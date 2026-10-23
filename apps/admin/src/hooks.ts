@@ -90,3 +90,18 @@ export async function attempt(
     setInFlight(key, false)
   }
 }
+
+// Matches the breakpoint in phone.css.
+const phoneQuery = '(max-width: 767px)'
+
+/** True on a phone-sized screen, where the admin uses its one-column layout. */
+export function useIsPhone() {
+  return useSyncExternalStore(
+    (fn) => {
+      const media = window.matchMedia(phoneQuery)
+      media.addEventListener('change', fn)
+      return () => media.removeEventListener('change', fn)
+    },
+    () => window.matchMedia(phoneQuery).matches,
+  )
+}

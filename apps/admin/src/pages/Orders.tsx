@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Select, Table, Tag } from 'tdesign-react'
+import { Select, Tag } from 'tdesign-react'
+import { DataTable } from '../DataTable'
 import { fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
 import { offlineMethodLabel, orderKindLabel, orderStatusLabel } from '../labels'
@@ -23,7 +24,7 @@ export function Orders() {
           options={Object.entries(orderStatusLabel).map(([value, [label]]) => ({ value, label }))}
         />
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading}
         data={data ?? []}

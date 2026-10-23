@@ -1,7 +1,8 @@
 import { venueInstant } from '@rs/shared'
 import { useState } from 'react'
-import { Button, DateRangePicker, Dialog, Select, Table, Tag, Textarea } from 'tdesign-react'
+import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundStatusLabel } from '../labels'
@@ -102,7 +103,7 @@ export function Bookings() {
           ]}
         />
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading}
         data={data ?? []}

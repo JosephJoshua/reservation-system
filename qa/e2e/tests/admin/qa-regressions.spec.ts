@@ -260,3 +260,50 @@ test('a settings save from a stale tab is refused and keeps what was typed', asy
   await page.reload()
   await expect(notice(page)).toHaveValue(`第一个标签页${run}`)
 })
+
+test('an expired session says so on the login page', async ({ page }) => {
+  await login(page)
+  await page.evaluate(() => {
+    for (const k of Object.keys(localStorage)) localStorage.setItem(k, 'expired')
+  })
+  await page.goto('./#/bookings')
+  await expect(page.getByText('登录已过期，请重新登录')).toBeVisible()
+  await page.getByPlaceholder('管理密码').fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await expect(page.getByText('登录已过期，请重新登录')).toHaveCount(0)
+})
+
+test('on a phone the menu is a drawer, lists fit the screen and dialog actions sit at the bottom', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await login(page)
+  const openMenu = page.locator('.admin-menu-drawer.t-drawer--open')
+  // The second tap is on the page already shown, which must close the menu too.
+  for (const item of ['预约', '预约']) {
+    await page.getByRole('button', { name: '菜单' }).click()
+    await expect(openMenu).toHaveCount(1)
+    await openMenu.getByText(item, { exact: true }).click()
+    await expect(openMenu).toHaveCount(0)
+    await expect(page.locator('.admin-header')).toContainText(item)
+  }
+  for (const route of ['bookings', 'students', 'orders', 'schedule', 'settings']) {
+    await page.goto(`./#/${route}`)
+    await page.waitForLoadState('networkidle')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  }
+  await page.goto('./#/schedule')
+  await page.locator('.t-select').first().click()
+  await page.getByRole('listitem').filter({ hasText: coachName }).click()
+  await page.getByRole('button', { name: '批量排课' }).click()
+  const confirm = dialog(page).getByRole('button', { name: /创建/ })
+  // Polled, since the sheet zooms in.
+  await expect
+    .poll(async () => {
+      const box = await confirm.boundingBox()
+      return box ? [box.y + box.height > 844 - 80, box.width > 120] : null
+    })
+    .toEqual([true, true])
+})

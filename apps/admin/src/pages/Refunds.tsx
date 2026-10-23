@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Dialog, InputNumber, Select, Space, Table, Tag, Textarea } from 'tdesign-react'
+import { Button, Dialog, InputNumber, Select, Space, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
@@ -44,7 +45,7 @@ export function Refunds() {
           ]}
         />
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading}
         data={data ?? []}

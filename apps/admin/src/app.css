@@ -60,6 +60,12 @@ body {
   flex: 1;
 }
 
+.week-nav {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
 .login {
   min-height: 100vh;
   display: flex;
@@ -264,4 +270,49 @@ a:hover {
 
 .week-scroll {
   overflow-x: auto;
+}
+
+.admin-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-menu-drawer .t-drawer__body {
+  padding: 0;
+}
+
+.day-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.day-tab {
+  min-height: 44px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.day-tab.active {
+  border-color: var(--td-brand-color);
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
+.day-grid .slot-chip {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.pick-tag {
+  cursor: pointer;
 }

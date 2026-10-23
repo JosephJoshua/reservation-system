@@ -11,10 +11,10 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
 } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
@@ -93,7 +93,7 @@ export function Banners() {
       <p className="muted" style={{ marginTop: 0 }}>
         建议尺寸 750×300。首页公告在“设置”里修改。
       </p>
-      <Table
+      <DataTable
         rowKey="id"
         loading={banners.loading}
         data={banners.data ?? []}
@@ -139,6 +139,7 @@ export function Banners() {
                   编辑
                 </Button>
                 <Popconfirm
+                  theme="danger"
                   content="删除这张轮播图？"
                   confirmBtn={{ content: '删除', theme: 'danger' }}
                   cancelBtn="返回"

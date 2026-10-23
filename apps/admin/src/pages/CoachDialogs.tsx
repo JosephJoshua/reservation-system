@@ -14,11 +14,11 @@ import {
   Popconfirm,
   Select,
   Space,
-  Table,
   Tag,
   TimePicker,
 } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { fmtDateTime, today } from '../format'
 import { attempt, useApi } from '../hooks'
 import type { Coach } from '../types'
@@ -96,6 +96,7 @@ export function CoachBindingDialog({ coach, onClose }: { coach: Coach; onClose: 
           <Button onClick={generate}>{code ? '重新生成' : '生成绑定码'}</Button>
           {current.bound && (
             <Popconfirm
+              theme="warning"
               content="解除后教练需重新绑定才能使用教练入口。"
               confirmBtn={{ content: '解除绑定', theme: 'danger' }}
               cancelBtn="返回"
@@ -170,7 +171,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
       )}
       {data && lengths.length > 0 && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Table
+          <DataTable
             rowKey="key"
             size="small"
             data={rows}
