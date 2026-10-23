@@ -114,6 +114,32 @@ export async function createBooking(
     if (!student) throw notFound('用户')
     const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
     if (!slot) throw notFound('时段')
+    // A repeated tap or a retry after a lost response gets the booking it already made, rather
+    // than being told the slot is taken (by the student themself).
+    const own = tx
+      .select({ id: bookings.id, status: bookings.status, lessonTypeId: bookings.lessonTypeId })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.slotId, slot.id),
+          eq(bookings.studentId, studentId),
+          inArray(bookings.status, LIVE),
+        ),
+      )
+      .get()
+    if (own && own.lessonTypeId === input.lessonTypeId) {
+      const order = tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(and(eq(orders.bookingId, own.id), eq(orders.status, 'pending')))
+        .get()
+      return {
+        bookingId: own.id,
+        status:
+          own.status === 'pending_payment' ? ('pending_payment' as const) : ('confirmed' as const),
+        orderId: own.status === 'pending_payment' ? (order?.id ?? null) : null,
+      }
+    }
     if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段不可预约')
     const lessonType = tx
       .select()
@@ -277,6 +303,9 @@ export async function cancelBooking(
   if (!existing || (options.studentId !== undefined && existing.studentId !== options.studentId)) {
     throw notFound('预约')
   }
+  // A repeat of a cancel that already went through is a no-op. A cancel by someone else still
+  // fails, since the venue and the student cancel with different refunds.
+  if (existing.status === 'cancelled' && existing.cancelledBy === by) return
   // Set when the student cancelled what they saw as unpaid but the payment landed meanwhile.
   // They were told cancelling costs nothing, so the late-cancel rule does not apply.
   let paidWhileCancelling = false
@@ -294,6 +323,8 @@ export async function cancelBooking(
     // The payment that landed could not confirm the booking (the slot was gone), so it is
     // already being refunded in full and there is nothing left to cancel.
     if (paidWhileCancelling && booking.status === 'expired') return []
+    // Two cancels by the same side racing: the first one did the work.
+    if (booking.status === 'cancelled' && booking.cancelledBy === by) return []
     if (booking.status !== 'confirmed') throw new ApiError(409, 'not_cancellable', '该预约已取消')
     const order =
       booking.paidWith === 'order'

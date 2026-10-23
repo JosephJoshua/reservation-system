@@ -22,6 +22,9 @@ import { refundedSoFar, submitRefund } from './refunds'
 import { getSettings } from './settings'
 import { grantedLessons } from './views'
 
+// An open order is reused only while there is still time to pay it.
+const REUSE_MARGIN_MS = 2 * 60_000
+
 /** Starts a WeChat Pay purchase of a package product. */
 export async function purchasePackage(
   deps: Deps,
@@ -52,6 +55,22 @@ export async function purchasePackage(
       },
       now,
     )
+    // A repeated tap or a retry continues the order already open for this product, so the
+    // student never ends up with two cashier sessions for one purchase.
+    const open = tx
+      .select({ id: orders.id })
+      .from(orders)
+      .where(
+        and(
+          eq(orders.studentId, studentId),
+          eq(orders.productId, product.id),
+          eq(orders.status, 'pending'),
+          eq(orders.amount, price.price),
+          gt(orders.expiresAt, new Date(now.getTime() + REUSE_MARGIN_MS)),
+        ),
+      )
+      .get()
+    if (open) return open.id
     return tx
       .insert(orders)
       .values({
@@ -111,6 +130,15 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
   return immediate(deps.db, (tx) => {
     const pkg = tx.select().from(packages).where(eq(packages.id, packageId)).get()
     if (!pkg || pkg.studentId !== studentId) throw notFound('课时包')
+    if (pkg.status === 'refund_requested') {
+      // A repeated request returns the one already waiting for the admin.
+      const waiting = tx
+        .select({ id: refunds.id })
+        .from(refunds)
+        .where(and(eq(refunds.packageId, pkg.id), eq(refunds.status, 'requested')))
+        .get()
+      if (waiting) return waiting.id
+    }
     if (pkg.status !== 'active') throw new ApiError(409, 'package_not_active', '该课时包已申请退款')
     if (pkg.expiresAt <= now) throw new ApiError(409, 'package_expired', '课时包已过期')
     if (pkg.lessonsRemaining <= 0) throw new ApiError(409, 'package_empty', '课时包已用完')
@@ -168,6 +196,9 @@ export async function approvePackageRefund(deps: Deps, refundId: number, amount:
   immediate(deps.db, (tx) => {
     const refund = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
     if (!refund?.packageId) throw notFound('退款申请')
+    // A repeated approval of the same amount is a no-op; anything else was decided already.
+    const approved = ['pending', 'processing', 'succeeded'].includes(refund.status)
+    if (approved && refund.amount === amount) return
     if (refund.status !== 'requested')
       throw new ApiError(409, 'refund_not_requested', '该申请已处理')
     const order = tx.select().from(orders).where(eq(orders.id, refund.orderId)).get()
@@ -200,6 +231,7 @@ export function rejectPackageRefund(deps: Deps, refundId: number, note: string) 
   immediate(deps.db, (tx) => {
     const refund = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
     if (!refund?.packageId) throw notFound('退款申请')
+    if (refund.status === 'rejected') return
     if (refund.status !== 'requested')
       throw new ApiError(409, 'refund_not_requested', '该申请已处理')
     tx.update(refunds)

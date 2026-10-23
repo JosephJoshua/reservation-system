@@ -144,6 +144,15 @@ export async function retryRefund(deps: Deps, refundId: number) {
       .where(and(eq(refunds.id, refundId), eq(refunds.status, 'failed')))
       .run(),
   )
-  if (changed.changes === 0) throw new ApiError(409, 'refund_not_failed', '只能重试失败的退款')
+  if (changed.changes === 0) {
+    // A repeated retry finds the refund already on its way, which is what it asked for.
+    const row = deps.db
+      .select({ status: refunds.status })
+      .from(refunds)
+      .where(eq(refunds.id, refundId))
+      .get()
+    if (row && ['pending', 'processing', 'succeeded'].includes(row.status)) return
+    throw new ApiError(409, 'refund_not_failed', '只能重试失败的退款')
+  }
   await submitRefund(deps, refundId)
 }

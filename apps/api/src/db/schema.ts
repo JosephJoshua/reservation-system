@@ -335,3 +335,14 @@ export const banners = sqliteTable('banners', {
   sort: integer('sort').notNull().default(0),
   createdAt: createdAt(),
 })
+
+/** Responses to requests sent with an Idempotency-Key, so a retried or repeated submit runs once. */
+export const idempotencyKeys = sqliteTable('idempotency_keys', {
+  // Hash of the caller's token, the method, the path and the client's key.
+  id: text('id').primaryKey(),
+  // Null while the first request is still running.
+  status: integer('status'),
+  body: text('body'),
+  contentType: text('content_type'),
+  createdAt: instant('created_at').notNull(),
+})

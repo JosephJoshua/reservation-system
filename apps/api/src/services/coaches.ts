@@ -94,6 +94,12 @@ export async function bindCoach(deps: Deps, code: string, bindCode: string) {
   const normalized = bindCode.toUpperCase().replace(/[\s-]/g, '')
   const coach = immediate(deps.db, (tx) => {
     const coach = tx.select().from(coaches).where(eq(coaches.bindCode, normalized)).get()
+    if (!coach) {
+      // A repeated bind finds its code already used. If this WeChat is bound to an active coach,
+      // that bind went through, so answer it the way the first one was answered.
+      const bound = tx.select().from(coaches).where(eq(coaches.openid, openid)).get()
+      if (bound?.active) return bound
+    }
     if (!coach?.bindCodeExpiresAt || coach.bindCodeExpiresAt <= deps.now()) {
       throw new ApiError(400, 'bad_bind_code', '绑定码无效或已过期，请向场馆重新获取')
     }

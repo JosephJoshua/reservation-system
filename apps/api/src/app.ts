@@ -5,6 +5,7 @@ import { sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import type { Deps } from './deps'
 import { ApiError } from './errors'
+import { idempotency } from './idempotency'
 import { FakeGateway } from './pay/fake'
 import { adminRoutes } from './routes/admin'
 import { coachRoutes } from './routes/coach'
@@ -50,6 +51,7 @@ export function createApp(deps: Deps) {
     }
   })
 
+  app.use('*', idempotency(deps))
   app.route('/', payRoutes(deps))
   if (deps.gateway instanceof FakeGateway) app.route('/', devPayRoutes(deps, deps.gateway))
   app.route('/admin', adminRoutes(deps))
