@@ -5,7 +5,7 @@ const TOKEN_KEY = 'token'
 /** Development only: a storage key QA sets to log in as a named test student. */
 const DEV_LOGIN_KEY = 'devLogin'
 
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
+export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 export class ApiError extends Error {
   constructor(
@@ -17,7 +17,12 @@ export class ApiError extends Error {
   }
 }
 
-function request<T>(method: Method, path: string, data?: unknown, token?: string): Promise<T> {
+export function request<T>(
+  method: Method,
+  path: string,
+  data?: unknown,
+  token?: string,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     wx.request({
       url: `${apiBaseUrl}/api${path}`,
@@ -46,7 +51,8 @@ function request<T>(method: Method, path: string, data?: unknown, token?: string
   })
 }
 
-function wxCode(): Promise<string> {
+/** A wx.login code, or the QA stand-in in development builds. */
+export function wxCode(): Promise<string> {
   const devName =
     wx.getAccountInfoSync().miniProgram.envVersion === 'develop'
       ? (wx.getStorageSync(DEV_LOGIN_KEY) as string)

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import {
   type CoachHoursDto,
+  type CoachMeDto,
   lessonsFromHours,
   type SlotSyncDto,
   venueDateKey,
@@ -62,13 +63,14 @@ export function unbindCoach(deps: Deps, coachId: number) {
   })
 }
 
-function coachMe(deps: Deps, coach: typeof coaches.$inferSelect) {
+function coachMe(deps: Deps, coach: typeof coaches.$inferSelect): CoachMeDto {
   return {
     id: coach.id,
     name: coach.name,
     title: coach.title,
     avatarUrl: coach.avatarUrl,
     notifyTemplateIds: deps.notifier?.templateIds() ?? [],
+    advanceDays: getSettings(deps.db).booking.advanceDays,
   }
 }
 

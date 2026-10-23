@@ -7,6 +7,12 @@
   <view class="me-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
 </view>
 
+<view wx:if="{{isCoach}}" class="group">
+  <t-cell-group theme="card">
+    <t-cell title="教练工作台" left-icon="calendar-event" arrow hover bind:click="openCoach" />
+  </t-cell-group>
+</view>
+
 <view class="group">
   <t-cell-group theme="card">
     <t-cell title="我的课时包" note="{{remaining}}" left-icon="wallet" arrow hover bind:click="openMyPackages" />
@@ -26,4 +32,8 @@
     <t-cell wx:if="{{hasBookingPolicy}}" title="预约须知" left-icon="file" arrow hover data-kind="booking" bind:click="openPolicy" />
     <t-cell wx:if="{{hasAgreement}}" title="用户协议" left-icon="file-safety" arrow hover data-kind="agreement" bind:click="openPolicy" />
   </t-cell-group>
+</view>
+
+<view wx:if="{{meLoaded && !isCoach}}" class="coach-entry">
+  <text class="coach-link" bind:tap="openCoach">教练入口</text>
 </view>

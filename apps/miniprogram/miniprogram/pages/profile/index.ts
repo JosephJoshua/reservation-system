@@ -1,4 +1,4 @@
-import type { CatalogDto, HomeDto, PackageDto, StudentDto } from '../../lib/shared'
+import type { CatalogDto, HomeDto, MeDto, PackageDto } from '../../lib/shared'
 import { api, publicApi } from '../../utils/api'
 import { getCatalog, getMe } from '../../utils/data'
 import { maskPhone } from '../../utils/format'
@@ -12,6 +12,8 @@ Page({
     venue: null as HomeDto['venue'] | null,
     hasBookingPolicy: false,
     hasAgreement: false,
+    isCoach: false,
+    meLoaded: false,
   },
 
   onShow() {
@@ -21,8 +23,13 @@ Page({
   async load() {
     // Each part fills in on its own, so one failing request does not blank the page.
     getMe()
-      .then((me: StudentDto) =>
-        this.setData({ name: me.name, phone: me.phone ? maskPhone(me.phone) : '' }),
+      .then((me: MeDto) =>
+        this.setData({
+          name: me.name,
+          phone: me.phone ? maskPhone(me.phone) : '',
+          isCoach: me.isCoach,
+          meLoaded: true,
+        }),
       )
       .catch(() => {})
     api<PackageDto[]>('GET', '/packages')
@@ -49,6 +56,10 @@ Page({
 
   editProfile() {
     wx.navigateTo({ url: '/pages/profile-edit/index' })
+  },
+
+  openCoach() {
+    wx.navigateTo({ url: '/coach/index/index' })
   },
 
   openMyPackages() {

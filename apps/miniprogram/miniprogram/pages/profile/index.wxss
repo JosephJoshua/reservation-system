@@ -35,3 +35,19 @@
 .group {
   margin-top: 24rpx;
 }
+
+.coach-entry {
+  display: flex;
+  justify-content: center;
+  padding: 48rpx 0 calc(48rpx + env(safe-area-inset-bottom));
+}
+
+/* Quiet, but still a 44px tap target. */
+.coach-link {
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  padding: 0 32rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-placeholder);
+}

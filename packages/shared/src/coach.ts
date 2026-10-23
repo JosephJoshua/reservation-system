@@ -9,6 +9,8 @@ export interface CoachMeDto {
   avatarUrl: string
   /** Subscription message templates to ask the coach for, empty when none are set up. */
   notifyTemplateIds: string[]
+  /** How many days ahead lessons open for booking. */
+  advanceDays: number
 }
 
 export interface CoachLoginResponse {

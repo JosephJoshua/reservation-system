@@ -1,4 +1,4 @@
-import type { CatalogDto, LateCancelRule, StudentDto } from '../lib/shared'
+import type { CatalogDto, LateCancelRule, MeDto } from '../lib/shared'
 import { api } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
@@ -11,8 +11,8 @@ export async function getCatalog(fresh = false): Promise<CatalogDto> {
   return value
 }
 
-export function getMe(): Promise<StudentDto> {
-  return api<StudentDto>('GET', '/me')
+export function getMe(): Promise<MeDto> {
+  return api<MeDto>('GET', '/me')
 }
 
 /** One line on what cancelling late costs, for the confirm and detail pages. */

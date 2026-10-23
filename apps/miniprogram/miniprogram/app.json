@@ -11,6 +11,13 @@
     "pages/profile-edit/index",
     "pages/policy/index"
   ],
+  "subpackages": [
+    {
+      "root": "coach",
+      "name": "coach",
+      "pages": ["index/index", "lesson/index", "hours/index", "bind/index"]
+    }
+  ],
   "window": {
     "navigationBarTitleText": "预约",
     "navigationBarBackgroundColor": "@navBgColor",

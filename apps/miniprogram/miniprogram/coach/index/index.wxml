@@ -1,0 +1,70 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="primary" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="has-action-bar">
+  <view class="header">
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-into-view="{{dayAnchor}}" class="day-scroll">
+      <view class="day-row">
+        <view
+          wx:for="{{days}}"
+          wx:key="key"
+          id="day-{{item.key}}"
+          class="day {{date === item.key ? 'day-active' : ''}} {{item.past ? 'day-past' : ''}}"
+          data-key="{{item.key}}"
+          bind:tap="pickDate"
+        >
+          <view class="day-label">{{item.label}}</view>
+          <view class="day-date">{{item.date}}</view>
+          <view class="day-dot {{item.lessons ? '' : 'day-dot-none'}}" />
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{slotsState === 'error'}}" class="slots-status muted">{{error}}</view>
+  <view wx:elif="{{!slots.length}}" class="slots-empty">
+    <t-empty icon="{{emptyIcon}}" description="{{dayEmpty}}" />
+  </view>
+  <view wx:else>
+    <view class="section-title">{{summary}}</view>
+    <view class="card list">
+      <view
+        wx:for="{{slots}}"
+        wx:key="id"
+        class="row row-{{item.kind}}"
+        hover-class="{{item.kind === 'past' ? 'none' : 'row-hover'}}"
+        data-index="{{index}}"
+        bind:tap="openSlot"
+      >
+        <view class="row-time">
+          <view class="row-start">{{item.start}}</view>
+          <view class="row-end">{{item.end}}</view>
+        </view>
+        <view wx:if="{{item.kind === 'lesson'}}" class="row-main">
+          <view class="row-title">{{item.student}}</view>
+          <view class="row-sub">{{item.lesson}}</view>
+        </view>
+        <view wx:else class="row-main">
+          <view class="row-title row-free">{{item.label}}</view>
+        </view>
+        <t-tag wx:if="{{item.tag}}" size="medium" theme="{{item.tone}}" variant="light">{{item.tag}}</t-tag>
+        <view wx:if="{{item.kind !== 'past'}}" class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+      </view>
+    </view>
+    <view class="footnote">点空闲时段可关闭或重新开放，已预约的课程点开可签到、写备注或取消。</view>
+  </view>
+
+  <view class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="primary" bind:tap="openHours">设置可约时间</t-button>
+    </view>
+  </view>
+</view>
