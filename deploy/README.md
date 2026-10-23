@@ -125,7 +125,7 @@ staging build as the 体验版 to test on phones; upload a production build for 
 
 | Variable | Meaning |
 | --- | --- |
-| `ADMIN_PASSWORD` | Admin sign-in password. Required; use a long random one. |
+| `ADMIN_PASSWORD` | Password of the first admin login, `admin`, created when the database has no staff yet. Use a long random one. After that, staff logins are managed on the admin 员工 page and changing this variable has no effect; the image still refuses to start without it. |
 | `WECHAT_APPID` | Mini program AppID (`wxb8dc89b45d422bf1`). |
 | `WECHAT_APP_SECRET` | AppSecret from 开发管理 → 开发设置. Enables real WeChat sign-in and subscription messages. Required on staging too: without it the API uses a development login that trusts any caller. |
 | `PUBLIC_BASE_URL` | `https://` address of this environment. WeChat Pay sends payment and refund results to it. |
