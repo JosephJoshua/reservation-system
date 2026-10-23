@@ -27,7 +27,8 @@ describe('bookingWindowError', () => {
 
 describe('cancellationOutcome', () => {
   const startsAt = at('2026-10-25T02:00:00Z')
-  const base = { startsAt, amountPaid: 20000, rules }
+  const endsAt = at('2026-10-25T03:00:00Z')
+  const base = { startsAt, endsAt, amountPaid: 20000, rules }
 
   it('refunds everything before the deadline', () => {
     const now = at('2026-10-24T01:59:00Z')
@@ -75,13 +76,16 @@ describe('cancellationOutcome', () => {
     ).toBe('started')
   })
 
-  it('always gives everything back when the venue cancels', () => {
-    const now = at('2026-10-25T03:00:00Z')
+  it('always gives everything back when the venue cancels, until the lesson ends', () => {
+    const now = at('2026-10-25T02:30:00Z')
     expect(cancellationOutcome({ ...base, now, cancelledBy: 'venue', paidWith: 'order' })).toEqual({
       late: false,
       refund: 20000,
       returnLesson: false,
     })
+    expect(
+      cancellationOutcome({ ...base, now: endsAt, cancelledBy: 'venue', paidWith: 'order' }),
+    ).toBe('ended')
   })
 })
 

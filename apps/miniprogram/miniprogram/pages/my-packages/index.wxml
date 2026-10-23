@@ -5,7 +5,7 @@
 <view wx:elif="{{state === 'error'}}" class="centered">
   <view>
     <t-empty icon="{{errorIcon}}" description="{{error}}" />
-    <view class="retry"><t-button size="small" variant="outline" bind:tap="retry">重新加载</t-button></view>
+    <view class="retry"><t-button variant="outline" bind:tap="retry">重新加载</t-button></view>
   </view>
 </view>
 
@@ -13,7 +13,7 @@
   <view>
     <t-empty icon="{{emptyIcon}}" description="还没有课时包" />
     <view wx:if="{{packagesEnabled}}" class="retry">
-      <t-button size="small" theme="primary" variant="outline" bind:tap="buy">去购买</t-button>
+      <t-button theme="primary" variant="outline" bind:tap="buy">去购买</t-button>
     </view>
   </view>
 </view>
@@ -27,7 +27,7 @@
     <view class="pkg-type">{{item.lessonTypeName}}</view>
     <view class="pkg-count">
       <text class="pkg-remaining">{{item.remaining}}</text>
-      <text class="muted"> / {{item.purchased}} 节</text>
+      <text class="muted"> / {{item.total}} 节</text>
     </view>
     <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" color="{{item.active ? 'var(--td-brand-color)' : 'var(--td-text-color-disabled)'}}" />
     <view class="pkg-foot">

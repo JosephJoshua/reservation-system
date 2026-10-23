@@ -9,7 +9,7 @@ interface PackageView {
   name: string
   lessonTypeName: string
   remaining: number
-  purchased: number
+  total: number
   percent: number
   expires: string
   status: string
@@ -25,8 +25,11 @@ function view(p: PackageDto): PackageView {
     name: p.name,
     lessonTypeName: p.lessonTypeName,
     remaining: p.lessonsRemaining,
-    purchased: p.lessonsPurchased,
-    percent: p.lessonsPurchased ? Math.round((p.lessonsRemaining / p.lessonsPurchased) * 100) : 0,
+    total: p.lessonsPurchased + p.lessonsGranted,
+    percent: Math.min(
+      100,
+      Math.round((p.lessonsRemaining / Math.max(1, p.lessonsPurchased + p.lessonsGranted)) * 100),
+    ),
     expires: `${fullDate(p.expiresAt)}到期`,
     status: PACKAGE_STATUS[p.status],
     tone:

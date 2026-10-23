@@ -1,4 +1,4 @@
-import { packagePrice, suggestedPackageRefund } from '@rs/shared'
+import { packagePrice, suggestedPackageRefund, validityEnd } from '@rs/shared'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate } from '../db/client'
 import {
@@ -18,6 +18,7 @@ import { newOutRefundNo, newOutTradeNo } from './ids'
 import { closeOrder, createPackageFromOrder, startPayment } from './orders'
 import { refundedSoFar, submitRefund } from './refunds'
 import { getSettings } from './settings'
+import { grantedLessons } from './views'
 
 /** Starts a WeChat Pay purchase of a package product. */
 export async function purchasePackage(
@@ -73,7 +74,7 @@ export async function purchasePackage(
   try {
     return { orderId, payment: await startPayment(deps, orderId, student?.openid ?? '') }
   } catch (e) {
-    await closeOrder(deps, orderId, 'expired').catch(() => {})
+    await closeOrder(deps, orderId).catch(() => {})
     throw e
   }
 }
@@ -116,6 +117,7 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
       pricePaid: pkg.pricePaid,
       alreadyRefunded: refundedSoFar(tx, order.id),
       lessonsPurchased: pkg.lessonsPurchased,
+      lessonsGranted: grantedLessons(tx, [pkg.id]).get(pkg.id) ?? 0,
       lessonsRemaining: pkg.lessonsRemaining,
       perClassPrice: perClassPrice(deps, pkg.lessonTypeId),
     })
@@ -209,9 +211,12 @@ export function extendPackage(deps: Deps, packageId: number, days: number, note:
     const pkg = tx.select().from(packages).where(eq(packages.id, packageId)).get()
     if (pkg?.status !== 'active')
       throw new ApiError(409, 'package_not_active', '只能延长使用中的课时包')
-    const base = Math.max(pkg.expiresAt.getTime(), deps.now().getTime())
+    // Like a purchase, validity runs to the end of a venue day: counted from the current expiry
+    // while it is still ahead, otherwise from today.
+    const now = deps.now()
+    const from = pkg.expiresAt > now ? new Date(pkg.expiresAt.getTime() - 1) : now
     tx.update(packages)
-      .set({ expiresAt: new Date(base + days * 86_400_000) })
+      .set({ expiresAt: validityEnd(from, days) })
       .where(eq(packages.id, packageId))
       .run()
     tx.insert(packageLedger)

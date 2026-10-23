@@ -1,4 +1,4 @@
-import type { CatalogDto, LateCancelRule, PackageDto, StudentDto } from '../lib/shared'
+import type { CatalogDto, LateCancelRule, StudentDto } from '../lib/shared'
 import { api } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
@@ -13,29 +13,6 @@ export async function getCatalog(fresh = false): Promise<CatalogDto> {
 
 export function getMe(): Promise<StudentDto> {
   return api<StudentDto>('GET', '/me')
-}
-
-/** Mirrors the API's choice: the usable package that expires first. */
-export function usablePackage(
-  packages: PackageDto[],
-  lessonTypeId: number,
-  coachId: number,
-  startsAt: string,
-): PackageDto | null {
-  return (
-    packages
-      .filter(
-        (p) =>
-          p.status === 'active' &&
-          p.lessonTypeId === lessonTypeId &&
-          p.lessonsRemaining > 0 &&
-          p.expiresAt > startsAt &&
-          (p.coachIds.length === 0 || p.coachIds.includes(coachId)),
-      )
-      .sort((a, b) =>
-        a.expiresAt === b.expiresAt ? a.id - b.id : a.expiresAt < b.expiresAt ? -1 : 1,
-      )[0] ?? null
-  )
 }
 
 /** One line on what cancelling late costs, for the confirm and detail pages. */

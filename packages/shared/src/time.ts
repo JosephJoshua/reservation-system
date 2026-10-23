@@ -7,6 +7,20 @@ export function venueDateKey(instant: Date): string {
   return new Date(instant.getTime() + VENUE_UTC_OFFSET_MS).toISOString().slice(0, 10)
 }
 
+/** Venue wall-clock parts of an instant, for display. */
+export function venueParts(instant: Date) {
+  const d = new Date(instant.getTime() + VENUE_UTC_OFFSET_MS)
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    /** 0 is Sunday. */
+    weekday: d.getUTCDay(),
+    hours: d.getUTCHours(),
+    minutes: d.getUTCMinutes(),
+  }
+}
+
 /** Instant for a venue-local date (YYYY-MM-DD) and minutes after midnight. */
 export function venueInstant(dateKey: string, minutes: number): Date {
   const midnightUtc = Date.parse(`${dateKey}T00:00:00Z`)

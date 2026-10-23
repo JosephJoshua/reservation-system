@@ -301,9 +301,10 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
+    const bySlot = new Map(live.map((b) => [b.slotId, b]))
     return c.json(
       rows.map((s) => {
-        const b = live.find((x) => x.slotId === s.id)
+        const b = bySlot.get(s.id)
         return {
           ...s,
           booking: b
@@ -544,15 +545,17 @@ export function adminRoutes(deps: Deps) {
   app.patch('/students/:id', async (c) => {
     const body = await parseBody(
       c,
-      z.object({
-        name: z.string().trim().min(1).max(20).optional(),
-        phone: z
-          .string()
-          .trim()
-          .regex(/^1\d{10}$/)
-          .optional(),
-        tester: z.boolean().optional(),
-      }),
+      z
+        .object({
+          name: z.string().trim().min(1).max(20).optional(),
+          phone: z
+            .string()
+            .trim()
+            .regex(/^1\d{10}$/)
+            .optional(),
+          tester: z.boolean().optional(),
+        })
+        .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
     const changed = db
       .update(students)
@@ -638,17 +641,31 @@ export function adminRoutes(deps: Deps) {
       .orderBy(desc(orders.id))
       .limit(500)
       .all()
+    const refunded = new Map(
+      rows.length
+        ? db
+            .select({ orderId: refunds.orderId, total: sql<number>`sum(${refunds.amount})` })
+            .from(refunds)
+            .where(
+              and(
+                inArray(
+                  refunds.orderId,
+                  rows.map((r) => r.order.id),
+                ),
+                eq(refunds.status, 'succeeded'),
+              ),
+            )
+            .groupBy(refunds.orderId)
+            .all()
+            .map((r) => [r.orderId, Number(r.total)])
+        : [],
+    )
     return c.json(
       rows.map(({ order, student }) => ({
         ...order,
         prepayId: undefined,
         student,
-        refunded:
-          db
-            .select({ total: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
-            .from(refunds)
-            .where(and(eq(refunds.orderId, order.id), eq(refunds.status, 'succeeded')))
-            .get()?.total ?? 0,
+        refunded: refunded.get(order.id) ?? 0,
       })),
     )
   })
@@ -681,19 +698,23 @@ export function adminRoutes(deps: Deps) {
       .orderBy(desc(refunds.id))
       .limit(500)
       .all()
-    const now = deps.now()
+    const packageIds = rows.flatMap((r) => (r.refund.packageId ? [r.refund.packageId] : []))
+    const pkgs = new Map(
+      packageViews(
+        db,
+        packageIds.length
+          ? db.select().from(packages).where(inArray(packages.id, packageIds)).all()
+          : [],
+        deps.now(),
+      ).map((p) => [p.id, p]),
+    )
     return c.json(
-      rows.map((r) => {
-        const pkg = r.refund.packageId
-          ? db.select().from(packages).where(eq(packages.id, r.refund.packageId)).get()
-          : undefined
-        return {
-          ...r.refund,
-          order: r.order,
-          student: r.student,
-          package: pkg ? packageViews(db, [pkg], now)[0] : null,
-        }
-      }),
+      rows.map((r) => ({
+        ...r.refund,
+        order: r.order,
+        student: r.student,
+        package: r.refund.packageId ? (pkgs.get(r.refund.packageId) ?? null) : null,
+      })),
     )
   })
 

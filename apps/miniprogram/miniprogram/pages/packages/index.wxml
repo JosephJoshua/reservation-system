@@ -5,7 +5,7 @@
 <view wx:elif="{{state === 'error'}}" class="centered">
   <view>
     <t-empty icon="{{errorIcon}}" description="{{error}}" />
-    <view class="retry"><t-button size="small" variant="outline" bind:tap="retry">重新加载</t-button></view>
+    <view class="retry"><t-button variant="outline" bind:tap="retry">重新加载</t-button></view>
   </view>
 </view>
 
@@ -30,7 +30,6 @@
       </view>
       <t-button
         theme="primary"
-        size="small"
         loading="{{buying === item.id}}"
         disabled="{{buying !== 0 && buying !== item.id}}"
         data-id="{{item.id}}"

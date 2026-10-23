@@ -1,4 +1,4 @@
-import { validityEnd } from '@rs/shared'
+import { type CancelledBy, validityEnd } from '@rs/shared'
 import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { bookings, orders, packageLedger, packageProducts, packages } from '../db/schema'
@@ -55,12 +55,15 @@ export function applyPayment(
     const order = tx.select().from(orders).where(eq(orders.outTradeNo, outTradeNo)).get()
     if (!order) throw notFound('订单')
     if (order.status === 'paid') return []
+    // WeChat Pay charges the amount the order was created with, so a difference means something is
+    // badly wrong. Refuse to confirm anything; the callback fails and the order needs a person.
     if (paid.amount && paid.amount !== order.amount) {
       deps.log('paid amount differs from order', {
         outTradeNo,
         paid: paid.amount,
         order: order.amount,
       })
+      throw new Error(`paid amount ${paid.amount} differs from order amount ${order.amount}`)
     }
     tx.update(orders)
       .set({ status: 'paid', paidAt: paid.paidAt, transactionId: paid.transactionId })
@@ -94,7 +97,12 @@ export function applyPayment(
       }),
     ]
   })
-  for (const id of refundIds) void submitRefund(deps, id)
+  // Runs after the transaction; a failure leaves the refund pending for the sweeper to retry.
+  for (const id of refundIds) {
+    submitRefund(deps, id).catch((e) =>
+      deps.log('refund submit failed', { refundId: id, error: (e as Error).message }),
+    )
+  }
 }
 
 /** Creates the student's package for a paid package order. */
@@ -154,7 +162,8 @@ export async function syncOrder(deps: Deps, orderId: number) {
 export async function closeOrder(
   deps: Deps,
   orderId: number,
-  bookingStatus: 'expired' | 'cancelled',
+  /** Omitted when the hold simply ran out; given when someone cancels the booking. */
+  cancel?: { by: CancelledBy; reason: string | null },
 ): Promise<'closed' | 'paid'> {
   const order = deps.db.select().from(orders).where(eq(orders.id, orderId)).get()
   if (!order) throw notFound('订单')
@@ -178,8 +187,13 @@ export async function closeOrder(
     if (order.bookingId) {
       tx.update(bookings)
         .set(
-          bookingStatus === 'cancelled'
-            ? { status: 'cancelled', cancelledAt: now, cancelledBy: 'student' }
+          cancel
+            ? {
+                status: 'cancelled',
+                cancelledAt: now,
+                cancelledBy: cancel.by,
+                cancelReason: cancel.reason,
+              }
             : { status: 'expired' },
         )
         .where(and(eq(bookings.id, order.bookingId), eq(bookings.status, 'pending_payment')))
@@ -207,7 +221,7 @@ export async function expireOrders(deps: Deps) {
     .all()
   for (const { id } of due) {
     try {
-      await closeOrder(deps, id, 'expired')
+      await closeOrder(deps, id)
     } catch (e) {
       deps.log('expire order failed', { orderId: id, error: (e as Error).message })
     }

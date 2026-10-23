@@ -1,6 +1,11 @@
-import { bookingWindowError, type CancelledBy, cancellationOutcome } from '@rs/shared'
+import {
+  type BookingQuoteDto,
+  bookingWindowError,
+  type CancelledBy,
+  cancellationOutcome,
+} from '@rs/shared'
 import { and, asc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm'
-import { immediate } from '../db/client'
+import { immediate, type Q } from '../db/client'
 import {
   bookings,
   lessonTypes,
@@ -38,6 +43,47 @@ export interface CreateBookingResult {
   status: 'pending_payment' | 'confirmed'
   orderId: number | null
   payment: PaymentParams | null
+}
+
+/** The student's package that would pay for a lesson in this slot: the one expiring first. */
+export function usablePackage(
+  tx: Q,
+  studentId: number,
+  lessonTypeId: number,
+  slot: { coachId: number; startsAt: Date },
+) {
+  return tx
+    .select()
+    .from(packages)
+    .where(
+      and(
+        eq(packages.studentId, studentId),
+        eq(packages.lessonTypeId, lessonTypeId),
+        eq(packages.status, 'active'),
+        gt(packages.lessonsRemaining, 0),
+        gt(packages.expiresAt, slot.startsAt),
+      ),
+    )
+    .orderBy(asc(packages.expiresAt), asc(packages.id))
+    .all()
+    .find((p) => p.coachIds.length === 0 || p.coachIds.includes(slot.coachId))
+}
+
+/** What booking a slot would cost the student, for the confirm page. */
+export function quoteBooking(deps: Deps, studentId: number, slotId: number, lessonTypeId: number) {
+  const { db } = deps
+  const student = db.select().from(students).where(eq(students.id, studentId)).get()
+  const slot = db.select().from(slots).where(eq(slots.id, slotId)).get()
+  const lessonType = db.select().from(lessonTypes).where(eq(lessonTypes.id, lessonTypeId)).get()
+  if (!student || !slot || !lessonType || !visibleTo(lessonType, student)) throw notFound('时段')
+  const price = priceFor(db, slot.coachId, lessonType, deps.now())
+  if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
+  const pkg = lessonType.isTrial ? undefined : usablePackage(db, studentId, lessonType.id, slot)
+  return {
+    price,
+    package: pkg ? { id: pkg.id, name: pkg.name, lessonsRemaining: pkg.lessonsRemaining } : null,
+    perClassEnabled: lessonType.isTrial || getSettings(db).payment.perClassEnabled,
+  } satisfies BookingQuoteDto
 }
 
 /**
@@ -120,21 +166,7 @@ export async function createBooking(
     const pkg =
       lessonType.isTrial || input.payWith === 'wechat'
         ? undefined
-        : tx
-            .select()
-            .from(packages)
-            .where(
-              and(
-                eq(packages.studentId, studentId),
-                eq(packages.lessonTypeId, lessonType.id),
-                eq(packages.status, 'active'),
-                gt(packages.lessonsRemaining, 0),
-                gt(packages.expiresAt, slot.startsAt),
-              ),
-            )
-            .orderBy(asc(packages.expiresAt), asc(packages.id))
-            .all()
-            .find((p) => p.coachIds.length === 0 || p.coachIds.includes(slot.coachId))
+        : usablePackage(tx, studentId, lessonType.id, slot)
     if (input.payWith === 'package' && !pkg) {
       throw new ApiError(409, 'no_package', '没有可用于该课程的课时包')
     }
@@ -227,7 +259,7 @@ export async function createBooking(
     return { ...created, payment }
   } catch (e) {
     // Release the slot at once rather than holding it for the whole timeout.
-    await closeOrder(deps, created.orderId, 'expired').catch(() => {})
+    await closeOrder(deps, created.orderId).catch(() => {})
     throw e
   }
 }
@@ -246,10 +278,14 @@ export async function cancelBooking(
   if (!existing || (options.studentId !== undefined && existing.studentId !== options.studentId)) {
     throw notFound('预约')
   }
+  // Set when the student cancelled what they saw as unpaid but the payment landed meanwhile.
+  // They were told cancelling costs nothing, so the late-cancel rule does not apply.
+  let paidWhileCancelling = false
   if (existing.status === 'pending_payment') {
     const order = deps.db.select().from(orders).where(eq(orders.bookingId, bookingId)).get()
-    if (order && (await closeOrder(deps, order.id, 'cancelled')) === 'closed') return
-    // It was paid meanwhile: fall through and cancel it as a paid booking.
+    const cancel = { by, reason: options.reason ?? null }
+    if (order && (await closeOrder(deps, order.id, cancel)) === 'closed') return
+    paidWhileCancelling = true
   }
 
   const now = deps.now()
@@ -261,16 +297,20 @@ export async function cancelBooking(
       booking.paidWith === 'order'
         ? tx.select().from(orders).where(eq(orders.bookingId, booking.id)).get()
         : undefined
-    const outcome = cancellationOutcome({
-      startsAt: booking.startsAt,
-      now,
-      cancelledBy: by,
-      paidWith: booking.paidWith,
-      amountPaid: order?.status === 'paid' ? order.amount : 0,
-      rules: getSettings(tx).booking,
-    })
+    const amountPaid = order?.status === 'paid' ? order.amount : 0
+    const outcome = paidWhileCancelling
+      ? { late: false, refund: amountPaid, returnLesson: false }
+      : cancellationOutcome({
+          startsAt: booking.startsAt,
+          endsAt: booking.endsAt,
+          now,
+          cancelledBy: by,
+          paidWith: booking.paidWith,
+          amountPaid,
+          rules: getSettings(tx).booking,
+        })
     if (outcome === 'started') throw new ApiError(409, 'started', '课程已开始，无法取消')
-    if (outcome === 'already_closed') throw new ApiError(409, 'not_cancellable', '该预约已取消')
+    if (outcome === 'ended') throw new ApiError(409, 'ended', '课程已结束，无法取消')
 
     tx.update(bookings)
       .set({

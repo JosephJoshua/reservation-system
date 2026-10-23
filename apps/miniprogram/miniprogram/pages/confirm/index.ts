@@ -1,13 +1,6 @@
-import type { CreateBookingResponse, PackageDto, PriceTag, StudentDto } from '../../lib/shared'
+import type { BookingQuoteDto, CreateBookingResponse, StudentDto } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
-import {
-  cancelRuleText,
-  getCatalog,
-  getMe,
-  hasAgreed,
-  setAgreed,
-  usablePackage,
-} from '../../utils/data'
+import { cancelRuleText, getCatalog, getMe, hasAgreed, setAgreed } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { payOrder } from '../../utils/pay'
 
@@ -48,39 +41,38 @@ Page({
     submitting: false,
   },
 
-  startsAt: '',
-
   onLoad(query: Record<string, string | undefined>) {
-    this.startsAt = decodeURIComponent(query.startsAt ?? '')
     this.setData({
       slotId: Number(query.slotId),
       lessonTypeId: Number(query.lessonTypeId),
       coachId: Number(query.coachId),
-      when: lessonTime(this.startsAt, decodeURIComponent(query.endsAt ?? '')),
+      when: lessonTime(
+        decodeURIComponent(query.startsAt ?? ''),
+        decodeURIComponent(query.endsAt ?? ''),
+      ),
     })
     this.load()
   },
 
   async load() {
     try {
-      const [catalog, packages, me] = await Promise.all([
+      const { slotId, lessonTypeId } = this.data
+      const [catalog, quote, me] = await Promise.all([
         getCatalog(),
-        api<PackageDto[]>('GET', '/packages'),
+        // The API says which package it will use and what it will charge.
+        api<BookingQuoteDto>(
+          'GET',
+          `/bookings/quote?slotId=${slotId}&lessonTypeId=${lessonTypeId}`,
+        ),
         getMe(),
       ])
-      const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
+      const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
       const coach = catalog.coaches.find((c) => c.id === this.data.coachId)
-      const price: PriceTag | undefined = coach?.lessons.find(
-        (l) => l.lessonTypeId === this.data.lessonTypeId,
-      )?.price
-      if (!lessonType || !coach || !price) {
+      if (!lessonType || !coach) {
         this.setData({ state: 'error', error: '该课程暂不可预约' })
         return
       }
-      const pkg = lessonType.isTrial
-        ? null
-        : usablePackage(packages, lessonType.id, coach.id, this.startsAt)
-      const perClassEnabled = lessonType.isTrial || catalog.payment.perClassEnabled
+      const { price, package: pkg, perClassEnabled } = quote
       const hasPolicies = Boolean(catalog.policies.booking || catalog.policies.agreement)
       this.setData({
         state: 'ready',

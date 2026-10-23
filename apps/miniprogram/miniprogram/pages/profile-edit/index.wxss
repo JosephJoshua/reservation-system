@@ -3,7 +3,3 @@
 .form {
   padding-top: 24rpx;
 }
-
-.save {
-  padding: 32rpx;
-}

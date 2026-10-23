@@ -21,6 +21,11 @@ export function priceFor(
     )
     .get()
   if (!link?.active) return null
+  return linkPrice(lessonType, link.price, now)
+}
+
+/** The price for a lesson type given the coach's own price for it, if any. */
+export function linkPrice(lessonType: LessonType, coachPrice: number | null, now: Date): PriceTag {
   return lessonPrice(
     {
       price: lessonType.price,
@@ -28,7 +33,7 @@ export function priceFor(
       startsAt: lessonType.saleStartsAt,
       endsAt: lessonType.saleEndsAt,
     },
-    link.price,
+    coachPrice,
     now,
   )
 }

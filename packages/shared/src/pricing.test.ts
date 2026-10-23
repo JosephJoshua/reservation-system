@@ -60,6 +60,7 @@ describe('suggestedPackageRefund', () => {
       pricePaid: 180000,
       alreadyRefunded: 0,
       lessonsPurchased: 10,
+      lessonsGranted: 0,
       lessonsRemaining: 7,
       perClassPrice: 20000,
     }
@@ -73,9 +74,21 @@ describe('suggestedPackageRefund', () => {
         pricePaid: 180000,
         alreadyRefunded: 0,
         lessonsPurchased: 10,
+        lessonsGranted: 2,
         lessonsRemaining: 12,
         perClassPrice: 20000,
       }),
     ).toBe(180000)
+    // 2 granted, 3 used: the 3 come out of the paid lessons, so 7 paid lessons are refunded.
+    expect(
+      suggestedPackageRefund({
+        pricePaid: 150000,
+        alreadyRefunded: 0,
+        lessonsPurchased: 10,
+        lessonsGranted: 2,
+        lessonsRemaining: 9,
+        perClassPrice: 20000,
+      }),
+    ).toBe(90000)
   })
 })

@@ -1,17 +1,17 @@
-import { formatYuan, type PriceTag, venueDateKey } from '../lib/shared'
+import { formatYuan, type PriceTag, venueDateKey, venueParts } from '../lib/shared'
 
-const OFFSET_MS = 8 * 60 * 60 * 1000
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
-/** Venue wall-clock parts of an instant. */
+/** Venue wall-clock parts of an instant, ready to print. */
 function parts(iso: string | Date) {
-  const d = new Date(new Date(iso).getTime() + OFFSET_MS)
+  const p = venueParts(new Date(iso))
   return {
-    month: d.getUTCMonth() + 1,
-    day: d.getUTCDate(),
-    weekday: WEEKDAYS[d.getUTCDay()] ?? '',
-    hh: String(d.getUTCHours()).padStart(2, '0'),
-    mm: String(d.getUTCMinutes()).padStart(2, '0'),
+    year: p.year,
+    month: p.month,
+    day: p.day,
+    weekday: WEEKDAYS[p.weekday] ?? '',
+    hh: String(p.hours).padStart(2, '0'),
+    mm: String(p.minutes).padStart(2, '0'),
   }
 }
 
@@ -64,10 +64,9 @@ export function dateTime(iso: string): string {
 
 /** 4月22日, with the year when it is not this year: 2027年4月22日 */
 export function fullDate(iso: string | Date, now = new Date()): string {
-  const d = new Date(new Date(iso).getTime() + OFFSET_MS)
-  const year = d.getUTCFullYear()
-  const thisYear = new Date(now.getTime() + OFFSET_MS).getUTCFullYear()
-  return `${year === thisYear ? '' : `${year}年`}${d.getUTCMonth() + 1}月${d.getUTCDate()}日`
+  const p = parts(iso)
+  const year = p.year === venueParts(now).year ? '' : `${p.year}年`
+  return `${year}${p.month}月${p.day}日`
 }
 
 export function weekday(iso: string | Date): string {

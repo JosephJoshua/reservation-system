@@ -229,13 +229,8 @@ function CreateSlots({
       void MessagePlugin.warning('一次最多创建 500 个时段')
       return
     }
-    const slots = planned
-    if (slots.length === 0) {
-      void MessagePlugin.warning('所选时间都已过去')
-      return
-    }
     if (
-      await attempt(() => api('POST', '/admin/slots', { slots }), `已创建 ${slots.length} 个时段`)
+      await attempt(() => api('POST', '/admin/slots', { slots: planned }), `已创建 ${count} 个时段`)
     )
       onDone()
   }
@@ -365,7 +360,8 @@ function SlotDialog({
           <span className="muted">{slot.open ? '尚无预约' : '已关闭，学员看不到'}</span>
         )}
 
-        {b && !cancelling && (
+        {/* The API refuses to cancel a lesson that has ended. */}
+        {b && !cancelling && new Date(slot.endsAt) > new Date() && (
           <Button theme="danger" variant="outline" onClick={() => setCancelling(true)}>
             场馆取消该预约
           </Button>

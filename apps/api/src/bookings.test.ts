@@ -675,3 +675,166 @@ describe('auth', () => {
     expect((await h.call('PUT', '/me', { phone: '12345' }, a)).status).toBe(400)
   })
 })
+
+describe('review fixes', () => {
+  it('refunds in full when a payment lands while the student cancels the unpaid booking', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    // Three hours ahead: a paid booking cancelled now would be late and forfeit.
+    const slot = h.slot(coach.id, '2026-10-23', 13)
+    const t = await h.student('a')
+    const res = await book(h, t, slot.id, lesson.id)
+    const outTradeNo =
+      h.db.select().from(orders).where(eq(orders.id, res.json.orderId)).get()?.outTradeNo ?? ''
+    h.gateway.pay(outTradeNo, h.deps.now()) // paid at WeChat, callback not here yet
+    const cancel = await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
+    expect(cancel.json).toMatchObject({
+      status: 'cancelled',
+      late: false,
+      refund: { amount: 20000, status: 'succeeded' },
+    })
+  })
+
+  it('records an admin cancel of an unpaid booking as the venue, with the reason', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    const admin = await h.admin()
+    await h.call(
+      'POST',
+      `/admin/bookings/${res.json.bookingId}/cancel`,
+      { reason: '场地维修' },
+      admin,
+    )
+    const row = h.db.select().from(bookings).get()
+    expect(row).toMatchObject({
+      status: 'cancelled',
+      cancelledBy: 'venue',
+      cancelReason: '场地维修',
+    })
+  })
+
+  it('refuses a venue cancel once the lesson has ended', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    await pay(h, res.json.orderId)
+    const id = res.json.bookingId
+    h.clock.now = new Date('2026-10-25T03:00:00Z') // the lesson has ended
+    const admin = await h.admin()
+    const late = await h.call('POST', `/admin/bookings/${id}/cancel`, { reason: '补录' }, admin)
+    expect(late.json.error.code).toBe('ended')
+    h.clock.now = new Date('2026-10-25T02:30:00Z') // mid-lesson, a coach who did not show up
+    const mid = await h.call('POST', `/admin/bookings/${id}/cancel`, { reason: '教练缺席' }, admin)
+    expect(mid.status).toBe(204)
+  })
+
+  it('does not confirm a payment whose amount differs from the order', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    const order = h.db.select().from(orders).get()
+    const { applyPayment } = await import('./services/orders')
+    expect(() =>
+      applyPayment(h.deps, order?.outTradeNo ?? '', {
+        state: 'paid',
+        transactionId: 't1',
+        paidAt: h.deps.now(),
+        amount: 1,
+      }),
+    ).toThrow()
+    expect(h.db.select().from(orders).get()?.status).toBe('pending')
+    expect(h.db.select().from(bookings).get()?.status).toBe('pending_payment')
+    expect(res.status).toBe(201)
+  })
+
+  it('acknowledges a verified callback for an order it never had', async () => {
+    const h = setup()
+    h.gateway.parsePaymentNotification = () => ({
+      outTradeNo: 'RS_unknown',
+      order: { state: 'paid', transactionId: 't1', paidAt: h.deps.now(), amount: 100 },
+    })
+    const res = await h.app.request('/api/pay/wechat/notify', { method: 'POST', body: '{}' })
+    expect(res.status).toBe(204)
+  })
+
+  it('rejects an empty profile update instead of failing', async () => {
+    const h = setup()
+    const t = await h.student('a')
+    expect((await h.call('PUT', '/me', {}, t)).status).toBe(400)
+    const admin = await h.admin()
+    expect((await h.call('PATCH', '/admin/students/1', {}, admin)).status).toBe(400)
+  })
+
+  it('quotes the package the booking will use', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const slot = h.slot(coach.id)
+    const before = await h.call(
+      'GET',
+      `/bookings/quote?slotId=${slot.id}&lessonTypeId=${lesson.id}`,
+      undefined,
+      t,
+    )
+    expect(before.json).toMatchObject({
+      price: { price: 20000 },
+      package: null,
+      perClassEnabled: true,
+    })
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 180000,
+        validityDays: 90,
+      })
+      .returning()
+      .get()
+    const bought = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await pay(h, bought.json.orderId)
+    const after = await h.call(
+      'GET',
+      `/bookings/quote?slotId=${slot.id}&lessonTypeId=${lesson.id}`,
+      undefined,
+      t,
+    )
+    expect(after.json.package).toMatchObject({ name: '10 次课', lessonsRemaining: 10 })
+  })
+
+  it('suggests a package refund that charges used lessons before granted ones', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 150000,
+        validityDays: 90,
+      })
+      .returning()
+      .get()
+    const t = await h.student('a')
+    const bought = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await pay(h, bought.json.orderId)
+    const admin = await h.admin()
+    const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
+    await h.call('POST', `/admin/packages/${pkg.id}/grant`, { lessons: 2, note: '活动' }, admin)
+    for (const hour of [10, 11, 12])
+      await book(h, t, h.slot(coach.id, '2026-10-24', hour).id, lesson.id)
+    h.clock.now = new Date('2026-10-24T06:00:00Z') // after the three lessons
+    const res = await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    expect(res.json).toMatchObject({ lessonsGranted: 2, lessonsRemaining: 9 })
+    // 1500 paid, 3 paid lessons used at 200: 900.
+    expect(h.db.select().from(refunds).where(eq(refunds.packageId, pkg.id)).get()?.amount).toBe(
+      90000,
+    )
+  })
+})

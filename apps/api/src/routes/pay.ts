@@ -15,7 +15,16 @@ export function payRoutes(deps: Deps) {
     const body = await c.req.text()
     try {
       const { outTradeNo, order } = deps.gateway.parsePaymentNotification(c.req.raw.headers, body)
-      if (order.state === 'paid') applyPayment(deps, outTradeNo, order)
+      if (order.state === 'paid') {
+        try {
+          applyPayment(deps, outTradeNo, order)
+        } catch (e) {
+          // A verified callback for an order this database never had (another environment on the
+          // same merchant, or a restored backup) can never succeed, so stop WeChat retrying it.
+          if (!(e instanceof ApiError && e.status === 404)) throw e
+          deps.log('payment callback for an unknown order', { outTradeNo })
+        }
+      }
       return c.body(null, 204)
     } catch (e) {
       deps.log('payment callback rejected', (e as Error).message)

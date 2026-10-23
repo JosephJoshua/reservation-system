@@ -54,9 +54,6 @@ const privateConfig = existsSync(privateConfigPath)
   : {}
 const appid = process.env.WX_APPID?.trim()
 if (appid) privateConfig.appid = appid
-if (apiBaseUrl.startsWith('http://')) {
-  privateConfig.setting = { ...privateConfig.setting, urlCheck: false }
-}
-if (Object.keys(privateConfig).length > 0) {
-  writeFileSync(privateConfigPath, `${JSON.stringify(privateConfig, null, 2)}\n`)
-}
+// Only a plain-http local API needs the domain check off; an https one should be checked.
+privateConfig.setting = { ...privateConfig.setting, urlCheck: !apiBaseUrl.startsWith('http://') }
+writeFileSync(privateConfigPath, `${JSON.stringify(privateConfig, null, 2)}\n`)

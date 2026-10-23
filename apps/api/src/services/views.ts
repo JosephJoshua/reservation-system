@@ -6,9 +6,18 @@ import {
   type PackageStatus,
   type VenueSettings,
 } from '@rs/shared'
-import { desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { Q } from '../db/client'
-import { bookings, coaches, lessonTypes, orders, packages, refunds, slots } from '../db/schema'
+import {
+  bookings,
+  coaches,
+  lessonTypes,
+  orders,
+  packageLedger,
+  packages,
+  refunds,
+  slots,
+} from '../db/schema'
 
 type BookingRow = typeof bookings.$inferSelect
 type PackageRow = typeof packages.$inferSelect
@@ -31,7 +40,10 @@ function latestRefunds<K extends 'bookingId' | 'packageId'>(tx: Q, key: K, ids: 
   const rows = tx.select().from(refunds).where(inArray(refunds[key], ids)).orderBy(refunds.id).all()
   for (const r of rows) {
     const id = r[key]
-    if (id !== null) map.set(id, r)
+    if (id === null) continue
+    // A rejected request does not hide an earlier refund that actually happened.
+    if (r.status !== 'rejected' || (map.get(id)?.status ?? 'rejected') === 'rejected')
+      map.set(id, r)
   }
   return map
 }
@@ -108,6 +120,18 @@ export function bookingViews(
   })
 }
 
+/** Lessons the admin granted to each package, on top of what was bought. */
+export function grantedLessons(tx: Q, ids: number[]): Map<number, number> {
+  if (ids.length === 0) return new Map()
+  const rows = tx
+    .select({ packageId: packageLedger.packageId, n: sql<number>`sum(${packageLedger.delta})` })
+    .from(packageLedger)
+    .where(and(inArray(packageLedger.packageId, ids), eq(packageLedger.kind, 'grant')))
+    .groupBy(packageLedger.packageId)
+    .all()
+  return new Map(rows.map((r) => [r.packageId, Number(r.n)]))
+}
+
 export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[] {
   const types = new Map(
     tx
@@ -116,11 +140,9 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
       .all()
       .map((t) => [t.id, t.name]),
   )
-  const refundByPackage = latestRefunds(
-    tx,
-    'packageId',
-    rows.map((r) => r.id),
-  )
+  const ids = rows.map((r) => r.id)
+  const refundByPackage = latestRefunds(tx, 'packageId', ids)
+  const granted = grantedLessons(tx, ids)
   return rows.map((p) => {
     const refund = refundByPackage.get(p.id)
     return {
@@ -130,6 +152,7 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
       lessonTypeName: types.get(p.lessonTypeId) ?? '',
       coachIds: p.coachIds,
       lessonsPurchased: p.lessonsPurchased,
+      lessonsGranted: granted.get(p.id) ?? 0,
       lessonsRemaining: p.lessonsRemaining,
       expiresAt: p.expiresAt.toISOString(),
       status: packageStatus(p, now),

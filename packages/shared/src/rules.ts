@@ -32,27 +32,29 @@ export interface CancellationOutcome {
   returnLesson: boolean
 }
 
-export type CancellationError = 'started' | 'already_closed'
+export type CancellationError = 'started' | 'ended'
 
 /**
  * What a cancellation does. Students can cancel until the lesson starts; before the deadline they
- * get everything back, after it the late-cancel rule applies. The venue always gives everything back.
+ * get everything back, after it the late-cancel rule applies. The venue always gives everything
+ * back, and can cancel until the lesson ends (a coach who did not show up), not after.
  */
 export function cancellationOutcome(input: {
   startsAt: Date
+  endsAt: Date
   now: Date
   cancelledBy: CancelledBy
   paidWith: 'order' | 'package'
   amountPaid: Fen
   rules: VenueSettings['booking']
 }): CancellationOutcome | CancellationError {
-  const { startsAt, now, cancelledBy, paidWith, amountPaid, rules } = input
+  const { startsAt, endsAt, now, cancelledBy, paidWith, amountPaid, rules } = input
   const full: CancellationOutcome = {
     late: false,
     refund: paidWith === 'order' ? amountPaid : 0,
     returnLesson: paidWith === 'package',
   }
-  if (cancelledBy === 'venue') return full
+  if (cancelledBy === 'venue') return now >= endsAt ? 'ended' : full
   if (now >= startsAt) return 'started'
   const late = startsAt.getTime() - now.getTime() < rules.cancelDeadlineHours * HOUR
   if (!late) return full

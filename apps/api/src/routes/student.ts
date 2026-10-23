@@ -27,8 +27,8 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { type AuthVars, loginStudent, logout, requireStudent } from '../services/auth'
-import { cancelBooking, createBooking, LIVE } from '../services/bookings'
-import { priceFor, visibleTo } from '../services/catalog'
+import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
+import { linkPrice, visibleTo } from '../services/catalog'
 import { startPayment, syncOrder } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { getSettings } from '../services/settings'
@@ -104,14 +104,16 @@ export function studentRoutes(deps: Deps) {
   app.put('/me', async (c) => {
     const body = await parseBody(
       c,
-      z.object({
-        name: z.string().trim().min(1).max(20).optional(),
-        phone: z
-          .string()
-          .trim()
-          .regex(/^1\d{10}$/)
-          .optional(),
-      }),
+      z
+        .object({
+          name: z.string().trim().min(1).max(20).optional(),
+          phone: z
+            .string()
+            .trim()
+            .regex(/^1\d{10}$/)
+            .optional(),
+        })
+        .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
     db.update(students)
       .set(body)
@@ -150,9 +152,8 @@ export function studentRoutes(deps: Deps) {
       bio: coach.bio,
       avatarUrl: coach.avatarUrl,
       lessons: types.flatMap((t) => {
-        if (!links.some((l) => l.coachId === coach.id && l.lessonTypeId === t.id)) return []
-        const price = priceFor(db, coach.id, t, now)
-        return price ? [{ lessonTypeId: t.id, price }] : []
+        const link = links.find((l) => l.coachId === coach.id && l.lessonTypeId === t.id)
+        return link ? [{ lessonTypeId: t.id, price: linkPrice(t, link.price, now) }] : []
       }),
     }))
     const typeDtos: LessonTypeDto[] = types.map((t) => {
@@ -323,6 +324,11 @@ export function studentRoutes(deps: Deps) {
       }),
     )
     return c.json(await createBooking(deps, c.get('studentId'), body), 201)
+  })
+
+  app.get('/bookings/quote', (c) => {
+    const q = parseQuery(c, z.object({ slotId: positiveId, lessonTypeId: positiveId }))
+    return c.json(quoteBooking(deps, c.get('studentId'), q.slotId, q.lessonTypeId))
   })
 
   app.get('/bookings', (c) => {

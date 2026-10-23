@@ -168,6 +168,7 @@ Page({
     if (!rules) return '确定取消这节课吗？'
     const outcome = cancellationOutcome({
       startsAt: new Date(b.startsAt),
+      endsAt: new Date(b.endsAt),
       now: new Date(),
       cancelledBy: 'student',
       paidWith: b.paidWith,

@@ -113,6 +113,8 @@ export interface PackageDto {
   lessonTypeName: string
   coachIds: number[]
   lessonsPurchased: number
+  /** Extra lessons the venue added for free. */
+  lessonsGranted: number
   lessonsRemaining: number
   expiresAt: string
   status: PackageStatus
@@ -127,6 +129,14 @@ export interface PaymentParamsDto {
   signType: 'RSA'
   paySign: string
   fake?: true
+}
+
+/** What booking a slot would cost, so the confirm page shows exactly what the API will do. */
+export interface BookingQuoteDto {
+  price: PriceTag
+  /** The package that will pay, unless the student chooses WeChat Pay. */
+  package: { id: number; name: string; lessonsRemaining: number } | null
+  perClassEnabled: boolean
 }
 
 export interface CreateBookingResponse {

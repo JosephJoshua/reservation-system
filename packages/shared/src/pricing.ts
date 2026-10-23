@@ -55,17 +55,19 @@ export function formatYuan(fen: Fen): string {
 }
 
 /**
- * Suggested refund for the unused part of a package: what was paid minus the lessons used at the
- * per-class price, never below zero. Granted lessons are treated as used last.
+ * Suggested refund for the unused part of a package: what was paid minus the paid lessons used at
+ * the per-class price, never below zero. Granted lessons are treated as used last, so lessons
+ * used come out of the paid ones first.
  */
 export function suggestedPackageRefund(input: {
   pricePaid: Fen
   alreadyRefunded: Fen
   lessonsPurchased: number
+  lessonsGranted: number
   lessonsRemaining: number
   perClassPrice: Fen
 }): Fen {
-  const used = Math.max(0, input.lessonsPurchased - input.lessonsRemaining)
-  const left = input.pricePaid - input.alreadyRefunded - used * input.perClassPrice
-  return Math.max(0, Math.min(left, input.pricePaid - input.alreadyRefunded))
+  const used = input.lessonsPurchased + input.lessonsGranted - input.lessonsRemaining
+  const paidUsed = Math.min(input.lessonsPurchased, Math.max(0, used))
+  return Math.max(0, input.pricePaid - input.alreadyRefunded - paidUsed * input.perClassPrice)
 }
