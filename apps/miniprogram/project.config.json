@@ -1,7 +1,7 @@
 {
   "description": "Student booking mini program",
   "projectname": "reservation-system",
-  "appid": "touristappid",
+  "appid": "wxb8dc89b45d422bf1",
   "compileType": "miniprogram",
   "miniprogramRoot": "miniprogram/",
   "srcMiniprogramRoot": "miniprogram/",

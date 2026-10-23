@@ -13,10 +13,6 @@ const tabs = [
   { path: '/pages/profile/index', name: 'profile' },
 ]
 
-if (!process.env.WX_APPID) {
-  throw new Error('Set WX_APPID to a mini program AppID or a test AppID from the WeChat sandbox')
-}
-
 const miniProgram = await automator.launch({
   projectPath,
   ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
