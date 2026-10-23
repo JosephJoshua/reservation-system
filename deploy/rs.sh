@@ -1,36 +1,60 @@
 #!/bin/sh
-# Runs the deployment on the server. Installed as /srv/rs/rs.sh; see deploy/README.md.
+# Runs the deployment on the server, from /srv/rs; see deploy/README.md.
 set -eu
 cd "${RS_HOME:-/srv/rs}"
 
 usage() {
   cat <<'USAGE'
 usage: rs.sh <command>
-  build <dir> <tag>   build images rs-app:<tag> and rs-backup:<tag> from a release in <dir>
-  staging <tag>       run <tag> on staging
-  prod <tag>          back up, then run <tag> in production
-  promote             run the release that is on staging in production
-  rollback            run the previous production release again
-  backup              back up production now
-  backups             list stored backups
-  verify [name]       download a backup (default: latest), check it and count its rows
-  restore <name>      stop production, restore a backup (or "latest"), start again
-  status              show containers and releases
-  logs [service]      follow logs (app, app-staging, backup, caddy)
-  prune               remove releases and images other than the newest five
+  build <dir> <tag>         build images rs-app:<tag> and rs-backup:<tag> from a release in <dir>
+  staging <tag>             run <tag> on staging
+  prod <tag>                back up, then run <tag> in production
+  promote                   run the release that is on staging in production
+  rollback [backup]         run the previous production release again, first restoring
+                            [backup] when the release being undone changed the database
+  backup                    back up production now
+  backups                   list stored backups
+  verify [backup]           download a backup (default: latest), check it and count its rows
+  restore <backup> [tag]    stop production, restore a backup (or "latest"), start production
+                            again on [tag] (default: the current release)
+  status                    show containers and releases
+  logs [service]            follow logs (app, app-staging, backup, caddy)
+  prune                     remove releases and images other than the newest five
 USAGE
   exit 2
 }
 
 [ -f .env ] || { echo "$(pwd)/.env is missing, see deploy/README.md" >&2; exit 1; }
 
+die() { echo "$1" >&2; exit 1; }
 dc() { docker compose -f compose.yml "$@"; }
 get() { sed -n "s/^$1=//p" .env; }
 set_var() {
   if grep -q "^$1=" .env; then sed -i "s#^$1=.*#$1=$2#" .env; else echo "$1=$2" >>.env; fi
 }
-need_image() { docker image inspect "rs-app:$1" >/dev/null 2>&1 || { echo "no image rs-app:$1, build it first" >&2; exit 1; }; }
+need_image() { docker image inspect "rs-app:$1" >/dev/null 2>&1 || die "no image rs-app:$1, build it first"; }
 prod_running() { [ -n "$(dc ps -q --status running app)" ]; }
+
+# compose.yml, the Caddyfile and this script follow the production release, so shipping a branch
+# to staging never changes how production runs. Copied then renamed: this script may be running.
+install_config() {
+  src=releases/$1/deploy
+  [ -d "$src" ] || { echo "releases/$1 is gone, keeping the current compose.yml" >&2; return 0; }
+  for file in compose.yml Caddyfile rs.sh; do
+    cp "$src/$file" ".$file.new" && mv ".$file.new" "$file"
+  done
+  if [ -n "$(dc ps -q --status running caddy)" ]; then
+    dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+  fi
+}
+
+# Runs a backup script with the production release's image, or staging's before the first one.
+backup_tool() {
+  tag=$(get APP_TAG)
+  [ -n "$tag" ] || tag=$(get STAGING_TAG)
+  [ -n "$tag" ] || die "no release built yet"
+  APP_TAG=$tag dc run --rm --no-deps backup "$@"
+}
 
 cmd=${1:-}
 [ $# -gt 0 ] && shift
@@ -47,11 +71,13 @@ case $cmd in
       # shellcheck disable=SC2086
       docker build -f "$dir/deploy/Dockerfile" --target "$target" -t "rs-$target:$tag" $args "$dir"
     done
-    cp "$dir/deploy/compose.yml" "$dir/deploy/Caddyfile" "$dir/deploy/rs.sh" .
     ;;
   staging)
     [ $# -eq 1 ] || usage
     need_image "$1"
+    # Without the AppSecret the API falls back to a development login that trusts any caller.
+    grep -q '^WECHAT_APP_SECRET=.' staging.env || die "set WECHAT_APP_SECRET in staging.env first"
+    [ -f compose.yml ] || install_config "$1"
     set_var STAGING_TAG "$1"
     dc up -d --wait app-staging caddy
     echo "staging runs $1"
@@ -63,37 +89,51 @@ case $cmd in
     if prod_running; then dc exec -T backup /app/api/backup/backup.sh; fi
     current=$(get APP_TAG)
     if [ -n "$current" ] && [ "$current" != "$1" ]; then set_var APP_PREV_TAG "$current"; fi
+    install_config "$1"
     set_var APP_TAG "$1"
     dc up -d --wait app backup caddy
     echo "production runs $1"
     ;;
   promote)
     tag=$(get STAGING_TAG)
-    [ -n "$tag" ] || { echo "nothing on staging" >&2; exit 1; }
+    [ -n "$tag" ] || die "nothing on staging"
     exec "$(pwd)/rs.sh" prod "$tag"
     ;;
   rollback)
     tag=$(get APP_PREV_TAG)
-    [ -n "$tag" ] || { echo "no previous release" >&2; exit 1; }
+    [ -n "$tag" ] || die "no previous release"
+    if [ $# -eq 1 ]; then exec "$(pwd)/rs.sh" restore "$1" "$tag"; fi
     exec "$(pwd)/rs.sh" prod "$tag"
     ;;
   backup)
     dc exec -T backup /app/api/backup/backup.sh
     ;;
   backups)
-    dc run --rm --no-deps backup /app/api/backup/restore.sh list
+    backup_tool /app/api/backup/restore.sh list
     ;;
   verify)
-    dc run --rm --no-deps backup /app/api/backup/restore.sh check "${1:-latest}"
+    backup_tool /app/api/backup/restore.sh check "${1:-latest}"
     ;;
   restore)
-    [ $# -eq 1 ] || usage
+    [ $# -ge 1 ] && [ $# -le 2 ] || usage
+    current=$(get APP_TAG)
+    tag=${2:-$current}
+    [ -n "$tag" ] || die "no production release yet: rs.sh restore <backup> <tag>"
+    need_image "$tag"
     dc stop app
-    # Start production again even when the restore fails, on whichever database is in place.
-    status=0
-    dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1" || status=$?
-    dc up -d --wait app
-    exit $status
+    if ! APP_TAG=$tag dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1"; then
+      # Nothing was replaced: bring production back as it was.
+      if [ -n "$current" ]; then dc up -d --wait app; fi
+      exit 1
+    fi
+    # Started straight on the release meant for this database, so no other release migrates it.
+    if [ "$tag" != "$current" ]; then
+      [ -z "$current" ] || set_var APP_PREV_TAG "$current"
+      install_config "$tag"
+      set_var APP_TAG "$tag"
+    fi
+    dc up -d --wait app backup caddy
+    echo "production runs $tag on the restored database"
     ;;
   status)
     dc ps

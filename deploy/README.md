@@ -75,14 +75,20 @@ restarts staging. Check staging, then on the server:
 /srv/rs/rs.sh logs app    # follow production logs (app, app-staging, backup, caddy)
 ```
 
-A deploy restarts the container; Caddy holds requests for up to 15 seconds meanwhile, so users see
-a slow request rather than an error. Migrations run when the API starts.
+A deploy restarts the container: the API finishes open requests and closes the database, and
+Caddy holds new requests for up to 15 seconds meanwhile, so users see a slow request rather than
+an error. Migrations run when the API starts.
 
 **Rolling back.** `rs.sh rollback` runs the previous production release again. If the release
-being rolled back changed the database (new files in `apps/api/drizzle/`), the old code may not
-work on the migrated database: restore the copy taken just before the deploy instead
-(`rs.sh backups`, then `rs.sh restore <name>`, then `rs.sh rollback`). Bookings and payments
-made since that copy are lost, so check the orders in the WeChat Pay merchant platform afterwards.
+being undone changed the database (new files in `apps/api/drizzle/`), the old code may not work
+on the migrated database: pass the copy taken just before the deploy,
+`rs.sh rollback app-<time>.db.gz` (find it with `rs.sh backups`). That restores it and starts the
+previous release on it, so the newer release never touches it again. Bookings and payments made
+since that copy are lost, so check the orders in the WeChat Pay merchant platform afterwards.
+
+`compose.yml`, the `Caddyfile` and `rs.sh` in `/srv/rs` follow the production release: they are
+replaced when a release goes to production, not when one is shipped to staging. A release that
+changes them is tested on staging with the old ones.
 
 `rs.sh prune` removes releases and images other than the newest five. The disk fills up slowly
 without it; run it every month or so.
@@ -118,7 +124,7 @@ staging build as the 体验版 to test on phones; upload a production build for 
 | --- | --- |
 | `ADMIN_PASSWORD` | Admin sign-in password. Required; use a long random one. |
 | `WECHAT_APPID` | Mini program AppID (`wxb8dc89b45d422bf1`). |
-| `WECHAT_APP_SECRET` | AppSecret from 开发管理 → 开发设置. Enables real WeChat sign-in and subscription messages. |
+| `WECHAT_APP_SECRET` | AppSecret from 开发管理 → 开发设置. Enables real WeChat sign-in and subscription messages. Required on staging too: without it the API uses a development login that trusts any caller. |
 | `PUBLIC_BASE_URL` | `https://` address of this environment. WeChat Pay sends payment and refund results to it. |
 | `WECHAT_PAY_MCHID` | Merchant ID (商户号). |
 | `WECHAT_PAY_API_V3_KEY` | APIv3 key, set in the merchant platform under 账户中心 → API安全. |
@@ -128,7 +134,7 @@ staging build as the 体验版 to test on phones; upload a production build for 
 | `WECHAT_PAY_PUBLIC_KEY_ID` | Its ID, starting with `PUB_KEY_ID_`. |
 | `WECHAT_MINIPROGRAM_STATE` | Which build a tapped message opens: `formal` (production), `trial` (staging), `developer`. |
 | `WECHAT_NOTICE_COACH_BOOKED`, `WECHAT_NOTICE_COACH_CANCELLED` | Subscription message templates: the template ID from 订阅消息, then each field and what goes in it, such as `AbC123 thing1=student time2=time thing3=lesson`. Values: `student`, `lesson`, `time`, `coach`, `reason`. A template left empty is not sent. |
-| `NODE_ENV` | Set by the image to `production`, which requires WeChat sign-in and WeChat Pay to be configured. Staging uses `staging` until the merchant account exists; it then uses a fake payment gateway. |
+| `NODE_ENV` | Set by the image to `production`, which requires WeChat sign-in and WeChat Pay to be configured. Staging uses `staging` until the merchant account exists; it then uses a fake payment gateway, where a signed-in user can mark their own staging orders paid. |
 
 The image sets `PORT`, `DATABASE_PATH`, `UPLOADS_DIR` and `ADMIN_DIR`; leave them alone. All the
 WeChat Pay variables go together: setting some but not all stops the API at start.
@@ -163,8 +169,9 @@ gzipped and stored as `db/app-<UTC time>.db.gz`. Uploaded images are copied to `
 as `app.db.before-restore-<time>` in the volume, puts the copy in place, copies back any missing
 images and starts production again. Everything written after the copy was taken is lost.
 
-**Moving to a new server**, or after losing the old one: do the first setup, ship a release, run
-`rs.sh restore latest` before putting it in production, then `rs.sh promote`.
+**Moving to a new server**, or after losing the old one: do the first setup, ship a release, then
+`rs.sh restore latest <tag>` with the tag `ship.sh` printed. That restores the newest copy and
+starts production on it.
 
 **Check the backups** once a month: `rs.sh backups` should list one copy per night, and
 `rs.sh verify` downloads the newest one, checks it and prints how many students, bookings and

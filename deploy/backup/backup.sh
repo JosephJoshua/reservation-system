@@ -5,13 +5,28 @@ set -eu
 # shellcheck source=common.sh
 . /app/api/backup/common.sh
 
+tmp=
+reason=
+fail() { reason=$1; exit 1; }
+# Every way out that is not success alerts, including a command stopped by set -e.
+finish() {
+  status=$?
+  [ -z "$tmp" ] || rm -rf "$tmp"
+  if [ "$status" -ne 0 ]; then
+    reason=${reason:-"stopped with status $status"}
+    echo "backup failed: $reason" >&2
+    alert "$reason"
+  fi
+}
+trap finish EXIT
+
+[ -n "${COS_BUCKET:-}" ] || fail "COS_BUCKET is not set"
 [ -f "$DB" ] || fail "database $DB not found"
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
 name="app-$(date -u +%Y%m%dT%H%M%SZ).db.gz"
 
 node "$HERE/sqlite.mjs" snapshot "$DB" "$tmp/app.db" || fail "snapshot failed"
-gzip -9 "$tmp/app.db"
+gzip -9 "$tmp/app.db" || fail "compressing the snapshot failed"
 rclone copyto "$tmp/app.db.gz" "$REMOTE/db/$name" || fail "upload of $name failed"
 if [ -d "$UPLOADS" ]; then
   # Uploaded images never change once written, so a copy only sends new files.

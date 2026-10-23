@@ -8,6 +8,7 @@ set -eu
 # shellcheck source=common.sh
 . /app/api/backup/common.sh
 die() { echo "restore failed: $1" >&2; exit 1; }
+[ -n "${COS_BUCKET:-}" ] || die "COS_BUCKET is not set"
 usage() { echo "usage: restore.sh list | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
 
 if [ "${1:-}" = list ]; then
@@ -30,8 +31,13 @@ case $2 in
 esac
 
 [ -n "$(rclone lsf "$REMOTE/db/$name")" ] || die "no backup named $name"
-# Downloaded next to the database, so putting it in place is a rename on the same disk.
-tmp=$(mktemp -d "$(dirname "$DB")/.restore.XXXXXX")
+# A restore downloads next to the database, so putting it in place is a rename on the same disk;
+# a check stays out of the live volume.
+if [ "$command" = restore ]; then
+  tmp=$(mktemp -d "$(dirname "$DB")/.restore.XXXXXX")
+else
+  tmp=$(mktemp -d)
+fi
 trap 'rm -rf "$tmp"' EXIT
 rclone copyto "$REMOTE/db/$name" "$tmp/app.db.gz"
 gunzip "$tmp/app.db.gz"
@@ -43,11 +49,14 @@ if [ "$command" = check ]; then
   exit 0
 fi
 
-# Keep the database being replaced, and drop its WAL files: they belong to the old file and
-# would corrupt the restored one.
+# Keep the database being replaced together with its WAL files, which may hold its newest
+# writes; left in place they would corrupt the restored file.
 if [ -f "$DB" ]; then
   kept="$DB.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
   mv "$DB" "$kept"
+  for suffix in -wal -shm; do
+    if [ -f "$DB$suffix" ]; then mv "$DB$suffix" "$kept$suffix"; fi
+  done
   echo "previous database kept as $kept"
 fi
 rm -f "$DB-wal" "$DB-shm"

@@ -10,5 +10,5 @@ dir=/srv/rs/releases/$tag
 
 echo "shipping $ref ($tag) to $host"
 git archive --format=tar "$tag" | ssh "$host" "rm -rf $dir && mkdir -p $dir && tar -x -C $dir"
-ssh "$host" "$dir/deploy/rs.sh build $dir $tag && /srv/rs/rs.sh staging $tag"
+ssh "$host" "$dir/deploy/rs.sh build $dir $tag && $dir/deploy/rs.sh staging $tag"
 echo "staging runs $tag. To put it in production: ssh $host /srv/rs/rs.sh promote"

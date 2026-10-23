@@ -57,6 +57,7 @@ start_app() {
   die "app did not become healthy"
 }
 stop_app() { docker rm -f $p-app >/dev/null; }
+status_of() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port$1"; }
 api() { curl -sf -H "Authorization: Bearer $token" "$@"; }
 login() {
   token=$(curl -sf -X POST http://127.0.0.1:$port/api/admin/login \
@@ -77,6 +78,11 @@ printf '\211PNG\r\n\032\n' >"${TMPDIR:-/tmp}/drill.png"
 image=$(api -F "file=@${TMPDIR:-/tmp}/drill.png;type=image/png" http://127.0.0.1:$port/api/admin/uploads | jq -r .url)
 curl -sf -o /dev/null "http://127.0.0.1:$port$image" || die "uploaded image not served"
 
+step "admin app is served"
+[ "$(status_of /admin/)" = 200 ] || die "/admin/ not served"
+[ "$(status_of /admin/some/page)" = 200 ] || die "admin page paths do not get the app"
+[ "$(status_of /admin/assets/gone-1234.js)" = 404 ] || die "a missing bundle is not a 404"
+
 step "backup while the app runs"
 run_backup
 backup $p-data /app/api/backup/restore.sh list | grep -q 'app-.*\.db\.gz' || die "no backup listed"
@@ -89,14 +95,22 @@ step "change data after the backup"
 add_coach 丙
 [ "$(coach_names)" = "丙 乙 甲 " ] || die "unexpected coaches before restore: $(coach_names)"
 
-step "restore onto the same volume"
+step "restore onto the same volume, after a crash that left a WAL"
+docker kill $p-app >/dev/null
+backup $p-data test -f /data/app.db-wal || die "expected a WAL after a crash"
 stop_app
 backup $p-data /app/api/backup/restore.sh restore latest
-backup $p-data sh -c 'ls /data/app.db.before-restore-*' >/dev/null || die "old database not kept"
+backup $p-data sh -c 'ls /data/app.db.before-restore-*-wal' >/dev/null || die "old database or its WAL not kept"
 start_app $p-data
 login
 [ "$(coach_names)" = "乙 甲 " ] || die "restore gave coaches: $(coach_names)"
 curl -sf -o /dev/null "http://127.0.0.1:$port$image" || die "image missing after restore"
+
+step "a stop closes the database cleanly"
+started=$(date +%s)
+docker stop $p-app >/dev/null
+[ $(($(date +%s) - started)) -lt 5 ] || die "stopping the app took the full timeout"
+if backup $p-data test -f /data/app.db-wal; then die "the WAL was left behind after a stop"; fi
 stop_app
 
 step "restore onto an empty volume, as on a new server"

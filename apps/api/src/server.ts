@@ -57,19 +57,32 @@ if (config.adminDir) {
         ),
     }),
   )
-  root.get(
-    '/admin/*',
-    serveStatic({
-      path: 'index.html',
-      root: adminDir,
-      onFound: (_path, c) => c.header('Cache-Control', 'no-cache'),
-    }),
-  )
+  // Any other page path gets the app; a missing file (an old bundle after a deploy) stays a 404.
+  const index = serveStatic({
+    path: 'index.html',
+    root: adminDir,
+    onFound: (_path, c) => c.header('Cache-Control', 'no-cache'),
+  })
+  root.use('/admin/*', async (c, next) => {
+    if (/\.\w+$/.test(c.req.path)) return c.notFound()
+    return index(c, next)
+  })
   root.get('/', (c) => c.redirect('/admin/'))
 }
 const api = createApp(deps)
 root.all('/api/*', (c) => api.fetch(c.req.raw, c.env))
 
-serve({ fetch: root.fetch, port: config.port }, (info) => {
+const server = serve({ fetch: root.fetch, port: config.port }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`)
+})
+
+// A deploy stops the container with SIGTERM: finish open requests, then close the database so
+// SQLite folds its write-ahead log back into the file.
+process.on('SIGTERM', () => {
+  setTimeout(() => process.exit(1), 5000).unref()
+  server.close(() => {
+    db.$client.close()
+    process.exit(0)
+  })
+  if ('closeIdleConnections' in server) server.closeIdleConnections()
 })

@@ -21,6 +21,7 @@ services:
     logging: *logging
 
   app:
+    init: true
     image: rs-app:${APP_TAG:-none}
     restart: unless-stopped
     env_file: prod.env
@@ -28,6 +29,7 @@ services:
     logging: *logging
 
   backup:
+    init: true
     image: rs-backup:${APP_TAG:-none}
     restart: unless-stopped
     env_file: backup.env
@@ -35,6 +37,7 @@ services:
     logging: *logging
 
   app-staging:
+    init: true
     image: rs-app:${STAGING_TAG:-none}
     restart: unless-stopped
     env_file: staging.env
