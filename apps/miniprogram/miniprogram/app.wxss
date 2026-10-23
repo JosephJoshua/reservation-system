@@ -9,6 +9,8 @@ page {
   --td-empty-description-margin-top: 24rpx;
   /* WeChat asks for 44px tap targets; TDesign's medium button is 40px. */
   --td-button-medium-height: 88rpx;
+  /* Light buttons sit on the grey page, so they take the card colour to stand out. */
+  --td-button-light-bg-color: var(--td-bg-color-container);
   /* TDesign's warning orange is too light for small tag text on its pale fill. */
   --td-tag-warning-color: #a65000;
   background-color: var(--td-bg-color-page);

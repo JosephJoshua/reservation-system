@@ -37,7 +37,7 @@
 
   <view wx:if="{{booking.status === 'pending_payment'}}" class="action-bar">
     <view class="grow">
-      <t-button block t-class="action-button" variant="outline" disabled="{{busy}}" bind:tap="cancel">取消预约</t-button>
+      <t-button block t-class="action-button" theme="default" disabled="{{busy}}" bind:tap="cancel">取消预约</t-button>
     </view>
     <view class="grow">
       <t-button block t-class="action-button" theme="primary" loading="{{busy}}" bind:tap="pay">去支付</t-button>
@@ -45,7 +45,7 @@
   </view>
   <view wx:elif="{{booking.canCancel}}" class="action-bar">
     <view class="grow">
-      <t-button block t-class="action-button" variant="outline" loading="{{busy}}" bind:tap="cancel">取消预约</t-button>
+      <t-button block t-class="action-button" theme="default" loading="{{busy}}" bind:tap="cancel">取消预约</t-button>
     </view>
   </view>
   <view wx:elif="{{booking.status === 'cancelled' || booking.status === 'expired'}}" class="action-bar">
