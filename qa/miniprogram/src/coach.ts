@@ -43,13 +43,17 @@ async function call(method: string, path: string, body?: unknown, token?: string
   return json
 }
 
-/** Moves a booking and its slot to start an hour ago, so attendance can be marked. */
+/**
+ * Moves a booking and its slot to start an hour ago, so attendance can be marked. Never before the
+ * venue's midnight, so the lesson stays on today's schedule just after midnight too.
+ */
 function moveIntoPast(bookingId: number) {
   check(dbPath, 'set QA_DB to the API database file to test attendance')
   const require = createRequire(new URL('../../../apps/api/package.json', import.meta.url))
   const Database = require('better-sqlite3')
   const db = new Database(dbPath)
-  const start = Date.now() - 3_600_000
+  const now = Date.now()
+  const start = Math.max(now - 3_600_000, Date.parse(`${venueDate(now)}T00:00:00+08:00`))
   db.prepare('update bookings set starts_at = ?, ends_at = ? where id = ?').run(
     start,
     start + 3_600_000,
