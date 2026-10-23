@@ -1,0 +1,29 @@
+{
+  "pages": ["pages/booking/index", "pages/lessons/index", "pages/profile/index"],
+  "window": {
+    "navigationBarTitleText": "预约",
+    "navigationBarBackgroundColor": "@navBgColor",
+    "navigationBarTextStyle": "@navTextStyle",
+    "backgroundColor": "@bgColor",
+    "backgroundTextStyle": "@bgTextStyle"
+  },
+  "tabBar": {
+    "color": "@tabColor",
+    "selectedColor": "@tabSelectedColor",
+    "backgroundColor": "@tabBgColor",
+    "borderStyle": "@tabBorderStyle",
+    "list": [
+      { "pagePath": "pages/booking/index", "text": "预约" },
+      { "pagePath": "pages/lessons/index", "text": "课程" },
+      { "pagePath": "pages/profile/index", "text": "我的" }
+    ]
+  },
+  "usingComponents": {
+    "t-empty": "tdesign-miniprogram/empty/empty"
+  },
+  "darkmode": true,
+  "themeLocation": "theme.json",
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

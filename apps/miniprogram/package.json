@@ -1,0 +1,19 @@
+{
+  "name": "@rs/miniprogram",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:mp": "node scripts/prepare.mjs",
+    "build": "node scripts/prepare.mjs",
+    "typecheck": "node scripts/prepare.mjs && tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "tdesign-miniprogram": "1.17.0"
+  },
+  "devDependencies": {
+    "@rs/shared": "workspace:*",
+    "@rs/theme": "workspace:*",
+    "esbuild": "0.28.2",
+    "miniprogram-api-typings": "5.2.3"
+  }
+}
