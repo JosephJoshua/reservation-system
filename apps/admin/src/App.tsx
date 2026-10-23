@@ -7,6 +7,7 @@ import { ActionLog } from './pages/ActionLog'
 import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
 import { Catalog } from './pages/Catalog'
+import { Invoices } from './pages/Invoices'
 import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
 import { Overview } from './pages/Overview'
@@ -27,6 +28,7 @@ const pages = {
   products: ['课时包', Products],
   orders: ['订单', Orders],
   refunds: ['退款', Refunds],
+  invoices: ['发票', Invoices],
   reports: ['报表', Reports],
   banners: ['首页内容', Banners],
   settings: ['设置', Settings],

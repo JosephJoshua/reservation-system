@@ -35,7 +35,15 @@
       <view class="grow">
         <view class="pkg-meta">{{item.expires}}</view>
         <view wx:if="{{item.refund}}" class="pkg-meta">{{item.refund}}</view>
+        <view wx:if="{{item.invoice}}" class="pkg-meta">{{item.invoice}}</view>
       </view>
+      <view
+        wx:if="{{item.invoiceLink}}"
+        class="refund-link"
+        hover-class="refund-hover"
+        data-id="{{item.id}}"
+        bind:tap="openInvoice"
+      >{{item.invoiceLink}}</view>
       <view
         wx:if="{{item.canRefund}}"
         class="refund-link {{busy === item.id ? 'refund-busy' : ''}}"

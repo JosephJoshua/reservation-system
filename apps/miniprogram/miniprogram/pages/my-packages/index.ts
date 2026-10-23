@@ -2,6 +2,7 @@ import type { PackageDto } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { fullDate, yuan } from '../../utils/format'
+import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
 import { PACKAGE_STATUS, REFUND_STATUS } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { ask } from '../../utils/tap'
@@ -19,6 +20,8 @@ interface PackageView {
   active: boolean
   refund: string
   canRefund: boolean
+  invoice: string
+  invoiceLink: string
 }
 
 function view(p: PackageDto): PackageView {
@@ -40,6 +43,11 @@ function view(p: PackageDto): PackageView {
     refund: p.refund ? `退款 ${yuan(p.refund.amount)} · ${REFUND_STATUS[p.refund.status]}` : '',
     // Free packages (gifts) have nothing to refund.
     canRefund: p.status === 'active' && p.lessonsRemaining > 0 && p.pricePaid > 0,
+    invoice:
+      p.invoice?.state === 'requested' || p.invoice?.state === 'issued'
+        ? `发票${INVOICE_STATE[p.invoice.state]}`
+        : '',
+    invoiceLink: invoiceLink(p.invoice),
   }
 }
 
@@ -53,6 +61,8 @@ Page({
     packagesEnabled: false,
     busy: 0,
   },
+
+  raw: [] as PackageDto[],
 
   onShow() {
     this.load()
@@ -68,6 +78,7 @@ Page({
         api<PackageDto[]>('GET', '/packages'),
         getCatalog(),
       ])
+      this.raw = packages
       this.setData({
         state: 'ready',
         packages: packages.map(view),
@@ -97,6 +108,10 @@ Page({
     } finally {
       this.setData({ busy: 0 })
     }
+  },
+
+  openInvoice(e: WechatMiniprogram.TouchEvent) {
+    openInvoice(this.raw.find((p) => p.id === Number(e.currentTarget.dataset.id))?.invoice ?? null)
   },
 
   buy() {

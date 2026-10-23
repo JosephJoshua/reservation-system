@@ -107,6 +107,37 @@ export function apiOnce<T>(method: Method, path: string, data?: unknown): Promis
   return request<T>(method, path, data, token)
 }
 
+function downloadWith(path: string, token: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    wx.downloadFile({
+      url: `${apiBaseUrl}/api${path}`,
+      header: { Authorization: `Bearer ${token}` },
+      timeout: 30000,
+      success(res) {
+        if (res.statusCode === 200) resolve(res.tempFilePath)
+        else if (res.statusCode === 401) reject(new ApiError(401, 'unauthorized', '请重新登录'))
+        else reject(new ApiError(res.statusCode, 'http_error', '文件暂时无法打开，请稍后再试'))
+      },
+      fail() {
+        reject(new ApiError(0, 'network', '网络不佳，请稍后再试'))
+      },
+    })
+  })
+}
+
+/** Downloads a file only the student may see, such as an invoice, to a temporary path. */
+export async function download(path: string): Promise<string> {
+  const saved = wx.getStorageSync(TOKEN_KEY) as string
+  const token = saved || (await login())
+  try {
+    return await downloadWith(path, token)
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 401) throw e
+    wx.removeStorageSync(TOKEN_KEY)
+    return downloadWith(path, await login())
+  }
+}
+
 /** Forgets the session, so the next call logs in afresh. */
 export function clearSession(): void {
   wx.removeStorageSync(TOKEN_KEY)

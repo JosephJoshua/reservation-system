@@ -7,6 +7,7 @@ import {
 import { api, errorMessage, publicApi, showError } from '../../utils/api'
 import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
+import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { REFUND_STATUS } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
@@ -65,6 +66,8 @@ Page({
     payment: '',
     deadline: '',
     refund: '',
+    invoice: '',
+    invoiceTappable: false,
     address: '',
     cancelRule: '',
     busy: false,
@@ -131,6 +134,16 @@ Page({
             : '免费',
       deadline: `${dateTime(b.cancelDeadline)}${Date.parse(b.cancelDeadline) <= Date.now() ? '（已过）' : ''}`,
       refund: b.refund ? `${yuan(b.refund.amount)} · ${REFUND_STATUS[b.refund.status]}` : '',
+      invoice: b.invoice
+        ? invoiceAction(b.invoice) === 'request'
+          ? b.invoice.state === 'rejected'
+            ? '未通过，重新申请'
+            : '申请开票'
+          : invoiceAction(b.invoice) === 'view'
+            ? '查看发票'
+            : INVOICE_STATE[b.invoice.state]
+        : '',
+      invoiceTappable: !!invoiceAction(b.invoice),
       address: this.venue?.address ?? '',
       cancelRule: booking ? cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel) : '',
     })
@@ -232,6 +245,10 @@ Page({
     } finally {
       this.setData({ busy: false })
     }
+  },
+
+  openInvoice() {
+    openInvoice(this.data.booking?.invoice ?? null)
   },
 
   rebook() {

@@ -65,6 +65,7 @@ const STALE = new Set([
   'refund_not_pending',
   'package_not_active',
   'slot_has_bookings',
+  'invoice_handled',
   // An earlier submit of this dialog may have gone through: reload to see what it did.
   'in_progress',
   'idempotency_key_reused',

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Select, Tag } from 'tdesign-react'
 import { DataTable } from '../DataTable'
+import { ExportButton } from '../ExportButton'
 import { fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
 import { offlineMethodLabel, orderKindLabel, orderStatusLabel } from '../labels'
@@ -22,6 +23,12 @@ export function Orders() {
           value={status || undefined}
           onChange={(v) => setStatus(String(v ?? ''))}
           options={Object.entries(orderStatusLabel).map(([value, [label]]) => ({ value, label }))}
+        />
+        <span className="spacer" />
+        <ExportButton
+          kind="orders"
+          filters={{ status }}
+          filterText={status ? `状态：${orderStatusLabel[status as 'paid'][0]}` : undefined}
         />
       </div>
       <DataTable

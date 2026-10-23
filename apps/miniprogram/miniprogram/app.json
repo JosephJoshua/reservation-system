@@ -12,7 +12,9 @@
     "pages/policy/index",
     "pages/coach-detail/index",
     "pages/account-delete/index",
-    "pages/theme/index"
+    "pages/theme/index",
+    "pages/invoices/index",
+    "pages/invoice-request/index"
   ],
   "subpackages": [
     {

@@ -33,12 +33,18 @@ async function paidPackage(h: Harness, name = 'a') {
   return { t, lesson, coach, orderId: res.json.orderId as number }
 }
 
-async function upload(h: Harness, id: number, token: string, bytes: Uint8Array = PDF) {
+async function upload(
+  h: Harness,
+  id: number,
+  token: string,
+  bytes: Uint8Array = PDF,
+  key?: string,
+) {
   const form = new FormData()
   form.append('file', new File([bytes], 'invoice.pdf', { type: 'application/pdf' }))
   const res = await h.app.request(`/api/admin/invoices/${id}/issue`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...(key ? { 'Idempotency-Key': key } : {}) },
     body: form,
   })
   const text = await res.text()
@@ -250,6 +256,19 @@ describe('invoice queue', () => {
     expect(second).not.toBe(first)
     expect(readdirSync(invoicesDir(h.deps))).toEqual([second])
     expect(entries(h).at(-1)?.summary).toBe('重新上传订单「10 次课」的发票')
+  })
+
+  it('answers a repeated upload with the same key once, though each form has its own boundary', async () => {
+    const h = setup()
+    const { t, orderId } = await paidPackage(h)
+    const admin = await h.admin()
+    const id = (await h.call('POST', '/invoices', { orderId, ...person }, t)).json.id
+    const first = await upload(h, id, admin, PDF, 'k1')
+    const again = await upload(h, id, admin, PDF, 'k1')
+    expect(again).toEqual(first)
+    expect(entries(h).filter((e) => e.action === 'invoice.issue')).toHaveLength(1)
+    const other = await upload(h, id, admin, new TextEncoder().encode('%PDF-1.7\n% b\n'), 'k1')
+    expect(other.status).toBe(409)
   })
 
   it('rejects with a reason the student sees, and takes a new request afterwards', async () => {

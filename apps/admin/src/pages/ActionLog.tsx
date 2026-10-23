@@ -18,8 +18,9 @@ const groups: { label: string; actions: StaffAction[] }[] = [
     label: '退款',
     actions: ['refund.approve', 'refund.reject', 'refund.retry', 'refund.paid_back'],
   },
+  { label: '发票', actions: ['invoice.issue', 'invoice.reject', 'invoice.refund_seen'] },
   { label: '价格', actions: ['price.lesson_type', 'price.product', 'price.coach'] },
-  { label: '其他', actions: ['settings.update', 'student.update'] },
+  { label: '其他', actions: ['settings.update', 'student.update', 'data.export'] },
   { label: '员工', actions: ['staff.create', 'staff.update', 'staff.password'] },
 ]
 
