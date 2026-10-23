@@ -1,6 +1,7 @@
 import type { AccountDeletionDto } from '../../lib/shared'
 import { api, apiOnce, clearSession, errorMessage, showError } from '../../utils/api'
 import { ask } from '../../utils/tap'
+import { modalDangerColor } from '../../utils/theme'
 
 Page({
   data: {
@@ -39,7 +40,7 @@ Page({
         content: '注销后无法恢复。',
         confirmText: '注销',
         // Error red that keeps its contrast on the light and dark dialog.
-        confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
+        confirmColor: modalDangerColor(),
       })
       if (!answer?.confirm) return
       await apiOnce('DELETE', '/me')

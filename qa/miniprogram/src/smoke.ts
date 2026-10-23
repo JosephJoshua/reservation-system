@@ -1,4 +1,5 @@
-// Opens every tab of the student mini program and saves a screenshot of each.
+// Opens every tab of the student mini program and the 外观 page following the system theme, then
+// forced light and forced dark through the setting's storage key, and saves a screenshot of each.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
@@ -12,6 +13,8 @@ const tabs = [
   { path: '/pages/lessons/index', name: 'lessons' },
   { path: '/pages/profile/index', name: 'profile' },
 ]
+// Same key as THEME_STORAGE_KEY in apps/miniprogram/miniprogram/utils/theme.ts.
+const THEME_STORAGE_KEY = 'rs:theme'
 
 const miniProgram = await automator.launch({
   projectPath,
@@ -25,15 +28,29 @@ miniProgram.on('console', (msg: { type: string; args: unknown[] }) => {
 })
 
 try {
-  for (const tab of tabs) {
-    const page = await miniProgram.switchTab(tab.path)
-    if (!page) throw new Error(`Could not open ${tab.path}`)
-    await page.waitFor(500)
-    if (page.path !== tab.path.slice(1)) throw new Error(`Expected ${tab.path}, got ${page.path}`)
-    await miniProgram.screenshot({ path: `${outDir}/${tab.name}.png` })
-    console.log(`ok ${tab.path}`)
+  for (const theme of ['system', 'light', 'dark']) {
+    mkdirSync(`${outDir}/${theme}`, { recursive: true })
+    if (theme === 'system') await miniProgram.callWxMethod('removeStorageSync', THEME_STORAGE_KEY)
+    else await miniProgram.callWxMethod('setStorageSync', THEME_STORAGE_KEY, theme)
+    await miniProgram.reLaunch('/pages/booking/index')
+    for (const tab of tabs) {
+      const page = await miniProgram.switchTab(tab.path)
+      if (!page) throw new Error(`Could not open ${tab.path}`)
+      await page.waitFor(500)
+      if (page.path !== tab.path.slice(1)) throw new Error(`Expected ${tab.path}, got ${page.path}`)
+      await miniProgram.screenshot({ path: `${outDir}/${theme}/${tab.name}.png` })
+      console.log(`ok ${theme} ${tab.path}`)
+    }
+    const settings = await miniProgram.navigateTo('/pages/theme/index')
+    if (!settings) throw new Error('Could not open /pages/theme/index')
+    await settings.waitFor(500)
+    if ((await settings.data('setting')) !== theme) throw new Error(`外观 does not show ${theme}`)
+    await miniProgram.screenshot({ path: `${outDir}/${theme}/theme.png` })
+    console.log(`ok ${theme} /pages/theme/index`)
   }
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)
 } finally {
+  // Back to the default, following the system.
+  await miniProgram.callWxMethod('removeStorageSync', THEME_STORAGE_KEY).catch(() => {})
   await miniProgram.close()
 }

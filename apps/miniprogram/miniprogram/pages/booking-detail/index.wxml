@@ -1,3 +1,4 @@
+<theme-root>
 <view wx:if="{{state === 'loading'}}" class="centered">
   <t-loading theme="circular" size="48rpx" />
 </view>
@@ -55,3 +56,4 @@
   </view>
 </view>
 <privacy-popup id="privacy-popup" />
+</theme-root>

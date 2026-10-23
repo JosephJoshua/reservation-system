@@ -1,3 +1,4 @@
+<theme-root>
 <view class="form has-action-bar">
   <t-cell-group theme="card">
     <t-input label="姓名" placeholder="上课学员姓名" maxlength="{{20}}" value="{{name}}" bind:change="onName" />
@@ -14,3 +15,4 @@
     <t-button theme="primary" block t-class="action-button" loading="{{saving}}" bind:tap="save">保存</t-button>
   </view>
 </view>
+</theme-root>

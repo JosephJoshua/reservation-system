@@ -1,6 +1,7 @@
 import type { Attendance, CoachLessonDto } from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
 import { fullDate, lessonTime, yuan } from '../../utils/format'
+import { modalDangerColor } from '../../utils/theme'
 import { askForNotices, coachApi } from '../utils/coach-api'
 import { ATTENDANCE, lessonTag, type Tag } from '../utils/labels'
 
@@ -186,8 +187,7 @@ Page({
       title: '取消这节课？',
       content: `${refund}请同时电话告知学员。`,
       confirmText: '取消课程',
-      // Reds that keep 4.5:1 on the white and the dark modal.
-      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
+      confirmColor: modalDangerColor(),
       cancelText: '再想想',
     })
     if (!confirm) return

@@ -45,6 +45,12 @@ pnpm --filter @rs/api db:generate   # after schema changes
   include `<privacy-popup id="privacy-popup" />`, which shows WeChat's consent sheet. New kinds
   of personal data need the privacy policy in `packages/shared/src/policies.ts` updated, a new
   `POLICY_VERSION`, and the matching declaration in the mini program console.
+- Mini program theme: the 外观 setting (`utils/theme.ts`, storage key `rs:theme`) can force light
+  or dark. Every page's wxml is wrapped in `<theme-root>`, which sets `.theme-light` /
+  `.theme-dark` and paints the nav bar, tab bar and window background. Page styles use tokens
+  only, never `@media (prefers-color-scheme)`; add theme-dependent tokens to `styles/tokens.wxss`
+  (the build copies it into `lib/theme.wxss`). Native dialogs follow the system theme, so their
+  colors come from `modalDangerColor()` and similar.
 - Follow WeChat design rules: keep the native navigation bar and capsule area, 44px minimum tap
   targets, main action in a fixed bottom bar, loading, empty and error states on every list,
   support dark mode.

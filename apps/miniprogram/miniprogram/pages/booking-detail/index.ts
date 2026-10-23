@@ -11,6 +11,7 @@ import { REFUND_STATUS } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 import { ask } from '../../utils/tap'
+import { modalDangerColor } from '../../utils/theme'
 
 const STATUS: Record<BookingDto['status'], { title: string; icon: string; tone: string }> = {
   pending_payment: { title: '待支付', icon: 'time-filled', tone: 'hint' },
@@ -215,8 +216,7 @@ Page({
       title: '取消预约',
       content: quote.message,
       confirmText: '确认取消',
-      // Native modals don't read page tokens, so the dark red is picked here.
-      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
+      confirmColor: modalDangerColor(),
       cancelText: '再想想',
     })
     if (!answer?.confirm || this.data.busy) return

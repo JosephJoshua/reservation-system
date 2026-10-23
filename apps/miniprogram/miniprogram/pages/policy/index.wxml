@@ -1,3 +1,5 @@
+<theme-root>
+<view class="reading">
 <view wx:if="{{state === 'loading'}}" class="centered">
   <t-loading theme="circular" size="48rpx" />
 </view>
@@ -9,3 +11,5 @@
     <text user-select>{{item.text}}</text>
   </view>
 </view>
+</view>
+</theme-root>

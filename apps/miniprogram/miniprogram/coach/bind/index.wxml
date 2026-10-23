@@ -1,3 +1,4 @@
+<theme-root>
 <view class="has-action-bar">
   <view class="intro">
     <view class="intro-icon"><t-icon name="user-checked" size="96rpx" /></view>
@@ -14,3 +15,4 @@
     <t-button theme="primary" block t-class="action-button" disabled="{{code.length < 8}}" loading="{{binding}}" bind:tap="submit">绑定</t-button>
   </view>
 </view>
+</theme-root>

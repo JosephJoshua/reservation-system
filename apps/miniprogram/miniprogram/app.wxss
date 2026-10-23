@@ -1,43 +1,7 @@
-@import 'miniprogram_npm/tdesign-miniprogram/common/style/theme/_index.wxss';
-@import 'lib/brand.wxss';
+@import 'lib/theme.wxss';
 
 page {
-  --td-bg-color-page: #ededed;
-  /* Empty states: a light icon over darker copy, close to WeUI proportions. */
-  --td-empty-icon-color: var(--td-text-color-disabled);
-  --td-empty-description-color: var(--td-text-color-secondary);
-  --td-empty-description-margin-top: 24rpx;
-  /* WeChat asks for 44px tap targets; TDesign's medium button is 40px. */
-  --td-button-medium-height: 88rpx;
-  /* Light buttons sit on the grey page, so they take the card colour to stand out. */
-  --td-button-light-bg-color: var(--td-bg-color-container);
-  /* TDesign's warning orange is too light for small tag text on its pale fill. */
-  --td-tag-warning-color: #a65000;
-  /* Cell values are content, not hints; TDesign's placeholder grey is below 4.5:1. */
-  --td-cell-note-color: var(--td-text-color-secondary);
-  /* TDesign redeclares its progress colour on the component, so pages pass this one instead. */
-  --rs-progress-color: var(--td-brand-color);
   background-color: var(--td-bg-color-page);
   color: var(--td-text-color-primary);
   font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
-}
-
-@media (prefers-color-scheme: dark) {
-  page {
-    --td-bg-color-page: #111111;
-    /* TDesign's dark brand is a light blue that washes out white button text, so fills use a
-       deeper step and text on dark surfaces uses a lighter one. */
-    --td-brand-color: var(--td-brand-color-7);
-    --td-brand-color-active: var(--td-brand-color-6);
-    --td-text-color-brand: var(--td-brand-color-9);
-    --td-text-color-link: var(--td-brand-color-9);
-    --td-tag-primary-color: var(--td-brand-color-9);
-    --td-tag-warning-color: var(--rs-hint-color);
-    /* Brand text on dark cards (light and outline buttons, active tabs) takes the lighter step;
-       the progress bar is a non-text mark and needs 3:1. */
-    --td-button-light-color: var(--td-brand-color-9);
-    --td-button-primary-outline-color: var(--td-brand-color-9);
-    --td-tab-item-active-color: var(--td-brand-color-9);
-    --rs-progress-color: var(--td-brand-color-8);
-  }
 }
