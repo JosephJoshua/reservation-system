@@ -221,26 +221,24 @@ export async function approvePackageRefund(deps: Deps, refundId: number, amount:
     tx.insert(packageLedger)
       .values({ packageId: pkg.id, delta: -pkg.lessonsRemaining, kind: 'refund', actor: 'admin' })
       .run()
-    // Offline payments are paid back at the front desk, so the refund is done once approved.
+    // Offline payments stay pending until staff mark them paid back at the front desk.
     tx.update(refunds)
-      .set({
-        amount,
-        status: order.provider === 'offline' ? 'succeeded' : 'pending',
-        updatedAt: now,
-      })
+      .set({ amount, status: 'pending', updatedAt: now })
       .where(eq(refunds.id, refund.id))
       .run()
     return true
   })
   // A repeated approval leaves sending the refund to the first one (or the sweeper).
   if (approvedNow) await submitRefund(deps, refundId)
+  return approvedNow
 }
 
+/** Rejects a package refund request. Returns false for a repeat of a rejection already made. */
 export function rejectPackageRefund(deps: Deps, refundId: number, note: string) {
-  immediate(deps.db, (tx) => {
+  return immediate(deps.db, (tx) => {
     const refund = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
     if (!refund?.packageId) throw notFound('退款申请')
-    if (refund.status === 'rejected') return
+    if (refund.status === 'rejected') return false
     if (refund.status !== 'requested')
       throw new ApiError(409, 'refund_not_requested', '该申请已处理')
     tx.update(refunds)
@@ -251,6 +249,7 @@ export function rejectPackageRefund(deps: Deps, refundId: number, note: string) 
       .set({ status: 'active' })
       .where(and(eq(packages.id, refund.packageId), eq(packages.status, 'refund_requested')))
       .run()
+    return true
   })
 }
 

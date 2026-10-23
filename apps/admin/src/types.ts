@@ -79,7 +79,14 @@ export interface Slot {
   } | null
 }
 
-export type AdminBooking = BookingDto & { student: Person | null; coachNote: string }
+export type AdminBooking = BookingDto & {
+  student: Person | null
+  coachNote: string
+  /** Set when the front desk booked it for the student. */
+  bookedBy: { id: number; name: string } | null
+  /** Paid at the front desk, so a refund is handed back there. */
+  paidOffline: boolean
+}
 
 export interface StudentDetail extends Person {
   tester: boolean
@@ -152,3 +159,5 @@ export interface LedgerEntry {
   actor: 'student' | 'admin' | 'system'
   createdAt: string
 }
+
+export type { ActionLogEntryDto as ActionLogEntry, StaffDto as Staff } from '@rs/shared'

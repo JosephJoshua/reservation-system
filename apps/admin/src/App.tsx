@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Button, ConfigProvider, Drawer, Layout, Menu } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
-import { useIsPhone } from './hooks'
+import { useApi, useIsPhone } from './hooks'
+import { ActionLog } from './pages/ActionLog'
 import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
 import { Catalog } from './pages/Catalog'
@@ -14,6 +15,7 @@ import { Refunds } from './pages/Refunds'
 import { Reports } from './pages/Reports'
 import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
+import { STAFF_CHANGED, Staff } from './pages/Staff'
 import { Students } from './pages/Students'
 
 const pages = {
@@ -28,6 +30,8 @@ const pages = {
   reports: ['报表', Reports],
   banners: ['首页内容', Banners],
   settings: ['设置', Settings],
+  staff: ['员工', Staff],
+  actions: ['操作记录', ActionLog],
 } as const
 
 type PageKey = keyof typeof pages
@@ -146,9 +150,12 @@ export function App() {
                 )}
                 {pages[page][0]}
               </span>
-              <Button variant="text" onClick={logout}>
-                退出登录
-              </Button>
+              <span className="header-actions">
+                <SignedIn />
+                <Button variant="text" onClick={logout}>
+                  退出登录
+                </Button>
+              </span>
             </Layout.Header>
             <Layout.Content className="admin-content">
               <Page />
@@ -158,4 +165,15 @@ export function App() {
       )}
     </ConfigProvider>
   )
+}
+
+/** The signed-in staff member's name, so a shared front-desk computer shows whose session it is. */
+function SignedIn() {
+  const { data, reload } = useApi<{ name: string }>('/admin/me')
+  useEffect(() => {
+    const onChange = () => void reload()
+    window.addEventListener(STAFF_CHANGED, onChange)
+    return () => window.removeEventListener(STAFF_CHANGED, onChange)
+  }, [reload])
+  return data ? <span className="muted signed-in">{data.name}</span> : null
 }

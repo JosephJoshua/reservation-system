@@ -11,7 +11,6 @@ const deps: Deps = {
   gateway: new FakeGateway(),
   now: () => new Date(now as string),
   wxLogin: async () => '',
-  adminPassword: '',
   uploadsDir: '',
   log: () => {},
 }

@@ -58,6 +58,7 @@ let lessonTime = 0
 test('binds a coach to WeChat with a code', async ({ page, request }) => {
   const admin = (
     await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
       password: ADMIN_PASSWORD,
     })
   ).token

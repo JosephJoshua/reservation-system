@@ -1,7 +1,13 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { venueParts, venueSettings } from '@rs/shared'
+import {
+  offlineMethodLabels,
+  offlineMethods,
+  staffActions,
+  venueParts,
+  venueSettings,
+} from '@rs/shared'
 import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -20,14 +26,24 @@ import {
   packages,
   refunds,
   slots,
+  staff,
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { accountDeleted } from '../services/account'
-import { loginAdmin, logout, requireAdmin } from '../services/auth'
+import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
+import {
+  type AdminVars,
+  bearer,
+  limitedCheck,
+  loginAdmin,
+  logout,
+  requireAdmin,
+} from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
+import { bookForStudent, frontDeskQuote } from '../services/front-desk'
 import { setAttendance } from '../services/lessons'
 import {
   approvePackageRefund,
@@ -36,10 +52,18 @@ import {
   rejectPackageRefund,
   sellPackageOffline,
 } from '../services/packages'
-import { retryRefund } from '../services/refunds'
+import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
 import { getSettings, saveSettings } from '../services/settings'
+import {
+  createStaff,
+  findStaff,
+  setStaffPassword,
+  staffView,
+  updateStaff,
+  verifyPassword,
+} from '../services/staff'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { weeklyHoursBody } from './coach'
 
@@ -47,6 +71,32 @@ const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
 const nullableInstant = instant.nullable()
 const fen = z.number().int().min(0).max(10_000_000)
 const MAX_SLOTS_PER_REQUEST = 500
+// Refinements, so the client shows these messages rather than a generic field error.
+const password = z
+  .string()
+  .refine((v) => v.length >= 8 && v.length <= 100, { message: '密码需为 8 到 100 位' })
+const username = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine((v) => /^[a-z0-9_.-]{3,20}$/.test(v), {
+    message: '登录名需为 3 到 20 位字母、数字或 _ . -',
+  })
+const staffName = z.string().trim().min(1).max(20)
+const offlineMethod = z.enum(offlineMethods)
+const settingsSectionLabel = {
+  venue: '场馆信息',
+  booking: '预约规则',
+  payment: '支付',
+  notice: '公告',
+  policies: '须知与协议',
+} as const
+
+/** A price and its sale, if any, as one line for the action log. */
+function priceLine(price: number, sale: string | null, startsAt: Date | null, endsAt: Date | null) {
+  if (!sale || !startsAt || !endsAt) return yuan(price)
+  return `${yuan(price)}，${sale}（${venueMoment(startsAt)} 至 ${venueMoment(endsAt)}）`
+}
 
 const coachBody = z.object({
   name: z.string().trim().min(1).max(20),
@@ -131,13 +181,19 @@ function saleDatesValid(value: number | null, startsAt: Date | null, endsAt: Dat
 
 export function adminRoutes(deps: Deps) {
   const { db } = deps
-  const app = new Hono()
+  const app = new Hono<AdminVars>()
 
   app.post('/login', async (c) => {
-    const { password } = await parseBody(c, z.object({ password: z.string().max(200) }))
+    const body = await parseBody(
+      c,
+      z.object({
+        username: z.string().trim().toLowerCase().max(40),
+        password: z.string().max(200),
+      }),
+    )
     // Behind the reverse proxy, the last X-Forwarded-For entry is the address it saw.
     const client = c.req.header('X-Forwarded-For')?.split(',').pop()?.trim() || 'direct'
-    return c.json(loginAdmin(deps, password, client))
+    return c.json(loginAdmin(deps, body.username, body.password, client))
   })
 
   app.use('*', async (c, next) => {
@@ -150,17 +206,137 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
+  /**
+   * Records an action by the signed-in staff member, after the change itself has committed. A
+   * failed write is reported rather than thrown: the change is done, and an error would invite a
+   * retry that repeats it.
+   */
+  const log = (staffId: number, entry: Parameters<typeof logAction>[3]) => {
+    try {
+      logAction(db, deps.now(), staffId, entry)
+    } catch (e) {
+      deps.log('action log write failed', { staffId, entry, error: String(e) })
+    }
+  }
+  const ownToken = (c: { req: { header: (name: string) => string | undefined } }) =>
+    bearer(c.req.header('Authorization'))
+
+  // Staff logins and the action log
+
+  app.get('/me', (c) => c.json(staffView(findStaff(db, c.get('staffId')))))
+
+  app.put('/me/password', async (c) => {
+    const body = await parseBody(c, z.object({ current: z.string().max(200), password }))
+    const me = findStaff(db, c.get('staffId'))
+    // Limited like logins, so a session left open cannot guess its way to the password.
+    limitedCheck(
+      deps,
+      `password:${me.id}`,
+      () => verifyPassword(body.current, me.passwordHash),
+      new ApiError(403, 'bad_password', '当前密码不对'),
+    )
+    // Sessions on other devices end; this one stays.
+    setStaffPassword(deps, me.id, body.password, ownToken(c))
+    log(me.id, {
+      action: 'staff.password',
+      summary: '修改自己的密码',
+      target: { kind: 'staff', id: me.id },
+    })
+    return c.body(null, 204)
+  })
+
+  app.get('/staff', (c) =>
+    c.json(db.select().from(staff).orderBy(desc(staff.active), asc(staff.id)).all().map(staffView)),
+  )
+
+  app.post('/staff', async (c) => {
+    const body = await parseBody(c, z.object({ name: staffName, username, password }))
+    const row = createStaff(deps, body)
+    log(c.get('staffId'), {
+      action: 'staff.create',
+      summary: `新增员工 ${row.name}（${row.username}）`,
+      target: { kind: 'staff', id: row.id },
+    })
+    return c.json(staffView(row), 201)
+  })
+
+  app.patch('/staff/:id', async (c) => {
+    const body = await parseBody(
+      c,
+      z
+        .object({ name: staffName.optional(), active: z.boolean().optional() })
+        .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
+    )
+    const { before, after } = updateStaff(deps, c.get('staffId'), idParam(c), body)
+    const changes = [
+      before.name !== after.name && `姓名改为 ${after.name}`,
+      before.active !== after.active && (after.active ? '启用账号' : '停用账号'),
+    ].filter(Boolean)
+    if (changes.length) {
+      log(c.get('staffId'), {
+        action: 'staff.update',
+        summary: `${before.name}（${after.username}）${changes.join('，')}`,
+        target: { kind: 'staff', id: after.id },
+      })
+    }
+    return c.json(staffView(after))
+  })
+
+  app.put('/staff/:id/password', async (c) => {
+    const body = await parseBody(c, z.object({ password }))
+    const target = findStaff(db, idParam(c))
+    // Your own password needs the current one, so a session left open cannot take the account.
+    if (target.id === c.get('staffId')) {
+      throw new ApiError(409, 'own_password', '修改自己的密码请用“修改我的密码”')
+    }
+    setStaffPassword(deps, target.id, body.password)
+    log(c.get('staffId'), {
+      action: 'staff.password',
+      summary: `重置 ${target.name}（${target.username}）的密码`,
+      target: { kind: 'staff', id: target.id },
+    })
+    return c.body(null, 204)
+  })
+
+  app.get('/actions', (c) => {
+    const q = parseQuery(
+      c,
+      z.object({
+        staffId: z.coerce.number().int().positive().optional(),
+        studentId: z.coerce.number().int().positive().optional(),
+        // Comma separated.
+        actions: z
+          .string()
+          .optional()
+          .transform((v) => (v ? v.split(',') : undefined))
+          .pipe(z.array(z.enum(staffActions)).optional()),
+        from: instant.optional(),
+        to: instant.optional(),
+        before: z.coerce.number().int().positive().optional(),
+      }),
+    )
+    return c.json(listActions(db, q))
+  })
+
   // Settings
 
   app.get('/settings', (c) => c.json(getSettings(db)))
 
   app.put('/settings', async (c) => {
     const body = await parseBody(c, venueSettings)
-    immediate(db, (tx) => {
-      checkVersion(c, getSettings(tx))
+    const { before, after } = immediate(db, (tx) => {
+      const before = getSettings(tx)
+      checkVersion(c, before)
       saveSettings(tx, body, deps.now())
+      return { before, after: getSettings(tx) }
     })
-    return c.json(getSettings(db))
+    const changed = (Object.keys(settingsSectionLabel) as (keyof typeof settingsSectionLabel)[])
+      .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+      .map((k) => settingsSectionLabel[k])
+    if (changed.length) {
+      log(c.get('staffId'), { action: 'settings.update', summary: `修改${changed.join('、')}` })
+    }
+    return c.json(after)
   })
 
   // Coaches
@@ -239,17 +415,57 @@ export function adminRoutes(deps: Deps) {
     return coachId
   }
 
+  const categoryName = (id: number | null) => {
+    if (id === null) return '无类别'
+    const row = db
+      .select({ name: coachCategories.name })
+      .from(coachCategories)
+      .where(eq(coachCategories.id, id))
+      .get()
+    return `类别「${row?.name ?? `#${id}`}」`
+  }
+
+  /** Logs a coach's category change, since the category sets the coach's prices. */
+  const logCoachCategory = (
+    staffId: number,
+    coach: ReturnType<typeof coachView>,
+    before: number | null | undefined,
+  ) => {
+    if (before === undefined && coach.categoryId === null) return
+    if (before !== undefined && before === coach.categoryId) return
+    log(staffId, {
+      action: 'price.coach',
+      summary:
+        before === undefined
+          ? `新增教练 ${coach.name}，${categoryName(coach.categoryId)}`
+          : `${coach.name}：${categoryName(before)} 改为 ${categoryName(coach.categoryId)}`,
+      target: { kind: 'coach', id: coach.id },
+    })
+  }
+
   app.post('/coaches', async (c) => {
     const body = await parseBody(c, coachBody)
     const id = immediate(db, (tx) => saveCoach(tx, null, body))
-    return c.json(coachView(id), 201)
+    const view = coachView(id)
+    logCoachCategory(c.get('staffId'), view, undefined)
+    return c.json(view, 201)
   })
 
   app.put('/coaches/:id', async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, coachBody)
-    immediate(db, (tx) => saveCoach(tx, id, body))
-    return c.json(coachView(id))
+    const before = immediate(db, (tx) => {
+      const old = tx
+        .select({ categoryId: coaches.categoryId })
+        .from(coaches)
+        .where(eq(coaches.id, id))
+        .get()
+      saveCoach(tx, id, body)
+      return old?.categoryId ?? null
+    })
+    const view = coachView(id)
+    logCoachCategory(c.get('staffId'), view, before)
+    return c.json(view)
   })
 
   // Coach categories
@@ -306,17 +522,61 @@ export function adminRoutes(deps: Deps) {
 
   app.get('/coach-categories', (c) => c.json(categoryViews()))
 
+  /** Logs the category prices that changed, as "一对一私教 ¥200 改为 ¥250". */
+  const logCategoryPrices = (
+    staffId: number,
+    category: ReturnType<typeof categoryView>,
+    before: { lessonTypeId: number; price: number }[],
+  ) => {
+    const names = new Map(
+      db
+        .select({ id: lessonTypes.id, name: lessonTypes.name })
+        .from(lessonTypes)
+        .all()
+        .map((t) => [t.id, t.name]),
+    )
+    const old = new Map(before.map((p) => [p.lessonTypeId, p.price]))
+    const now = new Map(category.prices.map((p) => [p.lessonTypeId, p.price]))
+    const changes = [...new Set([...old.keys(), ...now.keys()])].flatMap((id) => {
+      const name = names.get(id) ?? `课程 #${id}`
+      const was = old.get(id)
+      const price = now.get(id)
+      if (price === undefined) return [`${name} 改为按课程标价`]
+      if (was === undefined) return [`${name} ${yuan(price)}`]
+      return was === price ? [] : [`${name} ${yuan(was)} 改为 ${yuan(price)}`]
+    })
+    if (changes.length) {
+      log(staffId, {
+        action: 'price.coach',
+        summary: `类别「${category.name}」：${changes.join('；')}`,
+        target: { kind: 'category', id: category.id },
+      })
+    }
+  }
+
   app.post('/coach-categories', async (c) => {
     const body = await parseBody(c, categoryBody)
     const id = immediate(db, (tx) => saveCategory(tx, null, body))
-    return c.json(categoryView(id), 201)
+    const view = categoryView(id)
+    logCategoryPrices(c.get('staffId'), view, [])
+    return c.json(view, 201)
   })
 
   app.put('/coach-categories/:id', async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, categoryBody)
-    immediate(db, (tx) => saveCategory(tx, id, body))
-    return c.json(categoryView(id))
+    const before = immediate(db, (tx) => {
+      const old = tx
+        .select({ lessonTypeId: categoryPrices.lessonTypeId, price: categoryPrices.price })
+        .from(categoryPrices)
+        .where(eq(categoryPrices.categoryId, id))
+        .all()
+      saveCategory(tx, id, body)
+      return old
+    })
+    const view = categoryView(id)
+    logCategoryPrices(c.get('staffId'), view, before)
+    return c.json(view)
   })
 
   app.delete('/coach-categories/:id', (c) => {
@@ -363,9 +623,18 @@ export function adminRoutes(deps: Deps) {
     c.json(db.select().from(lessonTypes).orderBy(asc(lessonTypes.sort), asc(lessonTypes.id)).all()),
   )
 
+  const lessonPriceLine = (t: z.infer<typeof lessonTypeBody>) =>
+    priceLine(t.price, t.salePercent ? `${t.salePercent}%` : null, t.saleStartsAt, t.saleEndsAt)
+
   app.post('/lesson-types', async (c) => {
     const body = await parseBody(c, lessonTypeBody)
-    return c.json(db.insert(lessonTypes).values(body).returning().get(), 201)
+    const row = db.insert(lessonTypes).values(body).returning().get()
+    log(c.get('staffId'), {
+      action: 'price.lesson_type',
+      summary: `新建课程 ${row.name}，${lessonPriceLine(body)}`,
+      target: { kind: 'lesson_type', id: row.id },
+    })
+    return c.json(row, 201)
   })
 
   app.put('/lesson-types/:id', async (c) => {
@@ -393,7 +662,17 @@ export function adminRoutes(deps: Deps) {
         .get()
       if (sold) throw new ApiError(409, 'trial_has_packages', '有课时包的课程不能设为体验课')
     }
-    return c.json(db.update(lessonTypes).set(body).where(eq(lessonTypes.id, id)).returning().get())
+    const row = db.update(lessonTypes).set(body).where(eq(lessonTypes.id, id)).returning().get()
+    const was = lessonPriceLine(existing)
+    const now = lessonPriceLine(body)
+    if (was !== now) {
+      log(c.get('staffId'), {
+        action: 'price.lesson_type',
+        summary: `${body.name}：${was} 改为 ${now}`,
+        target: { kind: 'lesson_type', id },
+      })
+    }
+    return c.json(row)
   })
 
   // Slots
@@ -636,13 +915,76 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
+    const staffIds = [
+      ...new Set(rows.flatMap((r) => (r.bookedByStaffId ? [r.bookedByStaffId] : []))),
+    ]
+    const bookedBy = new Map(
+      staffIds.length
+        ? db
+            .select({ id: staff.id, name: staff.name })
+            .from(staff)
+            .where(inArray(staff.id, staffIds))
+            .all()
+            .map((s) => [s.id, s])
+        : [],
+    )
+    // Paid at the front desk, so a refund is handed back there.
+    const paidOffline = new Set(
+      rows.length
+        ? db
+            .select({ bookingId: orders.bookingId })
+            .from(orders)
+            .where(
+              and(
+                inArray(
+                  orders.bookingId,
+                  rows.map((r) => r.id),
+                ),
+                eq(orders.provider, 'offline'),
+              ),
+            )
+            .all()
+            .map((o) => o.bookingId)
+        : [],
+    )
     return c.json(
       views.map((v, i) => ({
         ...v,
         student: people.get(rows[i]?.studentId ?? 0) ?? null,
         coachNote: rows[i]?.coachNote ?? '',
+        bookedBy: bookedBy.get(rows[i]?.bookedByStaffId ?? 0) ?? null,
+        paidOffline: paidOffline.has(v.id),
       })),
     )
+  })
+
+  const frontDeskTarget = {
+    studentId: z.number().int().positive(),
+    slotId: z.number().int().positive(),
+    lessonTypeId: z.number().int().positive(),
+  }
+
+  app.post('/bookings/quote', async (c) => {
+    const body = await parseBody(c, z.object(frontDeskTarget))
+    return c.json(frontDeskQuote(deps, body))
+  })
+
+  // 代约: the front desk books a lesson for a student.
+  app.post('/bookings', async (c) => {
+    const body = await parseBody(
+      c,
+      z.discriminatedUnion('payWith', [
+        z.object({ ...frontDeskTarget, payWith: z.literal('package') }),
+        z.object({
+          ...frontDeskTarget,
+          payWith: z.literal('offline'),
+          amount: fen,
+          method: offlineMethod.optional(),
+          note: z.string().trim().max(100).default(''),
+        }),
+      ]),
+    )
+    return c.json(bookForStudent(deps, c.get('staffId'), body), 201)
   })
 
   app.put('/bookings/:id/attendance', async (c) => {
@@ -650,13 +992,62 @@ export function adminRoutes(deps: Deps) {
       c,
       z.object({ attendance: z.enum(['attended', 'no_show']).nullable() }),
     )
-    setAttendance(deps, idParam(c), attendance, 'admin')
+    const id = idParam(c)
+    const before = db
+      .select({ attendance: bookings.attendance })
+      .from(bookings)
+      .where(eq(bookings.id, id))
+      .get()
+    setAttendance(deps, id, attendance, 'admin')
+    if (before && before.attendance !== attendance) {
+      const { what, studentId } = describeBooking(db, id)
+      const label = { attended: '到课', no_show: '缺席' }
+      log(c.get('staffId'), {
+        action: 'booking.attendance',
+        summary: `${what}：${attendance ? `记为${label[attendance]}` : '清除签到'}`,
+        studentId,
+        target: { kind: 'booking', id },
+      })
+    }
     return c.body(null, 204)
   })
 
   app.post('/bookings/:id/cancel', async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
-    await cancelBooking(deps, idParam(c), 'venue', { reason })
+    const id = idParam(c)
+    const cancelled = await cancelBooking(deps, id, 'venue', { reason })
+    const booking = db.select().from(bookings).where(eq(bookings.id, id)).get()
+    // A repeat cancelled nothing, and a payment that landed meanwhile may have expired the
+    // booking instead.
+    if (!cancelled || booking?.status !== 'cancelled' || booking.cancelledBy !== 'venue') {
+      return c.body(null, 204)
+    }
+    const { what, studentId } = describeBooking(db, id)
+    const refund = db
+      .select({ amount: refunds.amount, provider: orders.provider })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(eq(refunds.bookingId, id))
+      .orderBy(desc(refunds.id))
+      .get()
+    const returned = db
+      .select({ id: packageLedger.id })
+      .from(packageLedger)
+      .where(and(eq(packageLedger.bookingId, id), eq(packageLedger.kind, 'return')))
+      .get()
+    // An unpaid hold was simply released.
+    const outcome = refund
+      ? `，${refund.provider === 'offline' ? '待线下退还' : '退款'} ${yuan(refund.amount)}`
+      : returned
+        ? '，退回课时 1 节'
+        : ''
+    log(c.get('staffId'), {
+      action: 'booking.cancel',
+      summary: `${what}，原因：${reason}${outcome}`,
+      amount: refund?.amount ?? null,
+      studentId,
+      target: { kind: 'booking', id },
+    })
     return c.body(null, 204)
   })
 
@@ -685,10 +1076,24 @@ export function adminRoutes(deps: Deps) {
     }
   }
 
+  const productPriceLine = (p: z.infer<typeof productBody>) =>
+    priceLine(
+      p.price,
+      p.salePrice === null ? null : `限时价 ${yuan(p.salePrice)}`,
+      p.saleStartsAt,
+      p.saleEndsAt,
+    )
+
   app.post('/package-products', async (c) => {
     const body = await parseBody(c, productBody)
     checkProduct(body)
-    return c.json(db.insert(packageProducts).values(body).returning().get(), 201)
+    const row = db.insert(packageProducts).values(body).returning().get()
+    log(c.get('staffId'), {
+      action: 'price.product',
+      summary: `新建课时包 ${row.name}，${productPriceLine(body)}`,
+      target: { kind: 'product', id: row.id },
+    })
+    return c.json(row, 201)
   })
 
   app.put('/package-products/:id', async (c) => {
@@ -718,6 +1123,15 @@ export function adminRoutes(deps: Deps) {
       .where(eq(packageProducts.id, id))
       .returning()
       .get()
+    const was = productPriceLine(existing)
+    const now = productPriceLine(body)
+    if (was !== now) {
+      log(c.get('staffId'), {
+        action: 'price.product',
+        summary: `${body.name}：${was} 改为 ${now}`,
+        target: { kind: 'product', id },
+      })
+    }
     return c.json(row)
   })
 
@@ -789,17 +1203,28 @@ export function adminRoutes(deps: Deps) {
         })
         .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
-    const student = db
-      .select({ deletedAt: students.deletedAt })
-      .from(students)
-      .where(eq(students.id, idParam(c)))
-      .get()
-    if (!student) throw notFound('学员')
-    if (student.deletedAt) throw accountDeleted()
-    db.update(students)
-      .set(body)
-      .where(eq(students.id, idParam(c)))
-      .run()
+    const id = idParam(c)
+    const before = db.select().from(students).where(eq(students.id, id)).get()
+    if (!before) throw notFound('学员')
+    if (before.deletedAt) throw accountDeleted()
+    const changed = db.update(students).set(body).where(eq(students.id, id)).run()
+    if (changed.changes === 0) throw notFound('学员')
+    // Field names only: the log keeps no copy of a student's name or phone.
+    const changes = [
+      body.name !== undefined && body.name !== before.name && '修改姓名',
+      body.phone !== undefined && body.phone !== before.phone && '修改手机号',
+      body.tester !== undefined &&
+        body.tester !== before.tester &&
+        (body.tester ? '设为测试学员' : '取消测试学员'),
+    ].filter((x): x is string => Boolean(x))
+    if (changes.length) {
+      log(c.get('staffId'), {
+        action: 'student.update',
+        summary: changes.join('，'),
+        studentId: id,
+        target: { kind: 'student', id },
+      })
+    }
     return c.body(null, 204)
   })
 
@@ -822,7 +1247,15 @@ export function adminRoutes(deps: Deps) {
         note: z.string().trim().min(1).max(100),
       }),
     )
-    grantLessons(deps, idParam(c), body.lessons, body.note)
+    const id = idParam(c)
+    grantLessons(deps, id, body.lessons, body.note)
+    const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
+    log(c.get('staffId'), {
+      action: 'package.grant',
+      summary: `课时包「${pkg?.name}」赠送 ${body.lessons} 节：${body.note}`,
+      studentId: pkg?.studentId,
+      target: { kind: 'package', id },
+    })
     return c.body(null, 204)
   })
 
@@ -834,7 +1267,15 @@ export function adminRoutes(deps: Deps) {
         note: z.string().trim().max(100).default(''),
       }),
     )
-    extendPackage(deps, idParam(c), body.days, body.note)
+    const id = idParam(c)
+    extendPackage(deps, id, body.days, body.note)
+    const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
+    log(c.get('staffId'), {
+      action: 'package.extend',
+      summary: `课时包「${pkg?.name}」延长 ${body.days} 天${body.note ? `：${body.note}` : ''}`,
+      studentId: pkg?.studentId,
+      target: { kind: 'package', id },
+    })
     return c.body(null, 204)
   })
 
@@ -845,11 +1286,20 @@ export function adminRoutes(deps: Deps) {
         studentId: z.number().int().positive(),
         productId: z.number().int().positive(),
         amount: fen,
-        method: z.enum(['cash', 'alipay', 'wechat', 'transfer']),
+        method: offlineMethod,
         note: z.string().trim().max(100).default(''),
       }),
     )
-    return c.json({ packageId: sellPackageOffline(deps, body) }, 201)
+    const packageId = sellPackageOffline(deps, body)
+    const pkg = db.select().from(packages).where(eq(packages.id, packageId)).get()
+    log(c.get('staffId'), {
+      action: 'package.sell',
+      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabels[body.method]} ${yuan(body.amount)}`,
+      amount: body.amount,
+      studentId: body.studentId,
+      target: { kind: 'package', id: packageId },
+    })
+    return c.json({ packageId }, 201)
   })
 
   // Orders and refunds
@@ -955,20 +1405,78 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
+  /** "课时包「十节课」的" or "订单「一对一私教」的", with the refund's amount and student. */
+  const refundContext = (refundId: number) => {
+    const row = db
+      .select({ refund: refunds, order: orders })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(eq(refunds.id, refundId))
+      .get()
+    const pkg = row?.refund.packageId
+      ? db.select().from(packages).where(eq(packages.id, row.refund.packageId)).get()
+      : undefined
+    return {
+      what: pkg ? `课时包「${pkg.name}」` : `订单「${row?.order.description ?? ''}」`,
+      amount: row?.refund.amount ?? 0,
+      studentId: row?.order.studentId ?? null,
+    }
+  }
+
   app.post('/refunds/:id/approve', async (c) => {
     const { amount } = await parseBody(c, z.object({ amount: fen.min(1) }))
-    await approvePackageRefund(deps, idParam(c), amount)
+    const id = idParam(c)
+    if (!(await approvePackageRefund(deps, id, amount))) return c.body(null, 204)
+    const r = refundContext(id)
+    log(c.get('staffId'), {
+      action: 'refund.approve',
+      summary: `同意${r.what}退款 ${yuan(amount)}`,
+      amount,
+      studentId: r.studentId,
+      target: { kind: 'refund', id },
+    })
     return c.body(null, 204)
   })
 
   app.post('/refunds/:id/reject', async (c) => {
     const { note } = await parseBody(c, z.object({ note: z.string().trim().min(1).max(100) }))
-    rejectPackageRefund(deps, idParam(c), note)
+    const id = idParam(c)
+    if (!rejectPackageRefund(deps, id, note)) return c.body(null, 204)
+    const r = refundContext(id)
+    log(c.get('staffId'), {
+      action: 'refund.reject',
+      summary: `拒绝${r.what}退款：${note}`,
+      studentId: r.studentId,
+      target: { kind: 'refund', id },
+    })
+    return c.body(null, 204)
+  })
+
+  app.post('/refunds/:id/paid-back', (c) => {
+    const id = idParam(c)
+    if (!markOfflineRefundPaid(deps, id)) return c.body(null, 204)
+    const r = refundContext(id)
+    log(c.get('staffId'), {
+      action: 'refund.paid_back',
+      summary: `${r.what}线下退还 ${yuan(r.amount)}`,
+      amount: r.amount,
+      studentId: r.studentId,
+      target: { kind: 'refund', id },
+    })
     return c.body(null, 204)
   })
 
   app.post('/refunds/:id/retry', async (c) => {
-    await retryRefund(deps, idParam(c))
+    const id = idParam(c)
+    if (!(await retryRefund(deps, id))) return c.body(null, 204)
+    const r = refundContext(id)
+    log(c.get('staffId'), {
+      action: 'refund.retry',
+      summary: `重试${r.what}退款 ${yuan(r.amount)}`,
+      amount: r.amount,
+      studentId: r.studentId,
+      target: { kind: 'refund', id },
+    })
     return c.body(null, 204)
   })
 

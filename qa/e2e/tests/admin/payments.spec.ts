@@ -143,8 +143,16 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
   await expect(refundRow).toContainText('建议 ¥2400')
   await refundRow.getByRole('button', { name: '同意' }).click()
   await typeNumber(field(dialog(page), '退款金额').locator('input'), '2000')
-  await expect(dialog(page)).toContainText('请线下退还')
+  await expect(dialog(page)).toContainText('当面退还')
   await dialog(page).getByRole('button', { name: '确认退款' }).click()
+  await expect(refundRow).toHaveCount(0)
+
+  // Offline money waits until the desk says it was handed back.
+  await page.locator('.t-select').first().click()
+  await page.locator('.t-select-option', { hasText: '待提交/待退还' }).click()
+  await expect(refundRow).toContainText('待线下退还')
+  await refundRow.getByRole('button', { name: '已退还' }).click()
+  await page.locator('.t-popconfirm').getByRole('button', { name: '已退还' }).click()
   await expect(refundRow).toHaveCount(0)
 
   const [after] = await call<PackageDto[]>(request, 'GET', '/packages', token)

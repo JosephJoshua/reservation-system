@@ -411,3 +411,35 @@ a:hover {
 .pick-tag {
   cursor: pointer;
 }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signed-in {
+  font-weight: 400;
+}
+
+/* Plain text in a form row, lined up with the label. */
+.field-text {
+  display: inline-block;
+  line-height: 32px;
+}
+
+.slot-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.slot-picks .t-button {
+  margin: 0;
+}
+
+.load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}

@@ -39,6 +39,7 @@ async function countRequests(page: Page, part: string, fn: () => Promise<void>) 
 test('sets up a lesson, coach, package on sale and a student', async ({ request }) => {
   admin = (
     await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
       password: ADMIN_PASSWORD,
     })
   ).token
@@ -128,6 +129,8 @@ test('back closes a student opened from the list', async ({ page }) => {
   await page.goto('./#/students')
   await page.getByPlaceholder('姓名或手机号').fill(studentName)
   await page.getByRole('button', { name: '搜索' }).click()
+  // The full list may still be showing until the search answers.
+  await expect(page.getByRole('button', { name: '查看' })).toHaveCount(1)
   await page.getByRole('button', { name: '查看' }).click()
   await expect(page).toHaveURL(new RegExp(`#/students\\?id=${studentId}$`))
   await expect(page.locator('.t-drawer')).toContainText(studentName)
@@ -295,7 +298,8 @@ test('an expired session says so on the login page', async ({ page }) => {
   })
   await page.goto('./#/bookings')
   await expect(page.getByText('登录已过期，请重新登录')).toBeVisible()
-  await page.getByPlaceholder('管理密码').fill(ADMIN_PASSWORD)
+  await page.getByPlaceholder('登录名').fill('admin')
+  await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
   await page.getByRole('button', { name: '退出登录' }).click()

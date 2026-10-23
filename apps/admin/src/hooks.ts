@@ -62,6 +62,7 @@ const STALE = new Set([
   'ended',
   'refund_not_requested',
   'refund_not_failed',
+  'refund_not_pending',
   'package_not_active',
   'slot_has_bookings',
   // An earlier submit of this dialog may have gone through: reload to see what it did.

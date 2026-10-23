@@ -61,7 +61,7 @@ status_of() { curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port$1";
 api() { curl -sf -H "Authorization: Bearer $token" "$@"; }
 login() {
   token=$(curl -sf -X POST http://127.0.0.1:$port/api/admin/login \
-    -H 'Content-Type: application/json' -d "{\"password\":\"$password\"}" | jq -r .token)
+    -H 'Content-Type: application/json' -d "{\"username\":\"admin\",\"password\":\"$password\"}" | jq -r .token)
 }
 add_coach() {
   api -X POST http://127.0.0.1:$port/api/admin/coaches -H 'Content-Type: application/json' \

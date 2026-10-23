@@ -22,8 +22,8 @@ export function refundedSoFar(tx: Q, orderId: number): number {
 }
 
 /**
- * Adds a refund row inside the caller's transaction. Offline orders are refunded by hand at the
- * front desk, so their refund is recorded as done.
+ * Adds a pending refund row inside the caller's transaction. WeChat Pay refunds are then sent;
+ * offline ones stay pending until staff mark them paid back at the front desk.
  */
 export function createRefund(
   tx: Q,
@@ -41,7 +41,6 @@ export function createRefund(
   if (input.amount <= 0 || input.amount > order.amount - refundedSoFar(tx, order.id)) {
     throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
   }
-  const status = order.provider === 'offline' ? 'succeeded' : 'pending'
   const row = tx
     .insert(refunds)
     .values({
@@ -49,7 +48,7 @@ export function createRefund(
       orderId: order.id,
       amount: input.amount,
       reason: input.reason,
-      status,
+      status: 'pending',
       bookingId: input.bookingId,
       packageId: input.packageId,
       updatedAt: now,
@@ -119,7 +118,15 @@ export async function sweepRefunds(deps: Deps) {
   const rows = deps.db
     .select({ id: refunds.id, outRefundNo: refunds.outRefundNo, status: refunds.status })
     .from(refunds)
-    .where(and(inArray(refunds.status, ['pending', 'processing']), lt(refunds.updatedAt, cutoff)))
+    // Offline refunds wait for the front desk, not for WeChat Pay.
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
+    .where(
+      and(
+        inArray(refunds.status, ['pending', 'processing']),
+        lt(refunds.updatedAt, cutoff),
+        eq(orders.provider, 'wechat'),
+      ),
+    )
     .all()
   for (const row of rows) {
     try {
@@ -151,8 +158,34 @@ export async function retryRefund(deps: Deps, refundId: number) {
       .from(refunds)
       .where(eq(refunds.id, refundId))
       .get()
-    if (row && ['pending', 'processing', 'succeeded'].includes(row.status)) return
+    if (row && ['pending', 'processing', 'succeeded'].includes(row.status)) return false
     throw new ApiError(409, 'refund_not_failed', '只能重试失败的退款')
   }
   await submitRefund(deps, refundId)
+  return true
+}
+
+/**
+ * Staff handed an offline refund back at the front desk. Returns false for a repeat of a
+ * hand-back already recorded.
+ */
+export function markOfflineRefundPaid(deps: Deps, refundId: number) {
+  const now = deps.now()
+  return immediate(deps.db, (tx) => {
+    const row = tx
+      .select({ status: refunds.status, provider: orders.provider })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(eq(refunds.id, refundId))
+      .get()
+    if (row?.provider === 'offline' && row.status === 'succeeded') return false
+    if (row?.provider !== 'offline' || row.status !== 'pending') {
+      throw new ApiError(409, 'refund_not_pending', '该退款已处理')
+    }
+    tx.update(refunds)
+      .set({ status: 'succeeded', updatedAt: now })
+      .where(eq(refunds.id, refundId))
+      .run()
+    return true
+  })
 }

@@ -1,11 +1,20 @@
 import { useState } from 'react'
-import { Button, Dialog, InputNumber, Select, Space, Tag, Textarea } from 'tdesign-react'
+import {
+  Button,
+  Dialog,
+  InputNumber,
+  Popconfirm,
+  Select,
+  Space,
+  Tag,
+  Textarea,
+} from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
-import { refundStatusLabel } from '../labels'
+import { refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
 
@@ -15,6 +24,16 @@ export function Refunds() {
     `/admin/refunds${status ? `?status=${status}` : ''}`,
   )
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
+
+  const paidBack = async (r: Refund) => {
+    if (
+      await attempt(() => api('POST', `/admin/refunds/${r.id}/paid-back`), '已记录退还', {
+        onStale: reload,
+        key: `paid-back-${r.id}`,
+      })
+    )
+      await reload()
+  }
 
   const retry = async (r: Refund) => {
     if (
@@ -37,7 +56,7 @@ export function Refunds() {
           onChange={(v) => setStatus(String(v ?? ''))}
           options={[
             { value: 'requested', label: '待审核' },
-            { value: 'pending', label: '待提交' },
+            { value: 'pending', label: '待提交/待退还' },
             { value: 'processing', label: '退款中' },
             { value: 'succeeded', label: '已退款' },
             { value: 'failed', label: '退款失败' },
@@ -84,7 +103,7 @@ export function Refunds() {
             colKey: 'status',
             title: '状态',
             cell: ({ row }) => {
-              const [label, theme] = refundStatusLabel[row.status]
+              const [label, theme] = refundLabel(row.status, row.order.provider === 'offline')
               return (
                 <span>
                   <Tag theme={theme} variant="light">
@@ -121,6 +140,17 @@ export function Refunds() {
                     拒绝
                   </Button>
                 </Space>
+              ) : row.status === 'pending' && row.order.provider === 'offline' ? (
+                <Popconfirm
+                  content={`确认已当面退还 ${yuan(row.amount)}？`}
+                  confirmBtn="已退还"
+                  cancelBtn="返回"
+                  onConfirm={() => paidBack(row)}
+                >
+                  <Button variant="text" theme="primary">
+                    已退还
+                  </Button>
+                </Popconfirm>
               ) : row.status === 'failed' ? (
                 <Button variant="text" theme="primary" onClick={() => retry(row)}>
                   重试
@@ -210,7 +240,7 @@ function Decide({
           </Field>
           <p className="muted">
             {refund.order.provider === 'offline'
-              ? '该课时包为前台付款，请线下退还，系统只记录。'
+              ? '该课时包为前台付款，当面退还后在列表中点“已退还”。'
               : '将原路退回学员微信。退款后课时包作废。'}
           </p>
         </div>

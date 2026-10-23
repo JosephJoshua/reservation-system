@@ -29,11 +29,23 @@ export const students = sqliteTable('students', {
   createdAt: createdAt(),
 })
 
+/** Front-desk and management logins for the admin app. All have full access. */
+export const staff = sqliteTable('staff', {
+  id: id(),
+  name: text('name').notNull(),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  // Deactivated staff cannot log in; they stay for the action log.
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  createdAt: createdAt(),
+})
+
 export const sessions = sqliteTable('sessions', {
   token: text('token').primaryKey(),
   role: text('role', { enum: ['student', 'admin', 'coach'] }).notNull(),
   studentId: integer('student_id').references(() => students.id),
   coachId: integer('coach_id').references(() => coaches.id),
+  staffId: integer('staff_id').references(() => staff.id),
   expiresAt: instant('expires_at').notNull(),
 })
 
@@ -192,6 +204,8 @@ export const bookings = sqliteTable(
     // When the coach was told about the booking and its cancellation, or decided not to be.
     coachToldBookedAt: instant('coach_told_booked_at'),
     coachToldCancelledAt: instant('coach_told_cancelled_at'),
+    // Set when the front desk booked the lesson for the student.
+    bookedByStaffId: integer('booked_by_staff_id').references(() => staff.id),
     createdAt: createdAt(),
   },
   (t) => [
@@ -382,4 +396,27 @@ export const idempotencyKeys = sqliteTable(
     createdAt: instant('created_at').notNull(),
   },
   (t) => [index('idempotency_keys_created').on(t.createdAt)],
+)
+
+/** What staff did with money, bookings, prices and logins. Rows are never changed. */
+export const actionLog = sqliteTable(
+  'action_log',
+  {
+    id: id(),
+    staffId: integer('staff_id')
+      .notNull()
+      .references(() => staff.id),
+    action: text('action').notNull(),
+    // Short Chinese description, written when the action happens so later edits never change it.
+    summary: text('summary').notNull(),
+    // Money moved by the action, in fen, when there is any.
+    amount: integer('amount'),
+    // The student it concerns. Their name is looked up when read, never copied into the summary,
+    // so a deleted account leaves no personal data here.
+    studentId: integer('student_id').references(() => students.id),
+    targetKind: text('target_kind'),
+    targetId: integer('target_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('action_log_time').on(t.createdAt), index('action_log_staff').on(t.staffId)],
 )

@@ -148,7 +148,8 @@ async function step(name: string, fn: () => Promise<void>) {
 
 try {
   const run = Date.now().toString(36)
-  const admin = (await call('POST', '/admin/login', { password: adminPassword })).token as string
+  const admin = (await call('POST', '/admin/login', { username: 'admin', password: adminPassword }))
+    .token as string
   const coaches = (await call('GET', '/admin/coaches', undefined, admin)) as {
     id: number
     name: string

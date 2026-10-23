@@ -2,10 +2,11 @@ import { venueInstant } from '@rs/shared'
 import { useState } from 'react'
 import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
+import { BookForStudent } from '../BookForStudent'
 import { DataTable } from '../DataTable'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
-import { bookingStatusLabel, refundStatusLabel } from '../labels'
+import { bookingStatusLabel, refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { AdminBooking, Coach } from '../types'
 
@@ -17,6 +18,7 @@ export function Bookings() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [reason, setReason] = useState('')
+  const [booking, setBooking] = useState(false)
   const submitting = useSubmitting()
 
   const params = new URLSearchParams({
@@ -68,6 +70,7 @@ export function Bookings() {
     <div>
       <div className="toolbar">
         <DateRangePicker
+          style={{ width: 280 }}
           value={range}
           onChange={(v) => setRange([String(v[0] ?? today()), String(v[1] ?? today())])}
         />
@@ -102,6 +105,8 @@ export function Bookings() {
             { label: '时间降序', value: 'desc' },
           ]}
         />
+        <span className="spacer" />
+        <Button onClick={() => setBooking(true)}>代约</Button>
       </div>
       <DataTable
         rowKey="id"
@@ -129,19 +134,23 @@ export function Bookings() {
           {
             colKey: 'paid',
             title: '支付',
-            cell: ({ row }) =>
-              row.paidWith === 'package'
-                ? `课时包 ${row.packageName ?? ''}`
-                : row.price
-                  ? yuan(row.price)
-                  : '免费',
+            cell: ({ row }) => (
+              <div>
+                {row.paidWith === 'package'
+                  ? `课时包 ${row.packageName ?? ''}`
+                  : row.price
+                    ? yuan(row.price)
+                    : '免费'}
+                {row.bookedBy && <div className="muted nowrap">{row.bookedBy.name} 代约</div>}
+              </div>
+            ),
           },
           {
             colKey: 'status',
             title: '状态',
             cell: ({ row }) => {
               const [label, theme] = bookingStatusLabel[row.status]
-              const refund = row.refund ? refundStatusLabel[row.refund.status] : null
+              const refund = row.refund ? refundLabel(row.refund.status, row.paidOffline) : null
               return (
                 <span>
                   <Tag theme={theme} variant="light">
@@ -230,7 +239,9 @@ export function Bookings() {
             {cancelling.student?.name} {fmtDateTime(cancelling.startsAt)}{' '}
             {cancelling.lessonType.name}
           </p>
-          <p className="muted">场馆取消时，已付款项全额退回微信，课时包课时退回。</p>
+          <p className="muted">
+            场馆取消时，已付款项全额退款，课时包课时退回。前台收款的，请在退款页确认当面退还。
+          </p>
           <Textarea
             placeholder="取消原因，学员可见"
             value={reason}
@@ -238,6 +249,15 @@ export function Bookings() {
             onChange={(v) => setReason(String(v))}
           />
         </Dialog>
+      )}
+      {booking && (
+        <BookForStudent
+          onClose={() => setBooking(false)}
+          onDone={() => {
+            setBooking(false)
+            void reload()
+          }}
+        />
       )}
     </div>
   )

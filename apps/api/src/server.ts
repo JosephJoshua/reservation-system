@@ -8,12 +8,14 @@ import { runMigrations } from './db/migrate'
 import type { Deps } from './deps'
 import { FakeGateway } from './pay/fake'
 import { WechatPayGateway } from './pay/wechat'
+import { ensureFirstStaff } from './services/staff'
 import { startSweeper } from './sweeper'
 import { devLogin, wechatLogin } from './wx'
 import { logNotifier, wechatNotifier } from './wx-notify'
 
 const db = openDb(config.databasePath)
 runMigrations(db)
+ensureFirstStaff(db, config.adminPassword)
 
 const log = (message: string, detail?: unknown) => console.error(`[api] ${message}`, detail ?? '')
 
@@ -25,7 +27,6 @@ const deps: Deps = {
     config.wechatAppId && config.wechatAppSecret
       ? wechatLogin(config.wechatAppId, config.wechatAppSecret)
       : devLogin,
-  adminPassword: config.adminPassword,
   uploadsDir: config.uploadsDir,
   log,
   notifier:
