@@ -49,13 +49,9 @@ install_config() {
   fi
 }
 
-# Records the release being replaced as the one to roll back to; a rollback forgets it instead.
+# Records the release being replaced as the one to roll back to.
 remember_previous() {
-  if [ -n "${RS_ROLLBACK:-}" ]; then
-    set_var APP_PREV_TAG ""
-  elif [ -n "$1" ] && [ "$1" != "$2" ]; then
-    set_var APP_PREV_TAG "$1"
-  fi
+  if [ -n "$1" ] && [ "$1" != "$2" ]; then set_var APP_PREV_TAG "$1"; fi
 }
 
 # Runs a backup script with the production release's image, or staging's before the first one.
@@ -112,10 +108,9 @@ case $cmd in
   rollback)
     tag=$(get APP_PREV_TAG)
     [ -n "$tag" ] || die "no previous release"
-    # The undone release is not offered as the next rollback.
-    export RS_ROLLBACK=1
-    if [ $# -eq 1 ]; then exec "$(pwd)/rs.sh" restore "$1" "$tag"; fi
-    exec "$(pwd)/rs.sh" prod "$tag"
+    if [ $# -eq 1 ]; then "$(pwd)/rs.sh" restore "$1" "$tag"; else "$(pwd)/rs.sh" prod "$tag"; fi
+    # Once it worked, the undone release is not offered as the next rollback.
+    set_var APP_PREV_TAG ""
     ;;
   backup)
     dc exec -T backup /app/api/backup/backup.sh
@@ -134,8 +129,12 @@ case $cmd in
     need_image "$tag"
     # The scheduled backup must not copy the database while it is being swapped.
     dc stop app backup
-    if ! APP_TAG=$tag dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1"; then
-      # restore.sh only fails before the swap: bring production back as it was.
+    status=0
+    APP_TAG=$tag dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1" || status=$?
+    if [ "$status" -eq 3 ]; then
+      die "production is stopped: fix /data with 'docker compose -f compose.yml run --rm backup sh', then rs.sh restore again"
+    elif [ "$status" -ne 0 ]; then
+      # Nothing was replaced: bring production back as it was.
       if [ -n "$current" ]; then dc up -d --wait app backup; fi
       exit 1
     fi
@@ -149,7 +148,7 @@ case $cmd in
     echo "production runs $tag on the restored database"
     ;;
   restore-images)
-    dc run --rm --no-deps backup sh -c '. /app/api/backup/common.sh && rclone copy "$REMOTE/uploads" "$UPLOADS"'
+    backup_tool /app/api/backup/restore.sh images
     ;;
   status)
     dc ps

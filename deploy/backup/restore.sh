@@ -3,18 +3,34 @@
 #   restore.sh list                     show the stored copies, oldest first
 #   restore.sh check latest | <name>    download a copy, check it and count what it holds
 #   restore.sh restore latest | <name>  put a copy in place of the live database
-# Restore only while the app container is stopped; rs.sh restore does that for you.
+#   restore.sh images                   copy back uploaded images missing from the volume
+# Restore only while the app container is stopped; rs.sh restore does that for you. Exit status 3
+# means the swap stopped halfway: the files in /data need a look before production starts.
 set -eu
 # shellcheck source=common.sh
 . /app/api/backup/common.sh
 die() { echo "restore failed: $1" >&2; exit 1; }
 [ -n "${COS_BUCKET:-}" ] || die "COS_BUCKET is not set"
-usage() { echo "usage: restore.sh list | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
+usage() { echo "usage: restore.sh list | images | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
 
-if [ "${1:-}" = list ]; then
-  rclone lsl "$REMOTE/db" | sort -k4
-  exit 0
-fi
+# Images are only ever added, so copying back what is missing is enough. rclone exits with 3
+# when there is no uploads/ folder yet, which just means no images.
+copy_images() {
+  status=0
+  rclone copy "$REMOTE/uploads" "$UPLOADS" || status=$?
+  [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
+}
+
+case ${1:-} in
+  list)
+    rclone lsl "$REMOTE/db" | sort -k4
+    exit 0
+    ;;
+  images)
+    copy_images || die "copying images failed"
+    exit 0
+    ;;
+esac
 [ $# -eq 2 ] || usage
 command=$1
 case $command in check | restore) ;; *) usage ;; esac
@@ -51,24 +67,22 @@ fi
 
 # Keep the database being replaced together with its WAL files, which may hold its newest
 # writes; left in place they would corrupt the restored file.
+halfway() {
+  echo "restore failed halfway: $1" >&2
+  echo "production stays stopped; the database being replaced is ${kept:-gone}, check /data" >&2
+  exit 3
+}
 if [ -f "$DB" ]; then
   kept="$DB.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
-  mv "$DB" "$kept"
+  mv "$DB" "$kept" || die "could not move the current database aside"
   for suffix in -wal -shm; do
-    if [ -f "$DB$suffix" ]; then mv "$DB$suffix" "$kept$suffix"; fi
+    if [ -f "$DB$suffix" ]; then mv "$DB$suffix" "$kept$suffix" || halfway "could not move $DB$suffix"; fi
   done
   echo "previous database kept as $kept"
 fi
-rm -f "$DB-wal" "$DB-shm"
-if ! mv "$tmp/app.db" "$DB"; then
-  if [ -n "${kept:-}" ]; then mv "$kept" "$DB"; fi
-  die "could not put db/$name in place; the previous database is back"
-fi
+rm -f "$DB-wal" "$DB-shm" || halfway "could not remove stale WAL files"
+mv "$tmp/app.db" "$DB" || halfway "could not put db/$name in place"
 
 # The database is replaced from here on, so a failed image copy is a warning, not a failure.
-# Images are only ever added, so copying back what is missing is enough.
-if [ -n "$(rclone lsf "$REMOTE/uploads" --max-depth 1 2>/dev/null | head -n 1)" ] &&
-  ! rclone copy "$REMOTE/uploads" "$UPLOADS"; then
-  echo "WARNING: some images were not copied back; run rs.sh restore-images" >&2
-fi
+copy_images || echo "WARNING: some images were not copied back; run rs.sh restore-images" >&2
 echo "restored db/$name"

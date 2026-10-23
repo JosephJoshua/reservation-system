@@ -57,7 +57,7 @@ if (config.adminDir) {
         ),
     }),
   )
-  // Any other page path gets the app; a missing file (an old bundle after a deploy) stays a 404.
+  // Any other page path gets the app; a missing bundle (an old one after a deploy) stays a 404.
   const index = serveStatic({
     path: 'index.html',
     root: adminDir,
@@ -76,13 +76,15 @@ const server = serve({ fetch: root.fetch, port: config.port }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`)
 })
 
-// A deploy stops the container with SIGTERM: finish open requests and the sweep in progress, then
-// close the database so SQLite folds its write-ahead log back into the file.
+// A deploy stops the container with SIGTERM: finish open requests and the sweep in progress (for
+// at most a few seconds, since a sweep waits on WeChat), then close the database so SQLite folds
+// its write-ahead log back into the file.
 process.on('SIGTERM', () => {
   setTimeout(() => process.exit(1), 8000).unref()
   const closed = new Promise((resolve) => server.close(resolve))
   if ('closeIdleConnections' in server) server.closeIdleConnections()
-  Promise.all([closed, stopSweeper()]).then(() => {
+  const swept = Promise.race([stopSweeper(), new Promise((resolve) => setTimeout(resolve, 4000))])
+  Promise.all([closed, swept]).then(() => {
     db.$client.close()
     process.exit(0)
   })
