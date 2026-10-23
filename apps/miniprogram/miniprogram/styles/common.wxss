@@ -66,6 +66,11 @@
   min-width: 0;
 }
 
+/* t-class for buttons in the bar, so they fill it like the rest. */
+.action-button {
+  width: 100% !important;
+}
+
 .has-action-bar {
   padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
 }

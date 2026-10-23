@@ -7,6 +7,6 @@
 </view>
 <view class="action-bar">
   <view class="grow">
-    <t-button theme="primary" block loading="{{saving}}" bind:tap="save">保存</t-button>
+    <t-button theme="primary" block t-class="action-button" loading="{{saving}}" bind:tap="save">保存</t-button>
   </view>
 </view>

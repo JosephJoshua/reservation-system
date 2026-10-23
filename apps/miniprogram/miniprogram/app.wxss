@@ -9,8 +9,8 @@ page {
   --td-empty-description-margin-top: 24rpx;
   /* WeChat asks for 44px tap targets; TDesign's medium button is 40px. */
   --td-button-medium-height: 88rpx;
-  /* The default warning orange is too light for small tag text on its pale fill. */
-  --td-tag-warning-color: var(--td-warning-color-6);
+  /* TDesign's warning orange is too light for small tag text on its pale fill. */
+  --td-tag-warning-color: #a65000;
   background-color: var(--td-bg-color-page);
   color: var(--td-text-color-primary);
   font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;

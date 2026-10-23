@@ -10,7 +10,7 @@
 <view wx:elif="{{state === 'error'}}" class="centered">
   <view>
     <t-empty icon="{{errorIcon}}" description="{{error}}" />
-    <view class="retry"><t-button variant="outline" bind:tap="load">重新加载</t-button></view>
+    <view class="retry"><t-button theme="primary" variant="outline" bind:tap="load">重新加载</t-button></view>
   </view>
 </view>
 
