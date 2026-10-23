@@ -22,9 +22,14 @@ page {
   --td-button-danger-border-color: #c4362f;
   --td-button-danger-active-bg-color: #a32c26;
   --td-button-danger-active-border-color: #a32c26;
-  /* Status text such as attendance marks. */
-  --rs-success-text-color: var(--td-success-color);
-  --rs-error-text-color: var(--td-error-color);
+  /* Status text such as attendance marks, and the success and danger tags and outline buttons:
+     TDesign's light greens and reds fall under 4.5:1 on their pale tag fills. */
+  --rs-success-text-color: #2a7a4b;
+  --rs-error-text-color: #c4362f;
+  --td-tag-success-color: var(--rs-success-text-color);
+  --td-tag-danger-color: var(--rs-error-text-color);
+  --td-button-danger-outline-color: var(--rs-error-text-color);
+  --td-button-danger-outline-border-color: var(--rs-error-text-color);
   /* Long text such as the policies reads on white in light mode. */
   --rs-reading-bg-color: var(--td-bg-color-container);
 }
@@ -47,6 +52,8 @@ page {
     --td-button-danger-border-color: #a8383d;
     --td-button-danger-active-bg-color: #8f2f33;
     --td-button-danger-active-border-color: #8f2f33;
+    /* Otherwise the disabled fill keeps near-white text and reads stronger than the enabled one. */
+    --td-button-danger-disabled-color: var(--td-text-color-disabled);
     --rs-success-text-color: #5fc48a;
     --rs-error-text-color: #f07075;
     --td-button-light-color: var(--td-brand-color-9);

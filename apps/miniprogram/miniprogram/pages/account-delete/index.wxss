@@ -27,7 +27,7 @@
 }
 
 .blocker .item-icon {
-  color: var(--td-error-color);
+  color: var(--rs-error-text-color);
 }
 
 .retry {
