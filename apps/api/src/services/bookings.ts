@@ -26,6 +26,9 @@ import { getSettings } from './settings'
 
 export const LIVE = ['pending_payment', 'confirmed'] as const
 
+// Each unpaid booking holds its slot until the order expires, so one student cannot hold many.
+const MAX_UNPAID_HOLDS = 3
+
 const windowMessages = {
   started: '该时段已开始',
   too_soon: '离上课时间太近，无法预约',
@@ -36,6 +39,13 @@ export interface CreateBookingInput {
   slotId: number
   lessonTypeId: number
   payWith?: 'package' | 'wechat'
+}
+
+export interface CancelOptions {
+  studentId?: number
+  reason?: string
+  /** The student saw that cancelling now is late. Without it a late cancel is refused. */
+  acceptLate?: boolean
 }
 
 export interface CreateBookingResult {
@@ -212,6 +222,16 @@ export async function createBooking(
       if (!lessonType.isTrial && !settings.payment.perClassEnabled) {
         throw new ApiError(409, 'package_required', '请先购买课时包')
       }
+      if (price.price > 0) {
+        const holds = tx
+          .select({ n: sql<number>`count(*)` })
+          .from(bookings)
+          .where(and(eq(bookings.studentId, studentId), eq(bookings.status, 'pending_payment')))
+          .get()
+        if ((holds?.n ?? 0) >= MAX_UNPAID_HOLDS) {
+          throw new ApiError(409, 'too_many_unpaid', '你有未支付的预约，请先支付或取消')
+        }
+      }
       if (price.price === 0) {
         const booking = tx
           .insert(bookings)
@@ -236,7 +256,13 @@ export async function createBooking(
           provider: 'wechat',
           status: 'pending',
           bookingId: booking.id,
-          expiresAt: new Date(now.getTime() + settings.payment.timeoutMinutes * 60_000),
+          // Never payable after the lesson starts.
+          expiresAt: new Date(
+            Math.min(
+              now.getTime() + settings.payment.timeoutMinutes * 60_000,
+              slot.startsAt.getTime(),
+            ),
+          ),
         })
         .returning({ id: orders.id })
         .get()
@@ -272,7 +298,7 @@ export async function cancelBooking(
   deps: Deps,
   bookingId: number,
   by: CancelledBy,
-  options: { studentId?: number; reason?: string } = {},
+  options: CancelOptions = {},
 ) {
   const existing = deps.db.select().from(bookings).where(eq(bookings.id, bookingId)).get()
   if (!existing || (options.studentId !== undefined && existing.studentId !== options.studentId)) {
@@ -311,6 +337,10 @@ export async function cancelBooking(
         })
     if (outcome === 'started') throw new ApiError(409, 'started', '课程已开始，无法取消')
     if (outcome === 'ended') throw new ApiError(409, 'ended', '课程已结束，无法取消')
+    // The student agreed to a free cancel, but the deadline passed (or their clock is off).
+    if (outcome.late && !options.acceptLate) {
+      throw new ApiError(409, 'late_now', '已过免费取消时间，请重新确认')
+    }
 
     tx.update(bookings)
       .set({

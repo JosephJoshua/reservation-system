@@ -369,7 +369,11 @@ export function studentRoutes(deps: Deps) {
 
   app.post('/bookings/:id/cancel', async (c) => {
     const id = idParam(c)
-    await cancelBooking(deps, id, 'student', { studentId: c.get('studentId') })
+    const { acceptLate } = await parseBody(
+      c,
+      z.object({ acceptLate: z.boolean().default(false) }).default({ acceptLate: false }),
+    )
+    await cancelBooking(deps, id, 'student', { studentId: c.get('studentId'), acceptLate })
     const row = db.select().from(bookings).where(eq(bookings.id, id)).get()
     if (!row) throw notFound('预约')
     const [view] = bookingViews(db, [row], getSettings(db).booking, deps.now())

@@ -84,7 +84,10 @@ export async function submitRefund(deps: Deps, refundId: number): Promise<void> 
         ? { status: 'failed', failure: result.reason }
         : { status: result.status, providerRefundId: result.refundId }
   } catch (e) {
-    const retryable = !(e instanceof GatewayError) || e.code === 'NETWORK' || (e.status ?? 0) >= 500
+    const status = e instanceof GatewayError ? (e.status ?? 0) : 0
+    // Network errors, rate limits and server errors are worth another try; the rest need a person.
+    const retryable =
+      !(e instanceof GatewayError) || e.code === 'NETWORK' || status === 429 || status >= 500
     deps.log('refund submit failed', { refundId, error: (e as Error).message })
     if (retryable) return
     update = { status: 'failed', failure: (e as GatewayError).message.slice(0, 200) }

@@ -18,7 +18,9 @@ export const notFound = (what = '内容') => new ApiError(404, 'not_found', `${w
 export async function parseBody<T extends z.ZodType>(c: Context, schema: T): Promise<z.infer<T>> {
   let raw: unknown
   try {
-    raw = await c.req.json()
+    // An empty body reaches the schema as undefined, for endpoints whose body is optional.
+    const text = await c.req.text()
+    raw = text.trim() === '' ? undefined : JSON.parse(text)
   } catch {
     throw new ApiError(400, 'invalid_body', '请求格式错误')
   }

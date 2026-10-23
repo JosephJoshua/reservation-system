@@ -1,7 +1,7 @@
 import { type CancelledBy, validityEnd } from '@rs/shared'
-import { and, eq, inArray, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNotNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
-import { bookings, orders, packageLedger, packageProducts, packages } from '../db/schema'
+import { bookings, orders, packageLedger, packageProducts, packages, slots } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { OrderState, PaymentParams } from '../pay/gateway'
@@ -77,7 +77,10 @@ export function applyPayment(
     if (!order.bookingId) return []
     const booking = tx.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
     if (!booking) return []
-    if (booking.status === 'pending_payment' || booking.status === 'expired') {
+    if (
+      booking.status === 'pending_payment' ||
+      (booking.status === 'expired' && revivable(tx, booking, deps.now()))
+    ) {
       try {
         tx.update(bookings).set({ status: 'confirmed' }).where(eq(bookings.id, booking.id)).run()
         return []
@@ -103,6 +106,30 @@ export function applyPayment(
       deps.log('refund submit failed', { refundId: id, error: (e as Error).message }),
     )
   }
+}
+
+/**
+ * Whether a booking whose hold ran out can still be confirmed by a late payment: the lesson is
+ * ahead, the slot still takes bookings and the student has not booked that time since. Whether
+ * someone else took the slot is left to the unique index.
+ */
+function revivable(tx: Q, booking: typeof bookings.$inferSelect, now: Date) {
+  if (booking.startsAt <= now) return false
+  const slot = tx.select({ open: slots.open }).from(slots).where(eq(slots.id, booking.slotId)).get()
+  if (!slot?.open) return false
+  const clash = tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.studentId, booking.studentId),
+        inArray(bookings.status, ['pending_payment', 'confirmed']),
+        lt(bookings.startsAt, booking.endsAt),
+        gt(bookings.endsAt, booking.startsAt),
+      ),
+    )
+    .get()
+  return !clash
 }
 
 /** Creates the student's package for a paid package order. */
@@ -171,7 +198,11 @@ export async function closeOrder(
   if (order.status === 'pending' && order.prepayId) {
     if ((await deps.gateway.closeOrder(order.outTradeNo)) === 'paid') {
       const state = await deps.gateway.queryOrder(order.outTradeNo)
-      if (state.state === 'paid') applyPayment(deps, order.outTradeNo, state)
+      // Report 'paid' only once the payment is recorded, so callers see the booking confirmed.
+      if (state.state !== 'paid') {
+        throw new ApiError(409, 'payment_processing', '支付结果确认中，请稍后再试')
+      }
+      applyPayment(deps, order.outTradeNo, state)
       return 'paid'
     }
   }

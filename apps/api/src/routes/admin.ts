@@ -117,7 +117,9 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/login', async (c) => {
     const { password } = await parseBody(c, z.object({ password: z.string().max(200) }))
-    return c.json(loginAdmin(deps, password))
+    // Behind the reverse proxy, the last X-Forwarded-For entry is the address it saw.
+    const client = c.req.header('X-Forwarded-For')?.split(',').pop()?.trim() || 'direct'
+    return c.json(loginAdmin(deps, password, client))
   })
 
   app.use('*', async (c, next) => {

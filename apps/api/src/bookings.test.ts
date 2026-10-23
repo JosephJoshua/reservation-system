@@ -287,7 +287,11 @@ describe('cancelling a paid lesson', () => {
     const h = setup()
     const { t, bookingId } = await paidBooking(h)
     h.clock.now = new Date('2026-10-25T03:00:00Z') // 23 hours before
-    const res = await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)
+    // The student must have seen that this cancel is late.
+    const unaware = await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)
+    expect(unaware.json.error.code).toBe('late_now')
+    expect(h.db.select().from(bookings).get()?.status).toBe('confirmed')
+    const res = await h.call('POST', `/bookings/${bookingId}/cancel`, { acceptLate: true }, t)
     expect(res.json).toMatchObject({ status: 'cancelled', late: true, refund: null })
   })
 
@@ -432,7 +436,13 @@ describe('packages', () => {
     expect((await h.call('GET', '/packages', undefined, t)).json[0].lessonsRemaining).toBe(8)
     h.clock.now = new Date('2026-10-23T12:00:00Z') // 20 hours before the 24th, 44 before the 26th
     await h.call('POST', `/bookings/${early.json.bookingId}/cancel`, undefined, t)
-    await h.call('POST', `/bookings/${late.json.bookingId}/cancel`, undefined, t)
+    const lateCancel = await h.call(
+      'POST',
+      `/bookings/${late.json.bookingId}/cancel`,
+      { acceptLate: true },
+      t,
+    )
+    expect(lateCancel.json).toMatchObject({ status: 'cancelled', late: true })
     expect((await h.call('GET', '/packages', undefined, t)).json[0].lessonsRemaining).toBe(9)
   })
 
@@ -881,5 +891,153 @@ describe('review fixes', () => {
       admin,
     )
     expect(cheaper.status).toBe(200)
+  })
+})
+
+describe('review round 2', () => {
+  async function orderOf(h: Harness, orderId: number) {
+    const order = h.db.select().from(orders).where(eq(orders.id, orderId)).get()
+    if (!order) throw new Error('no order')
+    return order
+  }
+
+  it('refunds a late payment instead of reviving a booking that would clash', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const { coachLessonTypes, coaches } = await import('./db/schema')
+    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
+    const t = await h.student('a')
+    const first = await book(h, t, h.slot(coach.id).id, lesson.id)
+    const order = await orderOf(h, first.json.orderId)
+    h.clock.now = new Date(h.clock.now.getTime() + 13 * 60_000)
+    await sweep(h.deps)
+    // The student books the same time with another coach and pays for it.
+    const second = await book(h, t, h.slot(other.id).id, lesson.id)
+    await pay(h, second.json.orderId)
+    // The first payment was made in time at WeChat; its callback only arrives now.
+    const { applyPayment } = await import('./services/orders')
+    applyPayment(h.deps, order.outTradeNo, {
+      state: 'paid',
+      transactionId: 'late',
+      paidAt: h.deps.now(),
+      amount: order.amount,
+    })
+    const rows = h.db.select().from(bookings).all()
+    expect(rows.find((b) => b.id === first.json.bookingId)?.status).toBe('expired')
+    expect(rows.find((b) => b.id === second.json.bookingId)?.status).toBe('confirmed')
+    const refund = h.db.select().from(refunds).get()
+    expect(refund).toMatchObject({ orderId: order.id, amount: 20000 })
+  })
+
+  it('refunds a late payment for a slot the admin closed meanwhile', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const slot = h.slot(coach.id)
+    const t = await h.student('a')
+    const res = await book(h, t, slot.id, lesson.id)
+    const order = await orderOf(h, res.json.orderId)
+    h.clock.now = new Date(h.clock.now.getTime() + 13 * 60_000)
+    await sweep(h.deps)
+    h.db.update(slots).set({ open: false }).where(eq(slots.id, slot.id)).run()
+    const { applyPayment } = await import('./services/orders')
+    applyPayment(h.deps, order.outTradeNo, {
+      state: 'paid',
+      transactionId: 'late',
+      paidAt: h.deps.now(),
+      amount: order.amount,
+    })
+    expect(h.db.select().from(bookings).get()?.status).toBe('expired')
+    expect(h.db.select().from(refunds).get()?.amount).toBe(20000)
+  })
+
+  it('still revives a booking paid in time when the slot is free', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    const order = await orderOf(h, res.json.orderId)
+    h.clock.now = new Date(h.clock.now.getTime() + 13 * 60_000)
+    await sweep(h.deps)
+    const { applyPayment } = await import('./services/orders')
+    applyPayment(h.deps, order.outTradeNo, {
+      state: 'paid',
+      transactionId: 'late',
+      paidAt: h.deps.now(),
+      amount: order.amount,
+    })
+    expect(h.db.select().from(bookings).get()?.status).toBe('confirmed')
+    expect(h.db.select().from(refunds).all()).toHaveLength(0)
+  })
+
+  it('never lets an order stay payable past the lesson start', async () => {
+    const h = setup()
+    h.settings((s) => {
+      s.booking.minNoticeMinutes = 0
+    })
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    // 2026-10-23 10:00 at the venue; now is 10:00, so 11:00 starts in an hour.
+    const slot = h.slot(coach.id, '2026-10-23', 11)
+    h.clock.now = new Date(slot.startsAt.getTime() - 5 * 60_000)
+    const res = await book(h, t, slot.id, lesson.id)
+    const order = await orderOf(h, res.json.orderId)
+    expect(order.expiresAt?.getTime()).toBe(slot.startsAt.getTime())
+  })
+
+  it('limits how many unpaid bookings one student can hold', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    for (const hour of [9, 10, 11]) {
+      expect((await book(h, t, h.slot(coach.id, '2026-10-25', hour).id, lesson.id)).status).toBe(
+        201,
+      )
+    }
+    const fourth = await book(h, t, h.slot(coach.id, '2026-10-25', 12).id, lesson.id)
+    expect(fourth.json.error.code).toBe('too_many_unpaid')
+  })
+
+  it('reports a cancel as pending when WeChat says paid but the payment is not visible yet', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    h.gateway.closeOrder = async () => 'paid'
+    const cancel = await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
+    expect(cancel.json.error.code).toBe('payment_processing')
+    expect(h.db.select().from(bookings).get()?.status).toBe('pending_payment')
+  })
+
+  it('keeps retrying a refund WeChat rate limited', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    await pay(h, res.json.orderId)
+    const { GatewayError } = await import('./pay/gateway')
+    const original = h.gateway.refund.bind(h.gateway)
+    h.gateway.refund = async () => {
+      throw new GatewayError('too fast', 'FREQUENCY_LIMITED', 429)
+    }
+    await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
+    expect(h.db.select().from(refunds).get()?.status).toBe('pending')
+    h.gateway.refund = original
+    h.clock.now = new Date(h.clock.now.getTime() + 2 * 60_000)
+    await sweep(h.deps)
+    expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
+  })
+
+  it('slows down admin password guessing', async () => {
+    const h = setup()
+    for (let i = 0; i < 10; i++) {
+      const res = await h.call('POST', '/admin/login', { password: `guess${i}` })
+      expect(res.status).toBe(401)
+    }
+    expect((await h.call('POST', '/admin/login', { password: 'guess' })).status).toBe(429)
+    // Even the right password waits out the window.
+    expect((await h.call('POST', '/admin/login', { password: 'test-password' })).status).toBe(429)
+    h.clock.now = new Date(h.clock.now.getTime() + 16 * 60_000)
+    expect((await h.call('POST', '/admin/login', { password: 'test-password' })).status).toBe(200)
   })
 })

@@ -161,11 +161,16 @@ Page({
     }
   },
 
-  /** Spells out what cancelling now costs before asking. */
-  cancelMessage(b: BookingDto): string {
-    if (b.status === 'pending_payment') return '取消后该时段将释放给其他学员。'
+  /**
+   * Spells out what cancelling now costs before asking, and whether that is a late cancel. The
+   * server refuses a late cancel the student did not see coming.
+   */
+  cancelQuote(b: BookingDto): { message: string; late: boolean } {
+    if (b.status === 'pending_payment') {
+      return { message: '取消后该时段将释放给其他学员。', late: false }
+    }
     const rules = this.catalog?.booking
-    if (!rules) return '确定取消这节课吗？'
+    if (!rules) return { message: '确定取消这节课吗？', late: false }
     const outcome = cancellationOutcome({
       startsAt: new Date(b.startsAt),
       endsAt: new Date(b.endsAt),
@@ -175,25 +180,34 @@ Page({
       amountPaid: b.price,
       rules,
     })
-    if (typeof outcome === 'string') return '课程已开始，无法取消。'
+    if (typeof outcome === 'string') return { message: '课程已开始，无法取消。', late: false }
+    const { late } = outcome
     if (b.paidWith === 'package') {
-      return outcome.returnLesson
-        ? '取消后课时将退回课时包。'
-        : '已过免费取消时间，取消后本节课时不退回。'
+      return {
+        late,
+        message: outcome.returnLesson
+          ? '取消后课时将退回课时包。'
+          : '已过免费取消时间，取消后本节课时不退回。',
+      }
     }
-    if (b.price === 0) return '确定取消这节课吗？'
-    if (!outcome.late) return `取消后 ${yuan(outcome.refund)} 将原路退回。`
-    return outcome.refund > 0
-      ? `已过免费取消时间，取消后退还 ${yuan(outcome.refund)}。`
-      : '已过免费取消时间，取消后不退款。'
+    if (b.price === 0) return { message: '确定取消这节课吗？', late }
+    if (!late) return { message: `取消后 ${yuan(outcome.refund)} 将原路退回。`, late }
+    return {
+      late,
+      message:
+        outcome.refund > 0
+          ? `已过免费取消时间，取消后退还 ${yuan(outcome.refund)}。`
+          : '已过免费取消时间，取消后不退款。',
+    }
   },
 
   async cancel() {
     const b = this.data.booking
     if (!b || this.data.busy) return
+    const quote = this.cancelQuote(b)
     const { confirm } = await wx.showModal({
       title: '取消预约',
-      content: this.cancelMessage(b),
+      content: quote.message,
       confirmText: '确认取消',
       confirmColor: '#d54941',
       cancelText: '再想想',
@@ -201,7 +215,9 @@ Page({
     if (!confirm) return
     this.setData({ busy: true })
     try {
-      const updated = await api<BookingDto>('POST', `/bookings/${b.id}/cancel`)
+      const updated = await api<BookingDto>('POST', `/bookings/${b.id}/cancel`, {
+        acceptLate: quote.late,
+      })
       this.show(updated)
     } catch (e) {
       showError(e)
