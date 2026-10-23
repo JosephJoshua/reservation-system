@@ -1,0 +1,403 @@
+import { venueDateKey, venueInstant } from '@rs/shared'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Button,
+  Checkbox,
+  DateRangePicker,
+  Dialog,
+  Input,
+  InputNumber,
+  MessagePlugin,
+  Select,
+  Space,
+  Tag,
+  Textarea,
+} from 'tdesign-react'
+import { api } from '../api'
+import { Field } from '../Field'
+import { addDays, fmtTime, fmtWeekday, today, venueIso } from '../format'
+import { attempt, useApi } from '../hooks'
+import { bookingStatusLabel } from '../labels'
+import type { Coach, LessonType, Slot } from '../types'
+
+const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
+
+/** Monday of the venue week containing `dateKey`. */
+function mondayOf(dateKey: string) {
+  const day = venueInstant(dateKey, 12 * 60).getUTCDay() // noon at the venue is the same UTC day
+  return addDays(dateKey, -((day + 6) % 7))
+}
+
+export function Schedule() {
+  const coaches = useApi<Coach[]>('/admin/coaches')
+  const types = useApi<LessonType[]>('/admin/lesson-types')
+  const [coachId, setCoachId] = useState<number | null>(null)
+  const [week, setWeek] = useState(() => mondayOf(today()))
+  const [creating, setCreating] = useState(false)
+  const [selected, setSelected] = useState<Slot | null>(null)
+
+  const active = (coaches.data ?? []).filter((c) => c.active)
+  useEffect(() => {
+    if (coachId === null && active[0]) setCoachId(active[0].id)
+  }, [active, coachId])
+
+  const from = venueInstant(week, 0).toISOString()
+  const to = venueInstant(addDays(week, 7), 0).toISOString()
+  const slots = useApi<Slot[]>(
+    coachId
+      ? `/admin/slots?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&coachId=${coachId}`
+      : null,
+  )
+
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(week, i)), [week])
+
+  return (
+    <div>
+      <div className="toolbar">
+        <Select
+          style={{ width: 180 }}
+          value={coachId ?? undefined}
+          placeholder="选择教练"
+          options={active.map((c) => ({ label: c.name, value: c.id }))}
+          onChange={(v) => setCoachId(Number(v))}
+        />
+        <Button variant="outline" onClick={() => setWeek(addDays(week, -7))}>
+          上一周
+        </Button>
+        <span>
+          {week} 至 {addDays(week, 6)}
+        </span>
+        <Button variant="outline" onClick={() => setWeek(addDays(week, 7))}>
+          下一周
+        </Button>
+        <Button variant="text" onClick={() => setWeek(mondayOf(today()))}>
+          本周
+        </Button>
+        <span className="spacer" />
+        <Button disabled={!coachId} onClick={() => setCreating(true)}>
+          批量排课
+        </Button>
+      </div>
+
+      {active.length === 0 && !coaches.loading && (
+        <p className="muted">先在“课程与教练”里添加教练</p>
+      )}
+
+      <div className="week-grid">
+        {days.map((d, i) => {
+          const daySlots = (slots.data ?? []).filter(
+            (s) => venueDateKey(new Date(s.startsAt)) === d,
+          )
+          return (
+            <div key={d} className="week-day">
+              <h4>
+                周{WEEKDAYS[i]} {d.slice(5)}
+                {d === today() && <span className="muted"> 今天</span>}
+              </h4>
+              {daySlots.length === 0 && <span className="muted">无时段</span>}
+              {daySlots.map((s) => (
+                <button
+                  type="button"
+                  key={s.id}
+                  className={`slot-chip${s.booking ? ' booked' : ''}${s.open ? '' : ' closed'}`}
+                  onClick={() => setSelected(s)}
+                >
+                  {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
+                  <br />
+                  {s.booking
+                    ? `${s.booking.student?.name || '学员'} · ${s.booking.status === 'pending_payment' ? '待支付' : '已约'}`
+                    : new Date(s.startsAt) <= new Date()
+                      ? '已过'
+                      : s.open
+                        ? '可预约'
+                        : '已关闭'}
+                </button>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+
+      {creating && coachId && (
+        <CreateSlots
+          coachId={coachId}
+          durations={[
+            ...new Set((types.data ?? []).filter((t) => t.active).map((t) => t.durationMinutes)),
+          ]}
+          initialFrom={week}
+          onClose={() => setCreating(false)}
+          onDone={() => {
+            setCreating(false)
+            void slots.reload()
+          }}
+        />
+      )}
+
+      {selected && (
+        <SlotDialog
+          slot={selected}
+          onClose={() => setSelected(null)}
+          onChanged={() => {
+            setSelected(null)
+            void slots.reload()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function parseTimes(text: string): string[] | null {
+  const parts = text
+    .split(/[,，\s]+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return null
+  const out: string[] = []
+  for (const p of parts) {
+    const m = /^(\d{1,2})[:：](\d{2})$/.exec(p)
+    if (!m) return null
+    const h = Number(m[1])
+    const min = Number(m[2])
+    if (h > 23 || min > 59) return null
+    out.push(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`)
+  }
+  return [...new Set(out)].sort()
+}
+
+function CreateSlots({
+  coachId,
+  durations,
+  initialFrom,
+  onClose,
+  onDone,
+}: {
+  coachId: number
+  durations: number[]
+  initialFrom: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const start = initialFrom < today() ? today() : initialFrom
+  const [range, setRange] = useState<[string, string]>([
+    start,
+    addDays(initialFrom, 6) < start ? addDays(start, 6) : addDays(initialFrom, 6),
+  ])
+  const [weekdays, setWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
+  const [times, setTimes] = useState('09:00, 10:00, 14:00, 15:00, 16:00')
+  const [minutes, setMinutes] = useState(durations[0] ?? 60)
+
+  const parsed = useMemo(() => parseTimes(times), [times])
+  const dates = useMemo(() => {
+    const out: string[] = []
+    for (let d = range[0]; d <= range[1] && out.length < 120; d = addDays(d, 1)) {
+      const wd = (venueInstant(d, 12 * 60).getUTCDay() + 6) % 7
+      if (weekdays.includes(wd)) out.push(d)
+    }
+    return out
+  }, [range, weekdays])
+  // Times already past are skipped, so a range starting today still works.
+  const planned = useMemo(() => {
+    if (!parsed) return []
+    const now = Date.now()
+    return dates.flatMap((d) =>
+      parsed.flatMap((t) => {
+        const startsAt = venueIso(d, t)
+        if (new Date(startsAt).getTime() <= now) return []
+        return [
+          {
+            coachId,
+            startsAt,
+            endsAt: new Date(new Date(startsAt).getTime() + minutes * 60_000).toISOString(),
+          },
+        ]
+      }),
+    )
+  }, [parsed, dates, coachId, minutes])
+  const count = planned.length
+
+  const submit = async () => {
+    if (!parsed) {
+      void MessagePlugin.warning('时间格式应为 09:00，多个用逗号分隔')
+      return
+    }
+    if (count === 0) {
+      void MessagePlugin.warning('没有要创建的时段')
+      return
+    }
+    if (count > 500) {
+      void MessagePlugin.warning('一次最多创建 500 个时段')
+      return
+    }
+    const slots = planned
+    if (slots.length === 0) {
+      void MessagePlugin.warning('所选时间都已过去')
+      return
+    }
+    if (
+      await attempt(() => api('POST', '/admin/slots', { slots }), `已创建 ${slots.length} 个时段`)
+    )
+      onDone()
+  }
+
+  return (
+    <Dialog
+      visible
+      width={560}
+      header="批量排课"
+      confirmBtn={`创建 ${count} 个时段`}
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <div className="fields">
+        <Field label="日期">
+          <DateRangePicker
+            value={range}
+            onChange={(v) => setRange([String(v[0] ?? ''), String(v[1] ?? '')])}
+          />
+        </Field>
+        <Field label="星期">
+          <Checkbox.Group value={weekdays} onChange={(v) => setWeekdays(v as number[])}>
+            {WEEKDAYS.map((w, i) => (
+              <Checkbox key={w} value={i}>
+                周{w}
+              </Checkbox>
+            ))}
+          </Checkbox.Group>
+        </Field>
+        <Field label="开始时间" help="多个用逗号分隔，如 09:00, 10:30">
+          <Input
+            value={times}
+            status={parsed ? 'default' : 'error'}
+            onChange={(v) => setTimes(String(v))}
+          />
+        </Field>
+        <Field label="时长" help="需与课程时长一致，学员才能预约">
+          <Space>
+            <InputNumber
+              theme="normal"
+              value={minutes}
+              min={15}
+              max={480}
+              step={15}
+              suffix="分钟"
+              onChange={(v) => setMinutes(Number(v) || 60)}
+            />
+            {durations.map((d) => (
+              <Tag
+                key={d}
+                variant={d === minutes ? 'dark' : 'outline'}
+                theme="primary"
+                style={{ cursor: 'pointer' }}
+                onClick={() => setMinutes(d)}
+              >
+                {d} 分钟
+              </Tag>
+            ))}
+          </Space>
+        </Field>
+      </div>
+    </Dialog>
+  )
+}
+
+function SlotDialog({
+  slot,
+  onClose,
+  onChanged,
+}: {
+  slot: Slot
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
+  const b = slot.booking
+  const status = b ? bookingStatusLabel[b.status as keyof typeof bookingStatusLabel] : null
+  const started = new Date(slot.startsAt) <= new Date()
+
+  const toggle = async () => {
+    if (
+      await attempt(
+        () => api('PATCH', `/admin/slots/${slot.id}`, { open: !slot.open }),
+        slot.open ? '已关闭' : '已开放',
+      )
+    )
+      onChanged()
+  }
+  const remove = async () => {
+    if (await attempt(() => api('DELETE', `/admin/slots/${slot.id}`), '已删除')) onChanged()
+  }
+  const cancel = async () => {
+    if (!b || !reason.trim()) return
+    if (
+      await attempt(
+        () => api('POST', `/admin/bookings/${b.id}/cancel`, { reason }),
+        '已取消，学员将收到全额退款或退回课时',
+      )
+    )
+      onChanged()
+  }
+
+  return (
+    <Dialog
+      visible
+      width={480}
+      header={`${fmtWeekday(slot.startsAt)} ${fmtTime(slot.startsAt)}-${fmtTime(slot.endsAt)}`}
+      footer={false}
+      onClose={onClose}
+    >
+      <Space direction="vertical" style={{ width: '100%' }}>
+        {b ? (
+          <div>
+            <Space>
+              <span>
+                {b.student?.name || '未填写姓名'} {b.student?.phone}
+              </span>
+              {status && (
+                <Tag theme={status[1]} variant="light">
+                  {status[0]}
+                </Tag>
+              )}
+            </Space>
+          </div>
+        ) : (
+          <span className="muted">{slot.open ? '尚无预约' : '已关闭，学员看不到'}</span>
+        )}
+
+        {b && !cancelling && (
+          <Button theme="danger" variant="outline" onClick={() => setCancelling(true)}>
+            场馆取消该预约
+          </Button>
+        )}
+        {b && cancelling && (
+          <>
+            <Textarea
+              placeholder="取消原因，学员可见"
+              value={reason}
+              maxlength={100}
+              onChange={(v) => setReason(String(v))}
+            />
+            <Button theme="danger" disabled={!reason.trim()} onClick={cancel}>
+              确认取消并退款
+            </Button>
+          </>
+        )}
+
+        <Space>
+          {!started && (
+            <Button variant="outline" onClick={toggle}>
+              {slot.open ? '关闭时段' : '重新开放'}
+            </Button>
+          )}
+          {!b && (
+            <Button variant="text" theme="danger" onClick={remove}>
+              删除时段
+            </Button>
+          )}
+        </Space>
+        {slot.open && b && <span className="muted">关闭时段不影响已有预约</span>}
+      </Space>
+    </Dialog>
+  )
+}

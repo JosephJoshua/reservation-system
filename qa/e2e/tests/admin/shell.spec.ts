@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test'
 
-test('shows the admin shell and a healthy API', async ({ page }) => {
+test('asks for the admin password', async ({ page }) => {
   await page.goto('./')
   await expect(page).toHaveTitle('球馆管理')
-  await expect(page.getByText('服务正常')).toBeVisible()
+  await page.getByPlaceholder('管理密码').fill('wrong')
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByText('密码错误')).toBeVisible()
 })
 
 test('applies the venue brand color over TDesign', async ({ page }) => {
