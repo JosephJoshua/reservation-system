@@ -56,7 +56,7 @@ Page({
   },
 
   editProfile() {
-    wx.navigateTo({ url: '/pages/profile-edit/index' })
+    navigateOnce('/pages/profile-edit/index')
   },
 
   openCoach() {
@@ -64,15 +64,15 @@ Page({
   },
 
   openMyPackages() {
-    wx.navigateTo({ url: '/pages/my-packages/index' })
+    navigateOnce('/pages/my-packages/index')
   },
 
   openPackages() {
-    wx.navigateTo({ url: '/pages/packages/index' })
+    navigateOnce('/pages/packages/index')
   },
 
   openPolicy(e: WechatMiniprogram.TouchEvent) {
-    wx.navigateTo({ url: `/pages/policy/index?kind=${e.currentTarget.dataset.kind}` })
+    navigateOnce(`/pages/policy/index?kind=${e.currentTarget.dataset.kind}`)
   },
 
   openMap() {

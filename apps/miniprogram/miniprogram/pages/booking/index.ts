@@ -2,6 +2,7 @@ import type { BannerDto, CatalogDto, HomeDto } from '../../lib/shared'
 import { assetUrl, errorMessage, publicApi } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { priceText } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 
 Page({
   data: {
@@ -76,18 +77,18 @@ Page({
     const banner = this.data.banners[e.currentTarget.dataset.index as number]
     if (!banner?.linkId) return
     if (banner.linkKind === 'lesson_type') {
-      wx.navigateTo({ url: `/pages/book/index?lessonTypeId=${banner.linkId}` })
+      navigateOnce(`/pages/book/index?lessonTypeId=${banner.linkId}`)
     } else if (banner.linkKind === 'package') {
-      wx.navigateTo({ url: `/pages/packages/index?id=${banner.linkId}` })
+      navigateOnce(`/pages/packages/index?id=${banner.linkId}`)
     }
   },
 
   openLessonType(e: WechatMiniprogram.TouchEvent) {
-    wx.navigateTo({ url: `/pages/book/index?lessonTypeId=${e.currentTarget.dataset.id}` })
+    navigateOnce(`/pages/book/index?lessonTypeId=${e.currentTarget.dataset.id}`)
   },
 
   openPackages() {
-    wx.navigateTo({ url: '/pages/packages/index' })
+    navigateOnce('/pages/packages/index')
   },
 
   openMap() {

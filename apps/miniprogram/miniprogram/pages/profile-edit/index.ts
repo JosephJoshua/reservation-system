@@ -23,6 +23,7 @@ Page({
   },
 
   async save() {
+    if (this.data.saving) return
     const name = this.data.name.trim()
     const phone = this.data.phone.trim()
     if (!name) {

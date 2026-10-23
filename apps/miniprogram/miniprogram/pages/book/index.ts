@@ -2,6 +2,7 @@ import { type CatalogDto, type SlotDto, venueDateKey } from '../../lib/shared'
 import { api, assetUrl, errorMessage } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { dayName, monthDay, priceText, time, weekday } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 
 interface CoachOption {
   id: number
@@ -184,7 +185,7 @@ Page({
       `startsAt=${encodeURIComponent(slot.startsAt)}`,
       `endsAt=${encodeURIComponent(slot.endsAt)}`,
     ].join('&')
-    wx.navigateTo({ url: `/pages/confirm/index?${query}` })
+    navigateOnce(`/pages/confirm/index?${query}`)
   },
 
   retry() {
