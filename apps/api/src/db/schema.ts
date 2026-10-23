@@ -1,5 +1,5 @@
 // Run `pnpm db:generate` after changing tables. Money is integer fen; instants are UTC ms.
-import { studentNoticeKinds } from '@rs/shared'
+import { type InvoiceTitle, studentNoticeKinds } from '@rs/shared'
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -23,6 +23,8 @@ export const students = sqliteTable('students', {
   // The POLICY_VERSION the student last agreed to, and when.
   policyVersion: text('policy_version'),
   policyAgreedAt: instant('policy_agreed_at'),
+  // The invoice title used last, to fill the next request. Cleared when the account is deleted.
+  invoiceTitle: text('invoice_title', { mode: 'json' }).$type<InvoiceTitle>(),
   // A deleted account keeps its row for the orders and bookings that point at it, with the
   // name and phone cleared and the openid replaced, so the same WeChat user starts afresh.
   deletedAt: instant('deleted_at'),
@@ -364,6 +366,46 @@ export const refunds = sqliteTable(
     updatedAt: instant('updated_at').notNull(),
   },
   (t) => [index('refunds_status').on(t.status)],
+)
+
+/**
+ * A student's request for a 发票 on a paid order. Staff issue it in the tax system and upload
+ * the PDF, or reject it with a reason. An order has at most one request that is not rejected.
+ */
+export const invoices = sqliteTable(
+  'invoices',
+  {
+    id: id(),
+    studentId: integer('student_id')
+      .notNull()
+      .references(() => students.id),
+    orderId: integer('order_id')
+      .notNull()
+      .references(() => orders.id),
+    status: text('status', { enum: ['requested', 'issued', 'rejected'] }).notNull(),
+    titleKind: text('title_kind', { enum: ['personal', 'company'] }).notNull(),
+    title: text('title').notNull(),
+    taxNumber: text('tax_number').notNull().default(''),
+    email: text('email').notNull(),
+    // The amount paid less refunds when requested; staff check it again when issuing.
+    amount: integer('amount').notNull(),
+    rejectReason: text('reject_reason'),
+    // File name under the uploads folder's invoices/ directory, which is never served as is.
+    pdfFile: text('pdf_file'),
+    issuedAt: instant('issued_at'),
+    handledByStaffId: integer('handled_by_staff_id').references(() => staff.id),
+    // How many of the order's refunds staff have taken into account: those before the request,
+    // then each one staff marked as handled. A refund beyond this count flags the invoice.
+    refundsSeen: integer('refunds_seen').notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('invoices_one_live_per_order')
+      .on(t.orderId)
+      .where(sql`status in ('requested', 'issued')`),
+    index('invoices_status').on(t.status, t.createdAt),
+    index('invoices_student').on(t.studentId),
+  ],
 )
 
 export const banners = sqliteTable('banners', {

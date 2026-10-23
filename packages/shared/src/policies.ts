@@ -4,7 +4,7 @@ import type { VenueSettings } from './settings'
  * The date of the privacy policy and default user agreement below. Change it whenever either
  * text changes in substance: students who agreed to an older version are asked again.
  */
-export const POLICY_VERSION = '2026-10-23'
+export const POLICY_VERSION = '2026-10-24'
 
 /** Who runs the mini program and how to reach them, falling back to the venue's own details. */
 function operator(s: VenueSettings) {
@@ -30,6 +30,7 @@ ${op.name}（以下简称“我们”）运营本小程序，为你提供乒乓�
 3. 预约和上课记录：预约的课程、时间、教练、取消和到课情况，以及教练为上课所做的备注。
 4. 订单和支付记录：金额、支付状态、微信支付交易单号和退款记录。我们无法获取你的银行卡或微信钱包信息。
 5. 订阅消息：你同意接收后，我们按你的选择发送预约和课程通知。
+6. 发票信息：申请发票时由你填写的抬头、税号和接收邮箱，用于开具和发送发票。
 
 二、我们如何使用
 仅用于提供预约、上课、支付、退款、课程通知和客户服务，以及依法需要保存的记录。我们不会将你的信息用于广告，也不会出售给任何人。
@@ -45,7 +46,7 @@ ${op.name}（以下简称“我们”）运营本小程序，为你提供乒乓�
 2. 地图：打开微信内置地图显示场馆位置。我们不获取你的位置。
 
 五、保存期限
-账号存续期间保存你的信息。注销账号后，我们删除你的姓名、手机号、微信登录标识和教练备注；订单、支付和退款记录按会计和税务法规要求匿名保存，到期后删除。
+账号存续期间保存你的信息。注销账号后，我们删除你的姓名、手机号、微信登录标识、教练备注、发票邮箱和个人抬头的发票；订单、支付和退款记录按会计和税务法规要求匿名保存，到期后删除。
 
 六、你的权利
 1. 查看和修改：在“我的 > 个人信息”中查看和修改姓名、手机号。

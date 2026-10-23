@@ -1,10 +1,13 @@
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { POLICY_VERSION } from '@rs/shared'
 import { and, eq, gt, inArray } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
-import { bookings, orders, packages, refunds, sessions, students } from '../db/schema'
+import { bookings, invoices, orders, packages, refunds, sessions, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { newToken } from './ids'
+import { invoicesDir } from './invoices'
 
 export const accountDeleted = () => new ApiError(409, 'account_deleted', '该学员已注销')
 
@@ -93,16 +96,23 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
       )
       .get()
   if (openRefund) blockers.push('有退款正在处理，请完成后再注销')
+  const openInvoice = tx
+    .select({ id: invoices.id })
+    .from(invoices)
+    .where(and(eq(invoices.studentId, studentId), eq(invoices.status, 'requested')))
+    .get()
+  if (openInvoice) blockers.push('发票申请正在处理，请完成后再注销')
   return blockers
 }
 
 /**
  * Deletes the student's account: their name, phone, WeChat identity and the coach's notes on
- * them go, while bookings, orders and refunds stay for the accounts, pointing at an empty row.
+ * them go, while bookings, orders, refunds and invoices stay for the accounts, pointing at an
+ * empty row.
  */
 export function deleteAccount(deps: Deps, studentId: number) {
   const now = deps.now()
-  immediate(deps.db, (tx) => {
+  const files = immediate(deps.db, (tx) => {
     const student = tx.select().from(students).where(eq(students.id, studentId)).get()
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     const blockers = deletionBlockers(tx, studentId, now)
@@ -116,11 +126,26 @@ export function deleteAccount(deps: Deps, studentId: number) {
         tester: false,
         policyVersion: null,
         policyAgreedAt: null,
+        invoiceTitle: null,
         deletedAt: now,
       })
       .where(eq(students.id, studentId))
       .run()
     tx.update(bookings).set({ coachNote: '' }).where(eq(bookings.studentId, studentId)).run()
     tx.delete(sessions).where(eq(sessions.studentId, studentId)).run()
+    // Invoices stay for the accounts, without the email. One made out to the student by name
+    // loses the name and its PDF; a company's title is not personal data.
+    const personal = tx
+      .select({ pdfFile: invoices.pdfFile })
+      .from(invoices)
+      .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
+      .all()
+    tx.update(invoices).set({ email: '' }).where(eq(invoices.studentId, studentId)).run()
+    tx.update(invoices)
+      .set({ title: '', pdfFile: null })
+      .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
+      .run()
+    return personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : []))
   })
+  for (const file of files) rmSync(join(invoicesDir(deps), file), { force: true })
 }
