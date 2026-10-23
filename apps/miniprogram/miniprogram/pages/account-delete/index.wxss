@@ -36,7 +36,14 @@
   margin-top: 32rpx;
 }
 
-/* TDesign's dark danger fill leaves white text under 4.5:1. */
+/* TDesign's danger fills leave white text under 4.5:1 in both themes. */
+page {
+  --td-button-danger-bg-color: #c4362f;
+  --td-button-danger-border-color: #c4362f;
+  --td-button-danger-active-bg-color: #a32c26;
+  --td-button-danger-active-border-color: #a32c26;
+}
+
 @media (prefers-color-scheme: dark) {
   page {
     --td-button-danger-bg-color: #a8383d;
