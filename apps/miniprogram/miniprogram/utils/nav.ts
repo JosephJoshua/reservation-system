@@ -1,4 +1,11 @@
 let navigating = false
+let landed: unknown
+let landedAt = 0
+
+function topPage(): unknown {
+  const pages = getCurrentPages()
+  return pages[pages.length - 1]
+}
 
 /**
  * Runs one navigation and ignores further ones until it settles, so a quick double tap does not
@@ -6,12 +13,14 @@ let navigating = false
  */
 function once(go: (complete: () => void) => void): void {
   if (navigating) return
+  // The new page is shown a moment after complete, so a late second tap is still ignored for a
+  // short while. Once the user has left that page, for example by going back, taps count again.
+  if (topPage() === landed && Date.now() - landedAt < 500) return
   navigating = true
   go(() => {
-    // The new page is shown a moment after complete; a short hold covers the transition.
-    setTimeout(() => {
-      navigating = false
-    }, 500)
+    navigating = false
+    landed = topPage()
+    landedAt = Date.now()
   })
 }
 
