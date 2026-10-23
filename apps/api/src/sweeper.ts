@@ -1,4 +1,5 @@
 import type { Deps } from './deps'
+import { expireIdempotencyKeys } from './idempotency'
 import { notifyCoaches } from './services/coach-notices'
 import { syncAllSlots } from './services/coaches'
 import { expireOrders } from './services/orders'
@@ -28,6 +29,11 @@ export async function sweep(deps: Deps) {
     await expireOrders(deps)
     await sweepRefunds(deps)
   } finally {
+    try {
+      expireIdempotencyKeys(deps)
+    } catch (e) {
+      deps.log('idempotency sweep failed', (e as Error).message)
+    }
     // Last, so slow WeChat sends never hold up payments, but also when payments fail.
     try {
       await notifyStudents(deps)

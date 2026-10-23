@@ -54,12 +54,14 @@ export async function startPayment(
 
 /**
  * Starts payment for an order just created for the student. If that fails, the order is closed at
- * once so a booking's slot is not held for the whole timeout.
+ * once so a booking's slot is not held for the whole timeout. A repeated request that reuses an
+ * order passes `release: false`: the first request may still be paying it.
  */
 export async function startPaymentOrRelease(
   deps: Deps,
   orderId: number,
   studentId: number,
+  { release = true } = {},
 ): Promise<PaymentParams> {
   const student = deps.db
     .select({ openid: students.openid })
@@ -69,6 +71,7 @@ export async function startPaymentOrRelease(
   try {
     return await startPayment(deps, orderId, student?.openid ?? '')
   } catch (e) {
+    if (!release) throw e
     await closeOrder(deps, orderId).catch((closeError) =>
       deps.log('release order failed', { orderId, error: (closeError as Error).message }),
     )

@@ -45,7 +45,12 @@ describe('booking one slot concurrently', () => {
       book(h, t, slot.id, lesson.id),
       book(h, t, slot.id, lesson.id),
     ])
-    expect([a.status, b.status].sort()).toEqual([201, 409])
+    // The second tap gets the same booking and order back, not "slot taken" by themself.
+    expect([a.status, b.status]).toEqual([201, 201])
+    expect(b.json).toMatchObject({ bookingId: a.json.bookingId, orderId: a.json.orderId })
+    expect(b.json.payment.package).toBe(a.json.payment.package)
+    expect(h.db.select().from(bookings).all()).toHaveLength(1)
+    expect(h.db.select().from(orders).all()).toHaveLength(1)
   })
 
   it('refuses a second live booking at the database level', async () => {
@@ -319,11 +324,21 @@ describe('cancelling a paid lesson', () => {
       (await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)).json.error.code,
     ).toBe('started')
     h.clock.now = new Date('2026-10-23T02:00:00Z')
-    await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)
-    expect(
-      (await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)).json.error.code,
-    ).toBe('not_cancellable')
+    const first = await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)
+    // A repeated cancel is answered with the cancelled booking and refunds nothing more.
+    const again = await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, t)
+    expect(again.status).toBe(200)
+    expect(again.json).toEqual(first.json)
     expect(h.db.select().from(refunds).all()).toHaveLength(1)
+    // The venue cancelling what the student already cancelled still fails.
+    const admin = await h.admin()
+    const venue = await h.call(
+      'POST',
+      `/admin/bookings/${bookingId}/cancel`,
+      { reason: '补录' },
+      admin,
+    )
+    expect(venue.json.error.code).toBe('not_cancellable')
   })
 
   it('keeps a refund pending through a network failure and retries it', async () => {

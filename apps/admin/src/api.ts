@@ -32,7 +32,16 @@ export function handleUnauthorized(fn: () => void) {
   onUnauthorized = fn
 }
 
-export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+/**
+ * Calls the API. Pass `key` (one per dialog opening, say) to make repeated submits of the same
+ * action safe: the server runs it once and answers repeats with the first result.
+ */
+export async function api<T = unknown>(
+  method: string,
+  path: string,
+  body?: unknown,
+  options: { key?: string } = {},
+): Promise<T> {
   const token = getToken()
   const isForm = body instanceof FormData
   let res: Response
@@ -42,6 +51,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
       headers: {
         ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.key ? { 'Idempotency-Key': options.key } : {}),
       },
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })
