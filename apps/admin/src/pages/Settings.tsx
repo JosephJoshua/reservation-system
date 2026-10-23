@@ -6,6 +6,7 @@ import {
   DatePicker,
   Input,
   InputNumber,
+  Loading,
   MessagePlugin,
   Radio,
   Space,
@@ -24,7 +25,7 @@ function coordValid(text: string, limit: number) {
 }
 
 export function Settings() {
-  const { data, reload } = useApi<VenueSettings>('/admin/settings')
+  const { data, error, reload } = useApi<VenueSettings>('/admin/settings')
   const [s, setS] = useState<VenueSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [coord, setCoord] = useState({ lat: '', lng: '' })
@@ -38,7 +39,7 @@ export function Settings() {
     })
   }, [data])
 
-  if (!s) return null
+  if (!s) return error ? <p className="muted">{error}</p> : <Loading size="small" />
 
   const set = (fn: (draft: VenueSettings) => void) => {
     const next = structuredClone(s)

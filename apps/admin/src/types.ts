@@ -58,6 +58,8 @@ export interface Slot {
   startsAt: string
   endsAt: string
   open: boolean
+  /** `hours` slots come from the coach's weekly hours and come back if deleted. */
+  source: 'manual' | 'hours'
   booking: { id: number; status: string; student: Person | null } | null
 }
 

@@ -3,8 +3,9 @@ import { useState } from 'react'
 import { Button, DateRangePicker, Dialog, Select, Table, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundStatusLabel } from '../labels'
+import { StudentCell } from '../StudentCell'
 import type { AdminBooking, Coach } from '../types'
 
 export function Bookings() {
@@ -14,6 +15,7 @@ export function Bookings() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [reason, setReason] = useState('')
+  const submitting = useSubmitting()
 
   const params = new URLSearchParams({
     from: venueInstant(range[0], 0).toISOString(),
@@ -21,7 +23,12 @@ export function Bookings() {
   })
   if (status) params.set('status', status)
   if (coachId) params.set('coachId', String(coachId))
-  const { data, loading, reload } = useApi<AdminBooking[]>(`/admin/bookings?${params}`)
+  const { data, loading, error, reload } = useApi<AdminBooking[]>(`/admin/bookings?${params}`)
+
+  const closeCancel = () => {
+    setCancelling(null)
+    setReason('')
+  }
 
   const cancel = async () => {
     if (!cancelling || !reason.trim()) return
@@ -29,10 +36,15 @@ export function Bookings() {
       await attempt(
         () => api('POST', `/admin/bookings/${cancelling.id}/cancel`, { reason }),
         '已取消',
+        {
+          onStale: () => {
+            closeCancel()
+            void reload()
+          },
+        },
       )
     ) {
-      setCancelling(null)
-      setReason('')
+      closeCancel()
       await reload()
     }
   }
@@ -42,6 +54,7 @@ export function Bookings() {
       await attempt(
         () => api('PUT', `/admin/bookings/${row.id}/attendance`, { attendance }),
         '已更新签到',
+        { key: `attendance-${row.id}` },
       )
     ) {
       await reload()
@@ -81,23 +94,24 @@ export function Bookings() {
         rowKey="id"
         loading={loading}
         data={data ?? []}
-        empty="这段时间没有预约"
+        empty={error ?? '这段时间没有预约'}
         columns={[
           {
             colKey: 'startsAt',
             title: '时间',
-            cell: ({ row }) => `${fmtDateTime(row.startsAt)}-${fmtTime(row.endsAt)}`,
+            width: 150,
+            cell: ({ row }) => (
+              <span className="nowrap">
+                {fmtDateTime(row.startsAt)}-{fmtTime(row.endsAt)}
+              </span>
+            ),
           },
           { colKey: 'coach', title: '教练', cell: ({ row }) => row.coach.name },
           { colKey: 'lessonType', title: '课程', cell: ({ row }) => row.lessonType.name },
           {
             colKey: 'student',
             title: '学员',
-            cell: ({ row }) => (
-              <a href={`#/students?id=${row.student?.id ?? ''}`}>
-                {row.student?.name || '未填写'} {row.student?.phone}
-              </a>
-            ),
+            cell: ({ row }) => <StudentCell student={row.student} />,
           },
           {
             colKey: 'paid',
@@ -189,9 +203,15 @@ export function Bookings() {
         <Dialog
           visible
           header="场馆取消预约"
-          confirmBtn={{ content: '确认取消', theme: 'danger', disabled: !reason.trim() }}
+          confirmBtn={{
+            content: '确认取消',
+            theme: 'danger',
+            disabled: !reason.trim(),
+            loading: submitting,
+          }}
+          cancelBtn="返回"
           onConfirm={cancel}
-          onClose={() => setCancelling(null)}
+          onClose={closeCancel}
         >
           <p>
             {cancelling.student?.name} {fmtDateTime(cancelling.startsAt)}{' '}

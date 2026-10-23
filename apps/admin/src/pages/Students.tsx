@@ -1,3 +1,4 @@
+import { packagePrice } from '@rs/shared'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -6,6 +7,7 @@ import {
   Drawer,
   Input,
   InputNumber,
+  Loading,
   Select,
   Space,
   Switch,
@@ -16,7 +18,7 @@ import {
 import { api } from '../api'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import {
   bookingStatusLabel,
   ledgerKindLabel,
@@ -36,11 +38,17 @@ export function Students() {
   const [openId, setOpenId] = useState<number | null>(idFromHash)
   const list = useApi<StudentRow[]>(`/admin/students?q=${encodeURIComponent(query)}`)
 
+  const { reload } = list
   useEffect(() => {
-    const onHash = () => setOpenId(idFromHash())
+    const onHash = () => {
+      const id = idFromHash()
+      setOpenId(id)
+      // Closed with the back button: show what changed in the drawer.
+      if (id === null) void reload()
+    }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [])
+  }, [reload])
 
   return (
     <div>
@@ -65,7 +73,7 @@ export function Students() {
         rowKey="id"
         loading={list.loading}
         data={list.data ?? []}
-        empty={query ? '没有找到学员' : '还没有学员'}
+        empty={list.error ?? (query ? '没有找到学员' : '还没有学员')}
         columns={[
           {
             colKey: 'name',
@@ -83,7 +91,14 @@ export function Students() {
             colKey: 'op',
             title: '操作',
             cell: ({ row }) => (
-              <Button variant="text" theme="primary" onClick={() => setOpenId(row.id)}>
+              // Through the address, so back closes the drawer and refresh keeps it open.
+              <Button
+                variant="text"
+                theme="primary"
+                onClick={() => {
+                  window.location.hash = `/students?id=${row.id}`
+                }}
+              >
                 查看
               </Button>
             ),
@@ -95,7 +110,8 @@ export function Students() {
           id={openId}
           onClose={() => {
             setOpenId(null)
-            if (window.location.hash.includes('?')) window.location.hash = '/students'
+            // Replaced rather than pushed, so back does not open the drawer again.
+            if (window.location.hash.includes('?')) history.replaceState(null, '', '#/students')
             void list.reload()
           }}
         />
@@ -117,11 +133,13 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   return (
     <Drawer
       visible
-      size="720px"
+      size="800px"
       header={s ? s.name || '学员' : '学员'}
       footer={false}
       onClose={onClose}
     >
+      {!s && detail.error && <p className="muted">{detail.error}</p>}
+      {!s && !detail.error && <Loading size="small" />}
       {s && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Space align="center">
@@ -152,15 +170,18 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
               data={s.packages}
               empty="没有课时包"
               columns={[
-                { colKey: 'name', title: '名称' },
+                { colKey: 'name', title: '名称', ellipsis: true },
                 {
                   colKey: 'left',
                   title: '剩余',
-                  cell: ({ row }) => `${row.lessonsRemaining}/${row.lessonsPurchased}`,
+                  width: 80,
+                  cell: ({ row }) =>
+                    `${row.lessonsRemaining}/${row.lessonsPurchased + row.lessonsGranted}`,
                 },
                 {
                   colKey: 'expiresAt',
                   title: '有效期至',
+                  width: 120,
                   cell: ({ row }) => fmtDate(new Date(new Date(row.expiresAt).getTime() - 1)),
                 },
                 { colKey: 'pricePaid', title: '实付', cell: ({ row }) => yuan(row.pricePaid) },
@@ -179,8 +200,9 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                 {
                   colKey: 'op',
                   title: '操作',
+                  width: 180,
                   cell: ({ row }) => (
-                    <Space size={0}>
+                    <Space size={0} breakLine={false}>
                       {row.status === 'active' ||
                       row.status === 'used_up' ||
                       row.status === 'expired' ? (
@@ -276,6 +298,19 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   )
 }
 
+/** What the student would pay in the mini program right now, sale included. */
+function priceNow(p: PackageProduct) {
+  return packagePrice(
+    {
+      price: p.price,
+      salePrice: p.salePrice,
+      startsAt: p.saleStartsAt ? new Date(p.saleStartsAt) : null,
+      endsAt: p.saleEndsAt ? new Date(p.saleEndsAt) : null,
+    },
+    new Date(),
+  ).price
+}
+
 function OfflineSale({
   studentId,
   products,
@@ -290,12 +325,13 @@ function OfflineSale({
   const onSale = products.filter((p) => p.onSale)
   const [productId, setProductId] = useState<number | undefined>(onSale[0]?.id)
   const product = products.find((p) => p.id === productId)
-  const [amount, setAmount] = useState<number | undefined>(toYuan(product?.price))
+  const [amount, setAmount] = useState<number | undefined>(toYuan(product && priceNow(product)))
   const [method, setMethod] = useState<keyof typeof offlineMethodLabel>('alipay')
   const [note, setNote] = useState('')
+  const submitting = useSubmitting()
+  const fen = toFen(amount)
 
   const submit = async () => {
-    const fen = toFen(amount)
     if (!productId || fen === null) return
     const ok = await attempt(
       () =>
@@ -315,7 +351,11 @@ function OfflineSale({
     <Dialog
       visible
       header="前台售卖课时包"
-      confirmBtn="确认收款"
+      confirmBtn={{
+        content: '确认收款',
+        disabled: !productId || fen === null,
+        loading: submitting,
+      }}
       onConfirm={submit}
       onClose={onClose}
     >
@@ -323,11 +363,15 @@ function OfflineSale({
         <Field label="课时包">
           <Select
             value={productId}
-            options={onSale.map((p) => ({ label: `${p.name}（${yuan(p.price)}）`, value: p.id }))}
+            placeholder={onSale.length ? '选择课时包' : '没有在售的课时包'}
+            options={onSale.map((p) => ({
+              label: `${p.name}（${yuan(priceNow(p))}）`,
+              value: p.id,
+            }))}
             onChange={(v) => {
               const p = products.find((x) => x.id === Number(v))
               setProductId(Number(v))
-              setAmount(toYuan(p?.price))
+              setAmount(toYuan(p && priceNow(p)))
             }}
           />
         </Field>
@@ -369,6 +413,7 @@ function PackageAction({
 }) {
   const [n, setN] = useState(1)
   const [note, setNote] = useState('')
+  const submitting = useSubmitting()
   const submit = async () => {
     const body = kind === 'grant' ? { lessons: n, note } : { days: n, note }
     if (await attempt(() => api('POST', `/admin/packages/${packageId}/${kind}`, body), '已保存'))
@@ -378,7 +423,11 @@ function PackageAction({
     <Dialog
       visible
       header={kind === 'grant' ? '赠送课时' : '延长有效期'}
-      confirmBtn={{ content: '确认', disabled: kind === 'grant' && !note.trim() }}
+      confirmBtn={{
+        content: '确认',
+        disabled: kind === 'grant' && !note.trim(),
+        loading: submitting,
+      }}
       onConfirm={submit}
       onClose={onClose}
     >
@@ -407,12 +456,14 @@ function PackageAction({
 }
 
 function Ledger({ packageId, onClose }: { packageId: number; onClose: () => void }) {
-  const { data } = useApi<LedgerEntry[]>(`/admin/packages/${packageId}/ledger`)
+  const { data, loading, error } = useApi<LedgerEntry[]>(`/admin/packages/${packageId}/ledger`)
   return (
     <Dialog visible width={560} header="课时记录" footer={false} onClose={onClose}>
       <Table
         rowKey="id"
+        loading={loading}
         data={data ?? []}
+        empty={error ?? '没有记录'}
         columns={[
           { colKey: 'createdAt', title: '时间', cell: ({ row }) => fmtDateTime(row.createdAt) },
           { colKey: 'kind', title: '类型', cell: ({ row }) => ledgerKindLabel[row.kind] },

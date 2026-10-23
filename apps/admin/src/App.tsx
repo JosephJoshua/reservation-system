@@ -90,7 +90,7 @@ export function App() {
               ))}
             </Menu>
           </Layout.Aside>
-          <Layout>
+          <Layout className="admin-main">
             <Layout.Header className="admin-header">
               <span>{pages[page][0]}</span>
               <Button variant="text" onClick={logout}>

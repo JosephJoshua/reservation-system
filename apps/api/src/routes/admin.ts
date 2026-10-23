@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { venueSettings } from '@rs/shared'
+import { venueParts, venueSettings } from '@rs/shared'
 import { and, asc, desc, eq, gt, gte, inArray, like, lt, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -377,7 +377,7 @@ export function adminRoutes(deps: Deps) {
           .map((r) => r.id),
       )
       const ids: number[] = []
-      body.slots.forEach((s, i) => {
+      body.slots.forEach((s) => {
         if (!coachIds.has(s.coachId)) throw notFound('教练')
         if (s.endsAt <= s.startsAt) {
           throw new ApiError(400, 'invalid_slot', '结束时间需晚于开始时间')
@@ -399,7 +399,13 @@ export function adminRoutes(deps: Deps) {
           )
           .get()
         if (overlap) {
-          throw new ApiError(409, 'slot_overlap', `第 ${i + 1} 个时段与该教练已有时段重叠`)
+          const t = venueParts(s.startsAt)
+          const pad = (n: number) => String(n).padStart(2, '0')
+          throw new ApiError(
+            409,
+            'slot_overlap',
+            `${t.month}月${t.day}日 ${pad(t.hours)}:${pad(t.minutes)} 与该教练已有时段重叠`,
+          )
         }
         ids.push(tx.insert(slots).values(s).returning({ id: slots.id }).get().id)
       })

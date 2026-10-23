@@ -9,13 +9,14 @@ interface Summary {
 }
 
 export function Overview() {
-  const { data } = useApi<Summary>('/admin/summary')
+  const { data, error } = useApi<Summary>('/admin/summary')
   const items: [string, number | undefined, string][] = [
     ['待上课预约', data?.upcomingBookings, '#/bookings'],
     ['待支付', data?.pendingPayments, '#/bookings'],
     ['待审核退款', data?.refundRequests, '#/refunds'],
     ['退款失败', data?.failedRefunds, '#/refunds'],
   ]
+  if (error) return <p className="muted">{error}</p>
   return (
     <div className="stat-grid">
       {items.map(([label, value, href]) => (

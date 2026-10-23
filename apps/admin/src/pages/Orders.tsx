@@ -3,11 +3,14 @@ import { Select, Table, Tag } from 'tdesign-react'
 import { fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
 import { offlineMethodLabel, orderKindLabel, orderStatusLabel } from '../labels'
+import { StudentCell } from '../StudentCell'
 import type { Order } from '../types'
 
 export function Orders() {
   const [status, setStatus] = useState('')
-  const { data, loading } = useApi<Order[]>(`/admin/orders${status ? `?status=${status}` : ''}`)
+  const { data, loading, error } = useApi<Order[]>(
+    `/admin/orders${status ? `?status=${status}` : ''}`,
+  )
   return (
     <div>
       <div className="toolbar">
@@ -24,22 +27,22 @@ export function Orders() {
         rowKey="id"
         loading={loading}
         data={data ?? []}
-        empty="没有订单"
+        empty={error ?? '没有订单'}
         columns={[
           { colKey: 'createdAt', title: '下单时间', cell: ({ row }) => fmtDateTime(row.createdAt) },
           {
             colKey: 'student',
             title: '学员',
-            cell: ({ row }) => (
-              <a href={`#/students?id=${row.student.id}`}>
-                {row.student.name || '未填写'} {row.student.phone}
-              </a>
-            ),
+            cell: ({ row }) => <StudentCell student={row.student} />,
           },
           {
             colKey: 'kind',
             title: '类型',
-            cell: ({ row }) => `${orderKindLabel[row.kind]} · ${row.description}`,
+            // A trial order is described by its lesson name, which is often just 体验课.
+            cell: ({ row }) =>
+              row.description === orderKindLabel[row.kind]
+                ? row.description
+                : `${orderKindLabel[row.kind]} · ${row.description}`,
           },
           { colKey: 'amount', title: '金额', cell: ({ row }) => yuan(row.amount) },
           {
@@ -68,7 +71,7 @@ export function Orders() {
           {
             colKey: 'outTradeNo',
             title: '订单号',
-            cell: ({ row }) => <span className="muted">{row.outTradeNo}</span>,
+            cell: ({ row }) => <span className="muted nowrap">{row.outTradeNo}</span>,
           },
         ]}
       />

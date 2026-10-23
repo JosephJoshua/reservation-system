@@ -3,19 +3,25 @@ import { Button, Dialog, InputNumber, Select, Space, Table, Tag, Textarea } from
 import { api } from '../api'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import { refundStatusLabel } from '../labels'
+import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
 
 export function Refunds() {
   const [status, setStatus] = useState('requested')
-  const { data, loading, reload } = useApi<Refund[]>(
+  const { data, loading, error, reload } = useApi<Refund[]>(
     `/admin/refunds${status ? `?status=${status}` : ''}`,
   )
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
 
   const retry = async (r: Refund) => {
-    if (await attempt(() => api('POST', `/admin/refunds/${r.id}/retry`), '已重新提交'))
+    if (
+      await attempt(() => api('POST', `/admin/refunds/${r.id}/retry`), '已重新提交', {
+        onStale: reload,
+        key: `retry-${r.id}`,
+      })
+    )
       await reload()
   }
 
@@ -42,17 +48,13 @@ export function Refunds() {
         rowKey="id"
         loading={loading}
         data={data ?? []}
-        empty="没有记录"
+        empty={error ?? '没有记录'}
         columns={[
           { colKey: 'createdAt', title: '申请时间', cell: ({ row }) => fmtDateTime(row.createdAt) },
           {
             colKey: 'student',
             title: '学员',
-            cell: ({ row }) => (
-              <a href={`#/students?id=${row.student.id}`}>
-                {row.student.name || '未填写'} {row.student.phone}
-              </a>
-            ),
+            cell: ({ row }) => <StudentCell student={row.student} />,
           },
           {
             colKey: 'what',
@@ -154,6 +156,7 @@ function Decide({
 }) {
   const [amount, setAmount] = useState<number | undefined>(toYuan(refund.amount || undefined))
   const [note, setNote] = useState('')
+  const submitting = useSubmitting()
   const fen = toFen(amount)
 
   const submit = async () => {
@@ -163,8 +166,11 @@ function Decide({
         (await attempt(
           () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }),
           '已同意退款',
+          { onStale: onDone },
         ))
-      : await attempt(() => api('POST', `/admin/refunds/${refund.id}/reject`, { note }), '已拒绝')
+      : await attempt(() => api('POST', `/admin/refunds/${refund.id}/reject`, { note }), '已拒绝', {
+          onStale: onDone,
+        })
     if (ok) onDone()
   }
 
@@ -176,6 +182,7 @@ function Decide({
         content: approve ? '确认退款' : '确认拒绝',
         theme: approve ? 'primary' : 'danger',
         disabled: approve ? fen === null || fen <= 0 : !note.trim(),
+        loading: submitting,
       }}
       onConfirm={submit}
       onClose={onClose}

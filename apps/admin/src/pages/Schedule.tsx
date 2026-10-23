@@ -15,12 +15,14 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { Field } from '../Field'
-import { addDays, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, useApi } from '../hooks'
+import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel } from '../labels'
 import type { Coach, LessonType, Slot } from '../types'
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
+// Matches the API's limit per request.
+const MAX_SLOTS = 500
 
 /** Monday of the venue week containing `dateKey`. */
 function mondayOf(dateKey: string) {
@@ -83,39 +85,41 @@ export function Schedule() {
         <p className="muted">先在“课程与教练”里添加教练</p>
       )}
 
-      <div className="week-grid">
-        {days.map((d, i) => {
-          const daySlots = (slots.data ?? []).filter(
-            (s) => venueDateKey(new Date(s.startsAt)) === d,
-          )
-          return (
-            <div key={d} className="week-day">
-              <h4>
-                周{WEEKDAYS[i]} {d.slice(5)}
-                {d === today() && <span className="muted"> 今天</span>}
-              </h4>
-              {daySlots.length === 0 && <span className="muted">无时段</span>}
-              {daySlots.map((s) => (
-                <button
-                  type="button"
-                  key={s.id}
-                  className={`slot-chip${s.booking ? ' booked' : ''}${s.open ? '' : ' closed'}`}
-                  onClick={() => setSelected(s)}
-                >
-                  {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
-                  <br />
-                  {s.booking
-                    ? `${s.booking.student?.name || '学员'} · ${s.booking.status === 'pending_payment' ? '待支付' : '已约'}`
-                    : new Date(s.startsAt) <= new Date()
-                      ? '已过'
-                      : s.open
-                        ? '可预约'
-                        : '已关闭'}
-                </button>
-              ))}
-            </div>
-          )
-        })}
+      <div className="week-scroll">
+        <div className="week-grid">
+          {days.map((d, i) => {
+            const daySlots = (slots.data ?? []).filter(
+              (s) => venueDateKey(new Date(s.startsAt)) === d,
+            )
+            return (
+              <div key={d} className="week-day">
+                <h4>
+                  周{WEEKDAYS[i]} {d.slice(5)}
+                  {d === today() && <span className="muted"> 今天</span>}
+                </h4>
+                {daySlots.length === 0 && <span className="muted">无时段</span>}
+                {daySlots.map((s) => (
+                  <button
+                    type="button"
+                    key={s.id}
+                    className={`slot-chip${s.booking ? ' booked' : ''}${s.open ? '' : ' closed'}`}
+                    onClick={() => setSelected(s)}
+                  >
+                    {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
+                    <br />
+                    {s.booking
+                      ? `${s.booking.student?.name || '学员'} · ${s.booking.status === 'pending_payment' ? '待支付' : '已约'}`
+                      : new Date(s.startsAt) <= new Date()
+                        ? '已过'
+                        : s.open
+                          ? '可预约'
+                          : '已关闭'}
+                  </button>
+                ))}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {creating && coachId && (
@@ -186,11 +190,12 @@ function CreateSlots({
   const [weekdays, setWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
   const [times, setTimes] = useState('09:00, 10:00, 14:00, 15:00, 16:00')
   const [minutes, setMinutes] = useState(durations[0] ?? 60)
+  const submitting = useSubmitting()
 
   const parsed = useMemo(() => parseTimes(times), [times])
   const dates = useMemo(() => {
     const out: string[] = []
-    for (let d = range[0]; d <= range[1] && out.length < 120; d = addDays(d, 1)) {
+    for (let d = range[0]; d <= range[1]; d = addDays(d, 1)) {
       const wd = (venueInstant(d, 12 * 60).getUTCDay() + 6) % 7
       if (weekdays.includes(wd)) out.push(d)
     }
@@ -225,8 +230,8 @@ function CreateSlots({
       void MessagePlugin.warning('没有要创建的时段')
       return
     }
-    if (count > 500) {
-      void MessagePlugin.warning('一次最多创建 500 个时段')
+    if (count > MAX_SLOTS) {
+      void MessagePlugin.warning(`一次最多创建 ${MAX_SLOTS} 个时段，请缩短日期范围`)
       return
     }
     if (
@@ -240,7 +245,7 @@ function CreateSlots({
       visible
       width={560}
       header="批量排课"
-      confirmBtn={`创建 ${count} 个时段`}
+      confirmBtn={{ content: `创建 ${count} 个时段`, loading: submitting }}
       onConfirm={submit}
       onClose={onClose}
     >
@@ -307,6 +312,7 @@ function SlotDialog({
 }) {
   const [reason, setReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const submitting = useSubmitting()
   const b = slot.booking
   const status = b ? bookingStatusLabel[b.status as keyof typeof bookingStatusLabel] : null
   const started = new Date(slot.startsAt) <= new Date()
@@ -316,12 +322,18 @@ function SlotDialog({
       await attempt(
         () => api('PATCH', `/admin/slots/${slot.id}`, { open: !slot.open }),
         slot.open ? '已关闭' : '已开放',
+        { onStale: onChanged },
       )
     )
       onChanged()
   }
   const remove = async () => {
-    if (await attempt(() => api('DELETE', `/admin/slots/${slot.id}`), '已删除')) onChanged()
+    if (
+      await attempt(() => api('DELETE', `/admin/slots/${slot.id}`), '已删除', {
+        onStale: onChanged,
+      })
+    )
+      onChanged()
   }
   const cancel = async () => {
     if (!b || !reason.trim()) return
@@ -329,6 +341,7 @@ function SlotDialog({
       await attempt(
         () => api('POST', `/admin/bookings/${b.id}/cancel`, { reason }),
         '已取消，学员将收到全额退款或退回课时',
+        { onStale: onChanged },
       )
     )
       onChanged()
@@ -338,7 +351,7 @@ function SlotDialog({
     <Dialog
       visible
       width={480}
-      header={`${fmtWeekday(slot.startsAt)} ${fmtTime(slot.startsAt)}-${fmtTime(slot.endsAt)}`}
+      header={`${fmtDate(slot.startsAt).slice(5)} ${fmtWeekday(slot.startsAt)} ${fmtTime(slot.startsAt)}-${fmtTime(slot.endsAt)}`}
       footer={false}
       onClose={onClose}
     >
@@ -374,7 +387,7 @@ function SlotDialog({
               maxlength={100}
               onChange={(v) => setReason(String(v))}
             />
-            <Button theme="danger" disabled={!reason.trim()} onClick={cancel}>
+            <Button theme="danger" disabled={!reason.trim()} loading={submitting} onClick={cancel}>
               确认取消并退款
             </Button>
           </>
@@ -382,12 +395,13 @@ function SlotDialog({
 
         <Space>
           {!started && (
-            <Button variant="outline" onClick={toggle}>
+            <Button variant="outline" loading={submitting} onClick={toggle}>
               {slot.open ? '关闭时段' : '重新开放'}
             </Button>
           )}
-          {!b && (
-            <Button variant="text" theme="danger" onClick={remove}>
+          {/* Slots from weekly hours would come back at the next sync, so they are only closed. */}
+          {!b && slot.source === 'manual' && (
+            <Button variant="text" theme="danger" loading={submitting} onClick={remove}>
               删除时段
             </Button>
           )}

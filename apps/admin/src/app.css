@@ -236,3 +236,27 @@ a:hover {
 .stat + .muted {
   margin-top: 4px;
 }
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.student-cell {
+  max-width: 160px;
+}
+
+.student-cell a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Lets wide content scroll inside the page instead of pushing the header off screen. */
+.admin-main {
+  min-width: 0;
+}
+
+.week-scroll {
+  overflow-x: auto;
+}
