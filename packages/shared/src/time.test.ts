@@ -20,5 +20,8 @@ describe('venueInstant', () => {
 
   it('rejects malformed dates', () => {
     expect(() => venueInstant('2026-13-01', 0)).toThrow(RangeError)
+    expect(() => venueInstant('2026-02-30', 0)).toThrow(RangeError)
+    expect(() => venueInstant('2026-2-3', 0)).toThrow(RangeError)
+    expect(venueInstant('2028-02-29', 0).toISOString()).toBe('2028-02-28T16:00:00.000Z')
   })
 })

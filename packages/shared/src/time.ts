@@ -10,6 +10,13 @@ export function venueDateKey(instant: Date): string {
 /** Instant for a venue-local date (YYYY-MM-DD) and minutes after midnight. */
 export function venueInstant(dateKey: string, minutes: number): Date {
   const midnightUtc = Date.parse(`${dateKey}T00:00:00Z`)
-  if (Number.isNaN(midnightUtc)) throw new RangeError(`Invalid date key: ${dateKey}`)
+  // Date.parse rolls impossible days such as 2026-02-30 into the next month, so round-trip it.
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(dateKey) ||
+    Number.isNaN(midnightUtc) ||
+    new Date(midnightUtc).toISOString().slice(0, 10) !== dateKey
+  ) {
+    throw new RangeError(`Invalid date key: ${dateKey}`)
+  }
   return new Date(midnightUtc - VENUE_UTC_OFFSET_MS + minutes * 60_000)
 }
