@@ -330,7 +330,11 @@ a:hover {
 
 .category-lesson {
   display: inline-block;
-  min-width: 96px;
+  width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .quick-picks {

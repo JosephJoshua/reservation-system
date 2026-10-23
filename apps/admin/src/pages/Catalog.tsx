@@ -73,28 +73,37 @@ export function Catalog() {
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const categories = useApi<CoachCategory[]>('/admin/coach-categories')
+  // `loaded` is the record as listed when an edit began, so a save over someone else's change is refused.
   const [category, setCategory] = useState<{
     id: number | null
     key: string
     form: CategoryForm
+    loaded?: CoachCategory
   } | null>(null)
-  const [lesson, setLesson] = useState<{ id: number | null; key: string; form: LessonForm } | null>(
-    null,
-  )
-  const [coach, setCoach] = useState<{ id: number | null; key: string; form: CoachForm } | null>(
-    null,
-  )
+  const [lesson, setLesson] = useState<{
+    id: number | null
+    key: string
+    form: LessonForm
+    loaded?: LessonType
+  } | null>(null)
+  const [coach, setCoach] = useState<{
+    id: number | null
+    key: string
+    form: CoachForm
+    loaded?: CoachForm
+  } | null>(null)
   const [binding, setBinding] = useState<Coach | null>(null)
   const [hoursOf, setHoursOf] = useState<Coach | null>(null)
   const submitting = useSubmitting()
 
   const saveLesson = async () => {
     if (!lesson) return
-    const { id, key, form } = lesson
+    const { id, key, form, loaded } = lesson
     const ok = await attempt(
       () =>
         api(id ? 'PUT' : 'POST', id ? `/admin/lesson-types/${id}` : '/admin/lesson-types', form, {
           key,
+          ifMatch: loaded,
         }),
       '已保存',
       { onStale: () => closeAndReload(setLesson, types.reload) },
@@ -107,9 +116,13 @@ export function Catalog() {
 
   const saveCoach = async () => {
     if (!coach) return
-    const { id, key, form } = coach
+    const { id, key, form, loaded } = coach
     const ok = await attempt(
-      () => api(id ? 'PUT' : 'POST', id ? `/admin/coaches/${id}` : '/admin/coaches', form, { key }),
+      () =>
+        api(id ? 'PUT' : 'POST', id ? `/admin/coaches/${id}` : '/admin/coaches', form, {
+          key,
+          ifMatch: loaded,
+        }),
       '已保存',
       { onStale: () => closeAndReload(setCoach, coaches.reload) },
     )
@@ -121,14 +134,14 @@ export function Catalog() {
 
   const saveCategory = async () => {
     if (!category) return
-    const { id, key, form } = category
+    const { id, key, form, loaded } = category
     const ok = await attempt(
       () =>
         api(
           id ? 'PUT' : 'POST',
           id ? `/admin/coach-categories/${id}` : '/admin/coach-categories',
           form,
-          { key },
+          { key, ifMatch: loaded },
         ),
       '已保存',
       { onStale: () => closeAndReload(setCategory, categories.reload) },
@@ -216,7 +229,9 @@ export function Catalog() {
                 <Button
                   variant="text"
                   theme="primary"
-                  onClick={() => setLesson({ key: newKey(), id: row.id, form: { ...row } })}
+                  onClick={() =>
+                    setLesson({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
+                  }
                 >
                   编辑
                 </Button>
@@ -279,6 +294,7 @@ export function Catalog() {
                       setCategory({
                         key: newKey(),
                         id: row.id,
+                        loaded: row,
                         form: {
                           name: row.name,
                           sort: row.sort,
@@ -289,7 +305,13 @@ export function Catalog() {
                   >
                     编辑
                   </Button>
-                  <Popconfirm content="删除该类别？" onConfirm={() => deleteCategory(row.id)}>
+                  <Popconfirm
+                    theme="danger"
+                    content="删除该类别？"
+                    confirmBtn={{ content: '删除', theme: 'danger' }}
+                    cancelBtn="返回"
+                    onConfirm={() => deleteCategory(row.id)}
+                  >
                     <Button variant="text" theme="danger">
                       删除
                     </Button>
@@ -392,10 +414,12 @@ export function Catalog() {
                     variant="text"
                     theme="primary"
                     onClick={() => {
+                      // Binding is not part of the edit, here or in the API's version check.
                       const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...form } = row
                       setCoach({
                         key: newKey(),
                         id: row.id,
+                        loaded: form,
                         form: {
                           ...form,
                           tags: [...row.tags],
@@ -631,13 +655,16 @@ function CategoryEditor({
             const p = own(t.id)
             return (
               <Space key={t.id} align="center" className="nowrap">
-                <span className="category-lesson">{t.name}</span>
+                <span className="category-lesson" title={t.name}>
+                  {t.name}
+                </span>
                 <Checkbox checked={!!p} onChange={(on) => setPrice(t.id, on ? t.price : null)}>
                   单独定价
                 </Checkbox>
                 {p ? (
                   <InputNumber
                     theme="normal"
+                    style={{ width: 140 }}
                     value={toYuan(p.price)}
                     min={0}
                     decimalPlaces={2}
@@ -707,19 +734,20 @@ function CoachEditor({
         <Input value={f.name} maxlength={20} onChange={(v) => set({ name: String(v) })} />
       </Field>
       <Field label="照片" help="正方形，JPG、PNG 或 WebP，不超过 2MB">
+        {/* Outside the Space, which would otherwise leave a gap for it. */}
+        <input
+          ref={fileInput}
+          hidden
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => {
+            void upload(e.target.files?.[0])
+            // Lets the same file be picked again after a failed upload.
+            e.target.value = ''
+          }}
+        />
         <Space align="center">
           {f.avatarUrl && <img className="avatar-thumb" src={f.avatarUrl} alt="" />}
-          <input
-            ref={fileInput}
-            hidden
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={(e) => {
-              void upload(e.target.files?.[0])
-              // Lets the same file be picked again after a failed upload.
-              e.target.value = ''
-            }}
-          />
           <Button variant="outline" loading={uploading} onClick={() => fileInput.current?.click()}>
             {f.avatarUrl ? '更换照片' : '选择照片'}
           </Button>

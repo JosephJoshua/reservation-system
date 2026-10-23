@@ -455,6 +455,9 @@ export function adminRoutes(deps: Deps) {
     const id = idParam(c)
     const body = await parseBody(c, coachBody)
     const before = immediate(db, (tx) => {
+      // Binding comes and goes on its own (codes expire), so only the edited fields count.
+      const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...editable } = coachView(id)
+      checkVersion(c, editable)
       const old = tx
         .select({ categoryId: coaches.categoryId })
         .from(coaches)
@@ -566,6 +569,7 @@ export function adminRoutes(deps: Deps) {
     const id = idParam(c)
     const body = await parseBody(c, categoryBody)
     const before = immediate(db, (tx) => {
+      checkVersion(c, categoryView(id))
       const old = tx
         .select({ lessonTypeId: categoryPrices.lessonTypeId, price: categoryPrices.price })
         .from(categoryPrices)
@@ -642,6 +646,7 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, lessonTypeBody)
     const existing = db.select().from(lessonTypes).where(eq(lessonTypes.id, id)).get()
     if (!existing) throw notFound('课程')
+    checkVersion(c, existing)
     const used = db
       .select({ id: bookings.id })
       .from(bookings)
@@ -1104,6 +1109,7 @@ export function adminRoutes(deps: Deps) {
     // while someone is paying for it. Price and sale edits are fine: the order already has its amount.
     const existing = db.select().from(packageProducts).where(eq(packageProducts.id, id)).get()
     if (!existing) throw notFound('课时包')
+    checkVersion(c, existing)
     const termsChanged =
       body.lessonTypeId !== existing.lessonTypeId ||
       body.lessonCount !== existing.lessonCount ||
