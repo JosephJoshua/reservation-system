@@ -1,0 +1,151 @@
+@import '../../styles/common.wxss';
+
+.summary {
+  margin-top: 24rpx;
+  padding: 32rpx;
+}
+
+.summary-name {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.summary-when {
+  margin-top: 12rpx;
+  font-size: 32rpx;
+  color: var(--rs-hint-color);
+}
+
+.coach {
+  display: flex;
+  align-items: center;
+  margin-top: 28rpx;
+  padding-top: 28rpx;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.coach-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 20rpx;
+}
+
+.coach-name {
+  font-size: 30rpx;
+  color: var(--td-text-color-primary);
+}
+
+.coach-title {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.duration {
+  font-size: 26rpx;
+}
+
+.option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 28rpx 32rpx;
+}
+
+.option + .option::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 96rpx;
+  right: 0;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.option-icon {
+  color: var(--td-brand-color);
+}
+
+.option-icon.wechat {
+  color: #07c160;
+}
+
+.option-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 20rpx;
+}
+
+.option-title {
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+.option-desc {
+  margin-top: 4rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.checked {
+  color: var(--td-brand-color);
+}
+
+.unchecked {
+  color: var(--td-text-color-placeholder);
+}
+
+.links {
+  margin-top: 8rpx;
+}
+
+.link {
+  color: var(--td-text-color-link);
+}
+
+.agree {
+  display: flex;
+  align-items: flex-start;
+  padding: 0 32rpx 24rpx;
+}
+
+.agree-text {
+  margin-left: 12rpx;
+  font-size: 26rpx;
+  line-height: 36rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.total-label {
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.total {
+  margin-left: 8rpx;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.submit {
+  width: 280rpx;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}
+
+.option-icon,
+.checked,
+.unchecked {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.agree .checked,
+.agree .unchecked {
+  height: 36rpx;
+}

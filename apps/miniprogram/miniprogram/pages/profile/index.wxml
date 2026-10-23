@@ -1,3 +1,29 @@
-<view class="container">
-  <t-empty icon="{{emptyIcon}}" description="暂未登录" />
+<view class="me" hover-class="me-hover" bind:tap="editProfile">
+  <t-avatar icon="user" size="112rpx" />
+  <view class="me-text">
+    <view class="me-name">{{name || '未填写姓名'}}</view>
+    <view class="me-phone">{{phone || '填写手机号，便于场馆联系'}}</view>
+  </view>
+  <view class="me-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+</view>
+
+<view class="group">
+  <t-cell-group theme="card">
+    <t-cell title="我的课时包" note="{{remaining}}" left-icon="wallet" arrow hover bind:click="openMyPackages" />
+    <t-cell wx:if="{{packagesEnabled}}" title="购买课时包" left-icon="shop" arrow hover bind:click="openPackages" />
+  </t-cell-group>
+</view>
+
+<view wx:if="{{venue && (venue.address || venue.phone)}}" class="group">
+  <t-cell-group theme="card">
+    <t-cell wx:if="{{venue.address}}" title="场馆地址" description="{{venue.address}}" left-icon="location" arrow hover bind:click="openMap" />
+    <t-cell wx:if="{{venue.phone}}" title="联系场馆" note="{{venue.phone}}" left-icon="call" arrow hover bind:click="call" />
+  </t-cell-group>
+</view>
+
+<view wx:if="{{hasBookingPolicy || hasAgreement}}" class="group">
+  <t-cell-group theme="card">
+    <t-cell wx:if="{{hasBookingPolicy}}" title="预约须知" left-icon="file" arrow hover data-kind="booking" bind:click="openPolicy" />
+    <t-cell wx:if="{{hasAgreement}}" title="用户协议" left-icon="file-safety" arrow hover data-kind="agreement" bind:click="openPolicy" />
+  </t-cell-group>
 </view>

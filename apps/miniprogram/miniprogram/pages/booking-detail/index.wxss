@@ -1,0 +1,46 @@
+@import '../../styles/common.wxss';
+
+.status {
+  display: flex;
+  align-items: center;
+  padding: 48rpx 48rpx 40rpx;
+}
+
+.status-icon {
+  display: flex;
+  margin-right: 24rpx;
+}
+
+.tone-brand {
+  color: var(--td-brand-color);
+}
+
+.tone-hint {
+  color: var(--rs-hint-color);
+}
+
+.tone-muted {
+  color: var(--td-text-color-placeholder);
+}
+
+.status-title {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.status-text {
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.venue {
+  margin-top: 24rpx;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

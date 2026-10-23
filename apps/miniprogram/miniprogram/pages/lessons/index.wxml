@@ -1,3 +1,45 @@
-<view class="container">
-  <t-empty icon="{{emptyIcon}}" description="暂无课程" />
+<t-tabs value="{{scope}}" bind:change="onScope">
+  <t-tab-panel label="即将开始" value="upcoming" />
+  <t-tab-panel label="已结束" value="past" />
+</t-tabs>
+
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button size="small" variant="outline" bind:tap="load">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:elif="{{!lessons.length}}" class="centered">
+  <view>
+    <t-empty icon="{{emptyIcon}}" description="{{scope === 'upcoming' ? '还没有预约的课程' : '暂无历史课程'}}" />
+    <view wx:if="{{scope === 'upcoming'}}" class="retry">
+      <t-button size="small" theme="primary" variant="outline" bind:tap="book">去预约</t-button>
+    </view>
+  </view>
+</view>
+
+<view wx:else class="list">
+  <view
+    wx:for="{{lessons}}"
+    wx:key="id"
+    class="lesson card"
+    hover-class="lesson-hover"
+    data-id="{{item.id}}"
+    bind:tap="open"
+  >
+    <view class="date">
+      <view class="date-day">{{item.day}}</view>
+      <view class="date-num">{{item.date}}</view>
+    </view>
+    <view class="info">
+      <view class="info-time">{{item.time}}</view>
+      <view class="info-name">{{item.name}} · {{item.coach}}</view>
+    </view>
+    <t-tag size="small" theme="{{item.tone}}" variant="light">{{item.status}}</t-tag>
+  </view>
 </view>

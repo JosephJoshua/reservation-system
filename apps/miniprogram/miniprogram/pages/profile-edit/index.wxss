@@ -1,0 +1,9 @@
+@import '../../styles/common.wxss';
+
+.form {
+  padding-top: 24rpx;
+}
+
+.save {
+  padding: 32rpx;
+}

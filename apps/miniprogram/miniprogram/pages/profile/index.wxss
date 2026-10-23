@@ -1,8 +1,37 @@
-.container {
-  box-sizing: border-box;
+.me {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding-bottom: 12vh;
+  padding: 48rpx 32rpx;
+  background-color: var(--td-bg-color-container);
+}
+
+.me-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.me-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 28rpx;
+}
+
+.me-name {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.me-phone {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.me-arrow {
+  display: flex;
+  color: var(--td-text-color-placeholder);
+}
+
+.group {
+  margin-top: 24rpx;
 }

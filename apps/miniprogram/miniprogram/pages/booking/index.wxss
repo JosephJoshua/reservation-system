@@ -1,8 +1,122 @@
-.container {
-  box-sizing: border-box;
+@import '../../styles/common.wxss';
+
+.banners {
+  height: 300rpx;
+  margin: 24rpx 32rpx 0;
+  border-radius: 16rpx;
+  overflow: hidden;
+  /* Keeps the rounded corners while the swiper animates on iOS. */
+  transform: translateY(0);
+}
+
+.banner-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.banner-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 48rpx 28rpx 24rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.45));
+}
+
+.notice {
+  margin: 24rpx 32rpx 0;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.lesson {
+  position: relative;
   display: flex;
   align-items: center;
+  padding: 28rpx 24rpx 28rpx 32rpx;
+}
+
+.lesson + .lesson::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 32rpx;
+  right: 0;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.lesson-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.lesson-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.lesson-name {
+  display: flex;
+  align-items: center;
+  font-size: 32rpx;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+
+.lesson-tag {
+  display: flex;
+  margin-left: 12rpx;
+}
+
+.lesson-desc {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lesson-meta {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-placeholder);
+}
+
+.lesson-side {
+  margin-left: 24rpx;
+  text-align: right;
+  font-size: 32rpx;
+  white-space: nowrap;
+}
+
+.lesson-from {
+  margin-left: 4rpx;
+  font-size: 24rpx;
+}
+
+.lesson-arrow {
+  display: flex;
+  margin-left: 8rpx;
+  color: var(--td-text-color-placeholder);
+}
+
+.inline-empty {
+  display: block;
+  padding: 64rpx 0;
+}
+
+.retry {
+  display: flex;
   justify-content: center;
-  min-height: 100vh;
-  padding-bottom: 12vh;
+  margin-top: 32rpx;
+}
+
+.bottom-space {
+  height: 48rpx;
 }

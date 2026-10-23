@@ -1,3 +1,80 @@
-<view class="container">
-  <t-empty icon="{{emptyIcon}}" description="暂无可预约的课程" />
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button size="small" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="home">
+  <swiper
+    wx:if="{{banners.length}}"
+    class="banners"
+    indicator-dots="{{banners.length > 1}}"
+    indicator-color="rgba(255,255,255,0.5)"
+    indicator-active-color="#ffffff"
+    autoplay="{{banners.length > 1}}"
+    interval="{{5000}}"
+    circular
+  >
+    <swiper-item wx:for="{{banners}}" wx:key="id" data-index="{{index}}" bind:tap="openBanner">
+      <image class="banner-image" src="{{item.src}}" mode="aspectFill" />
+      <view wx:if="{{item.title}}" class="banner-title">{{item.title}}</view>
+    </swiper-item>
+  </swiper>
+
+  <view wx:if="{{notice}}" class="notice">
+    <t-notice-bar visible content="{{notice}}" prefixIcon="sound" marquee="{{notice.length > 22}}" />
+  </view>
+
+  <view class="section-title">选择课程</view>
+  <view wx:if="{{lessonTypes.length}}" class="card">
+    <view
+      wx:for="{{lessonTypes}}"
+      wx:key="id"
+      class="lesson"
+      hover-class="lesson-hover"
+      data-id="{{item.id}}"
+      bind:tap="openLessonType"
+    >
+      <view class="lesson-main">
+        <view class="lesson-name">
+          <text>{{item.name}}</text>
+          <view wx:if="{{item.isTrial}}" class="lesson-tag"><t-tag size="small" theme="primary" variant="light">体验</t-tag></view>
+        </view>
+        <view wx:if="{{item.description}}" class="lesson-desc">{{item.description}}</view>
+        <view class="lesson-meta">{{item.duration}}</view>
+      </view>
+      <view class="lesson-side">
+        <view wx:if="{{item.price}}">
+          <text class="price">{{item.price}}</text><text class="muted lesson-from">起</text>
+        </view>
+        <view wx:if="{{item.original}}" class="price-original">{{item.original}}</view>
+      </view>
+      <view class="lesson-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+    </view>
+  </view>
+  <view wx:else class="card">
+    <view class="inline-empty"><t-empty icon="{{emptyIcon}}" description="暂无可预约的课程" /></view>
+  </view>
+
+  <block wx:if="{{packageCount}}">
+    <view class="section-title">课时包</view>
+    <t-cell-group theme="card">
+      <t-cell title="购买课时包" description="多节一起买，单节更划算" left-icon="wallet" arrow hover bind:click="openPackages" />
+    </t-cell-group>
+  </block>
+
+  <block wx:if="{{venue && (venue.address || venue.phone || venue.openingHours)}}">
+    <view class="section-title">场馆信息</view>
+    <t-cell-group theme="card">
+      <t-cell wx:if="{{venue.openingHours}}" title="营业时间" note="{{venue.openingHours}}" left-icon="time" />
+      <t-cell wx:if="{{venue.address}}" title="{{venue.address}}" left-icon="location" arrow hover bind:click="openMap" />
+      <t-cell wx:if="{{venue.phone}}" title="联系场馆" note="{{venue.phone}}" left-icon="call" arrow hover bind:click="call" />
+    </t-cell-group>
+  </block>
+  <view class="bottom-space" />
 </view>

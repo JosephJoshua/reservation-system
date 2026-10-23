@@ -1,0 +1,48 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button size="small" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:elif="{{!packages.length}}" class="centered">
+  <view>
+    <t-empty icon="{{emptyIcon}}" description="还没有课时包" />
+    <view wx:if="{{packagesEnabled}}" class="retry">
+      <t-button size="small" theme="primary" variant="outline" bind:tap="buy">去购买</t-button>
+    </view>
+  </view>
+</view>
+
+<view wx:else class="list">
+  <view wx:for="{{packages}}" wx:key="id" class="pkg card {{item.active ? '' : 'pkg-inactive'}}">
+    <view class="pkg-head">
+      <view class="pkg-name">{{item.name}}</view>
+      <t-tag size="small" theme="{{item.tone}}" variant="light">{{item.status}}</t-tag>
+    </view>
+    <view class="pkg-type">{{item.lessonTypeName}}</view>
+    <view class="pkg-count">
+      <text class="pkg-remaining">{{item.remaining}}</text>
+      <text class="muted"> / {{item.purchased}} 节</text>
+    </view>
+    <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" />
+    <view class="pkg-foot">
+      <view class="grow">
+        <view class="pkg-meta">{{item.expires}}</view>
+        <view wx:if="{{item.refund}}" class="pkg-meta">{{item.refund}}</view>
+      </view>
+      <t-button
+        wx:if="{{item.canRefund}}"
+        size="extra-small"
+        variant="text"
+        loading="{{busy === item.id}}"
+        data-id="{{item.id}}"
+        bind:tap="requestRefund"
+      >申请退款</t-button>
+    </view>
+  </view>
+</view>

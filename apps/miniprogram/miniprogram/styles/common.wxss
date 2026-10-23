@@ -1,0 +1,71 @@
+/* Shared page building blocks. Sizes follow WeChat: 32rpx body, 28rpx secondary, 24rpx captions. */
+.section-title {
+  padding: 40rpx 32rpx 16rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.card {
+  margin: 0 32rpx;
+  background-color: var(--td-bg-color-container);
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.price {
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.price-original {
+  margin-left: 8rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-placeholder);
+  text-decoration: line-through;
+}
+
+.muted {
+  color: var(--td-text-color-secondary);
+}
+
+.hint {
+  color: var(--rs-hint-color);
+}
+
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+}
+
+.footnote {
+  padding: 24rpx 32rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+
+/* Fixed bottom action bar; pages that use it add .has-action-bar for room at the bottom. */
+.action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 16rpx 32rpx calc(16rpx + env(safe-area-inset-bottom));
+  background-color: var(--td-bg-color-container);
+  box-shadow: 0 -1rpx 0 var(--td-component-stroke);
+}
+
+.action-bar .grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.has-action-bar {
+  padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
+}

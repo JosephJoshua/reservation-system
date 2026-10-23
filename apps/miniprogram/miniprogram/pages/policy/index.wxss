@@ -1,0 +1,12 @@
+@import '../../styles/common.wxss';
+
+page {
+  background-color: var(--td-bg-color-container);
+}
+
+.body {
+  padding: 32rpx 40rpx 64rpx;
+  font-size: 30rpx;
+  line-height: 1.75;
+  color: var(--td-text-color-primary);
+}

@@ -1,5 +1,16 @@
 {
-  "pages": ["pages/booking/index", "pages/lessons/index", "pages/profile/index"],
+  "pages": [
+    "pages/booking/index",
+    "pages/lessons/index",
+    "pages/profile/index",
+    "pages/book/index",
+    "pages/confirm/index",
+    "pages/booking-detail/index",
+    "pages/packages/index",
+    "pages/my-packages/index",
+    "pages/profile-edit/index",
+    "pages/policy/index"
+  ],
   "window": {
     "navigationBarTitleText": "预约",
     "navigationBarBackgroundColor": "@navBgColor",
