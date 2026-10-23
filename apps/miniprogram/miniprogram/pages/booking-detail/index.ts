@@ -210,7 +210,7 @@ Page({
       content: quote.message,
       confirmText: '确认取消',
       // Native modals don't read page tokens, so the dark red is picked here.
-      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#d54941',
+      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
       cancelText: '再想想',
     })
     if (!confirm) return
