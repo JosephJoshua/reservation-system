@@ -5,11 +5,13 @@ import { api } from '../api'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi } from '../hooks'
 import { bookingStatusLabel, refundStatusLabel } from '../labels'
-import type { AdminBooking } from '../types'
+import type { AdminBooking, Coach } from '../types'
 
 export function Bookings() {
   const [range, setRange] = useState<[string, string]>([today(), addDays(today(), 13)])
   const [status, setStatus] = useState<string>('')
+  const [coachId, setCoachId] = useState<number | null>(null)
+  const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [reason, setReason] = useState('')
 
@@ -18,6 +20,7 @@ export function Bookings() {
     to: venueInstant(range[1], 24 * 60).toISOString(),
   })
   if (status) params.set('status', status)
+  if (coachId) params.set('coachId', String(coachId))
   const { data, loading, reload } = useApi<AdminBooking[]>(`/admin/bookings?${params}`)
 
   const cancel = async () => {
@@ -30,6 +33,17 @@ export function Bookings() {
     ) {
       setCancelling(null)
       setReason('')
+      await reload()
+    }
+  }
+
+  const mark = async (row: AdminBooking, attendance: string | null) => {
+    if (
+      await attempt(
+        () => api('PUT', `/admin/bookings/${row.id}/attendance`, { attendance }),
+        '已更新签到',
+      )
+    ) {
       await reload()
     }
   }
@@ -53,6 +67,14 @@ export function Bookings() {
             { label: '已取消', value: 'cancelled' },
             { label: '已超时', value: 'expired' },
           ]}
+        />
+        <Select
+          style={{ width: 140 }}
+          clearable
+          placeholder="全部教练"
+          value={coachId ?? undefined}
+          onChange={(v) => setCoachId(v ? Number(v) : null)}
+          options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
         />
       </div>
       <Table
@@ -115,6 +137,39 @@ export function Bookings() {
                     </span>
                   )}
                 </span>
+              )
+            },
+          },
+          {
+            colKey: 'attendance',
+            title: '签到',
+            cell: ({ row }) => {
+              const started = Date.parse(row.startsAt) <= Date.now()
+              const markable = started && (row.status === 'confirmed' || row.status === 'completed')
+              return (
+                <div>
+                  {markable ? (
+                    <Select
+                      size="small"
+                      style={{ width: 96 }}
+                      placeholder="未签到"
+                      clearable
+                      value={row.attendance ?? undefined}
+                      options={[
+                        { label: '到课', value: 'attended' },
+                        { label: '缺席', value: 'no_show' },
+                      ]}
+                      onChange={(v) => mark(row, v ? String(v) : null)}
+                    />
+                  ) : (
+                    <span className="muted">-</span>
+                  )}
+                  {row.coachNote && (
+                    <div className="muted note-line" title={row.coachNote}>
+                      备注：{row.coachNote}
+                    </div>
+                  )}
+                </div>
               )
             },
           },

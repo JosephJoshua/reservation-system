@@ -18,6 +18,7 @@ import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi } from '../hooks'
 import type { Coach, LessonType } from '../types'
+import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
 
 type LessonForm = Omit<LessonType, 'id'>
 
@@ -35,7 +36,7 @@ const emptyLesson: LessonForm = {
   sort: 0,
 }
 
-type CoachForm = Omit<Coach, 'id'>
+type CoachForm = Omit<Coach, 'id' | 'bound' | 'bindCode' | 'bindCodeExpiresAt'>
 
 const emptyCoach: CoachForm = {
   name: '',
@@ -52,6 +53,8 @@ export function Catalog() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [lesson, setLesson] = useState<{ id: number | null; form: LessonForm } | null>(null)
   const [coach, setCoach] = useState<{ id: number | null; form: CoachForm } | null>(null)
+  const [binding, setBinding] = useState<Coach | null>(null)
+  const [hoursOf, setHoursOf] = useState<Coach | null>(null)
 
   const saveLesson = async () => {
     if (!lesson) return
@@ -200,26 +203,59 @@ export function Catalog() {
                 ),
             },
             {
+              colKey: 'bound',
+              title: '小程序',
+              cell: ({ row }) =>
+                row.bound ? (
+                  <Tag theme="primary" variant="light">
+                    已绑定
+                  </Tag>
+                ) : (
+                  <span className="muted">未绑定</span>
+                ),
+            },
+            {
               colKey: 'op',
               title: '操作',
               cell: ({ row }) => (
-                <Button
-                  variant="text"
-                  theme="primary"
-                  onClick={() =>
-                    setCoach({
-                      id: row.id,
-                      form: { ...row, lessons: row.lessons.map((l) => ({ ...l })) },
-                    })
-                  }
-                >
-                  编辑
-                </Button>
+                <Space size={0}>
+                  <Button
+                    variant="text"
+                    theme="primary"
+                    onClick={() => {
+                      const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...form } = row
+                      setCoach({
+                        id: row.id,
+                        form: { ...form, lessons: row.lessons.map((l) => ({ ...l })) },
+                      })
+                    }}
+                  >
+                    编辑
+                  </Button>
+                  <Button variant="text" theme="primary" onClick={() => setHoursOf(row)}>
+                    可约时间
+                  </Button>
+                  <Button variant="text" theme="primary" onClick={() => setBinding(row)}>
+                    微信绑定
+                  </Button>
+                </Space>
               ),
             },
           ]}
         />
       </Card>
+
+      {binding && (
+        <CoachBindingDialog
+          coach={binding}
+          onClose={() => {
+            setBinding(null)
+            void coaches.reload()
+          }}
+        />
+      )}
+
+      {hoursOf && <CoachHoursDialog coach={hoursOf} onClose={() => setHoursOf(null)} />}
 
       {lesson && (
         <Dialog

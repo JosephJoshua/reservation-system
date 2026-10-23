@@ -10,6 +10,7 @@ import { Orders } from './pages/Orders'
 import { Overview } from './pages/Overview'
 import { Products } from './pages/Products'
 import { Refunds } from './pages/Refunds'
+import { Reports } from './pages/Reports'
 import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
 import { Students } from './pages/Students'
@@ -23,6 +24,7 @@ const pages = {
   products: ['课时包', Products],
   orders: ['订单', Orders],
   refunds: ['退款', Refunds],
+  reports: ['报表', Reports],
   banners: ['首页内容', Banners],
   settings: ['设置', Settings],
 } as const
