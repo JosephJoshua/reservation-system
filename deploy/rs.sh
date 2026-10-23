@@ -10,7 +10,7 @@ usage: rs.sh <command>
   staging <tag>             run <tag> on staging
   prod <tag>                back up, then run <tag> in production
   promote                   run the release that is on staging in production
-  rollback [backup]         run the previous production release again, first restoring
+  rollback [backup]         swap production back to the previous release, first restoring
                             [backup] when the release being undone changed the database
   backup                    back up production now
   backups                   list stored backups
@@ -108,9 +108,8 @@ case $cmd in
   rollback)
     tag=$(get APP_PREV_TAG)
     [ -n "$tag" ] || die "no previous release"
-    if [ $# -eq 1 ]; then "$(pwd)/rs.sh" restore "$1" "$tag"; else "$(pwd)/rs.sh" prod "$tag"; fi
-    # Once it worked, the undone release is not offered as the next rollback.
-    set_var APP_PREV_TAG ""
+    if [ $# -eq 1 ]; then exec "$(pwd)/rs.sh" restore "$1" "$tag"; fi
+    exec "$(pwd)/rs.sh" prod "$tag"
     ;;
   backup)
     dc exec -T backup /app/api/backup/backup.sh
@@ -131,8 +130,8 @@ case $cmd in
     dc stop app backup
     status=0
     APP_TAG=$tag dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1" || status=$?
-    if [ "$status" -eq 3 ]; then
-      die "production is stopped: fix /data with 'docker compose -f compose.yml run --rm backup sh', then rs.sh restore again"
+    if [ "$status" -eq 99 ]; then
+      die "production is stopped: look at /data with 'cd /srv/rs && docker compose -f compose.yml run --rm backup sh', then run rs.sh restore again"
     elif [ "$status" -ne 0 ]; then
       # Nothing was replaced: bring production back as it was.
       if [ -n "$current" ]; then dc up -d --wait app backup; fi
