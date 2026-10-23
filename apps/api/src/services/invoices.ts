@@ -86,7 +86,8 @@ export function orderInvoices(tx: Q, rows: OrderRow[]): Map<number, OrderInvoice
           orderId: o.id,
           state,
           invoiceId: inv?.id ?? null,
-          amount: inv && state !== 'available' && state !== 'rejected' ? inv.amount : amount,
+          // A live invoice is for what it was issued for; otherwise what is left to invoice.
+          amount: inv && (state === 'requested' || state === 'issued') ? inv.amount : amount,
           rejectReason: inv?.status === 'rejected' ? inv.rejectReason : null,
         },
       ]
@@ -181,7 +182,7 @@ export function requestInvoice(
           taxNumber: title.taxNumber,
           email: title.email,
           amount: state.amount,
-          refundsSeen: refundCounts(tx, [orderId]).get(orderId) ?? 0,
+          refundSeenId: lastRefundId(tx, orderId),
           createdAt: now,
         })
         .returning({ id: invoices.id })
@@ -193,29 +194,43 @@ export function requestInvoice(
   })
 }
 
-/** How many refunds each order has had, leaving out rejected requests. */
-function refundCounts(tx: Q, orderIds: number[]) {
-  if (orderIds.length === 0) return new Map<number, number>()
-  const rows = tx
-    .select({ orderId: refunds.orderId, n: sql<number>`count(*)` })
-    .from(refunds)
-    .where(and(inArray(refunds.orderId, orderIds), ne(refunds.status, 'rejected')))
-    .groupBy(refunds.orderId)
-    .all()
-  return new Map(rows.map((r) => [r.orderId, Number(r.n)]))
+/**
+ * The newest refund on an order, rejected ones included. An invoice remembers it when issued or
+ * when staff mark a refund handled, so only refunds after that flag it. Ids only grow, so a
+ * refund rejected after it was seen cannot hide a later one, as a count would.
+ */
+function lastRefundId(tx: Q, orderId: number) {
+  return (
+    tx
+      .select({ id: sql<number | null>`max(${refunds.id})` })
+      .from(refunds)
+      .where(eq(refunds.orderId, orderId))
+      .get()?.id ?? 0
+  )
 }
 
-/** Invoices whose order had a refund since the request that staff have not marked handled. */
-function flaggedIds(tx: Q, rows: InvoiceRow[]) {
-  const counts = refundCounts(
-    tx,
-    rows.map((r) => r.orderId),
+/** Invoices whose order had a refund, not rejected, that staff have not marked handled. */
+export function flaggedIds(tx: Q, rows: InvoiceRow[]) {
+  const live = rows.filter((r) => r.status !== 'rejected')
+  if (live.length === 0) return new Set<number>()
+  const newest = new Map(
+    tx
+      .select({ orderId: refunds.orderId, id: sql<number>`max(${refunds.id})` })
+      .from(refunds)
+      .where(
+        and(
+          inArray(
+            refunds.orderId,
+            live.map((r) => r.orderId),
+          ),
+          ne(refunds.status, 'rejected'),
+        ),
+      )
+      .groupBy(refunds.orderId)
+      .all()
+      .map((r) => [r.orderId, Number(r.id)]),
   )
-  return new Set(
-    rows
-      .filter((r) => r.status !== 'rejected' && (counts.get(r.orderId) ?? 0) > r.refundsSeen)
-      .map((r) => r.id),
-  )
+  return new Set(live.filter((r) => (newest.get(r.orderId) ?? 0) > r.refundSeenId).map((r) => r.id))
 }
 
 export function adminInvoices(
@@ -233,10 +248,10 @@ export function adminInvoices(
     )
     // The queue is worked oldest first; finished ones read newest first.
     .orderBy(q.status === 'requested' ? invoices.id : desc(invoices.id))
-    .limit(500)
     .all()
   const flagged = flaggedIds(tx, rows)
-  const shown = q.flagged ? rows.filter((r) => flagged.has(r.id)) : rows
+  // Flagged ones are few and must all show, however old; the rest are cut to a page.
+  const shown = q.flagged ? rows.filter((r) => flagged.has(r.id)) : rows.slice(0, 500)
   return invoiceViews(tx, shown, flagged)
 }
 
@@ -343,10 +358,8 @@ export function issueInvoice(deps: Deps, staffId: number, id: number, pdf: Uint8
           // A first issue is for what is left after refunds; a replacement keeps the amount.
           amount: row.status === 'requested' ? amount : row.amount,
           // Refunds so far are in that amount; only later ones flag the invoice.
-          refundsSeen:
-            row.status === 'requested'
-              ? (refundCounts(tx, [row.orderId]).get(row.orderId) ?? 0)
-              : row.refundsSeen,
+          refundSeenId:
+            row.status === 'requested' ? lastRefundId(tx, row.orderId) : row.refundSeenId,
           issuedAt: row.issuedAt ?? now,
           handledByStaffId: staffId,
         })
@@ -383,8 +396,10 @@ export function markRefundSeen(deps: Deps, id: number) {
     const row = tx.select().from(invoices).where(eq(invoices.id, id)).get()
     if (!row) throw notFound('发票申请')
     if (!flaggedIds(tx, [row]).has(id)) return false
-    const seen = refundCounts(tx, [row.orderId]).get(row.orderId) ?? 0
-    tx.update(invoices).set({ refundsSeen: seen }).where(eq(invoices.id, id)).run()
+    tx.update(invoices)
+      .set({ refundSeenId: lastRefundId(tx, row.orderId) })
+      .where(eq(invoices.id, id))
+      .run()
     return true
   })
 }

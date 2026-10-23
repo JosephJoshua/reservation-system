@@ -1607,7 +1607,7 @@ export function adminRoutes(deps: Deps) {
 
   app.get('/exports/:kind', (c) => {
     const kind = c.req.param('kind')
-    if (!(kind in exportKinds)) throw notFound('导出类型')
+    if (!Object.hasOwn(exportKinds, kind)) throw notFound('导出类型')
     const k = kind as ExportKind
     const statuses = exportStatuses[k]
     const q = parseQuery(
@@ -1621,6 +1621,13 @@ export function adminRoutes(deps: Deps) {
             ? z.coerce.number().int().positive().optional()
             : z.undefined().optional(),
         q: k === 'students' ? z.string().trim().max(30).optional() : z.undefined().optional(),
+        flagged:
+          k === 'invoices'
+            ? z
+                .enum(['1'])
+                .optional()
+                .transform((v) => v === '1')
+            : z.undefined().optional(),
       }),
     )
     const { csv, rows } = buildExport(db, k, q, deps.now())

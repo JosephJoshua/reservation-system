@@ -12,7 +12,7 @@ CREATE TABLE `invoices` (
 	`pdf_file` text,
 	`issued_at` integer,
 	`handled_by_staff_id` integer,
-	`refunds_seen` integer DEFAULT 0 NOT NULL,
+	`refund_seen_id` integer DEFAULT 0 NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
 	FOREIGN KEY (`student_id`) REFERENCES `students`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`order_id`) REFERENCES `orders`(`id`) ON UPDATE no action ON DELETE no action,

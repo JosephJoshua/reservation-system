@@ -4,13 +4,13 @@ import {
   invoiceTitleError,
   invoiceTitleKindLabels,
   normalizeInvoiceTitle,
+  orderTitle,
   type StudentInvoicesDto,
 } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
 
-const KIND = { class: '单次课', trial: '体验课', package: '课时包' } as const
 const KINDS: InvoiceTitleKind[] = ['personal', 'company']
 
 Page({
@@ -55,10 +55,7 @@ Page({
       this.meName = me.name
       this.setData({
         state: 'ready',
-        item:
-          order.description === KIND[order.kind]
-            ? order.description
-            : `${KIND[order.kind]} · ${order.description}`,
+        item: orderTitle(order.kind, order.description),
         amount: yuan(order.amount),
         kind,
         kindLabel: invoiceTitleKindLabels[kind],

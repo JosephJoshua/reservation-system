@@ -173,6 +173,25 @@ describe('CSV exports', () => {
     expect(lines(orders.text)).toHaveLength(3)
   })
 
+  it('exports only invoices flagged for a refund, and says so in the log', async () => {
+    const h = setup()
+    const { admin, t } = await booked(h)
+    const orderId = (await h.call('GET', '/invoices', undefined, t)).json.orders[0].orderId
+    await h.call(
+      'POST',
+      '/invoices',
+      { orderId, kind: 'personal', name: '林小雨', taxNumber: '', email: 'l@example.com' },
+      t,
+    )
+    const all = await csv(h, 'invoices?from=2026-10-01&to=2026-10-31', admin)
+    expect(lines(all.text)).toHaveLength(2)
+    const flagged = await csv(h, 'invoices?from=2026-10-01&to=2026-10-31&flagged=1', admin)
+    expect(lines(flagged.text)).toHaveLength(1)
+    expect(h.db.select().from(actionLog).all().at(-1)?.summary).toBe(
+      '导出发票（2026-10-01 至 2026-10-31，开票后有退款），0 行',
+    )
+  })
+
   it('refuses bad ranges, kinds and filters', async () => {
     const h = setup()
     const admin = await h.admin()
@@ -187,6 +206,8 @@ describe('CSV exports', () => {
       expect(JSON.parse(res.text).error.message).toBe(message)
     }
     expect((await csv(h, 'secrets?from=2026-10-01&to=2026-10-31', admin)).status).toBe(404)
+    expect((await csv(h, 'constructor?from=2026-10-01&to=2026-10-31', admin)).status).toBe(404)
+    expect((await csv(h, 'orders?from=2026-10-01&to=2026-10-31&flagged=1', admin)).status).toBe(400)
     expect((await csv(h, 'students?from=2026-10-01&to=2026-10-31&status=paid', admin)).status).toBe(
       400,
     )

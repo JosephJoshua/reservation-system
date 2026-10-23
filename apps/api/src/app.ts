@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { HealthResponse } from '@rs/shared'
 import { sql } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import type { Deps } from './deps'
 import { ApiError } from './errors'
 import { idempotency } from './idempotency'
@@ -52,6 +53,17 @@ export function createApp(deps: Deps) {
     }
   })
 
+  // The largest body is an invoice PDF (10MB). Checked before anything reads a body, so a huge
+  // request is turned away instead of being held in memory.
+  app.use(
+    '*',
+    bodyLimit({
+      maxSize: 11 * 1024 * 1024,
+      onError: () => {
+        throw new ApiError(413, 'too_large', '文件不能超过 10MB')
+      },
+    }),
+  )
   app.use('*', idempotency(deps))
   app.route('/', payRoutes(deps))
   if (deps.gateway instanceof FakeGateway) app.route('/', devPayRoutes(deps, deps.gateway))

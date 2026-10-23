@@ -1,4 +1,4 @@
-import { invoiceStatusLabels, invoiceTitleKindLabels } from '@rs/shared'
+import { invoiceStatusLabels, invoiceTitleKindLabels, orderTitle } from '@rs/shared'
 import { useRef, useState } from 'react'
 import {
   Button,
@@ -17,7 +17,6 @@ import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDateTime, yuan } from '../format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
-import { orderKindLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { AdminInvoice } from '../types'
 
@@ -80,8 +79,15 @@ export function Invoices() {
         <span className="spacer" />
         <ExportButton
           kind="invoices"
-          filters={{ status }}
-          filterText={status ? `状态：${invoiceStatusLabels[status as 'requested']}` : undefined}
+          filters={{ status, flagged: flagged ? 1 : null }}
+          filterText={
+            [
+              status && `状态：${invoiceStatusLabels[status as 'requested']}`,
+              flagged && '开票后有退款',
+            ]
+              .filter(Boolean)
+              .join('，') || undefined
+          }
         />
       </div>
       <DataTable
@@ -110,9 +116,7 @@ export function Invoices() {
             width: 170,
             cell: ({ row }) => (
               <span>
-                {row.order.description === orderKindLabel[row.order.kind]
-                  ? row.order.description
-                  : `${orderKindLabel[row.order.kind]} · ${row.order.description}`}
+                {orderTitle(row.order.kind, row.order.description)}
                 <div className="muted">
                   {row.order.provider === 'wechat' ? '微信支付' : '前台付款'}{' '}
                   {yuan(row.order.amount)}

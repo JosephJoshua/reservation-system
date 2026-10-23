@@ -328,6 +328,39 @@ describe('invoice queue', () => {
     expect(list.orders[0].state).toBe('issued')
   })
 
+  it('flags a refund that comes after a seen one was rejected', async () => {
+    const h = setup()
+    const { t, orderId } = await paidPackage(h)
+    const admin = await h.admin()
+    const id = (await h.call('POST', '/invoices', { orderId, ...person }, t)).json.id
+    await upload(h, id, admin)
+    const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
+    const flaggedNow = async () =>
+      (await h.call('GET', '/admin/invoices?flagged=1', undefined, admin)).json.length
+    await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    expect(await flaggedNow()).toBe(1)
+    await h.call('POST', `/admin/invoices/${id}/refund-seen`, undefined, admin)
+    const refund = (await h.call('GET', '/admin/refunds', undefined, admin)).json[0]
+    await h.call('POST', `/admin/refunds/${refund.id}/reject`, { note: '不符合' }, admin)
+    expect(await flaggedNow()).toBe(0)
+    await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    expect(await flaggedNow()).toBe(1)
+  })
+
+  it('shows what is left to invoice once an order with a rejected request is refunded', async () => {
+    const h = setup()
+    const { t, orderId } = await paidPackage(h)
+    const admin = await h.admin()
+    const id = (await h.call('POST', '/invoices', { orderId, ...person }, t)).json.id
+    await h.call('POST', `/admin/invoices/${id}/reject`, { reason: '请改用单位抬头' }, admin)
+    const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
+    await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    const refund = (await h.call('GET', '/admin/refunds', undefined, admin)).json[0]
+    await h.call('POST', `/admin/refunds/${refund.id}/approve`, { amount: 180000 }, admin)
+    const order = (await h.call('GET', '/invoices', undefined, t)).json.orders[0]
+    expect(order).toMatchObject({ state: expect.stringMatching(/^refund(ing|ed)$/), amount: 0 })
+  })
+
   it('will not issue for an order that was fully refunded after the request', async () => {
     const h = setup()
     const { lesson } = h.seed()

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "09950493-90c1-413e-9ab8-14e0c6cf7169",
+  "id": "19966f9d-06c4-4b57-904c-1ecb0e9478da",
   "prevId": "66056d1b-007b-4843-9770-fecfbebbe11e",
   "tables": {
     "action_log": {
@@ -1025,8 +1025,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "refunds_seen": {
-          "name": "refunds_seen",
+        "refund_seen_id": {
+          "name": "refund_seen_id",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

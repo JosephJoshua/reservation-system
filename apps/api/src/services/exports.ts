@@ -2,6 +2,7 @@ import {
   invoiceStatusLabels,
   invoiceTitleKindLabels,
   offlineMethodLabels,
+  orderKindLabels,
   venueInstant,
   venueParts,
 } from '@rs/shared'
@@ -20,6 +21,7 @@ import {
   students,
 } from '../db/schema'
 import { ApiError } from '../errors'
+import { flaggedIds } from './invoices'
 import { grantedLessons, packageStatus } from './views'
 
 export const exportKinds = {
@@ -40,6 +42,8 @@ export interface ExportQuery {
   status?: string
   coachId?: number
   q?: string
+  /** Invoices only: those with a refund after them that staff have not marked handled. */
+  flagged?: boolean
 }
 
 type Cell = string | number | null
@@ -57,7 +61,6 @@ const bookingStatusText = {
   expired: '已超时',
 } as const
 const orderStatusText = { pending: '待支付', paid: '已支付', closed: '已关闭' } as const
-const orderKindText = { class: '单次课', trial: '体验课', package: '课时包' } as const
 const refundStatusText = {
   requested: '待审核',
   pending: '退款中',
@@ -360,7 +363,7 @@ function ordersTable(tx: Q, q: ExportQuery): Table {
       venueTime(o.createdAt),
       venueTime(o.paidAt),
       ...person(people.get(o.studentId)),
-      orderKindText[o.kind],
+      orderKindLabels[o.kind],
       o.description,
       yuanCell(o.amount),
       yuanCell(refunded.get(o.id) ?? 0),
@@ -438,8 +441,10 @@ function packagesTable(tx: Q, q: ExportQuery, now: Date): Table {
     .innerJoin(lessonTypes, eq(lessonTypes.id, packages.lessonTypeId))
     .where(and(gte(packages.createdAt, from), lt(packages.createdAt, to)))
     .orderBy(asc(packages.createdAt), asc(packages.id))
-    .limit(MAX_ROWS + 1)
     .all()
+    // The status depends on the time and the lessons left, so it is filtered here, before the
+    // size check: a few refund requests in a busy year still export.
+    .filter(({ p }) => !q.status || packageStatus(p, now) === q.status)
   checkSize(rows.length)
   const people = studentsById(
     tx,
@@ -450,7 +455,6 @@ function packagesTable(tx: Q, q: ExportQuery, now: Date): Table {
   for (let i = 0; i < ids.length; i += 500) {
     for (const [k, v] of grantedLessons(tx, ids.slice(i, i + 500))) granted.set(k, v)
   }
-  const shown = q.status
   return {
     header: [
       '课时包ID',
@@ -466,27 +470,25 @@ function packagesTable(tx: Q, q: ExportQuery, now: Date): Table {
       '实付（元）',
       '状态',
     ],
-    rows: rows
-      .filter(({ p }) => !shown || packageStatus(p, now) === shown)
-      .map(({ p, lesson }) => [
-        p.id,
-        ...person(people.get(p.studentId)),
-        p.name,
-        lesson,
-        venueTime(p.createdAt),
-        venueTime(p.expiresAt),
-        p.lessonsPurchased,
-        granted.get(p.id) ?? 0,
-        p.lessonsRemaining,
-        yuanCell(p.pricePaid),
-        packageStatusText[packageStatus(p, now)],
-      ]),
+    rows: rows.map(({ p, lesson }) => [
+      p.id,
+      ...person(people.get(p.studentId)),
+      p.name,
+      lesson,
+      venueTime(p.createdAt),
+      venueTime(p.expiresAt),
+      p.lessonsPurchased,
+      granted.get(p.id) ?? 0,
+      p.lessonsRemaining,
+      yuanCell(p.pricePaid),
+      packageStatusText[packageStatus(p, now)],
+    ]),
   }
 }
 
 function invoicesTable(tx: Q, q: ExportQuery): Table {
   const { from, to } = range(q)
-  const rows = tx
+  const all = tx
     .select({ i: invoices, o: orders })
     .from(invoices)
     .innerJoin(orders, eq(orders.id, invoices.orderId))
@@ -500,8 +502,12 @@ function invoicesTable(tx: Q, q: ExportQuery): Table {
       ),
     )
     .orderBy(asc(invoices.createdAt), asc(invoices.id))
-    .limit(MAX_ROWS + 1)
     .all()
+  const flagged = flaggedIds(
+    tx,
+    all.map((r) => r.i),
+  )
+  const rows = q.flagged ? all.filter((r) => flagged.has(r.i.id)) : all
   checkSize(rows.length)
   const people = studentsById(
     tx,
@@ -523,6 +529,7 @@ function invoicesTable(tx: Q, q: ExportQuery): Table {
       '邮箱',
       '状态',
       '拒绝原因',
+      '开票后有退款',
     ],
     rows: rows.map(({ i, o }) => [
       i.id,
@@ -538,6 +545,7 @@ function invoicesTable(tx: Q, q: ExportQuery): Table {
       i.email,
       invoiceStatusLabels[i.status],
       i.rejectReason ?? '',
+      flagged.has(i.id) ? '是' : '',
     ]),
   }
 }
@@ -580,5 +588,6 @@ export function describeExport(tx: Q, kind: ExportKind, q: ExportQuery) {
     parts.push(`教练：${coach?.name ?? q.coachId}`)
   }
   if (q.q) parts.push('按搜索词筛选')
+  if (q.flagged) parts.push('开票后有退款')
   return `导出${exportKinds[kind]}（${parts.join('，')}）`
 }

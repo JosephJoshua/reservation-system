@@ -1,9 +1,7 @@
-import type { InvoiceOrderDto, StudentInvoicesDto } from '../../lib/shared'
+import { type InvoiceOrderDto, orderTitle, type StudentInvoicesDto } from '../../lib/shared'
 import { api, errorMessage } from '../../utils/api'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
-
-const KIND = { class: '单次课', trial: '体验课', package: '课时包' } as const
 
 interface OrderView {
   orderId: number
@@ -25,7 +23,7 @@ function view(o: InvoiceOrderDto): OrderView {
   }
   return {
     orderId: o.orderId,
-    title: o.description === KIND[o.kind] ? o.description : `${KIND[o.kind]} · ${o.description}`,
+    title: orderTitle(o.kind, o.description),
     meta: `${fullDate(o.paidAt)}支付 · 可开票 ${yuan(o.amount)}`,
     state: INVOICE_STATE[o.state],
     tone:

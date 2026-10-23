@@ -1,3 +1,18 @@
+export type OrderKind = 'class' | 'trial' | 'package'
+
+export const orderKindLabels: Record<OrderKind, string> = {
+  class: '单次课',
+  trial: '体验课',
+  package: '课时包',
+}
+
+/** What an order was for, as 课时包 · 10 次课. A trial is often named just 体验课, said once. */
+export function orderTitle(kind: OrderKind, description: string): string {
+  return description === orderKindLabels[kind]
+    ? description
+    : `${orderKindLabels[kind]} · ${description}`
+}
+
 /** Whom an invoice is made out to: the student personally, or a company with a tax number. */
 export type InvoiceTitleKind = 'personal' | 'company'
 
@@ -49,7 +64,7 @@ export interface OrderInvoiceDto {
 export interface InvoiceOrderDto extends OrderInvoiceDto {
   /** What was bought, such as the lesson or package name. */
   description: string
-  kind: 'class' | 'trial' | 'package'
+  kind: OrderKind
   paidAt: string
 }
 
@@ -71,7 +86,7 @@ export interface AdminInvoiceDto {
   order: {
     id: number
     description: string
-    kind: 'class' | 'trial' | 'package'
+    kind: OrderKind
     amount: number
     provider: 'wechat' | 'offline'
     paidAt: string | null

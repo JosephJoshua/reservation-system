@@ -33,8 +33,6 @@ export const orderStatusLabel = {
   closed: ['已关闭', 'default'],
 } as const satisfies Record<string, [string, Theme]>
 
-export const orderKindLabel = { class: '单次课', trial: '体验课', package: '课时包' } as const
-
 export { offlineMethodLabels as offlineMethodLabel } from '@rs/shared'
 
 export const ledgerKindLabel = {

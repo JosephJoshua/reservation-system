@@ -394,9 +394,9 @@ export const invoices = sqliteTable(
     pdfFile: text('pdf_file'),
     issuedAt: instant('issued_at'),
     handledByStaffId: integer('handled_by_staff_id').references(() => staff.id),
-    // How many of the order's refunds staff have taken into account: those before the request,
-    // then each one staff marked as handled. A refund beyond this count flags the invoice.
-    refundsSeen: integer('refunds_seen').notNull().default(0),
+    // The newest refund on the order that staff have accounted for: the last one when it was
+    // issued, then the last one when they marked a refund handled. A later refund flags it.
+    refundSeenId: integer('refund_seen_id').notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [
