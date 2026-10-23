@@ -13,6 +13,8 @@ page {
   --td-button-light-bg-color: var(--td-bg-color-container);
   /* TDesign's warning orange is too light for small tag text on its pale fill. */
   --td-tag-warning-color: #a65000;
+  /* Cell values are content, not hints; TDesign's placeholder grey is below 4.5:1. */
+  --td-cell-note-color: var(--td-text-color-secondary);
   background-color: var(--td-bg-color-page);
   color: var(--td-text-color-primary);
   font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
@@ -29,5 +31,11 @@ page {
     --td-text-color-link: var(--td-brand-color-9);
     --td-tag-primary-color: var(--td-brand-color-9);
     --td-tag-warning-color: var(--rs-hint-color);
+    /* Brand text on dark cards (light and outline buttons, active tabs) takes the lighter step;
+       the progress bar is a non-text mark and needs 3:1. */
+    --td-button-light-color: var(--td-brand-color-9);
+    --td-button-primary-outline-color: var(--td-brand-color-9);
+    --td-tab-item-active-color: var(--td-brand-color-9);
+    --td-progress-inner-bg-color: var(--td-brand-color-8);
   }
 }

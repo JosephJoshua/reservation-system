@@ -12,7 +12,7 @@
 }
 
 .tone-brand {
-  color: var(--td-brand-color);
+  color: var(--td-text-color-brand);
 }
 
 .tone-hint {
