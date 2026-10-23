@@ -4,7 +4,7 @@ import {
   type CancelledBy,
   cancellationOutcome,
 } from '@rs/shared'
-import { and, asc, eq, gt, inArray, lt, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -18,9 +18,9 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { PaymentParams } from '../pay/gateway'
-import { priceFor, visibleTo } from './catalog'
+import { priceFor, trialsUsed, visibleTo } from './catalog'
 import { newOutTradeNo } from './ids'
-import { closeOrder, startPayment } from './orders'
+import { closeOrder, startPaymentOrRelease } from './orders'
 import { createRefund, submitRefund } from './refunds'
 import { getSettings } from './settings'
 
@@ -153,22 +153,7 @@ export async function createBooking(
 
     if (lessonType.isTrial) {
       if (!settings.payment.trialEnabled) throw new ApiError(409, 'trial_off', '暂不提供体验课')
-      const used = tx
-        .select({ n: sql<number>`count(*)` })
-        .from(bookings)
-        .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
-        .where(
-          and(
-            eq(bookings.studentId, studentId),
-            eq(lessonTypes.isTrial, true),
-            or(
-              inArray(bookings.status, LIVE),
-              and(eq(bookings.status, 'cancelled'), eq(bookings.late, true)),
-            ),
-          ),
-        )
-        .get()
-      if ((used?.n ?? 0) >= settings.payment.trialLimitPerStudent) {
+      if (trialsUsed(tx, studentId) >= settings.payment.trialLimitPerStudent) {
         throw new ApiError(409, 'trial_used', '体验课次数已用完')
       }
     }
@@ -275,19 +260,7 @@ export async function createBooking(
   })
 
   if (created.orderId === null) return { ...created, payment: null }
-  const openid = deps.db
-    .select({ openid: students.openid })
-    .from(students)
-    .where(eq(students.id, studentId))
-    .get()
-  try {
-    const payment = await startPayment(deps, created.orderId, openid?.openid ?? '')
-    return { ...created, payment }
-  } catch (e) {
-    // Release the slot at once rather than holding it for the whole timeout.
-    await closeOrder(deps, created.orderId).catch(() => {})
-    throw e
-  }
+  return { ...created, payment: await startPaymentOrRelease(deps, created.orderId, studentId) }
 }
 
 /**
@@ -318,23 +291,30 @@ export async function cancelBooking(
   const refundIds = immediate(deps.db, (tx) => {
     const booking = tx.select().from(bookings).where(eq(bookings.id, bookingId)).get()
     if (!booking) throw notFound('预约')
+    // The payment that landed could not confirm the booking (the slot was gone), so it is
+    // already being refunded in full and there is nothing left to cancel.
+    if (paidWhileCancelling && booking.status === 'expired') return []
     if (booking.status !== 'confirmed') throw new ApiError(409, 'not_cancellable', '该预约已取消')
     const order =
       booking.paidWith === 'order'
         ? tx.select().from(orders).where(eq(orders.bookingId, booking.id)).get()
         : undefined
     const amountPaid = order?.status === 'paid' ? order.amount : 0
-    const outcome = paidWhileCancelling
-      ? { late: false, refund: amountPaid, returnLesson: false }
-      : cancellationOutcome({
-          startsAt: booking.startsAt,
-          endsAt: booking.endsAt,
-          now,
-          cancelledBy: by,
-          paidWith: booking.paidWith,
-          amountPaid,
-          rules: getSettings(tx).booking,
-        })
+    const rules = cancellationOutcome({
+      startsAt: booking.startsAt,
+      endsAt: booking.endsAt,
+      now,
+      cancelledBy: by,
+      paidWith: booking.paidWith,
+      amountPaid,
+      rules: getSettings(tx).booking,
+    })
+    // A payment that landed during the cancel is refunded in full, since the student was told
+    // cancelling costs nothing, but only while the lesson can still be cancelled at all.
+    const outcome =
+      paidWhileCancelling && typeof rules !== 'string'
+        ? { late: false, refund: amountPaid, returnLesson: false }
+        : rules
     if (outcome === 'started') throw new ApiError(409, 'started', '课程已开始，无法取消')
     if (outcome === 'ended') throw new ApiError(409, 'ended', '课程已结束，无法取消')
     // The student agreed to a free cancel, but the deadline passed (or their clock is off).

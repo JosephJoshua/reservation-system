@@ -34,7 +34,6 @@ export function createRefund(
     reason: string
     bookingId?: number
     packageId?: number
-    status?: 'pending' | 'requested'
   },
 ): number {
   const order = tx.select().from(orders).where(eq(orders.id, input.orderId)).get()
@@ -42,7 +41,7 @@ export function createRefund(
   if (input.amount <= 0 || input.amount > order.amount - refundedSoFar(tx, order.id)) {
     throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
   }
-  const status = input.status ?? (order.provider === 'offline' ? 'succeeded' : 'pending')
+  const status = order.provider === 'offline' ? 'succeeded' : 'pending'
   const row = tx
     .insert(refunds)
     .values({
@@ -132,12 +131,16 @@ export async function sweepRefunds(deps: Deps) {
   }
 }
 
-/** Puts a failed refund back in the queue and sends it. */
+/**
+ * Puts a failed refund back in the queue and sends it. It gets a new refund number: WeChat Pay
+ * answers a repeated number with the old, failed refund.
+ */
 export async function retryRefund(deps: Deps, refundId: number) {
+  const now = deps.now()
   const changed = immediate(deps.db, (tx) =>
     tx
       .update(refunds)
-      .set({ status: 'pending', failure: null, updatedAt: deps.now() })
+      .set({ status: 'pending', failure: null, outRefundNo: newOutRefundNo(now), updatedAt: now })
       .where(and(eq(refunds.id, refundId), eq(refunds.status, 'failed')))
       .run(),
   )

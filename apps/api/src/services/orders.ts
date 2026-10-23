@@ -1,11 +1,22 @@
 import { type CancelledBy, validityEnd } from '@rs/shared'
 import { and, eq, gt, inArray, isNotNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
-import { bookings, orders, packageLedger, packageProducts, packages, slots } from '../db/schema'
+import {
+  bookings,
+  lessonTypes,
+  orders,
+  packageLedger,
+  packageProducts,
+  packages,
+  slots,
+  students,
+} from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { OrderState, PaymentParams } from '../pay/gateway'
+import { trialsUsed } from './catalog'
 import { createRefund, submitRefund } from './refunds'
+import { getSettings } from './settings'
 
 // Local expiry waits this long past WeChat's time_expire, so a payment made in the last second
 // has time to arrive before the slot is released.
@@ -42,6 +53,30 @@ export async function startPayment(
 }
 
 /**
+ * Starts payment for an order just created for the student. If that fails, the order is closed at
+ * once so a booking's slot is not held for the whole timeout.
+ */
+export async function startPaymentOrRelease(
+  deps: Deps,
+  orderId: number,
+  studentId: number,
+): Promise<PaymentParams> {
+  const student = deps.db
+    .select({ openid: students.openid })
+    .from(students)
+    .where(eq(students.id, studentId))
+    .get()
+  try {
+    return await startPayment(deps, orderId, student?.openid ?? '')
+  } catch (e) {
+    await closeOrder(deps, orderId).catch((closeError) =>
+      deps.log('release order failed', { orderId, error: (closeError as Error).message }),
+    )
+    throw e
+  }
+}
+
+/**
  * Records a successful payment. Idempotent: callbacks, queries and the sweeper may all report the
  * same payment. If the booking's slot was released meanwhile and someone else took it, the
  * payment is refunded in full.
@@ -57,7 +92,7 @@ export function applyPayment(
     if (order.status === 'paid') return []
     // WeChat Pay charges the amount the order was created with, so a difference means something is
     // badly wrong. Refuse to confirm anything; the callback fails and the order needs a person.
-    if (paid.amount && paid.amount !== order.amount) {
+    if (paid.amount !== order.amount) {
       deps.log('paid amount differs from order', {
         outTradeNo,
         paid: paid.amount,
@@ -110,13 +145,23 @@ export function applyPayment(
 
 /**
  * Whether a booking whose hold ran out can still be confirmed by a late payment: the lesson is
- * ahead, the slot still takes bookings and the student has not booked that time since. Whether
- * someone else took the slot is left to the unique index.
+ * ahead, the slot still takes bookings, a trial is still within the student's limit and the
+ * student has not booked that time since. Whether someone else took the slot is left to the
+ * unique index.
  */
 function revivable(tx: Q, booking: typeof bookings.$inferSelect, now: Date) {
   if (booking.startsAt <= now) return false
   const slot = tx.select({ open: slots.open }).from(slots).where(eq(slots.id, booking.slotId)).get()
   if (!slot?.open) return false
+  const lessonType = tx
+    .select({ isTrial: lessonTypes.isTrial })
+    .from(lessonTypes)
+    .where(eq(lessonTypes.id, booking.lessonTypeId))
+    .get()
+  if (lessonType?.isTrial) {
+    const { trialEnabled, trialLimitPerStudent } = getSettings(tx).payment
+    if (!trialEnabled || trialsUsed(tx, booking.studentId) >= trialLimitPerStudent) return false
+  }
   const clash = tx
     .select({ id: bookings.id })
     .from(bookings)
@@ -196,12 +241,8 @@ export async function closeOrder(
   if (!order) throw notFound('订单')
   if (order.status === 'paid') return 'paid'
   if (order.status === 'pending' && order.prepayId) {
-    if ((await deps.gateway.closeOrder(order.outTradeNo)) === 'paid') {
-      const state = await deps.gateway.queryOrder(order.outTradeNo)
-      // Report 'paid' only once the payment is recorded, so callers see the booking confirmed.
-      if (state.state !== 'paid') {
-        throw new ApiError(409, 'payment_processing', '支付结果确认中，请稍后再试')
-      }
+    const state = await deps.gateway.closeOrder(order.outTradeNo)
+    if (state.state === 'paid') {
       applyPayment(deps, order.outTradeNo, state)
       return 'paid'
     }
@@ -257,10 +298,4 @@ export async function expireOrders(deps: Deps) {
       deps.log('expire order failed', { orderId: id, error: (e as Error).message })
     }
   }
-}
-
-/** Order ids for bookings, used by listings. */
-export function ordersForBookings(tx: Q, bookingIds: number[]) {
-  if (bookingIds.length === 0) return []
-  return tx.select().from(orders).where(inArray(orders.bookingId, bookingIds)).all()
 }

@@ -168,7 +168,7 @@ describe('WechatPayGateway', () => {
       status: 200,
       body: { trade_state: 'SUCCESS', transaction_id: 'T' },
     }))
-    expect(await gateway.closeOrder('RS1')).toBe('paid')
+    expect((await gateway.closeOrder('RS1')).state).toBe('paid')
     expect(seen.some((r) => r.path.endsWith('/close'))).toBe(false)
   })
 
@@ -178,7 +178,7 @@ describe('WechatPayGateway', () => {
         ? { status: 204 }
         : { status: 200, body: { trade_state: 'NOTPAY' } },
     )
-    expect(await gateway.closeOrder('RS1')).toBe('closed')
+    expect((await gateway.closeOrder('RS1')).state).toBe('closed')
     expect(JSON.parse(seen.at(-1)?.body ?? '')).toEqual({ mchid: '1900000001' })
   })
 

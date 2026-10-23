@@ -15,7 +15,7 @@ import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import type { PaymentParams } from '../pay/gateway'
 import { newOutRefundNo, newOutTradeNo } from './ids'
-import { closeOrder, createPackageFromOrder, startPayment } from './orders'
+import { createPackageFromOrder, startPaymentOrRelease } from './orders'
 import { refundedSoFar, submitRefund } from './refunds'
 import { getSettings } from './settings'
 import { grantedLessons } from './views'
@@ -66,17 +66,7 @@ export async function purchasePackage(
       .returning({ id: orders.id })
       .get().id
   })
-  const student = deps.db
-    .select({ openid: students.openid })
-    .from(students)
-    .where(eq(students.id, studentId))
-    .get()
-  try {
-    return { orderId, payment: await startPayment(deps, orderId, student?.openid ?? '') }
-  } catch (e) {
-    await closeOrder(deps, orderId).catch(() => {})
-    throw e
-  }
+  return { orderId, payment: await startPaymentOrRelease(deps, orderId, studentId) }
 }
 
 /** Per-class price used to value lessons already taken from a package. */
@@ -106,7 +96,8 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
         and(
           eq(bookings.packageId, pkg.id),
           eq(bookings.status, 'confirmed'),
-          gt(bookings.startsAt, now),
+          // A lesson in progress still counts: the venue may yet cancel it and return the lesson.
+          gt(bookings.endsAt, now),
         ),
       )
       .get()

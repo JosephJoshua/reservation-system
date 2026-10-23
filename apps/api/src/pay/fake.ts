@@ -69,10 +69,10 @@ export class FakeGateway implements PaymentGateway {
 
   async closeOrder(outTradeNo: string) {
     const order = this.orders.get(outTradeNo)
-    if (!order) return 'closed' as const
-    if (order.state.state === 'paid') return 'paid' as const
+    if (!order) return { state: 'closed' as const }
+    if (order.state.state === 'paid') return order.state
     order.state = { state: 'closed' }
-    return 'closed' as const
+    return order.state
   }
 
   async refund(input: RefundInput): Promise<RefundState> {

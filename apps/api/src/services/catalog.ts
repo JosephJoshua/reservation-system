@@ -1,7 +1,7 @@
 import { lessonPrice, type PriceTag } from '@rs/shared'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, or, sql } from 'drizzle-orm'
 import type { Q } from '../db/client'
-import { coaches, coachLessonTypes, type lessonTypes } from '../db/schema'
+import { bookings, coaches, coachLessonTypes, lessonTypes } from '../db/schema'
 
 export type LessonType = typeof lessonTypes.$inferSelect
 
@@ -41,4 +41,24 @@ export function linkPrice(lessonType: LessonType, coachPrice: number | null, now
 /** Whether a student may see and book a lesson type. */
 export function visibleTo(lessonType: LessonType, student: { tester: boolean }) {
   return lessonType.active && (!lessonType.adminOnly || student.tester)
+}
+
+/** Trial lessons that count against a student's limit: live ones and late-cancelled ones. */
+export function trialsUsed(tx: Q, studentId: number): number {
+  const row = tx
+    .select({ n: sql<number>`count(*)` })
+    .from(bookings)
+    .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(lessonTypes.isTrial, true),
+        or(
+          inArray(bookings.status, ['pending_payment', 'confirmed']),
+          and(eq(bookings.status, 'cancelled'), eq(bookings.late, true)),
+        ),
+      ),
+    )
+    .get()
+  return row?.n ?? 0
 }

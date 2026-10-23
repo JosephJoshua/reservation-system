@@ -387,27 +387,27 @@ describe('trial lessons', () => {
   })
 })
 
-describe('packages', () => {
-  async function withPackage(h: Harness, lessonCount = 10) {
-    const { coach, lesson } = h.seed()
-    const product = h.db
-      .insert(packageProducts)
-      .values({
-        name: '10 次课',
-        lessonTypeId: lesson.id,
-        lessonCount,
-        price: 180000,
-        validityDays: 90,
-      })
-      .returning()
-      .get()
-    const t = await h.student('a')
-    const res = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
-    expect(res.status).toBe(201)
-    await pay(h, res.json.orderId)
-    return { coach, lesson, product, t }
-  }
+async function withPackage(h: Harness, lessonCount = 10) {
+  const { coach, lesson } = h.seed()
+  const product = h.db
+    .insert(packageProducts)
+    .values({
+      name: '10 次课',
+      lessonTypeId: lesson.id,
+      lessonCount,
+      price: 180000,
+      validityDays: 90,
+    })
+    .returning()
+    .get()
+  const t = await h.student('a')
+  const res = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+  expect(res.status).toBe(201)
+  await pay(h, res.json.orderId)
+  return { coach, lesson, product, t }
+}
 
+describe('packages', () => {
   it('creates the package once paid and uses it for bookings', async () => {
     const h = setup()
     const { coach, lesson, t } = await withPackage(h)
@@ -998,15 +998,115 @@ describe('review round 2', () => {
     expect(fourth.json.error.code).toBe('too_many_unpaid')
   })
 
-  it('reports a cancel as pending when WeChat says paid but the payment is not visible yet', async () => {
+  it('refuses a student cancel once the lesson started, even if the payment only lands then', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const slot = h.slot(coach.id)
+    const res = await book(h, t, slot.id, lesson.id)
+    const order = await orderOf(h, res.json.orderId)
+    h.gateway.pay(order.outTradeNo, h.deps.now()) // paid in time, callback lost
+    h.clock.now = new Date(slot.startsAt.getTime() + 60_000)
+    const cancel = await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
+    expect(cancel.json.error.code).toBe('started')
+    expect(h.db.select().from(bookings).get()?.status).toBe('confirmed')
+    expect(h.db.select().from(refunds).all()).toHaveLength(0)
+  })
+
+  it('reports a cancel as done when the late payment was refunded because the slot was gone', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const slot = h.slot(coach.id)
+    const a = await h.student('a')
+    const b = await h.student('b')
+    const res = await book(h, a, slot.id, lesson.id)
+    const order = await orderOf(h, res.json.orderId)
+    // While the cancel waits on WeChat, the hold expires, b takes the slot and a's payment lands.
+    h.gateway.closeOrder = async (outTradeNo) => {
+      h.db
+        .update(bookings)
+        .set({ status: 'expired' })
+        .where(eq(bookings.id, res.json.bookingId))
+        .run()
+      expect((await book(h, b, slot.id, lesson.id)).status).toBe(201)
+      const state = h.gateway.pay(outTradeNo, h.deps.now()).order
+      if (state.state !== 'paid') throw new Error('not paid')
+      return state
+    }
+    const cancel = await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, a)
+    expect(cancel.json).toMatchObject({ status: 'expired', refund: { amount: 20000 } })
+    expect(h.db.select().from(refunds).get()).toMatchObject({ orderId: order.id, amount: 20000 })
+  })
+
+  it('refuses a package refund while a lesson from it is in progress', async () => {
+    const h = setup()
+    const { coach, lesson, t } = await withPackage(h)
+    const slot = h.slot(coach.id, '2026-10-25', 10)
+    await book(h, t, slot.id, lesson.id)
+    h.clock.now = new Date(slot.startsAt.getTime() + 30 * 60_000)
+    const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
+    const res = await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    expect(res.json.error.code).toBe('package_in_use')
+  })
+
+  it('keeps a revived trial within the trial limit', async () => {
+    const h = setup()
+    const { coach, trial } = h.seed()
+    const t = await h.student('a')
+    const first = await book(h, t, h.slot(coach.id, '2026-10-25', 10).id, trial.id)
+    const order = await orderOf(h, first.json.orderId)
+    h.clock.now = new Date(h.clock.now.getTime() + 13 * 60_000)
+    await sweep(h.deps)
+    const second = await book(h, t, h.slot(coach.id, '2026-10-26', 10).id, trial.id)
+    await pay(h, second.json.orderId)
+    const { applyPayment } = await import('./services/orders')
+    applyPayment(h.deps, order.outTradeNo, {
+      state: 'paid',
+      transactionId: 'late',
+      paidAt: h.deps.now(),
+      amount: order.amount,
+    })
+    const first2 = h.db.select().from(bookings).where(eq(bookings.id, first.json.bookingId)).get()
+    expect(first2?.status).toBe('expired')
+    expect(h.db.select().from(refunds).get()).toMatchObject({ orderId: order.id, amount: 5000 })
+  })
+
+  it('confirms nothing when the payment reports no amount', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const t = await h.student('a')
     const res = await book(h, t, h.slot(coach.id).id, lesson.id)
-    h.gateway.closeOrder = async () => 'paid'
-    const cancel = await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
-    expect(cancel.json.error.code).toBe('payment_processing')
+    const order = await orderOf(h, res.json.orderId)
+    const { applyPayment } = await import('./services/orders')
+    expect(() =>
+      applyPayment(h.deps, order.outTradeNo, {
+        state: 'paid',
+        transactionId: 't1',
+        paidAt: h.deps.now(),
+        amount: 0,
+      }),
+    ).toThrow()
     expect(h.db.select().from(bookings).get()?.status).toBe('pending_payment')
+  })
+
+  it('retries a failed refund under a new refund number', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    await pay(h, res.json.orderId)
+    h.gateway.refundMode = 'fail'
+    await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
+    const failed = h.db.select().from(refunds).get()
+    expect(failed?.status).toBe('failed')
+    h.gateway.refundMode = 'succeeded'
+    const admin = await h.admin()
+    expect(
+      (await h.call('POST', `/admin/refunds/${failed?.id}/retry`, undefined, admin)).status,
+    ).toBe(204)
+    const retried = h.db.select().from(refunds).get()
+    expect(retried?.status).toBe('succeeded')
+    expect(retried?.outRefundNo).not.toBe(failed?.outRefundNo)
   })
 
   it('keeps retrying a refund WeChat rate limited', async () => {

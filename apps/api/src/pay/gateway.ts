@@ -53,8 +53,8 @@ export interface PaymentGateway {
   /** Signs the parameters for wx.requestPayment from a prepay id. */
   paymentParams(prepayId: string): PaymentParams
   queryOrder(outTradeNo: string): Promise<OrderState>
-  /** Closes an unpaid order. Resolves 'paid' instead when the order was paid meanwhile. */
-  closeOrder(outTradeNo: string): Promise<'closed' | 'paid'>
+  /** Closes an unpaid order. Resolves with the payment instead when it was paid meanwhile. */
+  closeOrder(outTradeNo: string): Promise<Exclude<OrderState, { state: 'pending' }>>
   refund(input: RefundInput): Promise<RefundState>
   queryRefund(outRefundNo: string): Promise<RefundState>
   /** Verifies and decrypts a payment callback. Throws on a bad signature. */

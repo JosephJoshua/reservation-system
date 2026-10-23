@@ -98,18 +98,18 @@ export class WechatPayGateway implements PaymentGateway {
 
   async closeOrder(outTradeNo: string) {
     const before = await this.queryOrder(outTradeNo)
-    if (before.state === 'paid') return 'paid' as const
-    if (before.state === 'closed') return 'closed' as const
+    if (before.state !== 'pending') return before
     try {
       await this.request(
         'POST',
         `/v3/pay/transactions/out-trade-no/${encodeURIComponent(outTradeNo)}/close`,
         { mchid: this.config.mchId },
       )
-      return 'closed' as const
+      return { state: 'closed' as const }
     } catch (e) {
       // Paid between the query and the close.
-      if ((await this.queryOrder(outTradeNo)).state === 'paid') return 'paid' as const
+      const after = await this.queryOrder(outTradeNo)
+      if (after.state === 'paid') return after
       throw e
     }
   }
