@@ -68,11 +68,19 @@ export function listActions(
   const people = new Map(
     ids.length
       ? tx
-          .select({ id: students.id, name: students.name, phone: students.phone })
+          .select({
+            id: students.id,
+            name: students.name,
+            phone: students.phone,
+            deletedAt: students.deletedAt,
+          })
           .from(students)
           .where(inArray(students.id, ids))
           .all()
-          .map((s) => [s.id, s])
+          .map(({ deletedAt, ...s }) => [
+            s.id,
+            deletedAt ? { ...s, name: '已注销学员', phone: '' } : s,
+          ])
       : [],
   )
   return rows.map(({ entry, staff }) => ({

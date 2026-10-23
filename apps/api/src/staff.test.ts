@@ -349,24 +349,40 @@ describe('action log', () => {
       },
       admin,
     )
+    const category = await h.call(
+      'POST',
+      '/admin/coach-categories',
+      { name: '高级', prices: [{ lessonTypeId: lesson.id, price: 25000 }] },
+      admin,
+    )
+    const coachBody = { name: coach.name, lessonTypeIds: [lesson.id, trial.id] }
     await h.call(
       'PUT',
       `/admin/coaches/${coach.id}`,
-      {
-        name: coach.name,
-        lessons: [
-          { lessonTypeId: lesson.id, price: 25000 },
-          { lessonTypeId: trial.id, price: null },
-        ],
-      },
+      { ...coachBody, categoryId: category.json.id },
       admin,
     )
-    await h.call('PUT', `/admin/coaches/${coach.id}`, { name: '王教练改名', lessons: [] }, admin)
+    // Same category, other fields: no price entry.
+    await h.call(
+      'PUT',
+      `/admin/coaches/${coach.id}`,
+      { ...coachBody, categoryId: category.json.id, title: '国家一级' },
+      admin,
+    )
+    await h.call(
+      'PUT',
+      `/admin/coach-categories/${category.json.id}`,
+      { name: '高级', prices: [{ lessonTypeId: trial.id, price: 5000 }] },
+      admin,
+    )
+    await h.call('PUT', `/admin/coaches/${coach.id}`, { ...coachBody, categoryId: null }, admin)
     const summaries = log(h).map((e) => [e.action, e.summary])
     expect(summaries).toEqual([
       ['price.lesson_type', '一对一私教：¥200 改为 ¥220，90%（11月1日 00:00 至 11月8日 00:00）'],
-      ['price.coach', '王教练：一对一私教 按课程标价 改为 ¥250'],
-      ['price.coach', '王教练改名：不再教 一对一私教；不再教 体验课'],
+      ['price.coach', '类别「高级」：一对一私教 ¥250'],
+      ['price.coach', '王教练：无类别 改为 类别「高级」'],
+      ['price.coach', '类别「高级」：一对一私教 改为按课程标价；体验课 ¥50'],
+      ['price.coach', '王教练：类别「高级」 改为 无类别'],
     ])
   })
 
@@ -678,6 +694,37 @@ describe('front-desk booking', () => {
     expect((await book(far.id)).status).toBe(201)
     expect((await book(soon.id)).status).toBe(201)
     expect((await book(past.id)).json.error.code).toBe('started')
+  })
+
+  it('refuses a student who deleted their account, and keeps their name out of the log', async () => {
+    const h = setup()
+    const { lesson, admin, student, slot } = await ready(h)
+    const target = { studentId: 1, slotId: slot.id, lessonTypeId: lesson.id }
+    const first = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...target, payWith: 'offline', amount: 0 },
+      admin,
+    )
+    expect(first.status).toBe(201)
+    await h.call(
+      'POST',
+      `/admin/bookings/${first.json.bookingId}/cancel`,
+      { reason: '改期' },
+      admin,
+    )
+    expect((await h.call('DELETE', '/me', undefined, student)).status).toBe(204)
+    const quote = await h.call('POST', '/admin/bookings/quote', target, admin)
+    expect(quote.json.error.code).toBe('account_deleted')
+    const res = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...target, payWith: 'offline', amount: 0 },
+      admin,
+    )
+    expect(res.json.error.code).toBe('account_deleted')
+    const entries = (await h.call('GET', '/admin/actions', undefined, admin)).json
+    expect(entries[0].student).toEqual({ id: 1, name: '已注销学员', phone: '' })
   })
 
   it('refuses closed, taken and clashing slots, wrong durations and missing packages', async () => {

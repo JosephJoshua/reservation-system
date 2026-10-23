@@ -12,6 +12,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
+import { accountDeleted } from './account'
 import { describeBooking, logAction, yuan } from './action-log'
 import { checkBookable, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
@@ -39,6 +40,7 @@ function check(
 ) {
   const student = tx.select().from(students).where(eq(students.id, input.studentId)).get()
   if (!student) throw notFound('学员')
+  if (student.deletedAt) throw accountDeleted()
   const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
   if (!slot) throw notFound('时段')
   if (slot.startsAt <= now) throw new ApiError(409, 'started', '该时段已开始')

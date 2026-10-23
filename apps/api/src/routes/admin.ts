@@ -31,8 +31,8 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
-import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
 import { accountDeleted } from '../services/account'
+import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
 import {
   type AdminVars,
   bearer,
@@ -415,10 +415,15 @@ export function adminRoutes(deps: Deps) {
     return coachId
   }
 
-  const categoryName = (id: number | null) =>
-    id === null
-      ? '无类别'
-      : `「${db.select({ name: coachCategories.name }).from(coachCategories).where(eq(coachCategories.id, id)).get()?.name ?? `#${id}`}」`
+  const categoryName = (id: number | null) => {
+    if (id === null) return '无类别'
+    const row = db
+      .select({ name: coachCategories.name })
+      .from(coachCategories)
+      .where(eq(coachCategories.id, id))
+      .get()
+    return `类别「${row?.name ?? `#${id}`}」`
+  }
 
   /** Logs a coach's category change, since the category sets the coach's prices. */
   const logCoachCategory = (
@@ -432,8 +437,8 @@ export function adminRoutes(deps: Deps) {
       action: 'price.coach',
       summary:
         before === undefined
-          ? `新增教练 ${coach.name}，类别${categoryName(coach.categoryId)}`
-          : `${coach.name}：类别${categoryName(before)}改为${categoryName(coach.categoryId)}`,
+          ? `新增教练 ${coach.name}，${categoryName(coach.categoryId)}`
+          : `${coach.name}：${categoryName(before)} 改为 ${categoryName(coach.categoryId)}`,
       target: { kind: 'coach', id: coach.id },
     })
   }

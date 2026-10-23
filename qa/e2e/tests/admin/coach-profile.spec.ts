@@ -48,6 +48,7 @@ let coachId = 0
 test('creates a category with its own price for a lesson', async ({ page, request }) => {
   const admin = (
     await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
       password: ADMIN_PASSWORD,
     })
   ).token

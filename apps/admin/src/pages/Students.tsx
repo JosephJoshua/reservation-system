@@ -260,9 +260,11 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             title="预约记录"
             bordered
             actions={
-              <Button size="small" onClick={() => setBooking(true)}>
-                代约
-              </Button>
+              s.deletedAt ? null : (
+                <Button size="small" onClick={() => setBooking(true)}>
+                  代约
+                </Button>
+              )
             }
           >
             <DataTable

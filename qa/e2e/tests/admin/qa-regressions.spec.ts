@@ -129,6 +129,8 @@ test('back closes a student opened from the list', async ({ page }) => {
   await page.goto('./#/students')
   await page.getByPlaceholder('姓名或手机号').fill(studentName)
   await page.getByRole('button', { name: '搜索' }).click()
+  // The full list may still be showing until the search answers.
+  await expect(page.getByRole('button', { name: '查看' })).toHaveCount(1)
   await page.getByRole('button', { name: '查看' }).click()
   await expect(page).toHaveURL(new RegExp(`#/students\\?id=${studentId}$`))
   await expect(page.locator('.t-drawer')).toContainText(studentName)

@@ -31,11 +31,14 @@ function StudentPicker({
     const timer = setTimeout(() => setQ(typed), 300)
     return () => clearTimeout(timer)
   }, [typed])
-  const found = useApi<Person[]>(`/admin/students?q=${encodeURIComponent(q)}`)
+  const found = useApi<(Person & { deletedAt: string | null })[]>(
+    `/admin/students?q=${encodeURIComponent(q)}`,
+  )
   const label = (p: Person) => `${p.name || '未填写姓名'} ${p.phone}`.trim()
   const options = [
     ...(value ? [value] : []),
-    ...(found.data ?? []).filter((p) => p.id !== value?.id),
+    // A student who deleted their account cannot be booked for.
+    ...(found.data ?? []).filter((p) => p.id !== value?.id && !p.deletedAt),
   ]
   return (
     <Select
@@ -168,7 +171,7 @@ export function BookForStudent({
   const fitting = useMemo(() => {
     if (!slot || !coach) return []
     const minutes = (Date.parse(slot.endsAt) - Date.parse(slot.startsAt)) / 60_000
-    const taught = new Set(coach.lessons.map((l) => l.lessonTypeId))
+    const taught = new Set(coach.lessonTypeIds)
     // Regular lessons first: the desk books those far more often than trials.
     return (types.data ?? [])
       .filter((t) => t.active && taught.has(t.id) && t.durationMinutes === minutes)

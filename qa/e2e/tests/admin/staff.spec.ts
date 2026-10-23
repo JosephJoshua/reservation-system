@@ -34,7 +34,7 @@ test('sets up a coach with a free slot and a named student', async ({ request })
   coachId = (
     await call<{ id: number }>(request, 'POST', '/admin/coaches', admin, {
       name: coachName,
-      lessons: [{ lessonTypeId, price: null }],
+      lessonTypeIds: [lessonTypeId],
     })
   ).id
   await call(request, 'POST', '/admin/slots', admin, {
