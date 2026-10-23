@@ -232,6 +232,8 @@ test("adds a whole category's coaches to a package", async ({ page }) => {
   const d = dialog(page)
   await field(d, '课程').locator('.t-select').click()
   await page.locator('.t-select-option').filter({ hasText: lessonName }).click()
+  // The option list fades out over the quick-pick buttons; a click during the fade lands on it.
+  await expect(page.locator('.t-select-option:visible')).toHaveCount(0)
   await field(d, '适用教练')
     .getByRole('button', { name: `添加全部${categoryName}` })
     .click()
