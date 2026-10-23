@@ -263,6 +263,8 @@ try {
       (d) => (d.lesson as { attendance: string | null }).attendance === 'attended',
     )
     await screenshot('lesson-attended')
+    // A second tap on the same mark within a second counts as a double tap and is ignored.
+    await sleep(1100)
     await invoke('mark', { currentTarget: { dataset: { value: 'attended' } } })
     await waitForPage(
       'coach/lesson/index',
@@ -274,12 +276,11 @@ try {
       (d) => (d.lesson as { attendance: string | null }).attendance === 'no_show',
     )
     await miniProgram.navigateBack()
-    const back = await waitForPage('coach/index/index', (d) => d.state === 'ready')
-    await sleep(800)
-    const rows = (await back.data('slots')) as { bookingId: number; tag: string }[]
-    check(
-      rows.find((s) => s.bookingId === past)?.tag === '缺席',
-      'list should show 缺席 after going back',
+    // The list reloads on show; waitForPage fails with a timeout if 缺席 never appears.
+    await waitForPage('coach/index/index', (d) =>
+      (d.slots as { bookingId: number; tag: string }[]).some(
+        (s) => s.bookingId === past && s.tag === '缺席',
+      ),
     )
   })
 
@@ -292,7 +293,9 @@ try {
       '.day',
       days.findIndex((d) => d.key === target),
     )
-    await sleep(300)
+    await waitForPage('coach/index/index', (d) =>
+      (d.slots as { bookingId: number }[]).some((s) => s.bookingId === future),
+    )
     await screenshot('schedule-future-day')
     const slots = (await home.data('slots')) as { bookingId: number }[]
     await tap(
