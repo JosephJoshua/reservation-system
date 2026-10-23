@@ -1,0 +1,238 @@
+import { join } from 'node:path'
+import { expect, type Page, test } from '@playwright/test'
+import type { CatalogDto, CreateBookingResponse, SlotDto } from '@rs/shared'
+import { ADMIN_PASSWORD, call, dialog, field, login, student } from './helpers'
+
+// Bugs found by exploratory QA of the admin app, each kept as a regression test.
+test.describe.configure({ mode: 'serial' })
+
+const run = Date.now().toString(36)
+const lessonName = `回归课${run}`
+const coachName = `回归教练${run}`
+const productName = `回归卡${run}`
+const studentName = `回归${run}`
+const shots = join(import.meta.dirname, '../../test-results/qa-shots')
+const PNG_1X1 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+const venueDate = (days: number) =>
+  new Date(Date.now() + days * 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10)
+
+let admin = ''
+let studentToken = ''
+let studentId = 0
+let coachId = 0
+let lessonTypeId = 0
+
+/** Counts requests matching `part` while `fn` runs, plus a short tail for late ones. */
+async function countRequests(page: Page, part: string, fn: () => Promise<void>) {
+  let n = 0
+  const onRequest = (r: { url(): string; method(): string }) => {
+    if (r.method() !== 'GET' && r.url().includes(part)) n++
+  }
+  page.on('request', onRequest)
+  await fn()
+  await page.waitForTimeout(500)
+  page.off('request', onRequest)
+  return n
+}
+
+test('sets up a lesson, coach, package on sale and a student', async ({ request }) => {
+  admin = (
+    await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      password: ADMIN_PASSWORD,
+    })
+  ).token
+  lessonTypeId = (
+    await call<{ id: number }>(request, 'POST', '/admin/lesson-types', admin, {
+      name: lessonName,
+      durationMinutes: 60,
+      price: 20000,
+    })
+  ).id
+  coachId = (
+    await call<{ id: number }>(request, 'POST', '/admin/coaches', admin, {
+      name: coachName,
+      lessons: [{ lessonTypeId, price: null }],
+    })
+  ).id
+  await call(request, 'POST', '/admin/package-products', admin, {
+    name: productName,
+    lessonTypeId,
+    lessonCount: 10,
+    price: 280000,
+    validityDays: 180,
+    salePrice: 250000,
+    saleStartsAt: new Date(Date.now() - 3_600_000).toISOString(),
+    saleEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+  })
+  studentToken = await student(request, `qa-${run}`)
+  const me = await call<{ id: number }>(request, 'PUT', '/me', studentToken, {
+    name: studentName,
+    phone: '13900000009',
+  })
+  studentId = me.id
+})
+
+test('a double click on 确认收款 records one sale at the running sale price', async ({
+  page,
+  request,
+}) => {
+  await login(page)
+  await page.goto(`./#/students?id=${studentId}`)
+  await page.getByRole('button', { name: '前台售卖' }).click()
+  await field(dialog(page), '课时包').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: productName }).click()
+  await expect(field(dialog(page), '实收金额').locator('input')).toHaveValue('2500.00')
+  const sales = await countRequests(page, '/offline-sale', () =>
+    dialog(page).getByRole('button', { name: '确认收款' }).dblclick(),
+  )
+  expect(sales).toBe(1)
+  const detail = await call<{ packages: unknown[] }>(
+    request,
+    'GET',
+    `/admin/students/${studentId}`,
+    admin,
+  )
+  expect(detail.packages).toHaveLength(1)
+})
+
+test('back closes a student opened from the list', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/students')
+  await page.getByPlaceholder('姓名或手机号').fill(studentName)
+  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByRole('button', { name: '查看' }).click()
+  await expect(page).toHaveURL(new RegExp(`#/students\\?id=${studentId}$`))
+  await expect(page.locator('.t-drawer')).toContainText(studentName)
+  await page.goBack()
+  await expect(page.locator('.t-drawer--open')).toHaveCount(0)
+
+  await page.goto('./#/students?id=99999999')
+  await expect(page.locator('.t-drawer')).toContainText('学员不存在')
+})
+
+test('batch scheduling sends one request on a double click and names the overlap', async ({
+  page,
+}) => {
+  await login(page)
+  await page.setViewportSize({ width: 1024, height: 700 })
+  await page.goto('./#/schedule')
+  await page.locator('.toolbar .t-select').click()
+  await page.locator('.t-select-option', { hasText: coachName }).click()
+  // The week grid scrolls on its own; the page and its header stay put.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024)
+  await expect(page.getByRole('button', { name: '退出登录' })).toBeInViewport()
+  await page.screenshot({ path: `${shots}/schedule-1024.png` })
+
+  await page.getByRole('button', { name: '下一周' }).click()
+  await page.getByRole('button', { name: '批量排课' }).click()
+  const creates = await countRequests(page, '/admin/slots', () =>
+    dialog(page)
+      .getByRole('button', { name: /^创建 \d+ 个时段$/ })
+      .dblclick(),
+  )
+  expect(creates).toBe(1)
+  await expect(dialog(page)).toHaveCount(0)
+
+  await page.getByRole('button', { name: '批量排课' }).click()
+  await dialog(page)
+    .getByRole('button', { name: /^创建 \d+ 个时段$/ })
+    .click()
+  await expect(page.getByText(/^\d+月\d+日 09:00 与该教练已有时段重叠$/)).toBeVisible()
+})
+
+test('batch scheduling counts every day of a long range', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/schedule')
+  await page.getByRole('button', { name: '批量排课' }).click()
+  await dialog(page).locator('.t-date-range-picker input').nth(1).click()
+  const right = page.locator('.t-date-picker__panel-content').nth(1)
+  for (let i = 0; i < 6; i++) await right.locator('.t-pagination-mini__next').click()
+  await right
+    .locator('.t-date-picker__cell:not(.t-date-picker__cell--additional)', { hasText: /^15$/ })
+    .click()
+  await dialog(page).locator('.t-dialog__header').click()
+  await field(dialog(page), '开始时间').locator('input').fill('23:00')
+  // Six months of days used to stop at 120 without saying so.
+  const label = await dialog(page)
+    .getByRole('button', { name: /^创建 \d+ 个时段$/ })
+    .textContent()
+  expect(Number(label?.match(/\d+/)?.[0])).toBeGreaterThan(150)
+})
+
+test('a venue cancel on a booking the student already cancelled closes and refreshes', async ({
+  page,
+  request,
+}) => {
+  const catalog = await call<CatalogDto>(request, 'GET', '/catalog', studentToken)
+  const lesson = catalog.lessonTypes.find((t) => t.name === lessonName)
+  if (!lesson) throw new Error('setup missing')
+  // The batch above filled next week, which starts within the next 1 to 7 days.
+  let open: SlotDto[] = []
+  for (let day = 1; day <= 13 && open.length < 2; day++) {
+    const slots = await call<SlotDto[]>(
+      request,
+      'GET',
+      `/slots?date=${venueDate(day)}&coachId=${coachId}&lessonTypeId=${lesson.id}`,
+      studentToken,
+    )
+    open = open.concat(slots.filter((s) => s.available))
+  }
+  const [first, second] = open
+  if (!first || !second) throw new Error('no slots')
+  const booked: CreateBookingResponse[] = []
+  for (const slot of [first, second]) {
+    const b = await call<CreateBookingResponse>(request, 'POST', '/bookings', studentToken, {
+      slotId: slot.id,
+      lessonTypeId: lesson.id,
+      payWith: 'wechat',
+    })
+    await call(request, 'POST', `/dev/fake-pay/${b.orderId}`)
+    booked.push(b)
+  }
+
+  await login(page)
+  await page.goto('./#/bookings')
+  await page.locator('.toolbar .t-select').nth(1).click()
+  await page.locator('.t-select-option', { hasText: coachName }).click()
+  const rows = page.getByRole('row').filter({ hasText: studentName })
+  await expect(rows).toHaveCount(2)
+
+  // A reason typed and abandoned does not carry over to another booking.
+  await rows.nth(0).getByRole('button', { name: '取消' }).click()
+  await dialog(page).locator('textarea').fill('不要带到下一条')
+  await dialog(page).getByRole('button', { name: '返回' }).click()
+  await rows.nth(1).getByRole('button', { name: '取消' }).click()
+  await expect(dialog(page).locator('textarea')).toHaveValue('')
+
+  // The student cancels both while the dialog is open.
+  await dialog(page).locator('textarea').fill('教练临时有事')
+  for (const b of booked) {
+    await call(request, 'POST', `/bookings/${b.bookingId}/cancel`, studentToken)
+  }
+  await dialog(page).getByRole('button', { name: '确认取消' }).click()
+  await expect(page.getByText('该预约已取消')).toBeVisible()
+  await expect(dialog(page)).toHaveCount(0)
+  await expect(rows.filter({ hasText: '学员取消' })).toHaveCount(2)
+})
+
+test('a banner title typed during an upload survives the upload', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/banners')
+  await page.getByRole('button', { name: '新建轮播图' }).click()
+  await page.route('**/api/admin/uploads', async (route) => {
+    await new Promise((r) => setTimeout(r, 800))
+    await route.continue()
+  })
+  await dialog(page)
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'banner.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(PNG_1X1, 'base64'),
+    })
+  await field(dialog(page), '标题').locator('input').fill('双十一')
+  await expect(dialog(page).locator('img.banner-thumb')).toBeVisible()
+  await expect(field(dialog(page), '标题').locator('input')).toHaveValue('双十一')
+  await expect(dialog(page).getByRole('button', { name: '更换图片' })).toBeVisible()
+})

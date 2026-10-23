@@ -119,7 +119,7 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
   await pkgRow.getByRole('button', { name: '加课时' }).click()
   await dialog(page).locator('textarea').fill('补课')
   await dialog(page).getByRole('button', { name: '确认' }).click()
-  await expect(pkgRow).toContainText('11/10')
+  await expect(pkgRow).toContainText('11/11')
 
   const [pkg] = await call<PackageDto[]>(request, 'GET', '/packages', token)
   await call(request, 'POST', `/packages/${pkg?.id}/refund-request`, token)

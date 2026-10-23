@@ -20,8 +20,14 @@ function moveIntoPast(bookingId: number) {
   const require = createRequire(join(import.meta.dirname, '../../../../apps/api/package.json'))
   const Database = require('better-sqlite3')
   const db = new Database(join(import.meta.dirname, '../../../../apps/api/data/e2e.db'))
-  const start = Date.now() - 2 * 3_600_000
-  const end = start + 3_600_000
+  // Not before the venue's midnight: the bookings page starts at today, so a lesson moved into
+  // yesterday would not be listed when this runs just after midnight.
+  const venueMidnight = Date.parse(
+    `${new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)}T00:00:00+08:00`,
+  )
+  const start = Math.max(Date.now() - 2 * 3_600_000, venueMidnight)
+  // Ended, so the report counts it.
+  const end = Math.max(start + 1000, Math.min(start + 3_600_000, Date.now() - 1000))
   db.prepare('update bookings set starts_at = ?, ends_at = ? where id = ?').run(
     start,
     end,
@@ -210,5 +216,6 @@ test('shows the monthly report and exports it', async ({ page }) => {
   const text = await (await file.createReadStream()).toArray()
   const csv = Buffer.concat(text).toString('utf8')
   expect(csv.startsWith('﻿')).toBe(true)
-  expect(csv).toContain(`${coachName},1,1,1,0,0,0,0`)
+  // The lesson is shorter than an hour when this runs just after midnight.
+  expect(csv).toMatch(new RegExp(`${coachName},1,[\\d.]+,1,0,0,0,0`))
 })
