@@ -1,11 +1,11 @@
 import type { PriceTag } from '@rs/shared'
 import { venueInstant } from '@rs/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { DatePicker, Dialog, Input, InputNumber, Radio, Select } from 'tdesign-react'
+import { Button, DatePicker, Dialog, Input, InputNumber, Radio, Select } from 'tdesign-react'
 import { api, RequestError } from './api'
 import { Field } from './Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, toFen, toYuan, yuan } from './format'
-import { attempt, useApi, useSubmitting } from './hooks'
+import { attempt, useApi, useIdempotencyKey, useSubmitting } from './hooks'
 import { offlineMethodLabel } from './labels'
 import type { Coach, LessonType, Person, Slot } from './types'
 
@@ -112,17 +112,20 @@ function SlotPicker({
       ) : free.length === 0 ? (
         <span className="muted">这天没有可约时段</span>
       ) : (
-        <Radio.Group
-          variant="default-filled"
-          value={value?.id}
-          onChange={(v) => onChange(free.find((s) => s.id === Number(v)) ?? null)}
-        >
+        // A grid of times rather than a radio group, so it wraps evenly on a phone too.
+        <div className="slot-picks">
           {free.map((s) => (
-            <Radio.Button key={s.id} value={s.id}>
+            <Button
+              key={s.id}
+              variant={s.id === value?.id ? 'base' : 'outline'}
+              theme={s.id === value?.id ? 'primary' : 'default'}
+              aria-pressed={s.id === value?.id}
+              onClick={() => onChange(s)}
+            >
               {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
-            </Radio.Button>
+            </Button>
           ))}
-        </Radio.Group>
+        </div>
       )}
     </div>
   )
@@ -156,8 +159,8 @@ export function BookForStudent({
   const [method, setMethod] = useState<Method>('alipay')
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
-  // One key per dialog: a retry after a lost response gets the booking already made.
-  const [requestKey] = useState(() => `book-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  // A retry after a lost response gets the booking already made.
+  const requestKey = useIdempotencyKey()
 
   const activeCoaches = (coaches.data ?? []).filter((c) => c.active)
   const coach = (coaches.data ?? []).find((c) => c.id === slot?.coachId)

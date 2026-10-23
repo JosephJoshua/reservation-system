@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Button, Dialog, Input, Space, Table, Tag } from 'tdesign-react'
+import { Button, Dialog, Input, Space, Tag } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import type { Staff as StaffMember } from '../types'
 
 export const STAFF_CHANGED = 'staff-changed'
@@ -38,7 +39,7 @@ export function Staff() {
         </Button>
         <Button onClick={() => setEditing({ kind: 'create' })}>新增员工</Button>
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={list.loading}
         data={list.data ?? []}
@@ -131,6 +132,10 @@ const usernameOk = (u: string) => /^[a-z0-9_.-]{3,20}$/i.test(u.trim())
 
 type DialogProps = { onClose: () => void; onDone: () => void }
 
+// Dialogs that send a password take no Idempotency-Key: the server keeps a plain hash of a keyed
+// request's body, which must never be a hash of a password. A repeat there is refused instead,
+// or (for a password) just sets the same password again.
+
 function CreateStaff({ onClose, onDone }: DialogProps) {
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -184,11 +189,12 @@ function CreateStaff({ onClose, onDone }: DialogProps) {
 function Rename({ member, onClose, onDone }: DialogProps & { member: StaffMember }) {
   const [name, setName] = useState(member.name)
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const ready = name.trim() !== '' && name.trim() !== member.name
   const submit = async () => {
     if (!ready) return
     if (
-      await attempt(() => api('PATCH', `/admin/staff/${member.id}`, { name }), '已保存', {
+      await attempt(() => api('PATCH', `/admin/staff/${member.id}`, { name }, { key }), '已保存', {
         onStale: onDone,
       })
     )
@@ -247,10 +253,11 @@ function ResetPassword({ member, onClose, onDone }: DialogProps & { member: Staf
 
 function Toggle({ member, onClose, onDone }: DialogProps & { member: StaffMember }) {
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const submit = async () => {
     if (
       await attempt(
-        () => api('PATCH', `/admin/staff/${member.id}`, { active: !member.active }),
+        () => api('PATCH', `/admin/staff/${member.id}`, { active: !member.active }, { key }),
         member.active ? '已停用' : '已启用',
         { onStale: onDone },
       )

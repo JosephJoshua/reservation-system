@@ -2,8 +2,8 @@ import { venueInstant } from '@rs/shared'
 import { useState } from 'react'
 import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
-import { DataTable } from '../DataTable'
 import { BookForStudent } from '../BookForStudent'
+import { DataTable } from '../DataTable'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundLabel } from '../labels'
@@ -70,6 +70,7 @@ export function Bookings() {
     <div>
       <div className="toolbar">
         <DateRangePicker
+          style={{ width: 280 }}
           value={range}
           onChange={(v) => setRange([String(v[0] ?? today()), String(v[1] ?? today())])}
         />

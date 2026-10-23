@@ -1,7 +1,8 @@
 import { type StaffAction, staffActionLabels, venueInstant } from '@rs/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, DateRangePicker, Select, Table, Tag } from 'tdesign-react'
+import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api, RequestError } from '../api'
+import { DataTable } from '../DataTable'
 import { addDays, fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
 import { StudentCell } from '../StudentCell'
@@ -97,7 +98,7 @@ export function ActionLog() {
           onChange={(v) => setRange(v[0] && v[1] ? [String(v[0]), String(v[1])] : [])}
         />
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading && rows.length === 0}
         data={rows}

@@ -24,6 +24,11 @@
     min-height: 44px;
   }
 
+  /* The page title needs the room; the 员工 page shows who is signed in. */
+  .signed-in {
+    display: none;
+  }
+
   .toolbar {
     gap: 8px;
   }
