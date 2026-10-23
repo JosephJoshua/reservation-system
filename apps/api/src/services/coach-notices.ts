@@ -1,19 +1,9 @@
-import { venueParts } from '@rs/shared'
 import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import { bookings, coaches, lessonTypes, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
-import type { NoticeKind } from '../wx-notify'
+import { lessonTime } from '../wx-notify'
 
 const BATCH = 50
-
-/** 2026年10月25日 14:00~15:00, the time format subscription messages accept. */
-function lessonTime(startsAt: Date, endsAt: Date) {
-  const s = venueParts(startsAt)
-  const e = venueParts(endsAt)
-  const hm = (p: { hours: number; minutes: number }) =>
-    `${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}`
-  return `${s.year}年${s.month}月${s.day}日 ${hm(s)}~${hm(e)}`
-}
 
 /**
  * Tells coaches about new and cancelled lessons by subscription message. Each booking is looked
@@ -24,7 +14,7 @@ export async function notifyCoaches(deps: Deps) {
   for (const kind of ['booked', 'cancelled'] as const) await notify(deps, kind)
 }
 
-async function notify(deps: Deps, kind: NoticeKind) {
+async function notify(deps: Deps, kind: 'booked' | 'cancelled') {
   const { db } = deps
   const column = kind === 'booked' ? 'coachToldBookedAt' : 'coachToldCancelledAt'
   const pending = db
@@ -56,7 +46,7 @@ async function notify(deps: Deps, kind: NoticeKind) {
     .limit(BATCH)
     .all()
 
-  const template = deps.notifier?.template(kind)
+  const template = deps.notifier?.template(`coach_${kind}`)
   for (const b of pending) {
     const now = deps.now()
     if (deps.notifier && template && b.openid && b.startsAt > now) {

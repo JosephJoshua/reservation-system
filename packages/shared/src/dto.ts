@@ -164,9 +164,14 @@ export interface StudentDto {
   phone: string
 }
 
+export const studentNoticeKinds = ['booked', 'cancelled', 'reminder', 'moved', 'feedback'] as const
+export type StudentNoticeKind = (typeof studentNoticeKinds)[number]
+
 /** GET /me: the student, and whether the same WeChat user is a bound coach. */
 export interface MeDto extends StudentDto {
   isCoach: boolean
+  /** Subscription message template IDs that are set up, for the pages that ask for them. */
+  noticeTemplates: Partial<Record<StudentNoticeKind, string>>
 }
 
 export interface ApiErrorBody {

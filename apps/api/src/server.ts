@@ -10,10 +10,12 @@ import { FakeGateway } from './pay/fake'
 import { WechatPayGateway } from './pay/wechat'
 import { startSweeper } from './sweeper'
 import { devLogin, wechatLogin } from './wx'
-import { wechatNotifier } from './wx-notify'
+import { logNotifier, wechatNotifier } from './wx-notify'
 
 const db = openDb(config.databasePath)
 runMigrations(db)
+
+const log = (message: string, detail?: unknown) => console.error(`[api] ${message}`, detail ?? '')
 
 const deps: Deps = {
   db,
@@ -25,7 +27,7 @@ const deps: Deps = {
       : devLogin,
   adminPassword: config.adminPassword,
   uploadsDir: config.uploadsDir,
-  log: (message, detail) => console.error(`[api] ${message}`, detail ?? ''),
+  log,
   notifier:
     config.wechatAppId && config.wechatAppSecret
       ? wechatNotifier({
@@ -33,7 +35,7 @@ const deps: Deps = {
           secret: config.wechatAppSecret,
           ...config.notices,
         })
-      : undefined,
+      : logNotifier(config.notices.templates, log),
 }
 
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')

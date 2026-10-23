@@ -1,4 +1,5 @@
 // Run `pnpm db:generate` after changing tables. Money is integer fen; instants are UTC ms.
+import { studentNoticeKinds } from '@rs/shared'
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -168,6 +169,36 @@ export const bookings = sqliteTable(
       .on(t.slotId)
       .where(sql`status in ('pending_payment', 'confirmed')`),
     index('bookings_student_time').on(t.studentId, t.startsAt),
+  ],
+)
+
+/**
+ * Subscription messages to students, sent by the sweeper. booked, cancelled and reminder rows
+ * come from booking state and appear at most once per booking; other kinds are queued by the
+ * code that causes them. doneAt is set once the message went out, was refused or was dropped.
+ */
+export const studentNotices = sqliteTable(
+  'student_notices',
+  {
+    id: id(),
+    bookingId: integer('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    kind: text('kind', { enum: studentNoticeKinds }).notNull(),
+    // Values fixed when the notice was queued, such as the old time of a moved lesson.
+    data: text('data', { mode: 'json' }).$type<Record<string, string>>().notNull().default({}),
+    createdAt: createdAt(),
+    // After a failed send, when to try again.
+    retryAt: instant('retry_at'),
+    doneAt: instant('done_at'),
+    result: text('result', { enum: ['sent', 'refused', 'skipped'] }),
+  },
+  (t) => [
+    uniqueIndex('student_notices_once')
+      .on(t.bookingId, t.kind)
+      .where(sql`kind in ('booked', 'cancelled', 'reminder')`),
+    index('student_notices_booking').on(t.bookingId, t.kind),
+    index('student_notices_pending').on(t.doneAt),
   ],
 )
 

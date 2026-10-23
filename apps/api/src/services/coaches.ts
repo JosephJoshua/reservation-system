@@ -24,6 +24,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
+import { templateIds } from '../wx-notify'
 import { startCoachSession } from './auth'
 import { LIVE } from './bookings'
 import { getSettings } from './settings'
@@ -69,7 +70,7 @@ function coachMe(deps: Deps, coach: typeof coaches.$inferSelect): CoachMeDto {
     name: coach.name,
     title: coach.title,
     avatarUrl: coach.avatarUrl,
-    notifyTemplateIds: deps.notifier?.templateIds() ?? [],
+    notifyTemplateIds: templateIds(deps.notifier, ['coach_booked', 'coach_cancelled']),
     advanceDays: getSettings(deps.db).booking.advanceDays,
   }
 }

@@ -4,10 +4,12 @@ import {
   type CoachDto,
   type HomeDto,
   type LessonTypeDto,
+  type MeDto,
   type OrderStatusDto,
   type PackageProductDto,
   packagePrice,
   type SlotDto,
+  studentNoticeKinds,
   venueInstant,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm'
@@ -103,7 +105,18 @@ export function studentRoutes(deps: Deps) {
       .from(coaches)
       .where(and(eq(coaches.openid, s.openid), eq(coaches.active, true)))
       .get()
-    return c.json({ id: s.id, name: s.name, phone: s.phone, isCoach: Boolean(coach) })
+    return c.json({
+      id: s.id,
+      name: s.name,
+      phone: s.phone,
+      isCoach: Boolean(coach),
+      noticeTemplates: Object.fromEntries(
+        studentNoticeKinds.flatMap((kind) => {
+          const id = deps.notifier?.template(`student_${kind}`)?.id
+          return id ? [[kind, id]] : []
+        }),
+      ),
+    } satisfies MeDto)
   })
 
   // PUT rather than PATCH because wx.request cannot send PATCH. Fields left out are kept.
