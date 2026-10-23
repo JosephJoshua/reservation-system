@@ -1,3 +1,3 @@
 <view class="container">
-  <t-empty description="功能开发中" />
+  <t-empty icon="calendar" description="暂无可预约的课程" />
 </view>
