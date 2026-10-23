@@ -1,5 +1,5 @@
 // The coach mode of the mini program. PUT and DELETE only, since wx.request cannot send PATCH.
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { bookings } from '../db/schema'
@@ -109,15 +109,32 @@ export function coachRoutes(deps: Deps) {
     if (booking.startsAt <= deps.now()) {
       throw new ApiError(409, 'started', '课程已开始，如需取消请联系场馆')
     }
-    // Marked before cancelling, so the sweeper never tells the coach about their own cancel.
-    const told = (at: Date | null) =>
-      deps.db.update(bookings).set({ coachToldCancelledAt: at }).where(eq(bookings.id, id)).run()
-    told(deps.now())
+    // Marked before cancelling, so the sweeper never tells the coach about their own cancel. Only a
+    // live booking is marked: a cancel by the student that got in first must still be announced.
+    const cancelReason = `教练取消：${reason}`
+    const marked = deps.db
+      .update(bookings)
+      .set({ coachToldCancelledAt: deps.now() })
+      .where(
+        and(
+          eq(bookings.id, id),
+          inArray(bookings.status, ['pending_payment', 'confirmed']),
+          isNull(bookings.coachToldCancelledAt),
+        ),
+      )
+      .run().changes
     try {
-      await cancelBooking(deps, id, 'venue', { reason: `教练取消：${reason}` })
+      await cancelBooking(deps, id, 'venue', { reason: cancelReason })
     } catch (e) {
-      const now = deps.db.select().from(bookings).where(eq(bookings.id, id)).get()
-      if (now?.status !== 'cancelled') told(null)
+      const row = deps.db.select().from(bookings).where(eq(bookings.id, id)).get()
+      const ours = row?.cancelledBy === 'venue' && row.cancelReason === cancelReason
+      if (marked && !ours) {
+        deps.db
+          .update(bookings)
+          .set({ coachToldCancelledAt: null })
+          .where(eq(bookings.id, id))
+          .run()
+      }
       throw e
     }
     return c.json(coachLesson(deps, id, coachId))

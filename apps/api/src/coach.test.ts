@@ -566,6 +566,42 @@ describe('the coach schedule and lessons', () => {
     expect(empty.status).toBe(400)
   })
 
+  it('still announces a student cancel that beat the coach cancel', async () => {
+    const h = setup()
+    const { token, student, bookingId } = await bookedLesson(h)
+    await h.call('POST', `/bookings/${bookingId}/cancel`, undefined, student)
+    const res = await h.call(
+      'POST',
+      `/coach/lessons/${bookingId}/cancel`,
+      { reason: '生病' },
+      token,
+    )
+    expect(res.status).toBe(409)
+    const row = h.db.select().from(bookings).where(eq(bookings.id, bookingId)).get()
+    expect(row).toMatchObject({
+      status: 'cancelled',
+      cancelledBy: 'student',
+      coachToldCancelledAt: null,
+    })
+  })
+
+  it('drops the attendance mark when the venue cancels a lesson under way', async () => {
+    const h = setup()
+    const { token, bookingId } = await bookedLesson(h)
+    h.clock.now = new Date('2026-10-26T02:10:00Z')
+    await h.call('PUT', `/coach/lessons/${bookingId}/attendance`, { attendance: 'attended' }, token)
+    const admin = await h.admin()
+    const res = await h.call(
+      'POST',
+      `/admin/bookings/${bookingId}/cancel`,
+      { reason: '停电' },
+      admin,
+    )
+    expect(res.status).toBeLessThan(300)
+    const row = h.db.select().from(bookings).where(eq(bookings.id, bookingId)).get()
+    expect(row).toMatchObject({ status: 'cancelled', attendance: null })
+  })
+
   it('does not let the coach cancel a lesson that has started', async () => {
     const h = setup()
     const { token, bookingId } = await bookedLesson(h)
