@@ -326,7 +326,10 @@ try {
     for (const kind of ['agreement', 'privacy']) {
       await miniProgram.navigateTo(`/pages/policy/index?kind=${kind}`)
       const policy = await waitForPage('pages/policy/index')
-      check(Boolean(await policy.data('text')), `${kind} text should not be empty`)
+      check(
+        ((await policy.data('lines')) as unknown[]).length > 0,
+        `${kind} text should not be empty`,
+      )
       await screenshot(kind)
       await miniProgram.navigateBack()
     }

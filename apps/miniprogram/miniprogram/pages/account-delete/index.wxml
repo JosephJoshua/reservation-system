@@ -32,11 +32,11 @@
     </view>
     <view class="item">
       <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
-      <view class="item-text">订单、支付和退款记录按法规要求匿名保存</view>
+      <view class="item-text">订单和退款记录按法规匿名保存</view>
     </view>
     <view class="item">
       <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
-      <view class="item-text">账号无法恢复。再次打开小程序将作为新用户</view>
+      <view class="item-text">账号无法恢复，再次使用即为新账号</view>
     </view>
   </view>
   <view class="footnote">如需导出上课记录，请在注销前联系场馆。</view>

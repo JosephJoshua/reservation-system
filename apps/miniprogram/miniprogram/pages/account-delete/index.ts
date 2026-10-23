@@ -37,7 +37,8 @@ Page({
         title: '确认注销账号？',
         content: '注销后无法恢复。',
         confirmText: '注销',
-        confirmColor: '#d54941',
+        // Error red that keeps its contrast on the light and dark dialog.
+        confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
       })
       if (!confirm) return
       await apiOnce('DELETE', '/me')

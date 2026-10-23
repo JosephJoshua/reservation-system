@@ -7,7 +7,8 @@ type Kind = keyof typeof TITLES
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
-    text: '',
+    // Lines like 一、… are section headings.
+    lines: [] as { text: string; heading: boolean }[],
     error: '',
     emptyIcon: { name: 'file', size: '112rpx' },
   },
@@ -18,7 +19,10 @@ Page({
     try {
       // Public, so the policies can be read before logging in or agreeing to anything.
       const policies = await publicApi<CatalogDto['policies']>('GET', '/policies')
-      this.setData({ state: 'ready', text: policies[kind] })
+      const lines = policies[kind]
+        .split('\n')
+        .map((text) => ({ text, heading: /^[一二三四五六七八九十]+、/.test(text) }))
+      this.setData({ state: 'ready', lines: policies[kind].trim() ? lines : [] })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }
