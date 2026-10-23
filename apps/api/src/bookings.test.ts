@@ -631,6 +631,8 @@ describe('slots', () => {
       admin,
     )
     expect(res.json.error.code).toBe('slot_overlap')
+    // Names the venue time, so the admin can find it in a batch of hundreds.
+    expect(res.json.error.message).toBe('10月25日 10:30 与该教练已有时段重叠')
     expect(h.db.select().from(slots).all()).toHaveLength(0)
   })
 
