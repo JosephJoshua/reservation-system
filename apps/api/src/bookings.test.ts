@@ -837,4 +837,33 @@ describe('review fixes', () => {
       90000,
     )
   })
+
+  it('locks the trial flag once a lesson type has bookings', async () => {
+    const h = setup()
+    const { coach, trial } = h.seed()
+    const t = await h.student('a')
+    await book(h, t, h.slot(coach.id).id, trial.id)
+    const admin = await h.admin()
+    const res = await h.call(
+      'PUT',
+      `/admin/lesson-types/${trial.id}`,
+      { name: trial.name, durationMinutes: 60, price: 5000, isTrial: false },
+      admin,
+    )
+    expect(res.json.error.code).toBe('trial_locked')
+  })
+
+  it('keeps package terms fixed while someone is paying for it', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const admin = await h.admin()
+    const body = { name: '10 次课', lessonTypeId: lesson.id, lessonCount: 10, price: 180000, validityDays: 90 }
+    const product = (await h.call('POST', '/admin/package-products', body, admin)).json
+    const t = await h.student('a')
+    await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    const fewer = await h.call('PUT', `/admin/package-products/${product.id}`, { ...body, lessonCount: 5 }, admin)
+    expect(fewer.json.error.code).toBe('product_in_payment')
+    const cheaper = await h.call('PUT', `/admin/package-products/${product.id}`, { ...body, price: 170000 }, admin)
+    expect(cheaper.status).toBe(200)
+  })
 })

@@ -223,13 +223,13 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, lessonTypeBody)
     const existing = db.select().from(lessonTypes).where(eq(lessonTypes.id, id)).get()
     if (!existing) throw notFound('课程')
-    if (body.durationMinutes !== existing.durationMinutes) {
-      const used = db
-        .select({ id: bookings.id })
-        .from(bookings)
-        .where(eq(bookings.lessonTypeId, id))
-        .get()
-      if (used) throw new ApiError(409, 'duration_locked', '已有预约的课程不能修改时长，请新建课程')
+    const used = db.select({ id: bookings.id }).from(bookings).where(eq(bookings.lessonTypeId, id)).get()
+    if (used && body.durationMinutes !== existing.durationMinutes) {
+      throw new ApiError(409, 'duration_locked', '已有预约的课程不能修改时长，请新建课程')
+    }
+    // Trial limits count past bookings by their lesson type, so the flag must not change under them.
+    if (used && body.isTrial !== existing.isTrial) {
+      throw new ApiError(409, 'trial_locked', '已有预约的课程不能更改是否为体验课，请新建课程')
     }
     if (body.isTrial && !existing.isTrial) {
       const sold = db
@@ -479,15 +479,32 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.put('/package-products/:id', async (c) => {
+    const id = idParam(c)
     const body = await parseBody(c, productBody)
     checkProduct(body)
+    // A package is created from the product when its payment lands, so its terms cannot change
+    // while someone is paying for it. Price and sale edits are fine: the order already has its amount.
+    const existing = db.select().from(packageProducts).where(eq(packageProducts.id, id)).get()
+    if (!existing) throw notFound('课时包')
+    const termsChanged =
+      body.lessonTypeId !== existing.lessonTypeId ||
+      body.lessonCount !== existing.lessonCount ||
+      body.validityDays !== existing.validityDays ||
+      JSON.stringify([...body.coachIds].sort()) !== JSON.stringify([...existing.coachIds].sort())
+    const paying = db
+      .select({ id: orders.id })
+      .from(orders)
+      .where(and(eq(orders.productId, id), eq(orders.status, 'pending')))
+      .get()
+    if (termsChanged && paying) {
+      throw new ApiError(409, 'product_in_payment', '有学员正在支付该课时包，请几分钟后再修改')
+    }
     const row = db
       .update(packageProducts)
       .set(body)
-      .where(eq(packageProducts.id, idParam(c)))
+      .where(eq(packageProducts.id, id))
       .returning()
       .get()
-    if (!row) throw notFound('课时包')
     return c.json(row)
   })
 
