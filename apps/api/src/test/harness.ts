@@ -17,6 +17,7 @@ import {
 import type { Deps } from '../deps'
 import { FakeGateway } from '../pay/fake'
 import { saveSettings } from '../services/settings'
+import { ensureFirstStaff, FIRST_USERNAME } from '../services/staff'
 import { devLogin } from '../wx'
 
 export const ADMIN_PASSWORD = 'test-password'
@@ -33,10 +34,10 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
     gateway,
     now: () => new Date(clock.now),
     wxLogin: devLogin,
-    adminPassword: ADMIN_PASSWORD,
     uploadsDir: mkdtempSync(join(tmpdir(), 'rs-uploads-')),
     log: (message, detail) => logs.push({ message, detail }),
   }
+  ensureFirstStaff(db, ADMIN_PASSWORD)
   const app = createApp(deps)
 
   async function call(
@@ -69,8 +70,9 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
     return token
   }
 
-  async function admin() {
-    const res = await call('POST', '/admin/login', { password: ADMIN_PASSWORD })
+  /** Logs in as the first staff login, or as another one given its username and password. */
+  async function admin(username = FIRST_USERNAME, password = ADMIN_PASSWORD) {
+    const res = await call('POST', '/admin/login', { username, password })
     return res.json.token as string
   }
 

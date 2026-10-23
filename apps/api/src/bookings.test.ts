@@ -670,7 +670,9 @@ describe('auth', () => {
     const h = setup()
     expect((await h.call('GET', '/catalog')).status).toBe(401)
     expect((await h.call('GET', '/admin/settings')).status).toBe(401)
-    expect((await h.call('POST', '/admin/login', { password: 'wrong' })).status).toBe(401)
+    expect(
+      (await h.call('POST', '/admin/login', { username: 'admin', password: 'wrong' })).status,
+    ).toBe(401)
     const student = await h.student('a')
     expect((await h.call('GET', '/admin/settings', undefined, student)).status).toBe(401)
   })
@@ -1181,14 +1183,22 @@ describe('review round 2', () => {
   it('slows down admin password guessing', async () => {
     const h = setup()
     for (let i = 0; i < 10; i++) {
-      const res = await h.call('POST', '/admin/login', { password: `guess${i}` })
+      const res = await h.call('POST', '/admin/login', { username: 'admin', password: `guess${i}` })
       expect(res.status).toBe(401)
     }
-    expect((await h.call('POST', '/admin/login', { password: 'guess' })).status).toBe(429)
+    expect(
+      (await h.call('POST', '/admin/login', { username: 'admin', password: 'guess' })).status,
+    ).toBe(429)
     // Even the right password waits out the window.
-    expect((await h.call('POST', '/admin/login', { password: 'test-password' })).status).toBe(429)
+    expect(
+      (await h.call('POST', '/admin/login', { username: 'admin', password: 'test-password' }))
+        .status,
+    ).toBe(429)
     h.clock.now = new Date(h.clock.now.getTime() + 16 * 60_000)
-    expect((await h.call('POST', '/admin/login', { password: 'test-password' })).status).toBe(200)
+    expect(
+      (await h.call('POST', '/admin/login', { username: 'admin', password: 'test-password' }))
+        .status,
+    ).toBe(200)
   })
 })
 

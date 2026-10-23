@@ -1,10 +1,10 @@
-import { timingSafeEqual } from 'node:crypto'
 import { and, eq, gt, lt } from 'drizzle-orm'
 import type { MiddlewareHandler } from 'hono'
-import { coaches, sessions, students } from '../db/schema'
+import { coaches, sessions, staff, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { newToken } from './ids'
+import { verifyPassword } from './staff'
 
 const STUDENT_SESSION_MS = 30 * 86_400_000
 const ADMIN_SESSION_MS = 12 * 3_600_000
@@ -12,6 +12,7 @@ const COACH_SESSION_MS = 30 * 86_400_000
 
 export type AuthVars = { Variables: { studentId: number } }
 export type CoachVars = { Variables: { coachId: number } }
+export type AdminVars = { Variables: { staffId: number } }
 
 export async function loginStudent(deps: Deps, code: string) {
   const openid = await deps.wxLogin(code)
@@ -35,14 +36,14 @@ export async function loginStudent(deps: Deps, code: string) {
   return { token, student }
 }
 
-// Failed admin logins per client, so the password cannot be guessed at speed.
+// Failed staff logins per client, so passwords cannot be guessed at speed.
 const LOGIN_WINDOW_MS = 15 * 60_000
 const MAX_FAILED_LOGINS = 10
 // Kept per app instance, so separate test apps never share counts.
 const failedLoginsByApp = new WeakMap<Deps, Map<string, { count: number; since: number }>>()
 
 /** `client` identifies the caller, such as the address the reverse proxy saw. */
-export function loginAdmin(deps: Deps, password: string, client: string) {
+export function loginAdmin(deps: Deps, username: string, password: string, client: string) {
   const now = deps.now().getTime()
   let failedLogins = failedLoginsByApp.get(deps)
   if (!failedLogins) {
@@ -56,19 +57,24 @@ export function loginAdmin(deps: Deps, password: string, client: string) {
   if (failed && failed.count >= MAX_FAILED_LOGINS) {
     throw new ApiError(429, 'too_many_attempts', '尝试次数过多，请 15 分钟后再试')
   }
-  const a = Buffer.from(password)
-  const b = Buffer.from(deps.adminPassword)
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+  const member = deps.db.select().from(staff).where(eq(staff.username, username)).get()
+  // The hash is checked even for an unknown name, so timing does not reveal which names exist.
+  if (!verifyPassword(password, member?.passwordHash) || !member?.active) {
     failedLogins.set(client, { count: (failed?.count ?? 0) + 1, since: failed?.since ?? now })
-    throw new ApiError(401, 'bad_password', '密码错误')
+    throw new ApiError(401, 'bad_password', '登录名或密码错误')
   }
   failedLogins.delete(client)
   const token = newToken()
   deps.db
     .insert(sessions)
-    .values({ token, role: 'admin', expiresAt: new Date(deps.now().getTime() + ADMIN_SESSION_MS) })
+    .values({
+      token,
+      role: 'admin',
+      staffId: member.id,
+      expiresAt: new Date(deps.now().getTime() + ADMIN_SESSION_MS),
+    })
     .run()
-  return { token }
+  return { token, staff: { id: member.id, name: member.name, username: member.username } }
 }
 
 /** Starts a session for a coach bound to the WeChat user who just logged in. */
@@ -110,11 +116,15 @@ export function requireStudent(deps: Deps): MiddlewareHandler<AuthVars> {
   }
 }
 
-export function requireAdmin(deps: Deps): MiddlewareHandler {
+export function requireAdmin(deps: Deps): MiddlewareHandler<AdminVars> {
   return async (c, next) => {
-    if (!session(deps, bearer(c.req.header('Authorization')), 'admin')) {
-      throw new ApiError(401, 'unauthorized', '请重新登录')
-    }
+    const s = session(deps, bearer(c.req.header('Authorization')), 'admin')
+    // A deactivated login loses access at once.
+    const member = s?.staffId
+      ? deps.db.select().from(staff).where(eq(staff.id, s.staffId)).get()
+      : undefined
+    if (!member?.active) throw new ApiError(401, 'unauthorized', '请重新登录')
+    c.set('staffId', member.id)
     await next()
   }
 }

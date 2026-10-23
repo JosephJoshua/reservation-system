@@ -38,10 +38,9 @@ function wechatPay(): WechatPayConfig | null {
   }
 }
 
+/** Only used to create the first staff login, `admin`, on an empty database. */
 function adminPassword() {
-  if (env.ADMIN_PASSWORD) return env.ADMIN_PASSWORD
-  if (production) throw new Error('ADMIN_PASSWORD is required in production')
-  return 'admin'
+  return env.ADMIN_PASSWORD || (production ? undefined : 'admin')
 }
 
 function notices() {

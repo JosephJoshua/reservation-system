@@ -5,7 +5,8 @@ export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin'
 
 export async function login(page: Page) {
   await page.goto('./')
-  await page.getByPlaceholder('管理密码').fill(ADMIN_PASSWORD)
+  await page.getByPlaceholder('登录名').fill('admin')
+  await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
 }

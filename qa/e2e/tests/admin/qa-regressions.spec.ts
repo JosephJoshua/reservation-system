@@ -39,6 +39,7 @@ async function countRequests(page: Page, part: string, fn: () => Promise<void>) 
 test('sets up a lesson, coach, package on sale and a student', async ({ request }) => {
   admin = (
     await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
       password: ADMIN_PASSWORD,
     })
   ).token
