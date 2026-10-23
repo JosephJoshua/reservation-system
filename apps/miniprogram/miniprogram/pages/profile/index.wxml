@@ -1,3 +1,3 @@
 <view class="container">
-  <t-empty icon="user" description="暂未登录" />
+  <t-empty icon="{{emptyIcon}}" description="暂未登录" />
 </view>

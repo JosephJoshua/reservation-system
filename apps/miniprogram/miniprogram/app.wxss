@@ -3,6 +3,10 @@
 
 page {
   --td-bg-color-page: #ededed;
+  /* Empty states: a light icon over darker copy, close to WeUI proportions. */
+  --td-empty-icon-color: var(--td-text-color-disabled);
+  --td-empty-description-color: var(--td-text-color-secondary);
+  --td-empty-description-margin-top: 24rpx;
   background-color: var(--td-bg-color-page);
   color: var(--td-text-color-primary);
   font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
