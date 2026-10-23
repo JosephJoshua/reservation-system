@@ -99,6 +99,13 @@
   margin-top: 8rpx;
 }
 
+/* A standalone link is a tap target of its own: 44px tall, text left aligned. */
+.links .link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 88rpx;
+}
+
 .link {
   color: var(--td-text-color-link);
 }

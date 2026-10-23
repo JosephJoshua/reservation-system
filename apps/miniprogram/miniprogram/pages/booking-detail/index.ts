@@ -41,6 +41,13 @@ function subtitle(b: BookingDto, now: number): string {
   }
 }
 
+/** The server sweeps unpaid holds a little after payBy; show them as expired from payBy on. */
+function settled(b: BookingDto, now: number): BookingDto {
+  return b.status === 'pending_payment' && b.payBy && Date.parse(b.payBy) <= now
+    ? { ...b, status: 'expired', canCancel: false }
+    : b
+}
+
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
@@ -101,7 +108,8 @@ Page({
     }
   },
 
-  show(b: BookingDto) {
+  show(fetched: BookingDto) {
+    const b = settled(fetched, Date.now())
     const status = STATUS[b.status]
     const { booking } = this.catalog ?? { booking: null }
     this.setData({
@@ -118,7 +126,7 @@ Page({
           : b.price > 0
             ? `微信支付 · ${yuan(b.price)}`
             : '免费',
-      deadline: dateTime(b.cancelDeadline),
+      deadline: `${dateTime(b.cancelDeadline)}${Date.parse(b.cancelDeadline) <= Date.now() ? '（已过）' : ''}`,
       refund: b.refund ? `${yuan(b.refund.amount)} · ${REFUND_STATUS[b.refund.status]}` : '',
       address: this.venue?.address ?? '',
       cancelRule: booking ? cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel) : '',
@@ -132,11 +140,7 @@ Page({
     this.timer = setInterval(() => {
       const b = this.data.booking
       if (b?.status !== 'pending_payment') return this.stopTimer()
-      if (b.payBy && Date.parse(b.payBy) <= Date.now()) {
-        this.stopTimer()
-        this.load()
-        return
-      }
+      if (b.payBy && Date.parse(b.payBy) <= Date.now()) return this.show(b)
       this.setData({ statusText: subtitle(b, Date.now()) })
     }, 1000) as unknown as number
   },
