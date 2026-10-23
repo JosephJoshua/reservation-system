@@ -72,9 +72,12 @@ function downloadCsv(report: MonthlyReport) {
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url
-  a.download = `月报-${report.month}.csv`
+  a.download = `report-${report.month}.csv`
+  document.body.append(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  // Revoking at once can cost the file its name in Chromium.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export function Reports() {

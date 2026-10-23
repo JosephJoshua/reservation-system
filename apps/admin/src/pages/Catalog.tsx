@@ -205,14 +205,20 @@ export function Catalog() {
             {
               colKey: 'bound',
               title: '小程序',
-              cell: ({ row }) =>
-                row.bound ? (
-                  <Tag theme="primary" variant="light">
-                    已绑定
-                  </Tag>
-                ) : (
-                  <span className="muted">未绑定</span>
-                ),
+              cell: ({ row }) => (
+                <Space size={4} align="center">
+                  {row.bound ? (
+                    <Tag theme="primary" variant="light">
+                      已绑定
+                    </Tag>
+                  ) : (
+                    <span className="muted">未绑定</span>
+                  )}
+                  <Button variant="text" theme="primary" onClick={() => setBinding(row)}>
+                    {row.bound ? '管理' : '绑定'}
+                  </Button>
+                </Space>
+              ),
             },
             {
               colKey: 'op',
@@ -234,9 +240,6 @@ export function Catalog() {
                   </Button>
                   <Button variant="text" theme="primary" onClick={() => setHoursOf(row)}>
                     可约时间
-                  </Button>
-                  <Button variant="text" theme="primary" onClick={() => setBinding(row)}>
-                    微信绑定
                   </Button>
                 </Space>
               ),

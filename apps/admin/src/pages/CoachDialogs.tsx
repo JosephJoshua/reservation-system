@@ -30,13 +30,13 @@ const hhmm = (m: number) =>
 const minutes = (v: string) => Number(v.slice(0, 2)) * 60 + Number(v.slice(3, 5))
 
 /** One line on what a save did to the coach's slots. */
-function syncMessage(r: SlotSyncDto) {
+function syncMessage(r: SlotSyncDto, done: string) {
   const parts = [
     r.created ? `新增 ${r.created} 个时段` : '',
     r.removed ? `移除 ${r.removed} 个时段` : '',
     r.bookedOnDaysOff ? `休息日还有 ${r.bookedOnDaysOff} 节已预约的课，请联系学员或取消` : '',
   ].filter(Boolean)
-  return parts.length ? parts.join('，') : '已保存，时段无变化'
+  return [done, ...parts].join('，')
 }
 
 /** Shows the coach's WeChat binding and hands out bind codes. */
@@ -127,7 +127,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
       result = await api<SlotSyncDto>('PUT', `/admin/coaches/${coach.id}/hours`, { hours })
     })
     if (ok && result) {
-      void MessagePlugin.success(syncMessage(result))
+      void MessagePlugin.success(syncMessage(result, '已保存'))
       onClose()
     }
   }
@@ -141,7 +141,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
       )
     })
     if (ok && result) {
-      void MessagePlugin.info(syncMessage(result))
+      void MessagePlugin.info(syncMessage(result, off ? `${date} 设为休息日` : `${date} 恢复接课`))
       setDayOff('')
       await reload()
     }
@@ -183,9 +183,11 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
               {
                 colKey: 'time',
                 title: '时间',
+                width: 280,
                 cell: ({ row }) => (
                   <Space align="center" size={4}>
                     <TimePicker
+                      style={{ width: 112 }}
                       format="HH:mm"
                       steps={[1, 5]}
                       clearable={false}
@@ -194,6 +196,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
                     />
                     至
                     <TimePicker
+                      style={{ width: 112 }}
                       format="HH:mm"
                       steps={[1, 5]}
                       clearable={false}
@@ -262,9 +265,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
           </div>
 
           <div>
-            <div className="field-label" style={{ marginBottom: 8 }}>
-              休息日
-            </div>
+            <div className="subhead">休息日</div>
             <Space align="center" breakLine>
               {data.daysOff.map((d) => (
                 <Tag key={d} closable onClose={() => toggleDayOff(d, false)}>
@@ -274,6 +275,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
               <DatePicker
                 value={dayOff}
                 placeholder="添加休息日"
+                allowInput
                 disableDate={{ before: today() }}
                 onChange={(v) => {
                   const date = String(v ?? '')

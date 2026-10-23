@@ -203,6 +203,10 @@ a:hover {
   background: var(--td-bg-color-secondarycontainer);
 }
 
+.bind-code-box .muted {
+  margin-top: 8px;
+}
+
 .bind-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 32px;
@@ -221,4 +225,14 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.subhead {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.stat + .muted {
+  margin-top: 4px;
 }
