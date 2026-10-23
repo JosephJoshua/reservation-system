@@ -202,7 +202,9 @@ try {
   const past = await book(`qa_b_${run}`, 3)
   moveIntoPast(past)
 
-  // Let the launch login finish first, or it can write its own token back after we clear it.
+  // Let the launch login finish first, or it can write its own token back after we clear it. The
+  // token is cleared before waiting, so a token left by an earlier run does not end the wait early.
+  await miniProgram.callWxMethod('removeStorageSync', 'token')
   for (let i = 0; i < 20 && !(await miniProgram.callWxMethod('getStorageSync', 'token')); i++) {
     await sleep(250)
   }
@@ -395,5 +397,9 @@ try {
   console.log('all coach flows passed')
 } finally {
   await miniProgram.restoreWxMethod('showModal').catch(() => {})
+  // The next run, or a person opening DevTools, starts from a normal student login.
+  for (const key of ['devLogin', 'token', 'coachToken']) {
+    await miniProgram.callWxMethod('removeStorageSync', key).catch(() => {})
+  }
   await miniProgram.close()
 }
