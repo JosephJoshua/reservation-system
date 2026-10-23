@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -6,6 +6,7 @@ import {
   Dialog,
   Input,
   InputNumber,
+  MessagePlugin,
   Popconfirm,
   Select,
   Space,
@@ -16,16 +17,20 @@ import {
 import { api } from '../api'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
+
+// Matches the API's upload limit.
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
 export function Banners() {
   const banners = useApi<Banner[]>('/admin/banners')
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [edit, setEdit] = useState<{ id: number | null; form: BannerForm } | null>(null)
+  const submitting = useSubmitting()
 
   const save = async () => {
     if (!edit) return
@@ -89,7 +94,7 @@ export function Banners() {
         rowKey="id"
         loading={banners.loading}
         data={banners.data ?? []}
-        empty="还没有轮播图"
+        empty={banners.error ?? '还没有轮播图'}
         columns={[
           {
             colKey: 'imageUrl',
@@ -145,7 +150,7 @@ export function Banners() {
           visible
           width={600}
           header={edit.id ? '编辑轮播图' : '新建轮播图'}
-          confirmBtn={{ content: '保存', disabled: !edit.form.imageUrl }}
+          confirmBtn={{ content: '保存', disabled: !edit.form.imageUrl, loading: submitting }}
           onConfirm={save}
           onClose={() => setEdit(null)}
         >
@@ -153,7 +158,8 @@ export function Banners() {
             value={edit.form}
             products={products.data ?? []}
             types={types.data ?? []}
-            onChange={(form) => setEdit({ ...edit, form })}
+            // Merged into the latest form, so an upload finishing later keeps what was typed meanwhile.
+            onChange={(patch) => setEdit((e) => e && { ...e, form: { ...e.form, ...patch } })}
           />
         </Dialog>
       )}
@@ -165,24 +171,36 @@ function BannerEditor({
   value: f,
   products,
   types,
-  onChange,
+  onChange: set,
 }: {
   value: BannerForm
   products: PackageProduct[]
   types: LessonType[]
-  onChange: (v: BannerForm) => void
+  onChange: (patch: Partial<BannerForm>) => void
 }) {
-  const set = (patch: Partial<BannerForm>) => onChange({ ...f, ...patch })
   const [uploading, setUploading] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
+  // An upload that finishes after the dialog closed must not land on the next banner opened.
+  const open = useRef(false)
+  useEffect(() => {
+    open.current = true
+    return () => {
+      open.current = false
+    }
+  }, [])
 
   const upload = async (file: File | undefined) => {
     if (!file) return
+    if (file.size > MAX_IMAGE_BYTES) {
+      void MessagePlugin.error('图片不能超过 2MB')
+      return
+    }
     setUploading(true)
     const form = new FormData()
     form.append('file', file)
     await attempt(async () => {
       const { url } = await api<{ url: string }>('POST', '/admin/uploads', form)
-      set({ imageUrl: url })
+      if (open.current) set({ imageUrl: url })
     })
     setUploading(false)
   }
@@ -195,6 +213,17 @@ function BannerEditor({
   return (
     <div className="fields">
       <Field label="图片">
+        <input
+          ref={fileInput}
+          hidden
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => {
+            void upload(e.target.files?.[0])
+            // Lets the same file be picked again after a failed upload.
+            e.target.value = ''
+          }}
+        />
         <Space direction="vertical">
           {f.imageUrl && (
             <img
@@ -204,14 +233,9 @@ function BannerEditor({
               alt=""
             />
           )}
-          <label>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              disabled={uploading}
-              onChange={(e) => void upload(e.target.files?.[0])}
-            />
-          </label>
+          <Button variant="outline" loading={uploading} onClick={() => fileInput.current?.click()}>
+            {f.imageUrl ? '更换图片' : '选择图片'}
+          </Button>
           <span className="muted">JPG、PNG 或 WebP，不超过 2MB</span>
         </Space>
       </Field>
