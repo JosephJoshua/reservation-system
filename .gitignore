@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+test-results/
+playwright-report/
+.DS_Store
+apps/miniprogram/miniprogram/miniprogram_npm/
+apps/miniprogram/miniprogram/lib/
+apps/miniprogram/project.private.config.json
