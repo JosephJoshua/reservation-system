@@ -84,8 +84,8 @@ shows both), so running it again swaps back. If the release being undone changed
 (new files in `apps/api/drizzle/`), the old code may not work on the migrated database. Restore
 instead, and start the release that ran before the bad deploy on the copy taken just before it:
 `rs.sh restore app-<time>.db.gz <tag>`. In `rs.sh backups`, that copy is the newest one older than
-the bad deploy. After any restore, `rollback` has no previous release to offer, so the newer release
-cannot start on the restored database by accident. Bookings and payments made since that
+the bad deploy. After any restore, `rollback` has no previous release to offer. Staging still runs the bad
+release, so ship a fix to staging before the next `promote`. Bookings and payments made since that
 copy are lost, so check the orders in the WeChat Pay merchant platform afterwards.
 
 `compose.yml`, the `Caddyfile` and `rs.sh` in `/srv/rs` follow the production release: they are

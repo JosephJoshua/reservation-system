@@ -70,7 +70,11 @@ fi
 # never loses them.
 halfway() {
   echo "restore failed halfway: $1" >&2
-  echo "replaced databases are in $(dirname "$DB") as $(basename "$DB").before-restore-<time>, each with its -wal and -shm files; move all three back together" >&2
+  if [ -n "${kept:-}" ]; then
+    echo "this run moved the live database to $kept; move it back with any $kept-wal and $kept-shm" >&2
+  else
+    echo "no live database was moved by this run; an earlier run's copy is the newest $DB.before-restore-* file" >&2
+  fi
   exit 99
 }
 if [ -f "$DB" ]; then
