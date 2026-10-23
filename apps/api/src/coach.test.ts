@@ -651,8 +651,7 @@ describe('coach notices', () => {
     }
     const sent: { openid: string; page: string; data: Record<string, string> }[] = []
     const notifier: Notifier = {
-      templateIds: () => ['tpl'],
-      template: () => template,
+      template: (kind) => (kind.startsWith('coach_') ? { ...template, id: kind } : undefined),
       async send(openid, _template, page, values) {
         if (result === 'fail') throw new Error('offline')
         sent.push({ openid, page, data: { ...values } })
@@ -668,7 +667,8 @@ describe('coach notices', () => {
     h.deps.notifier = notifier
     const { coach, lesson, token } = await withCoach(h)
     expect((await h.call('GET', '/coach/me', undefined, token)).json.notifyTemplateIds).toEqual([
-      'tpl',
+      'coach_booked',
+      'coach_cancelled',
     ])
     const student = await h.student('a')
     await h.call('PUT', '/me', { name: '小明' }, student)

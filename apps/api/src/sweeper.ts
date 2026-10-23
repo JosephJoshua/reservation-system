@@ -3,12 +3,13 @@ import { notifyCoaches } from './services/coach-notices'
 import { syncAllSlots } from './services/coaches'
 import { expireOrders } from './services/orders'
 import { sweepRefunds } from './services/refunds'
+import { notifyStudents } from './services/student-notices'
 
 const SLOT_SYNC_MS = 3_600_000
 let lastSlotSync = 0
 
 /**
- * Closes expired orders, pushes refunds along and tells coaches about their lessons. Runs every
+ * Closes expired orders, pushes refunds along and tells coaches and students about lessons. Runs every
  * 30 seconds; slots from coaches' weekly hours roll forward once an hour.
  */
 export async function sweep(deps: Deps) {
@@ -22,6 +23,11 @@ export async function sweep(deps: Deps) {
     await notifyCoaches(deps)
   } catch (e) {
     deps.log('coach sweep failed', (e as Error).message)
+  }
+  try {
+    await notifyStudents(deps)
+  } catch (e) {
+    deps.log('student notices failed', (e as Error).message)
   }
   await expireOrders(deps)
   await sweepRefunds(deps)

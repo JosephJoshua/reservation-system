@@ -1,8 +1,22 @@
 // WeChat subscription messages (订阅消息). A user grants one message per tap on the mini program's
 // prompt, so the coach pages ask on every few taps; a send without a grant fails with 43101.
 
+import type { StudentNoticeKind } from '@rs/shared'
+
+const VALUE_KEYS = [
+  'student',
+  'lesson',
+  'time',
+  'oldTime',
+  'coach',
+  'place',
+  'reason',
+  'refund',
+  'note',
+] as const
+
 /** The values a message can carry; each template field maps to one of them. */
-export type NoticeValues = Record<'student' | 'lesson' | 'time' | 'coach' | 'reason', string>
+export type NoticeValues = Partial<Record<(typeof VALUE_KEYS)[number], string>>
 
 export interface NoticeTemplate {
   id: string
@@ -10,10 +24,9 @@ export interface NoticeTemplate {
   fields: Record<string, keyof NoticeValues>
 }
 
-export type NoticeKind = 'booked' | 'cancelled'
+export type NoticeKind = `coach_${'booked' | 'cancelled'}` | `student_${StudentNoticeKind}`
 
 export interface Notifier {
-  templateIds(): string[]
   template(kind: NoticeKind): NoticeTemplate | undefined
   /** 'refused' when the user has no grant left; throws when WeChat could not be reached. */
   send(
@@ -23,8 +36,6 @@ export interface Notifier {
     values: NoticeValues,
   ): Promise<'sent' | 'refused'>
 }
-
-const VALUE_KEYS = ['student', 'lesson', 'time', 'coach', 'reason'] as const
 
 /**
  * Reads a template from an env value such as `AbC123 thing1=student time2=time thing3=lesson`:
@@ -36,7 +47,7 @@ export function parseTemplate(value: string | undefined): NoticeTemplate | undef
   const fields: NoticeTemplate['fields'] = {}
   for (const pair of pairs) {
     const [field, name] = pair.split('=')
-    if (!field || !VALUE_KEYS.includes(name as keyof NoticeValues)) {
+    if (!field || !VALUE_KEYS.includes(name as (typeof VALUE_KEYS)[number])) {
       throw new Error(`Bad notice template field "${pair}"`)
     }
     fields[field] = name as keyof NoticeValues
@@ -96,13 +107,12 @@ export function wechatNotifier(options: {
   }
 
   return {
-    templateIds: () => Object.values(options.templates).flatMap((t) => (t ? [t.id] : [])),
     template: (kind) => options.templates[kind],
     async send(openid, template, page, values) {
       const data = Object.fromEntries(
         Object.entries(template.fields).map(([field, name]) => [
           field,
-          { value: fieldValue(field, values[name]) },
+          { value: fieldValue(field, values[name] ?? '') },
         ]),
       )
       const res = await fetchImpl(
@@ -128,4 +138,23 @@ export function wechatNotifier(options: {
       throw new Error(`subscribe send: ${result.errcode} ${result.errmsg ?? ''}`)
     },
   }
+}
+
+/** Logs messages instead of sending them, for trying templates out without WeChat. */
+export function logNotifier(
+  templates: Partial<Record<NoticeKind, NoticeTemplate>>,
+  log: (message: string, detail?: unknown) => void,
+): Notifier {
+  return {
+    template: (kind) => templates[kind],
+    async send(openid, template, page, values) {
+      log('notice', { openid, template: template.id, page, values })
+      return 'sent'
+    },
+  }
+}
+
+/** The template IDs of the given kinds that are set up, for a page to ask the user about. */
+export function templateIds(notifier: Notifier | undefined, kinds: NoticeKind[]) {
+  return kinds.flatMap((kind) => notifier?.template(kind)?.id ?? [])
 }

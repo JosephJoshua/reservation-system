@@ -1,4 +1,4 @@
-import type { CatalogDto, LateCancelRule, MeDto } from '../lib/shared'
+import type { CatalogDto, LateCancelRule, MeDto, StudentNoticeKind } from '../lib/shared'
 import { api } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
@@ -13,6 +13,22 @@ export async function getCatalog(fresh = false): Promise<CatalogDto> {
 
 export function getMe(): Promise<MeDto> {
   return api<MeDto>('GET', '/me')
+}
+
+/**
+ * Asks to send the student the given messages, one each. WeChat only shows the prompt when this
+ * starts inside a tap handler, before any await. Resolves once the prompt is closed, so a payment
+ * sheet does not open on top of it.
+ */
+export function askForNotices(
+  templates: MeDto['noticeTemplates'],
+  kinds: StudentNoticeKind[],
+): Promise<void> {
+  const tmplIds = kinds.flatMap((kind) => templates[kind] ?? [])
+  if (!tmplIds.length) return Promise.resolve()
+  return new Promise((resolve) => {
+    wx.requestSubscribeMessage({ tmplIds: tmplIds.slice(0, 3), complete: () => resolve() })
+  })
 }
 
 /** One line on what cancelling late costs, for the confirm and detail pages. */

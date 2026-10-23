@@ -1,6 +1,13 @@
-import type { BookingQuoteDto, CreateBookingResponse, StudentDto } from '../../lib/shared'
+import type { BookingQuoteDto, CreateBookingResponse, MeDto, StudentDto } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
-import { cancelRuleText, getCatalog, getMe, hasAgreed, setAgreed } from '../../utils/data'
+import {
+  askForNotices,
+  cancelRuleText,
+  getCatalog,
+  getMe,
+  hasAgreed,
+  setAgreed,
+} from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { payOrder } from '../../utils/pay'
 
@@ -38,6 +45,7 @@ Page({
     hasPolicies: false,
     showAgreement: false,
     agreed: false,
+    noticeTemplates: {} as MeDto['noticeTemplates'],
     submitting: false,
   },
 
@@ -93,6 +101,7 @@ Page({
         needPhone: !me.phone,
         hasPolicies,
         showAgreement: hasPolicies && !hasAgreed(),
+        noticeTemplates: me.noticeTemplates,
       })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -156,6 +165,7 @@ Page({
     }
     this.setData({ submitting: true })
     try {
+      await askForNotices(this.data.noticeTemplates, ['booked', 'reminder', 'cancelled'])
       await this.saveProfile()
       if (this.data.showAgreement) setAgreed()
       const res = await api<CreateBookingResponse>('POST', '/bookings', {
