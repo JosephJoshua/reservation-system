@@ -1,0 +1,14 @@
+{
+  "name": "@rs/qa-miniprogram",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "pnpm --filter @rs/miniprogram build && tsx src/smoke.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "miniprogram-automator": "0.13.0",
+    "tsx": "4.23.15"
+  }
+}
