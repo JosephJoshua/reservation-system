@@ -1,4 +1,5 @@
 @import '../../styles/common.wxss';
+@import '../styles/dark.wxss';
 
 .header {
   padding: 16rpx 0 8rpx;

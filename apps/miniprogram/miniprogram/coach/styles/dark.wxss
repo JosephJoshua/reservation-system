@@ -1,0 +1,25 @@
+/*
+ * Dark mode text colors for coach pages. TDesign's outline buttons and light tags keep their
+ * light-mode text colors in dark, which fall under 4.5:1 on dark cards; these lighter shades pass.
+ */
+@media (prefers-color-scheme: dark) {
+  page {
+    --rs-dark-success-text: #5fc48a;
+    --rs-dark-error-text: #f07075;
+    --td-button-primary-outline-color: var(--td-brand-color-9);
+    --td-button-primary-outline-border-color: var(--td-brand-color-9);
+    --td-button-danger-outline-color: var(--rs-dark-error-text);
+    --td-button-danger-outline-border-color: var(--rs-dark-error-text);
+    --td-tag-primary-color: var(--td-brand-color-9);
+    --td-tag-success-color: var(--rs-dark-success-text);
+    --td-tag-danger-color: var(--rs-dark-error-text);
+  }
+
+  .mark-attended {
+    color: var(--rs-dark-success-text);
+  }
+
+  .mark-no_show {
+    color: var(--rs-dark-error-text);
+  }
+}

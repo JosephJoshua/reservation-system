@@ -1,4 +1,5 @@
 @import '../../styles/common.wxss';
+@import '../styles/dark.wxss';
 
 .day {
   position: relative;
@@ -40,7 +41,7 @@
 .day-off {
   font-size: 28rpx;
   line-height: 56rpx;
-  color: var(--td-text-color-placeholder);
+  color: var(--td-text-color-secondary);
 }
 
 .window {
@@ -80,7 +81,7 @@
   width: 88rpx;
   height: 88rpx;
   margin: -16rpx 0;
-  color: var(--td-text-color-placeholder);
+  color: var(--td-text-color-secondary);
 }
 
 .day-add {
