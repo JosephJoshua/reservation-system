@@ -154,6 +154,15 @@ describe('staff logins', () => {
     expect((await h.call('GET', '/admin/me', undefined, desk)).status).toBe(200)
     expect((await h.call('GET', '/admin/me', undefined, phone)).status).toBe(401)
 
+    // Your own password cannot be reset without the current one.
+    const own = await h.call(
+      'PUT',
+      `/admin/staff/${li.id}/password`,
+      { password: 'x-pass-12' },
+      desk,
+    )
+    expect(own.json.error.code).toBe('own_password')
+
     // A reset by someone else ends all of them.
     await h.call('PUT', `/admin/staff/${li.id}/password`, { password: 'reset-pass-1' }, admin)
     expect((await h.call('GET', '/admin/me', undefined, desk)).status).toBe(401)
@@ -450,6 +459,54 @@ describe('front-desk booking', () => {
       admin,
     )
     expect(h.db.select().from(refunds).get()).toMatchObject({ amount: 18000, status: 'succeeded' })
+  })
+
+  it('leaves the refund for the desk to pay back when the student cancels', async () => {
+    const h = setup()
+    const { lesson, admin, student, slot } = await ready(h)
+    const res = await h.call(
+      'POST',
+      '/admin/bookings',
+      {
+        studentId: 1,
+        slotId: slot.id,
+        lessonTypeId: lesson.id,
+        payWith: 'offline',
+        amount: 20000,
+        method: 'cash',
+      },
+      admin,
+    )
+    await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, {}, student)
+    const refund = h.db.select().from(refunds).get()
+    expect(refund).toMatchObject({ amount: 20000, status: 'pending' })
+    const paid = await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
+    expect(paid.status).toBe(204)
+    expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
+    expect(log(h).at(-1)).toMatchObject({
+      action: 'refund.paid_back',
+      summary: '订单「一对一私教」线下退还 ¥200',
+      amount: 20000,
+      studentId: 1,
+    })
+    const again = await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
+    expect(again.json.error.code).toBe('refund_not_pending')
+  })
+
+  it('says a venue cancel returned the package lesson', async () => {
+    const h = setup()
+    const { lesson, admin, slot } = await ready(h)
+    await sellPackage(h, admin, 1, product(h, lesson.id).id)
+    const res = await h.call(
+      'POST',
+      '/admin/bookings',
+      { studentId: 1, slotId: slot.id, lessonTypeId: lesson.id, payWith: 'package' },
+      admin,
+    )
+    await h.call('POST', `/admin/bookings/${res.json.bookingId}/cancel`, { reason: '停电' }, admin)
+    expect(log(h).at(-1)?.summary).toBe(
+      '10月25日 10:00 王教练 一对一私教，原因：停电，退回课时 1 节',
+    )
   })
 
   it('books a free lesson without an order', async () => {

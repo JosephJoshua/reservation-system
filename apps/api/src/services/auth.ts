@@ -92,7 +92,7 @@ export function startCoachSession(deps: Deps, coachId: number) {
   return token
 }
 
-function bearer(header: string | undefined) {
+export function bearer(header: string | undefined) {
   return header?.startsWith('Bearer ') ? header.slice(7) : undefined
 }
 

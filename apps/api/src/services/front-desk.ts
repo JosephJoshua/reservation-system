@@ -1,3 +1,4 @@
+import type { OfflineMethod } from '@rs/shared'
 import { and, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -17,8 +18,6 @@ import { LIVE, usablePackage } from './bookings'
 import { priceFor, trialsUsed } from './catalog'
 import { newOutTradeNo } from './ids'
 import { getSettings } from './settings'
-
-export type OfflineMethod = 'cash' | 'alipay' | 'wechat' | 'transfer'
 
 export interface FrontDeskBookingInput {
   studentId: number

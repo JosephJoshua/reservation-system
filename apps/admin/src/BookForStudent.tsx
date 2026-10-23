@@ -24,7 +24,13 @@ function StudentPicker({
   value: Person | null
   onChange: (p: Person | null) => void
 }) {
+  const [typed, setTyped] = useState('')
   const [q, setQ] = useState('')
+  // Searches once typing pauses, not on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(typed), 300)
+    return () => clearTimeout(timer)
+  }, [typed])
   const found = useApi<Person[]>(`/admin/students?q=${encodeURIComponent(q)}`)
   const label = (p: Person) => `${p.name || '未填写姓名'} ${p.phone}`.trim()
   const options = [
@@ -41,7 +47,7 @@ function StudentPicker({
       empty={found.error ?? (q ? '没有找到学员' : '还没有学员')}
       // The server filters; showing every result it sends keeps typed digits matching phones.
       filter={() => true}
-      onSearch={(v) => setQ(v.trim())}
+      onSearch={(v) => setTyped(v.trim())}
       options={options.map((p) => ({ label: label(p), value: p.id }))}
       onChange={(v) => onChange(options.find((p) => p.id === Number(v)) ?? null)}
     />

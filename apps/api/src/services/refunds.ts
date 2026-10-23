@@ -23,7 +23,8 @@ export function refundedSoFar(tx: Q, orderId: number): number {
 
 /**
  * Adds a refund row inside the caller's transaction. Offline orders are refunded by hand at the
- * front desk, so their refund is recorded as done.
+ * front desk: recorded as done when staff pay it back on the spot (`paidBack`), otherwise left
+ * pending until staff mark it paid back.
  */
 export function createRefund(
   tx: Q,
@@ -34,6 +35,7 @@ export function createRefund(
     reason: string
     bookingId?: number
     packageId?: number
+    paidBack?: boolean
   },
 ): number {
   const order = tx.select().from(orders).where(eq(orders.id, input.orderId)).get()
@@ -41,7 +43,7 @@ export function createRefund(
   if (input.amount <= 0 || input.amount > order.amount - refundedSoFar(tx, order.id)) {
     throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
   }
-  const status = order.provider === 'offline' ? 'succeeded' : 'pending'
+  const status = order.provider === 'offline' && input.paidBack ? 'succeeded' : 'pending'
   const row = tx
     .insert(refunds)
     .values({
@@ -155,4 +157,24 @@ export async function retryRefund(deps: Deps, refundId: number) {
     throw new ApiError(409, 'refund_not_failed', '只能重试失败的退款')
   }
   await submitRefund(deps, refundId)
+}
+
+/** Staff handed an offline refund back at the front desk. */
+export function markOfflineRefundPaid(deps: Deps, refundId: number) {
+  const now = deps.now()
+  immediate(deps.db, (tx) => {
+    const row = tx
+      .select({ status: refunds.status, provider: orders.provider })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(eq(refunds.id, refundId))
+      .get()
+    if (row?.provider !== 'offline' || row.status !== 'pending') {
+      throw new ApiError(409, 'refund_not_pending', '该退款已处理')
+    }
+    tx.update(refunds)
+      .set({ status: 'succeeded', updatedAt: now })
+      .where(eq(refunds.id, refundId))
+      .run()
+  })
 }

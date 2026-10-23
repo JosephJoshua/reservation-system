@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button, Card, Input, MessagePlugin } from 'tdesign-react'
 import { api, setToken } from '../api'
 
+/** `notice` explains why the login shows, such as an expired session. */
 export function Login({ notice, onDone }: { notice?: string; onDone: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')

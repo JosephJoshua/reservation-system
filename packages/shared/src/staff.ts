@@ -1,3 +1,18 @@
+/** How the front desk took an offline payment. */
+export const offlineMethodLabels = {
+  cash: '现金',
+  alipay: '支付宝',
+  wechat: '微信收款码',
+  transfer: '转账',
+} as const
+
+export type OfflineMethod = keyof typeof offlineMethodLabels
+
+export const offlineMethods = Object.keys(offlineMethodLabels) as [
+  OfflineMethod,
+  ...OfflineMethod[],
+]
+
 /** What the action log records, with the name the admin app shows for each. */
 export const staffActionLabels = {
   'booking.create': '代约',
@@ -9,6 +24,7 @@ export const staffActionLabels = {
   'refund.approve': '同意退款',
   'refund.reject': '拒绝退款',
   'refund.retry': '重试退款',
+  'refund.paid_back': '线下退还',
   'price.lesson_type': '课程价格',
   'price.product': '课时包价格',
   'price.coach': '教练价格',

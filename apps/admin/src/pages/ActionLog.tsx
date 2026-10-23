@@ -13,7 +13,10 @@ const PAGE = 50
 const groups: { label: string; actions: StaffAction[] }[] = [
   { label: '预约', actions: ['booking.create', 'booking.cancel', 'booking.attendance'] },
   { label: '课时包', actions: ['package.sell', 'package.grant', 'package.extend'] },
-  { label: '退款', actions: ['refund.approve', 'refund.reject', 'refund.retry'] },
+  {
+    label: '退款',
+    actions: ['refund.approve', 'refund.reject', 'refund.retry', 'refund.paid_back'],
+  },
   { label: '价格', actions: ['price.lesson_type', 'price.product', 'price.coach'] },
   { label: '其他', actions: ['settings.update', 'student.update'] },
   { label: '员工', actions: ['staff.create', 'staff.update', 'staff.password'] },

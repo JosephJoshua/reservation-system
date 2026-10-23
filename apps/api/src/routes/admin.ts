@@ -1,7 +1,13 @@
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { staffActions, venueParts, venueSettings } from '@rs/shared'
+import {
+  offlineMethodLabels,
+  offlineMethods,
+  staffActions,
+  venueParts,
+  venueSettings,
+} from '@rs/shared'
 import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -27,7 +33,7 @@ import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
 import { accountDeleted } from '../services/account'
-import { type AdminVars, loginAdmin, logout, requireAdmin } from '../services/auth'
+import { type AdminVars, bearer, loginAdmin, logout, requireAdmin } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
@@ -39,7 +45,7 @@ import {
   rejectPackageRefund,
   sellPackageOffline,
 } from '../services/packages'
-import { retryRefund } from '../services/refunds'
+import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
 import { getSettings, saveSettings } from '../services/settings'
@@ -70,13 +76,7 @@ const username = z
     message: '登录名需为 3 到 20 位字母、数字或 _ . -',
   })
 const staffName = z.string().trim().min(1).max(20)
-const offlineMethod = z.enum(['cash', 'alipay', 'wechat', 'transfer'])
-const offlineMethodLabel = {
-  cash: '现金',
-  alipay: '支付宝',
-  wechat: '微信收款码',
-  transfer: '转账',
-}
+const offlineMethod = z.enum(offlineMethods)
 const settingsSectionLabel = {
   venue: '场馆信息',
   booking: '预约规则',
@@ -199,11 +199,20 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  /** Records an action by the signed-in staff member, after the change itself has committed. */
-  const log = (staffId: number, entry: Parameters<typeof logAction>[3]) =>
-    logAction(db, deps.now(), staffId, entry)
+  /**
+   * Records an action by the signed-in staff member, after the change itself has committed. A
+   * failed write is reported rather than thrown: the change is done, and an error would invite a
+   * retry that repeats it.
+   */
+  const log = (staffId: number, entry: Parameters<typeof logAction>[3]) => {
+    try {
+      logAction(db, deps.now(), staffId, entry)
+    } catch (e) {
+      deps.log('action log write failed', { staffId, entry, error: String(e) })
+    }
+  }
   const ownToken = (c: { req: { header: (name: string) => string | undefined } }) =>
-    c.req.header('Authorization')?.slice('Bearer '.length)
+    bearer(c.req.header('Authorization'))
 
   // Staff logins and the action log
 
@@ -265,8 +274,11 @@ export function adminRoutes(deps: Deps) {
   app.put('/staff/:id/password', async (c) => {
     const body = await parseBody(c, z.object({ password }))
     const target = findStaff(db, idParam(c))
-    const self = target.id === c.get('staffId')
-    setStaffPassword(deps, target.id, body.password, self ? ownToken(c) : undefined)
+    // Your own password needs the current one, so a session left open cannot take the account.
+    if (target.id === c.get('staffId')) {
+      throw new ApiError(409, 'own_password', '修改自己的密码请用“修改我的密码”')
+    }
+    setStaffPassword(deps, target.id, body.password)
     log(c.get('staffId'), {
       action: 'staff.password',
       summary: `重置 ${target.name}（${target.username}）的密码`,
@@ -968,20 +980,25 @@ export function adminRoutes(deps: Deps) {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     await cancelBooking(deps, id, 'venue', { reason })
-    const { what, studentId } = describeBooking(db, id)
     const booking = db.select().from(bookings).where(eq(bookings.id, id)).get()
+    // A payment that landed meanwhile may have expired the booking instead: nothing was cancelled.
+    if (booking?.status !== 'cancelled' || booking.cancelledBy !== 'venue') {
+      return c.body(null, 204)
+    }
+    const { what, studentId } = describeBooking(db, id)
     const refund = db
       .select({ amount: refunds.amount })
       .from(refunds)
       .where(eq(refunds.bookingId, id))
       .orderBy(desc(refunds.id))
       .get()
+    const returned = db
+      .select({ id: packageLedger.id })
+      .from(packageLedger)
+      .where(and(eq(packageLedger.bookingId, id), eq(packageLedger.kind, 'return')))
+      .get()
     // An unpaid hold was simply released.
-    const outcome = refund
-      ? `，退款 ${yuan(refund.amount)}`
-      : booking?.paidWith === 'package'
-        ? '，退回课时 1 节'
-        : ''
+    const outcome = refund ? `，退款 ${yuan(refund.amount)}` : returned ? '，退回课时 1 节' : ''
     log(c.get('staffId'), {
       action: 'booking.cancel',
       summary: `${what}，原因：${reason}${outcome}`,
@@ -1235,7 +1252,7 @@ export function adminRoutes(deps: Deps) {
     const pkg = db.select().from(packages).where(eq(packages.id, packageId)).get()
     log(c.get('staffId'), {
       action: 'package.sell',
-      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabel[body.method]} ${yuan(body.amount)}`,
+      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabels[body.method]} ${yuan(body.amount)}`,
       amount: body.amount,
       studentId: body.studentId,
       target: { kind: 'package', id: packageId },
@@ -1387,6 +1404,20 @@ export function adminRoutes(deps: Deps) {
     log(c.get('staffId'), {
       action: 'refund.reject',
       summary: `拒绝${r.what}退款：${note}`,
+      studentId: r.studentId,
+      target: { kind: 'refund', id },
+    })
+    return c.body(null, 204)
+  })
+
+  app.post('/refunds/:id/paid-back', (c) => {
+    const id = idParam(c)
+    markOfflineRefundPaid(deps, id)
+    const r = refundContext(id)
+    log(c.get('staffId'), {
+      action: 'refund.paid_back',
+      summary: `${r.what}线下退还 ${yuan(r.amount)}`,
+      amount: r.amount,
       studentId: r.studentId,
       target: { kind: 'refund', id },
     })

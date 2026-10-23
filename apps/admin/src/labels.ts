@@ -35,12 +35,7 @@ export const orderStatusLabel = {
 
 export const orderKindLabel = { class: '单次课', trial: '体验课', package: '课时包' } as const
 
-export const offlineMethodLabel = {
-  cash: '现金',
-  alipay: '支付宝',
-  wechat: '微信收款码',
-  transfer: '转账',
-} as const
+export { offlineMethodLabels as offlineMethodLabel } from '@rs/shared'
 
 export const ledgerKindLabel = {
   purchase: '购买',
