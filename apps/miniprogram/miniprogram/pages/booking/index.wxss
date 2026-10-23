@@ -85,7 +85,7 @@
 .lesson-meta {
   margin-top: 8rpx;
   font-size: 24rpx;
-  color: var(--td-text-color-placeholder);
+  color: var(--td-text-color-secondary);
 }
 
 .lesson-side {

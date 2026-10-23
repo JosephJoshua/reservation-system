@@ -145,7 +145,7 @@
 
 .slot-full .slot-time,
 .slot-full .slot-sub {
-  color: var(--td-text-color-disabled);
+  color: var(--td-text-color-placeholder);
 }
 
 .retry {

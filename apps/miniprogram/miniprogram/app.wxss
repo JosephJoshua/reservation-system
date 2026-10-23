@@ -15,5 +15,13 @@ page {
 @media (prefers-color-scheme: dark) {
   page {
     --td-bg-color-page: #111111;
+    /* TDesign's dark brand is a light blue that washes out white button text, so fills use a
+       deeper step and text on dark surfaces uses a lighter one. */
+    --td-brand-color: var(--td-brand-color-7);
+    --td-brand-color-active: var(--td-brand-color-6);
+    --td-text-color-brand: var(--td-brand-color-9);
+    --td-text-color-link: var(--td-brand-color-9);
+    --td-tag-primary-color: var(--td-brand-color-9);
+    --td-tag-warning-color: var(--rs-hint-color);
   }
 }

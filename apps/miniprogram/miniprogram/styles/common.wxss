@@ -43,7 +43,7 @@
   padding: 24rpx 32rpx;
   font-size: 24rpx;
   line-height: 1.6;
-  color: var(--td-text-color-placeholder);
+  color: var(--td-text-color-secondary);
 }
 
 /* Fixed bottom action bar; pages that use it add .has-action-bar for room at the bottom. */

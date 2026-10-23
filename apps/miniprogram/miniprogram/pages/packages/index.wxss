@@ -42,7 +42,7 @@
 .product-meta {
   margin-top: 16rpx;
   font-size: 24rpx;
-  color: var(--td-text-color-placeholder);
+  color: var(--td-text-color-secondary);
 }
 
 .product-foot {
