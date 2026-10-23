@@ -85,37 +85,6 @@ importers:
         specifier: 5.0.5
         version: 5.0.5(@types/node@22.20.5)(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
 
-  apps/coach:
-    dependencies:
-      "@rs/shared":
-        specifier: workspace:*
-        version: link:../../packages/shared
-      "@rs/theme":
-        specifier: workspace:*
-        version: link:../../packages/theme
-      react:
-        specifier: 19.3.1
-        version: 19.3.1
-      react-dom:
-        specifier: 19.3.1
-        version: 19.3.1(react@19.3.1)
-      tdesign-mobile-react:
-        specifier: 1.0.0
-        version: 1.0.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-    devDependencies:
-      "@types/react":
-        specifier: 19.3.0
-        version: 19.3.0
-      "@types/react-dom":
-        specifier: 19.3.0
-        version: 19.3.0(@types/react@19.3.0)
-      "@vitejs/plugin-react":
-        specifier: 6.1.2
-        version: 6.1.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))
-      vite:
-        specifier: 8.3.5
-        version: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)
-
   apps/miniprogram:
     dependencies:
       tdesign-miniprogram:
@@ -176,13 +145,6 @@ packages:
     resolution:
       {
         integrity: sha512-2WJMeRQPHKSPemqk/awGrAiuFfzBmOIPXKizAsVhWH9YJqLZ0H+HS4c8loHGgW6utJ3E/ejXQUsiGaQy2NZ9Fw==,
-      }
-    engines: { node: ">=6.9.0" }
-
-  "@babel/runtime@7.29.10":
-    resolution:
-      {
-        integrity: sha512-NpugTzbKgGrNe45Ui32cN8vCFFMxVtP/9rtfwv0nP5FRDAjvYBxJcLVpYA9mr1jxP6cnIT7x9LUzuDTbWYYNRA==,
       }
     engines: { node: ">=6.9.0" }
 
@@ -1617,20 +1579,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  "@use-gesture/core@10.3.1":
-    resolution:
-      {
-        integrity: sha512-WcINiDt8WjqBdUXye25anHiNxPc0VOrlT8F6LLkU6cycrOGUDyY/yyFmsg3k8i5OLvv25llc0QC45GhR/C8llw==,
-      }
-
-  "@use-gesture/react@10.3.1":
-    resolution:
-      {
-        integrity: sha512-Yy19y6O2GJq8f7CHf7L0nxL8bf4PZCPaVOCgJrusOeFHY1LvHgYXnmnXg6N5iwAnbgbZCDjo60SiM6IPJi9C5g==,
-      }
-    peerDependencies:
-      react: ">= 16.8.0"
-
   "@vitejs/plugin-react@6.1.2":
     resolution:
       {
@@ -1669,15 +1617,6 @@ packages:
       {
         integrity: sha512-lwJRExuH417257Q5wv9QYugN9IMJkoxcrKrYxGPQkBzl7wlNpTUxD/5yNX4ESKVUIShKPgkGchYPFMWOOk0wzw==,
       }
-
-  ahooks@3.10.0:
-    resolution:
-      {
-        integrity: sha512-gwlBIjvG6x9UDOxZJeJ9l4x/nlrfrHBEqmau0b2mqchwWKOwAGAMXVE7rJXy883y9hzUTn+xlHgJHcJrf98Haw==,
-      }
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   any-base@1.1.0:
     resolution:
@@ -1772,12 +1711,6 @@ packages:
     resolution:
       {
         integrity: sha512-vjAczensTgRcqDERK0SR2XMwsF/tSvnvlv6VcF2GIhg6Sx4yOIt/irsr1RDJsKiIyBzJDpCoXiWWq28MqH2cnQ==,
-      }
-
-  dayjs@1.11.23:
-    resolution:
-      {
-        integrity: sha512-QDTCU0M0MxR3hQfnlDJfwekQiaanm1ubOD231u73WBckQ/fsamwRLiE2GBz6D3a/xF1NgfiDLJjXBa1hYOYTtQ==,
       }
 
   debug@4.1.1:
@@ -2061,12 +1994,6 @@ packages:
         integrity: sha512-9IXdWudL61npZjvLuVe/ktHiA41iE8qFyLB+4VDTblEsWBzeg8WQTlktdUK4CdncUqtUgUg0bbOmTE2bKBKaBQ==,
       }
 
-  js-cookie@3.0.8:
-    resolution:
-      {
-        integrity: sha512-yeJd4aNAdYZQjaon2bpD/Gb0B/omw7HQOsynXXcOiWVCacbBcPlgn8S/d1X6blFSaHao7ozqtW7NZW19xpCtIw==,
-      }
-
   js-tokens@4.0.0:
     resolution:
       {
@@ -2195,12 +2122,6 @@ packages:
     resolution:
       {
         integrity: sha512-J8xewKD/Gk22OZbhpOVSwcs60zhd95ESDwezOFuA3/099925PdHJ7OFHNTGtajL3AlZkykD32HykiMo+BIBI8A==,
-      }
-
-  lodash@4.18.1:
-    resolution:
-      {
-        integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==,
       }
 
   loose-envify@1.4.0:
@@ -2490,12 +2411,6 @@ packages:
         integrity: sha512-dYnhHh0nJoMfnkZs6GmmhFknAGRrLznOu5nc9ML+EJxGvrx6H7teuevqVqCuPcPK//3eDrrjQhehXVx9cnkGdw==,
       }
 
-  resize-observer-polyfill@1.5.1:
-    resolution:
-      {
-        integrity: sha512-LwZrotdHOo12nQuZlHEmtuXdqGoOD0OhaxopaNFxWzInpEgaLWoVuAMbTzixuosCx2nEG58ngzW3vxdWoxIgdg==,
-      }
-
   resolve-pkg-maps@1.0.0:
     resolution:
       {
@@ -2521,19 +2436,6 @@ packages:
     resolution:
       {
         integrity: sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw==,
-      }
-
-  screenfull@5.2.0:
-    resolution:
-      {
-        integrity: sha512-9BakfsO2aUQN2K9Fdbj87RJIEZ82Q9IGim7FqM5OsebfoFC6ZHXgDq/KvniuLTPdeM8wY2o6Dj3WQ7KeQCj3cA==,
-      }
-    engines: { node: ">=0.10.0" }
-
-  smoothscroll-polyfill@0.4.4:
-    resolution:
-      {
-        integrity: sha512-TK5ZA9U5RqCwMpfoMq/l1mrH0JAR7y7KRvOBx0n2869aLxch+gT9GhN3yUfjiw+d/DiF1mKo14+hd62JyMmoBg==,
       }
 
   sortablejs@1.15.7:
@@ -2583,15 +2485,6 @@ packages:
         integrity: sha512-r/MsvadJDq8OPLNE8prV/akEiOe9L6PGF0knjMHuqt/SmVJV+4P5bxq8o3HLs2H8GexEavE3TKVZPqqTEyvlUg==,
       }
 
-  tdesign-mobile-react@1.0.0:
-    resolution:
-      {
-        integrity: sha512-KmGuMXZGIRhl9F/aXUKq+FfAu6D3lPHGmfs4cwHTfGUdD+wqRVi3cCVNNlba9DEyOv6CsJ0rYMm69W7/DGtJ5A==,
-      }
-    peerDependencies:
-      react: ">=18.0.0"
-      react-dom: ">=18.0.0"
-
   tdesign-react@1.18.5:
     resolution:
       {
@@ -2638,12 +2531,6 @@ packages:
     resolution:
       {
         integrity: sha512-77EbyPPpMz+FRFRuAFlWMtmgUWGe9UOG2Z25NqCwiIjRhOf5iKGuzSe5P2w1laq+FkRy4p+PCuVkJSGkzTEKVw==,
-      }
-
-  tslib@2.8.1:
-    resolution:
-      {
-        integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==,
       }
 
   tsx@4.23.15:
@@ -2836,8 +2723,6 @@ snapshots:
   "@babel/runtime@7.26.10":
     dependencies:
       regenerator-runtime: 0.14.1
-
-  "@babel/runtime@7.29.10": {}
 
   "@biomejs/biome@2.6.2":
     optionalDependencies:
@@ -3488,13 +3373,6 @@ snapshots:
   "@typescript/typescript-win32-x64@7.0.2":
     optional: true
 
-  "@use-gesture/core@10.3.1": {}
-
-  "@use-gesture/react@10.3.1(react@19.3.1)":
-    dependencies:
-      "@use-gesture/core": 10.3.1
-      react: 19.3.1
-
   "@vitejs/plugin-react@6.1.2(vite@8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15))":
     dependencies:
       "@rolldown/pluginutils": 1.0.1
@@ -3510,19 +3388,6 @@ snapshots:
       vite: 8.3.5(@types/node@22.20.5)(esbuild@0.28.2)(tsx@4.23.15)
 
   "@vitest/spy@5.0.5": {}
-
-  ahooks@3.10.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
-    dependencies:
-      "@babel/runtime": 7.29.10
-      dayjs: 1.11.23
-      js-cookie: 3.0.8
-      lodash: 4.18.1
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-      react-fast-compare: 3.2.2
-      resize-observer-polyfill: 1.5.1
-      screenfull: 5.2.0
-      tslib: 2.8.1
 
   any-base@1.1.0: {}
 
@@ -3562,8 +3427,6 @@ snapshots:
   csstype@3.2.3: {}
 
   dayjs@1.11.10: {}
-
-  dayjs@1.11.23: {}
 
   debug@4.1.1:
     dependencies:
@@ -3730,8 +3593,6 @@ snapshots:
 
   jpeg-js@0.3.7: {}
 
-  js-cookie@3.0.8: {}
-
   js-tokens@4.0.0: {}
 
   licia@1.49.0: {}
@@ -3799,8 +3660,6 @@ snapshots:
       - debug
 
   lodash-es@4.18.1: {}
-
-  lodash@4.18.1: {}
 
   loose-envify@1.4.0:
     dependencies:
@@ -3940,8 +3799,6 @@ snapshots:
 
   regenerator-runtime@0.14.1: {}
 
-  resize-observer-polyfill@1.5.1: {}
-
   resolve-pkg-maps@1.0.0: {}
 
   rolldown@1.2.15:
@@ -3969,10 +3826,6 @@ snapshots:
 
   scheduler@0.28.0: {}
 
-  screenfull@5.2.0: {}
-
-  smoothscroll-polyfill@0.4.4: {}
-
   sortablejs@1.15.7: {}
 
   source-map-js@1.2.2: {}
@@ -3994,26 +3847,6 @@ snapshots:
       react-dom: 19.3.1(react@19.3.1)
 
   tdesign-miniprogram@1.17.0: {}
-
-  tdesign-mobile-react@1.0.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
-    dependencies:
-      "@popperjs/core": 2.11.8
-      "@types/sortablejs": 1.15.9
-      "@use-gesture/react": 10.3.1(react@19.3.1)
-      ahooks: 3.10.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      classnames: 2.5.1
-      csstype: 3.2.3
-      dayjs: 1.11.23
-      hoist-non-react-statics: 3.3.2
-      lodash-es: 4.18.1
-      react: 19.3.1
-      react-dom: 19.3.1(react@19.3.1)
-      react-transition-group: 4.4.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      smoothscroll-polyfill: 0.4.4
-      sortablejs: 1.15.7
-      tdesign-icons-react: 0.6.11(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      tinycolor2: 1.6.0
-      validator: 13.15.35
 
   tdesign-react@1.18.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
@@ -4051,8 +3884,6 @@ snapshots:
       picomatch: 4.0.7
 
   tslib@2.3.1: {}
-
-  tslib@2.8.1: {}
 
   tsx@4.23.15:
     dependencies:

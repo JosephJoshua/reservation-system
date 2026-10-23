@@ -20,15 +20,6 @@ export default defineConfig({
       testMatch: /admin\/.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:5173/admin/' },
     },
-    {
-      name: 'coach',
-      testMatch: /coach\/.*\.spec\.ts/,
-      use: {
-        ...devices['iPhone 13'],
-        defaultBrowserType: 'chromium',
-        baseURL: 'http://localhost:5174/coach/',
-      },
-    },
   ],
   webServer: [
     {
@@ -40,11 +31,6 @@ export default defineConfig({
     {
       command: 'pnpm --filter @rs/admin dev',
       url: 'http://localhost:5173/admin/',
-      reuseExistingServer: !ci,
-    },
-    {
-      command: 'pnpm --filter @rs/coach dev',
-      url: 'http://localhost:5174/coach/',
       reuseExistingServer: !ci,
     },
   ],

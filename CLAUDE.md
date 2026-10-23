@@ -1,24 +1,25 @@
 # reservation-system
 
-Booking for private table tennis lessons at one venue. Students use a WeChat mini program;
-coaches and the admin use web apps. Build for this venue only: generic names (coach, student,
-lesson type, resource, booking, package) but no multi-tenancy, plugins or unused abstractions.
+Booking for private table tennis lessons at one venue. Students and coaches use one WeChat mini
+program (coaches in a coach mode); the admin uses a web app. Build for this venue only: generic
+names (coach, student, lesson type, resource, booking, package) but no multi-tenancy, plugins or
+unused abstractions.
 
 ## Layout
 
 - `apps/api`: Hono + Drizzle + SQLite. `createApp(db)` in `src/app.ts`; routes under `/api`.
 - `apps/admin`: Vite + React + TDesign React, desktop, served at `/admin/`.
-- `apps/coach`: Vite + React + TDesign Mobile React, phone first, served at `/coach/`.
-- `apps/miniprogram`: native mini program in TypeScript with TDesign Miniprogram.
+- `apps/miniprogram`: native mini program in TypeScript with TDesign Miniprogram. Coach pages
+  live in the `coach/` subpackage and use their own coach session.
 - `packages/shared`: zod schemas, types, booking rules, venue time helpers. Used by every app.
 - `packages/theme`: brand tokens. Edit `tokens.json`, then `pnpm --filter @rs/theme generate`.
-- `qa/e2e`: Playwright specs for admin and coach. `qa/miniprogram`: automator scripts.
+- `qa/e2e`: Playwright specs for admin. `qa/miniprogram`: automator scripts.
 
 ## Commands
 
 ```sh
 pnpm install
-pnpm dev          # api :8787, admin :5173/admin/, coach :5174/coach/
+pnpm dev          # api :8787, admin :5173/admin/
 pnpm lint         # biome; `pnpm format` to fix
 pnpm typecheck
 pnpm test         # vitest + theme check
@@ -45,7 +46,7 @@ pnpm --filter @rs/api db:generate   # after schema changes
 ## QA
 
 A feature is done only after it has been driven for real, not just unit tested:
-Vitest for rules and API, Playwright for admin and coach (also try odd inputs and check
+Vitest for rules and API, Playwright for admin (also try odd inputs and check
 screenshots in light and dark), and `pnpm --filter @rs/qa-miniprogram smoke` plus feature
 scripts in WeChat DevTools on a Mac for the mini program.
 
