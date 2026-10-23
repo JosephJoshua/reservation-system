@@ -17,7 +17,7 @@ import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, newKey, useApi, useSubmitting } from '../hooks'
 import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
@@ -29,9 +29,12 @@ export function Banners() {
   const banners = useApi<Banner[]>('/admin/banners')
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
-  const [edit, setEdit] = useState<{ id: number | null; form: BannerForm; loaded?: Banner } | null>(
-    null,
-  )
+  const [edit, setEdit] = useState<{
+    id: number | null
+    form: BannerForm
+    loaded?: Banner
+    key: string
+  } | null>(null)
   const submitting = useSubmitting()
 
   const save = async () => {
@@ -42,7 +45,7 @@ export function Banners() {
           edit.id ? 'PUT' : 'POST',
           edit.id ? `/admin/banners/${edit.id}` : '/admin/banners',
           edit.form,
-          { ifMatch: edit.loaded },
+          { ifMatch: edit.loaded, key: edit.key },
         ),
       '已保存',
     )
@@ -83,6 +86,7 @@ export function Banners() {
                 active: true,
                 sort: 0,
               },
+              key: newKey(),
             })
           }
         >
@@ -134,7 +138,9 @@ export function Banners() {
                 <Button
                   variant="text"
                   theme="primary"
-                  onClick={() => setEdit({ id: row.id, form: { ...row }, loaded: row })}
+                  onClick={() =>
+                    setEdit({ id: row.id, form: { ...row }, loaded: row, key: newKey() })
+                  }
                 >
                   编辑
                 </Button>

@@ -96,6 +96,33 @@ test('a double click on 确认收款 records one sale at the running sale price'
   expect(detail.packages).toHaveLength(1)
 })
 
+test('a retry after a lost sale response records the sale once', async ({ page, request }) => {
+  await login(page)
+  await page.goto(`./#/students?id=${studentId}`)
+  await page.getByRole('button', { name: '前台售卖' }).click()
+  await field(dialog(page), '课时包').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: productName }).click()
+  // The first sale reaches the server, but its answer is lost on the way back.
+  let sent = 0
+  await page.route('**/api/admin/packages/offline-sale', async (route) => {
+    if (++sent > 1) return route.continue()
+    await route.fetch()
+    await route.abort('connectionreset')
+  })
+  await dialog(page).getByRole('button', { name: '确认收款' }).click()
+  await expect(page.getByText('网络异常，请检查网络后重试')).toBeVisible()
+  await dialog(page).getByRole('button', { name: '确认收款' }).click()
+  await expect(page.getByText('已记录')).toBeVisible()
+  expect(sent).toBe(2)
+  const detail = await call<{ packages: unknown[] }>(
+    request,
+    'GET',
+    `/admin/students/${studentId}`,
+    admin,
+  )
+  expect(detail.packages).toHaveLength(2)
+})
+
 test('back closes a student opened from the list', async ({ page }) => {
   await login(page)
   await page.goto('./#/students')

@@ -17,7 +17,7 @@ import {
 import { api } from '../api'
 import { Field } from '../Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, useApi, useIsPhone, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import { bookingStatusLabel } from '../labels'
 import type { Coach, LessonType, Slot } from '../types'
 
@@ -238,6 +238,7 @@ function CreateSlots({
   const [times, setTimes] = useState('09:00, 10:00, 14:00, 15:00, 16:00')
   const [minutes, setMinutes] = useState(durations[0] ?? 60)
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
 
   const parsed = useMemo(() => parseTimes(times), [times])
   const dates = useMemo(() => {
@@ -282,7 +283,11 @@ function CreateSlots({
       return
     }
     if (
-      await attempt(() => api('POST', '/admin/slots', { slots: planned }), `已创建 ${count} 个时段`)
+      await attempt(
+        () => api('POST', '/admin/slots', { slots: planned }, { key }),
+        `已创建 ${count} 个时段`,
+        { onStale: onDone },
+      )
     )
       onDone()
   }

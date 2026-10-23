@@ -18,7 +18,7 @@ import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useIsPhone, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import {
   bookingStatusLabel,
   ledgerKindLabel,
@@ -330,20 +330,27 @@ function OfflineSale({
   const [method, setMethod] = useState<keyof typeof offlineMethodLabel>('alipay')
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const fen = toFen(amount)
 
   const submit = async () => {
     if (!productId || fen === null) return
     const ok = await attempt(
       () =>
-        api('POST', '/admin/packages/offline-sale', {
-          studentId,
-          productId,
-          amount: fen,
-          method,
-          note,
-        }),
+        api(
+          'POST',
+          '/admin/packages/offline-sale',
+          {
+            studentId,
+            productId,
+            amount: fen,
+            method,
+            note,
+          },
+          { key },
+        ),
       '已记录',
+      { onStale: onDone },
     )
     if (ok) onDone()
   }
@@ -415,9 +422,18 @@ function PackageAction({
   const [n, setN] = useState(1)
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const submit = async () => {
     const body = kind === 'grant' ? { lessons: n, note } : { days: n, note }
-    if (await attempt(() => api('POST', `/admin/packages/${packageId}/${kind}`, body), '已保存'))
+    if (
+      await attempt(
+        () => api('POST', `/admin/packages/${packageId}/${kind}`, body, { key }),
+        '已保存',
+        {
+          onStale: onDone,
+        },
+      )
+    )
       onDone()
   }
   return (

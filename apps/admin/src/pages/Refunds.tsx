@@ -4,7 +4,7 @@ import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { refundStatusLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
@@ -158,6 +158,7 @@ function Decide({
   const [amount, setAmount] = useState<number | undefined>(toYuan(refund.amount || undefined))
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const fen = toFen(amount)
   const amountValid = fen !== null && fen > 0 && fen <= refund.order.amount
 
@@ -165,13 +166,15 @@ function Decide({
     const ok = approve
       ? amountValid &&
         (await attempt(
-          () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }),
+          () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }, { key }),
           '已同意退款',
           { onStale: onDone },
         ))
-      : await attempt(() => api('POST', `/admin/refunds/${refund.id}/reject`, { note }), '已拒绝', {
-          onStale: onDone,
-        })
+      : await attempt(
+          () => api('POST', `/admin/refunds/${refund.id}/reject`, { note }, { key }),
+          '已拒绝',
+          { onStale: onDone },
+        )
     if (ok) onDone()
   }
 
