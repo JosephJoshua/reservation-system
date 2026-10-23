@@ -8,7 +8,16 @@ import { config } from '../config'
 import { saveSettings } from '../services/settings'
 import { openDb } from './client'
 import { runMigrations } from './migrate'
-import { banners, coaches, coachLessonTypes, lessonTypes, packageProducts, slots } from './schema'
+import {
+  banners,
+  categoryPrices,
+  coachCategories,
+  coaches,
+  coachLessonTypes,
+  lessonTypes,
+  packageProducts,
+  slots,
+} from './schema'
 
 /** A 750x300 PNG with a diagonal gradient, so banners have something real to show. */
 function gradientPng(from: [number, number, number], to: [number, number, number]): Buffer {
@@ -75,12 +84,45 @@ saveSettings(
   now,
 )
 
+const [head, senior] = db
+  .insert(coachCategories)
+  .values([
+    { name: '主教练', sort: 0 },
+    { name: '高级教练', sort: 1 },
+  ])
+  .returning()
+  .all()
+if (!head || !senior) throw new Error('category insert failed')
+
 const [wang, li, zhao] = db
   .insert(coaches)
   .values([
-    { name: '王磊', title: '国家二级运动员', bio: '执教 8 年，擅长弧圈球和步法训练。', sort: 1 },
-    { name: '李静', title: '省队退役运动员', bio: '耐心细致，适合零基础和青少年。', sort: 2 },
-    { name: '赵鹏', title: '高级教练', bio: '专注发球与接发球技术。', sort: 3 },
+    {
+      name: '王磊',
+      categoryId: head.id,
+      title: '国家二级运动员',
+      tags: ['弧圈球', '步法', '比赛备战'],
+      profile:
+        '<h3>执教经历</h3><p>执教 8 年，曾任市青少年队教练，带出多名省级比赛前八的学员。</p><h3>比赛成绩</h3><ul><li><p>2014 年全国乒乓球锦标赛（业余组）男单第三名</p></li><li><p>2016 年省运会男团冠军</p></li></ul><h3>教学风格</h3><p>重视基本功和步法，<strong>每节课都有针对性的多球训练</strong>，适合想参加比赛的学员。</p><img src="/api/uploads/demo-coach-1.png" />',
+      sort: 1,
+    },
+    {
+      name: '李静',
+      categoryId: senior.id,
+      title: '省队退役运动员',
+      tags: ['零基础', '青少年'],
+      profile:
+        '<p>耐心细致，擅长从握拍和站位教起，适合零基础成人和 6 岁以上的孩子。</p><ul><li><p>前省队队员，退役后执教 5 年</p></li><li><p>国家二级社会体育指导员</p></li></ul>',
+      sort: 2,
+    },
+    {
+      name: '赵鹏',
+      categoryId: senior.id,
+      title: '前市队主力',
+      tags: ['发球', '接发球'],
+      profile: '<p>专注发球与接发球技术，帮你在比赛中抢到前三板的主动。</p>',
+      sort: 3,
+    },
   ])
   .returning()
   .all()
@@ -109,13 +151,17 @@ const [private1, trial] = db
   .all()
 if (!private1 || !trial) throw new Error('lesson type insert failed')
 
+db.insert(categoryPrices)
+  .values({ categoryId: head.id, lessonTypeId: private1.id, price: 36000 })
+  .run()
+
 db.insert(coachLessonTypes)
   .values([
-    { coachId: wang.id, lessonTypeId: private1.id, price: 36000 },
-    { coachId: li.id, lessonTypeId: private1.id, price: null },
-    { coachId: zhao.id, lessonTypeId: private1.id, price: null },
-    { coachId: li.id, lessonTypeId: trial.id, price: null },
-    { coachId: zhao.id, lessonTypeId: trial.id, price: null },
+    { coachId: wang.id, lessonTypeId: private1.id },
+    { coachId: li.id, lessonTypeId: private1.id },
+    { coachId: zhao.id, lessonTypeId: private1.id },
+    { coachId: li.id, lessonTypeId: trial.id },
+    { coachId: zhao.id, lessonTypeId: trial.id },
   ])
   .run()
 
@@ -176,6 +222,7 @@ mkdirSync(config.uploadsDir, { recursive: true })
 const images = [
   { file: 'demo-banner-1.png', png: gradientPng([31, 79, 168], [17, 43, 92]) },
   { file: 'demo-banner-2.png', png: gradientPng([232, 98, 15], [31, 79, 168]) },
+  { file: 'demo-coach-1.png', png: gradientPng([17, 43, 92], [232, 98, 15]) },
 ]
 for (const image of images) writeFileSync(join(config.uploadsDir, image.file), image.png)
 db.insert(banners)

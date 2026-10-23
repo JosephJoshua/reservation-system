@@ -9,8 +9,11 @@ const run = Date.now().toString(36)
 const lessonName = `私教${run}`
 const coachName = `教练${run}`
 const productName = `十次卡${run}`
+const categoryName = `高级${run.slice(-4)}`
 
-test('sets up a lesson, a coach with their own price, a package and slots', async ({ page }) => {
+test('sets up a lesson, a coach category with its own price, a package and slots', async ({
+  page,
+}) => {
   await login(page)
 
   await page.goto('./#/catalog')
@@ -20,18 +23,28 @@ test('sets up a lesson, a coach with their own price, a package and slots', asyn
   await dialog(page).getByRole('button', { name: '保存' }).click()
   await expect(page.getByRole('cell', { name: lessonName })).toBeVisible()
 
+  await page.getByRole('button', { name: '新建类别' }).click()
+  await field(dialog(page), '名称').locator('input').fill(categoryName)
+  const price = field(dialog(page), '价格').locator('.nowrap').filter({ hasText: lessonName })
+  await price.locator('.t-checkbox', { hasText: /^单独定价$/ }).click()
+  await typeNumber(price.locator('.t-input-number input'), '300')
+  await dialog(page).getByRole('button', { name: '保存' }).click()
+  await expect(page.getByRole('cell', { name: `${lessonName} ¥300` })).toBeVisible()
+
   await page.getByRole('button', { name: '新建教练' }).click()
   await field(dialog(page), '姓名').locator('input').fill(coachName)
+  await field(dialog(page), '类别').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: categoryName }).click()
   await dialog(page)
     .locator('.t-checkbox', { hasText: new RegExp(`^${lessonName}$`) })
     .click()
-  await dialog(page)
-    .locator('.t-checkbox', { hasText: /^单独定价$/ })
-    .first()
-    .click()
-  await typeNumber(field(dialog(page), '所教课程').locator('.t-input-number input').first(), '300')
   await dialog(page).getByRole('button', { name: '保存' }).click()
-  await expect(page.getByRole('cell', { name: `${lessonName} ¥300` })).toBeVisible()
+  await expect(
+    page
+      .locator('.t-card')
+      .filter({ hasText: '新建教练' })
+      .getByRole('cell', { name: `${lessonName} ¥300` }),
+  ).toBeVisible()
 
   await page.goto('./#/products')
   await page.getByRole('button', { name: '新建课时包' }).click()

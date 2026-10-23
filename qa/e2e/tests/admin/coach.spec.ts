@@ -70,7 +70,7 @@ test('binds a coach to WeChat with a code', async ({ page, request }) => {
   ).id
   await call(request, 'POST', '/admin/coaches', admin, {
     name: coachName,
-    lessons: [{ lessonTypeId, price: null }],
+    lessonTypeIds: [lessonTypeId],
   })
 
   await login(page)

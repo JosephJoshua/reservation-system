@@ -1,14 +1,25 @@
 import type { Attendance, BookingDto, BookingStatus, PackageDto, RefundStatus } from '@rs/shared'
 
+export interface CoachCategory {
+  id: number
+  name: string
+  sort: number
+  /** Prices for some lesson types; the rest use the lesson type's own price. */
+  prices: { lessonTypeId: number; price: number }[]
+}
+
 export interface Coach {
   id: number
   name: string
+  categoryId: number | null
   title: string
-  bio: string
+  tags: string[]
+  /** HTML from the rich text editor, cleaned by the API. */
+  profile: string
   avatarUrl: string
   active: boolean
   sort: number
-  lessons: { lessonTypeId: number; price: number | null }[]
+  lessonTypeIds: number[]
   /** Whether a WeChat user is linked; the coach mode of the mini program needs one. */
   bound: boolean
   bindCode: string | null

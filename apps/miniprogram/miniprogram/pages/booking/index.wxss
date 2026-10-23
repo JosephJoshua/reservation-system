@@ -106,6 +106,19 @@
   color: var(--td-text-color-placeholder);
 }
 
+.coach-main {
+  margin-left: 24rpx;
+}
+
+.coach-title {
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inline-empty {
   display: block;
   padding: 64rpx 0;

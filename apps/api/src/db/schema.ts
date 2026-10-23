@@ -31,11 +31,37 @@ export const sessions = sqliteTable('sessions', {
   expiresAt: instant('expires_at').notNull(),
 })
 
+/** A coach category, such as 主教练, sets the coaches' price for each lesson type. */
+export const coachCategories = sqliteTable('coach_categories', {
+  id: id(),
+  name: text('name').notNull(),
+  sort: integer('sort').notNull().default(0),
+  createdAt: createdAt(),
+})
+
+/** A category's price for a lesson type. Without one, the lesson type's own price applies. */
+export const categoryPrices = sqliteTable(
+  'category_prices',
+  {
+    categoryId: integer('category_id')
+      .notNull()
+      .references(() => coachCategories.id),
+    lessonTypeId: integer('lesson_type_id')
+      .notNull()
+      .references(() => lessonTypes.id),
+    price: integer('price').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.categoryId, t.lessonTypeId] })],
+)
+
 export const coaches = sqliteTable('coaches', {
   id: id(),
   name: text('name').notNull(),
+  categoryId: integer('category_id').references(() => coachCategories.id),
   title: text('title').notNull().default(''),
-  bio: text('bio').notNull().default(''),
+  tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  // Sanitized HTML from the admin's editor, shown on the student's coach page.
+  profile: text('profile').notNull().default(''),
   avatarUrl: text('avatar_url').notNull().default(''),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   sort: integer('sort').notNull().default(0),
@@ -91,7 +117,7 @@ export const lessonTypes = sqliteTable('lesson_types', {
   createdAt: createdAt(),
 })
 
-/** Which lesson types a coach teaches, with an optional price of their own. */
+/** Which lesson types a coach teaches. The price comes from the coach's category. */
 export const coachLessonTypes = sqliteTable(
   'coach_lesson_types',
   {
@@ -101,7 +127,6 @@ export const coachLessonTypes = sqliteTable(
     lessonTypeId: integer('lesson_type_id')
       .notNull()
       .references(() => lessonTypes.id),
-    price: integer('price'),
   },
   (t) => [primaryKey({ columns: [t.coachId, t.lessonTypeId] })],
 )

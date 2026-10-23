@@ -1,0 +1,73 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry">
+      <t-button wx:if="{{missing}}" theme="light" bind:tap="leave">返回</t-button>
+      <t-button wx:else theme="light" bind:tap="retry">重新加载</t-button>
+    </view>
+  </view>
+</view>
+
+<view wx:else class="{{lessons.length ? 'has-action-bar' : 'bottom-space'}}">
+  <view class="profile-head card">
+    <t-avatar image="{{avatar}}" icon="{{avatar ? '' : 'user'}}" size="136rpx" />
+    <view class="head-text">
+      <view class="head-name">
+        <text>{{name}}</text>
+        <view wx:if="{{category}}" class="head-tag">
+          <t-tag size="small" theme="primary" variant="light">{{category}}</t-tag>
+        </view>
+      </view>
+      <view wx:if="{{title}}" class="head-title">{{title}}</view>
+      <view wx:if="{{tags.length}}" class="head-tags">
+        <t-tag wx:for="{{tags}}" wx:key="*this" size="small" variant="outline">{{item}}</t-tag>
+      </view>
+    </view>
+  </view>
+
+  <view class="section-title">课程与价格</view>
+  <view wx:if="{{!lessons.length}}" class="card">
+    <view class="inline-empty"><t-empty icon="{{emptyIcon}}" description="该教练暂未开放预约" /></view>
+  </view>
+  <block wx:else>
+    <view class="card">
+      <view
+        wx:for="{{lessons}}"
+        wx:key="id"
+        class="lesson"
+        hover-class="lesson-hover"
+        data-id="{{item.id}}"
+        bind:tap="openLesson"
+      >
+        <view class="lesson-main">
+          <view class="lesson-name">{{item.name}}</view>
+          <view class="lesson-meta">{{item.duration}}</view>
+        </view>
+        <view class="lesson-side">
+          <text class="price">{{item.price}}</text>
+          <view wx:if="{{item.original}}" class="price-original">{{item.original}}</view>
+        </view>
+        <view class="lesson-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+      </view>
+    </view>
+  </block>
+
+  <block wx:if="{{profile}}">
+    <view class="section-title">教练介绍</view>
+    <view class="card profile-body">
+      <rich-text nodes="{{profile}}" user-select />
+    </view>
+  </block>
+
+  <view wx:if="{{lessons.length}}" class="action-bar">
+    <view class="grow">
+      <t-button theme="primary" size="large" t-class="action-button" bind:tap="pickLesson">
+        预约{{name}}
+      </t-button>
+    </view>
+  </view>
+</view>

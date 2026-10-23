@@ -19,7 +19,7 @@ import { api } from '../api'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi } from '../hooks'
-import type { Coach, LessonType, PackageProduct } from '../types'
+import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 
 type ProductForm = Omit<PackageProduct, 'id'>
 
@@ -27,6 +27,7 @@ export function Products() {
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const coaches = useApi<Coach[]>('/admin/coaches')
+  const categories = useApi<CoachCategory[]>('/admin/coach-categories')
   const [edit, setEdit] = useState<{ id: number | null; form: ProductForm } | null>(null)
 
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
@@ -158,6 +159,7 @@ export function Products() {
             value={edit.form}
             types={regular}
             coaches={coaches.data ?? []}
+            categories={categories.data ?? []}
             onChange={(form) => setEdit({ ...edit, form })}
           />
         </Dialog>
@@ -170,15 +172,22 @@ function ProductEditor({
   value: f,
   types,
   coaches,
+  categories,
   onChange,
 }: {
   value: ProductForm
   types: LessonType[]
   coaches: Coach[]
+  categories: CoachCategory[]
   onChange: (v: ProductForm) => void
 }) {
   const set = (patch: Partial<ProductForm>) => onChange({ ...f, ...patch })
-  const teaching = coaches.filter((c) => c.lessons.some((l) => l.lessonTypeId === f.lessonTypeId))
+  const teaching = coaches.filter((c) => c.lessonTypeIds.includes(f.lessonTypeId))
+  // A package usually matches one price level, so offer each category's coaches in one click.
+  const groups = categories.flatMap((cat) => {
+    const ids = teaching.filter((c) => c.categoryId === cat.id).map((c) => c.id)
+    return ids.length ? [{ name: cat.name, ids }] : []
+  })
   return (
     <div className="fields">
       <Field label="名称">
@@ -212,6 +221,20 @@ function ProductEditor({
           options={teaching.map((c) => ({ label: c.name, value: c.id }))}
           onChange={(v) => set({ coachIds: (v as number[]).map(Number) })}
         />
+        {groups.length > 0 && (
+          <Space size={4} className="quick-picks">
+            {groups.map((g) => (
+              <Button
+                key={g.name}
+                size="small"
+                variant="outline"
+                onClick={() => set({ coachIds: [...new Set([...f.coachIds, ...g.ids])] })}
+              >
+                添加全部{g.name}
+              </Button>
+            ))}
+          </Space>
+        )}
       </Field>
       <Field label="课时数">
         <InputNumber

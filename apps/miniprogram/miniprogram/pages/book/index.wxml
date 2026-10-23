@@ -39,6 +39,14 @@
         </view>
       </view>
     </scroll-view>
+    <view wx:if="{{picked}}" class="coach-info" hover-class="coach-info-hover" bind:tap="openCoach">
+      <view wx:if="{{picked.category}}" class="coach-info-tag">
+        <t-tag size="small" theme="primary" variant="light">{{picked.category}}</t-tag>
+      </view>
+      <text class="coach-info-title">{{picked.title || picked.name}}</text>
+      <text class="coach-info-link">教练介绍</text>
+      <t-icon name="chevron-right" size="32rpx" />
+    </view>
 
     <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="{{dayAnchor}}" class="day-scroll">
       <view id="day-start" class="day-start" />

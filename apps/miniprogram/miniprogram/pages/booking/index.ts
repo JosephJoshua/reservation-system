@@ -22,6 +22,7 @@ Page({
       price: string
       original: string
     }[],
+    coaches: [] as { id: number; name: string; category: string; title: string; avatar: string }[],
     packageCount: 0,
   },
 
@@ -64,6 +65,13 @@ Page({
           original,
         }
       }),
+      coaches: catalog.coaches.map((c) => ({
+        id: c.id,
+        name: c.name,
+        category: c.category,
+        title: c.title,
+        avatar: c.avatarUrl ? assetUrl(c.avatarUrl) : '',
+      })),
       packageCount: catalog.packageProducts.length,
     })
   },
@@ -85,6 +93,10 @@ Page({
 
   openLessonType(e: WechatMiniprogram.TouchEvent) {
     navigateOnce(`/pages/book/index?lessonTypeId=${e.currentTarget.dataset.id}`)
+  },
+
+  openCoach(e: WechatMiniprogram.TouchEvent) {
+    navigateOnce(`/pages/coach-detail/index?id=${e.currentTarget.dataset.id}`)
   },
 
   openPackages() {

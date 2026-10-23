@@ -61,6 +61,40 @@
   color: var(--td-text-color-secondary);
 }
 
+.coach-info {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  margin: 16rpx 32rpx 0;
+  padding: 0 20rpx 0 24rpx;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+  background-color: var(--td-bg-color-secondarycontainer);
+}
+
+.coach-info-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.coach-info-tag {
+  display: flex;
+  margin-right: 12rpx;
+}
+
+.coach-info-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-info-link {
+  margin-left: 16rpx;
+  color: var(--td-text-color-brand);
+}
+
 .day-scroll {
   margin-top: 24rpx;
 }

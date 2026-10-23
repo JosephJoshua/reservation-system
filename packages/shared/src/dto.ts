@@ -16,10 +16,17 @@ export interface LessonTypeDto {
 export interface CoachDto {
   id: number
   name: string
+  /** Category name such as 主教练, or empty. */
+  category: string
   title: string
-  bio: string
+  tags: string[]
   avatarUrl: string
   lessons: { lessonTypeId: number; price: PriceTag }[]
+}
+
+export interface CoachDetailDto extends CoachDto {
+  /** Sanitized HTML. Images point at /api/uploads/. */
+  profile: string
 }
 
 export interface PackageProductDto {
