@@ -138,12 +138,10 @@ then run: $(pwd)/rs.sh restore $1 $tag"
       exit 1
     fi
     # Started straight on the release meant for this database, so no other release migrates it.
-    # The release it replaces ran on a newer database, so it is not offered as a rollback.
-    if [ "$tag" != "$current" ]; then
-      set_var APP_PREV_TAG ""
-      install_config "$tag"
-      set_var APP_TAG "$tag"
-    fi
+    # Any earlier release ran on a different database, so none is offered as a rollback.
+    set_var APP_TAG "$tag"
+    set_var APP_PREV_TAG ""
+    if [ "$tag" != "$current" ]; then install_config "$tag"; fi
     dc up -d --wait app backup caddy
     echo "production runs $tag on the restored database"
     ;;

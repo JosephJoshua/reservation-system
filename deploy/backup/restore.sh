@@ -69,8 +69,8 @@ fi
 # left in place they would corrupt the restored file. Copies, so a rerun after a failure here
 # never loses them.
 halfway() {
-  if [ -n "${kept:-}" ]; then before="was kept as $kept"; else before="did not exist before"; fi
-  echo "restore failed halfway: $1; the previous $DB $before" >&2
+  echo "restore failed halfway: $1" >&2
+  echo "replaced databases are in $(dirname "$DB") as $(basename "$DB").before-restore-<time>, each with its -wal and -shm files; move all three back together" >&2
   exit 99
 }
 if [ -f "$DB" ]; then
