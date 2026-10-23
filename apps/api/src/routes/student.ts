@@ -100,7 +100,8 @@ export function studentRoutes(deps: Deps) {
     return c.json({ id: s.id, name: s.name, phone: s.phone })
   })
 
-  app.patch('/me', async (c) => {
+  // PUT rather than PATCH because wx.request cannot send PATCH. Fields left out are kept.
+  app.put('/me', async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -208,6 +209,7 @@ export function studentRoutes(deps: Deps) {
       },
       booking: {
         advanceDays: settings.booking.advanceDays,
+        minNoticeMinutes: settings.booking.minNoticeMinutes,
         cancelDeadlineHours: settings.booking.cancelDeadlineHours,
         lateCancel: settings.booking.lateCancel,
       },

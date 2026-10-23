@@ -664,4 +664,14 @@ describe('auth', () => {
     ).toBe(404)
     expect((await h.call('GET', `/orders/${res.json.orderId}`, undefined, b)).status).toBe(404)
   })
+
+  it('updates the profile with PUT, keeping fields left out', async () => {
+    const h = setup()
+    const a = await h.student('a')
+    const named = await h.call('PUT', '/me', { name: '小明' }, a)
+    expect(named.json).toMatchObject({ name: '小明', phone: '' })
+    const phoned = await h.call('PUT', '/me', { phone: '13800138000' }, a)
+    expect(phoned.json).toMatchObject({ name: '小明', phone: '13800138000' })
+    expect((await h.call('PUT', '/me', { phone: '12345' }, a)).status).toBe(400)
+  })
 })

@@ -37,7 +37,12 @@ export interface CatalogDto {
   coaches: CoachDto[]
   packageProducts: PackageProductDto[]
   payment: { trialEnabled: boolean; perClassEnabled: boolean; packagesEnabled: boolean }
-  booking: { advanceDays: number; cancelDeadlineHours: number; lateCancel: LateCancelRule }
+  booking: {
+    advanceDays: number
+    minNoticeMinutes: number
+    cancelDeadlineHours: number
+    lateCancel: LateCancelRule
+  }
   policies: { booking: string; agreement: string }
 }
 
