@@ -19,7 +19,7 @@ import {
 import { api, uploadImage } from '../api'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import { RichText } from '../RichText'
 import type { Coach, CoachCategory, LessonType } from '../types'
 import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
@@ -58,6 +58,12 @@ type CategoryForm = Omit<CoachCategory, 'id'>
 
 const emptyCategory: CategoryForm = { name: '', sort: 0, prices: [] }
 
+/** The record behind an open dialog changed elsewhere: close it and show the current list. */
+function closeAndReload(close: (v: null) => void, reload: () => Promise<void>) {
+  close(null)
+  void reload()
+}
+
 /** What a coach in a category charges for a lesson type before any sale. */
 function priceIn(category: CoachCategory | undefined, type: LessonType) {
   return category?.prices.find((p) => p.lessonTypeId === type.id)?.price ?? type.price
@@ -72,6 +78,7 @@ export function Catalog() {
   const [coach, setCoach] = useState<{ id: number | null; form: CoachForm } | null>(null)
   const [binding, setBinding] = useState<Coach | null>(null)
   const [hoursOf, setHoursOf] = useState<Coach | null>(null)
+  const submitting = useSubmitting()
 
   const saveLesson = async () => {
     if (!lesson) return
@@ -80,6 +87,7 @@ export function Catalog() {
       () =>
         api(id ? 'PUT' : 'POST', id ? `/admin/lesson-types/${id}` : '/admin/lesson-types', form),
       '已保存',
+      { onStale: () => closeAndReload(setLesson, types.reload) },
     )
     if (ok) {
       setLesson(null)
@@ -93,6 +101,7 @@ export function Catalog() {
     const ok = await attempt(
       () => api(id ? 'PUT' : 'POST', id ? `/admin/coaches/${id}` : '/admin/coaches', form),
       '已保存',
+      { onStale: () => closeAndReload(setCoach, coaches.reload) },
     )
     if (ok) {
       setCoach(null)
@@ -111,6 +120,7 @@ export function Catalog() {
           form,
         ),
       '已保存',
+      { onStale: () => closeAndReload(setCategory, categories.reload) },
     )
     if (ok) {
       setCategory(null)
@@ -119,7 +129,11 @@ export function Catalog() {
   }
 
   const deleteCategory = async (id: number) => {
-    if (await attempt(() => api('DELETE', `/admin/coach-categories/${id}`), '已删除')) {
+    const ok = await attempt(() => api('DELETE', `/admin/coach-categories/${id}`), '已删除', {
+      key: `category-${id}`,
+      onStale: categories.reload,
+    })
+    if (ok) {
       await categories.reload()
     }
   }
@@ -398,7 +412,11 @@ export function Catalog() {
           visible
           width={560}
           header={category.id ? '编辑类别' : '新建类别'}
-          confirmBtn={{ content: '保存', disabled: !category.form.name.trim() }}
+          confirmBtn={{
+            content: '保存',
+            disabled: !category.form.name.trim(),
+            loading: submitting,
+          }}
           onConfirm={saveCategory}
           onClose={() => setCategory(null)}
         >
@@ -415,7 +433,7 @@ export function Catalog() {
           visible
           width={560}
           header={lesson.id ? '编辑课程' : '新建课程'}
-          confirmBtn={{ content: '保存', disabled: !lesson.form.name.trim() }}
+          confirmBtn={{ content: '保存', disabled: !lesson.form.name.trim(), loading: submitting }}
           onConfirm={saveLesson}
           onClose={() => setLesson(null)}
         >
@@ -429,7 +447,7 @@ export function Catalog() {
           width={760}
           top={40}
           header={coach.id ? '编辑教练' : '新建教练'}
-          confirmBtn={{ content: '保存', disabled: !coach.form.name.trim() }}
+          confirmBtn={{ content: '保存', disabled: !coach.form.name.trim(), loading: submitting }}
           onConfirm={saveCoach}
           onClose={() => setCoach(null)}
         >

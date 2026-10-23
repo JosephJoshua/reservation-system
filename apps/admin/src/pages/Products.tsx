@@ -18,7 +18,7 @@ import {
 import { api } from '../api'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 
 type ProductForm = Omit<PackageProduct, 'id'>
@@ -29,6 +29,7 @@ export function Products() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const categories = useApi<CoachCategory[]>('/admin/coach-categories')
   const [edit, setEdit] = useState<{ id: number | null; form: ProductForm } | null>(null)
+  const submitting = useSubmitting()
 
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
   const typeName = (id: number) => types.data?.find((t) => t.id === id)?.name ?? ''
@@ -47,6 +48,12 @@ export function Products() {
           edit.form,
         ),
       '已保存',
+      {
+        onStale: () => {
+          setEdit(null)
+          void products.reload()
+        },
+      },
     )
     if (ok) {
       setEdit(null)
@@ -151,7 +158,7 @@ export function Products() {
           visible
           width={600}
           header={edit.id ? '编辑课时包' : '新建课时包'}
-          confirmBtn="保存"
+          confirmBtn={{ content: '保存', loading: submitting }}
           onConfirm={save}
           onClose={() => setEdit(null)}
         >

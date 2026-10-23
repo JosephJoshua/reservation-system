@@ -204,6 +204,18 @@ test('keeps edits made while a photo uploads and ignores one that lands after cl
   await expect(dialog(page)).toHaveCount(0)
 })
 
+test('saves a new category once on a double click', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/catalog')
+  await page.getByRole('button', { name: '新建类别' }).click()
+  const name = `双击${run.slice(-4)}`
+  await field(dialog(page), '名称').locator('input').fill(name)
+  await dialog(page).getByRole('button', { name: '保存' }).dblclick()
+  await expect(page.locator('.t-message')).toContainText('已保存')
+  const rows = page.locator('.t-card').filter({ hasText: '新建类别' }).getByRole('row')
+  await expect(rows.filter({ hasText: name })).toHaveCount(1)
+})
+
 test('refuses to delete a category that has coaches', async ({ page }) => {
   await login(page)
   await page.goto('./#/catalog')
