@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
+    "@rs/shared": "workspace:*",
     "@types/node": "22.20.5"
   }
 }

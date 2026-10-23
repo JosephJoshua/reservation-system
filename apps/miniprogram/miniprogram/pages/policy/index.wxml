@@ -1,0 +1,9 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+<view wx:elif="{{state === 'error' || !text}}" class="centered">
+  <t-empty icon="{{emptyIcon}}" description="{{error || '暂无内容'}}" />
+</view>
+<view wx:else class="body">
+  <text user-select>{{text}}</text>
+</view>

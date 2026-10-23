@@ -1,0 +1,44 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:elif="{{!products.length}}" class="centered">
+  <t-empty icon="{{emptyIcon}}" description="暂无在售的课时包" />
+</view>
+
+<view wx:else class="list">
+  <view wx:for="{{products}}" wx:key="id" class="product card {{item.highlighted ? 'product-highlight' : ''}}">
+    <view class="product-head">
+      <view class="product-name">{{item.name}}</view>
+      <view wx:if="{{item.original}}"><t-tag size="small" theme="warning" variant="light">限时优惠</t-tag></view>
+    </view>
+    <view class="product-scope">{{item.scope}}</view>
+    <view wx:if="{{item.description}}" class="product-desc">{{item.description}}</view>
+    <view class="product-meta">{{item.lessonCount}} 节 · {{item.validity}}</view>
+    <view class="product-foot">
+      <view class="grow">
+        <text class="product-price">{{item.price}}</text>
+        <text wx:if="{{item.original}}" class="price-original">{{item.original}}</text>
+        <view class="product-unit">{{item.unit}}</view>
+      </view>
+      <t-button
+        theme="primary"
+        loading="{{buying === item.id}}"
+        disabled="{{buying !== 0 && buying !== item.id}}"
+        data-id="{{item.id}}"
+        bind:tap="buy"
+      >购买</t-button>
+    </view>
+  </view>
+  <view class="footnote">
+    课时包仅限本人使用，过期后剩余课时失效。未使用的课时可申请退款，由场馆审核。
+    <text wx:if="{{hasAgreement}}" class="link" bind:tap="openAgreement">《用户协议》</text>
+  </view>
+</view>

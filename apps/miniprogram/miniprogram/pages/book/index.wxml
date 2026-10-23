@@ -1,0 +1,88 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else>
+  <view class="header">
+    <view class="section-title first">教练</view>
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="coach-scroll">
+      <view class="coach-row">
+        <view
+          wx:if="{{coaches.length > 1}}"
+          class="coach {{coachId === 0 ? 'coach-active' : ''}}"
+          data-id="{{0}}"
+          bind:tap="pickCoach"
+        >
+          <view class="coach-any">全部</view>
+          <view class="coach-name">不限教练</view>
+        </view>
+        <view
+          wx:for="{{coaches}}"
+          wx:key="id"
+          class="coach {{coachId === item.id ? 'coach-active' : ''}}"
+          data-id="{{item.id}}"
+          bind:tap="pickCoach"
+        >
+          <t-avatar image="{{item.avatar}}" icon="{{item.avatar ? '' : 'user'}}" size="88rpx" />
+          <view class="coach-name">{{item.name}}</view>
+          <view class="coach-price">
+            <text>{{item.price}}</text>
+            <text wx:if="{{item.original}}" class="price-original">{{item.original}}</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="{{dayAnchor}}" class="day-scroll">
+      <view id="day-start" class="day-start" />
+      <view class="day-row">
+        <view
+          wx:for="{{days}}"
+          wx:key="key"
+          id="day-{{item.key}}"
+          class="day {{date === item.key ? 'day-active' : ''}}"
+          data-key="{{item.key}}"
+          bind:tap="pickDate"
+        >
+          <view class="day-label">{{item.label}}</view>
+          <view class="day-date">{{item.date}}</view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{slotsState === 'loading'}}" class="slots-status">
+    <t-loading theme="circular" size="40rpx" />
+  </view>
+  <view wx:elif="{{slotsState === 'error'}}" class="slots-status muted">
+    {{error}}
+  </view>
+  <view wx:elif="{{!slots.length}}" class="slots-empty">
+    <t-empty icon="{{emptyIcon}}" description="这一天没有可预约的时段" />
+  </view>
+  <view wx:else>
+    <view class="section-title">
+      {{availableCount ? '可预约 ' + availableCount + ' 个时段，每节 ' + duration + ' 分钟' : '这一天已无可约时段'}}
+    </view>
+    <view class="slot-grid">
+      <view
+        wx:for="{{slots}}"
+        wx:key="id"
+        class="slot {{item.available ? '' : 'slot-full'}}"
+        hover-class="{{item.available ? 'slot-hover' : 'none'}}"
+        data-index="{{index}}"
+        bind:tap="pickSlot"
+      >
+        <view class="slot-time">{{item.time}}</view>
+        <view class="slot-sub">{{item.available ? (coachId ? '可约' : item.coachName) : item.closed ? '已截止' : '已约满'}}</view>
+      </view>
+    </view>
+  </view>
+</view>

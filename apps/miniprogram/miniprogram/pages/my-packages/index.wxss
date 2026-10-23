@@ -1,0 +1,80 @@
+@import '../../styles/common.wxss';
+
+.list {
+  padding: 24rpx 0 48rpx;
+}
+
+.pkg {
+  margin-bottom: 24rpx;
+  padding: 32rpx;
+}
+
+.pkg-inactive .pkg-name,
+.pkg-inactive .pkg-remaining {
+  color: var(--td-text-color-placeholder);
+}
+
+.pkg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pkg-name {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.pkg-type {
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.pkg-count {
+  margin: 24rpx 0 12rpx;
+  font-size: 28rpx;
+}
+
+.pkg-remaining {
+  font-size: 48rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.pkg-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.refund-link {
+  flex-shrink: 0;
+  margin-left: 24rpx;
+  padding: 16rpx 0 16rpx 24rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-link);
+}
+
+.refund-hover,
+.refund-busy {
+  opacity: 0.5;
+}
+
+.pkg-meta {
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

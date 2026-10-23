@@ -14,3 +14,18 @@ the gitignored `project.private.config.json`.
 
 Screenshots are written to `qa/miniprogram/screenshots/`. Set `WECHAT_DEVTOOLS_CLI` if DevTools
 is not installed in the default location.
+
+## Student flows
+
+Books, pays (through the fake gateway's 模拟支付 dialog), cancels, buys a package and loses a slot
+race against a second student, checking each screen and saving screenshots to
+`qa/miniprogram/screenshots/flows/`. It needs a local API with demo data and no WeChat Pay
+credentials:
+
+```sh
+DATABASE_PATH=data/qa.db pnpm --filter @rs/api db:seed   # once, on an empty database
+DATABASE_PATH=data/qa.db pnpm --filter @rs/api dev       # leave running
+pnpm --filter @rs/qa-miniprogram flows
+```
+
+The mini program calls `API_BASE_URL` (default `http://localhost:8787`), baked in by the build.

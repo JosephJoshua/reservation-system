@@ -1,8 +1,66 @@
-.container {
-  box-sizing: border-box;
+@import '../../styles/common.wxss';
+
+.list {
+  padding: 24rpx 0 48rpx;
+}
+
+.lesson {
   display: flex;
   align-items: center;
+  margin-bottom: 20rpx;
+  padding: 28rpx 32rpx;
+}
+
+.lesson-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.date {
+  width: 112rpx;
+  padding-right: 24rpx;
+  margin-right: 24rpx;
+  border-right: 1rpx solid var(--td-component-stroke);
+  text-align: center;
+}
+
+.date-day {
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.date-num {
+  margin-top: 4rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.info-time {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+
+.info-name {
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.centered {
+  min-height: 60vh;
+}
+
+.retry {
+  display: flex;
   justify-content: center;
-  min-height: 100vh;
-  padding-bottom: 12vh;
+  margin-top: 32rpx;
 }

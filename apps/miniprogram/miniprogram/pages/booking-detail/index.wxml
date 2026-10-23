@@ -1,0 +1,56 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="{{booking.canCancel || booking.status === 'cancelled' || booking.status === 'expired' ? 'has-action-bar' : ''}}">
+  <view class="status">
+    <view class="status-icon tone-{{statusTone}}"><t-icon name="{{statusIcon}}" size="56rpx" /></view>
+    <view>
+      <view class="status-title">{{statusTitle}}</view>
+      <view class="status-text">{{statusText}}</view>
+    </view>
+  </view>
+
+  <t-cell-group theme="card">
+    <t-cell title="课程" note="{{booking.lessonType.name}}" />
+    <t-cell title="教练" note="{{booking.coach.name}}" />
+    <t-cell title="时间" note="{{when}}" />
+    <t-cell title="支付" note="{{payment}}" />
+    <t-cell wx:if="{{refund}}" title="退款" note="{{refund}}" />
+    <t-cell wx:if="{{booking.status === 'confirmed' || booking.status === 'pending_payment'}}" title="免费取消截止" note="{{deadline}}" />
+  </t-cell-group>
+
+  <view wx:if="{{address}}" class="venue">
+    <t-cell-group theme="card">
+      <t-cell title="{{address}}" left-icon="location" arrow hover bind:click="openMap" />
+    </t-cell-group>
+  </view>
+
+  <view wx:if="{{booking.canCancel && cancelRule}}" class="footnote">{{cancelRule}}</view>
+
+  <view wx:if="{{booking.status === 'pending_payment'}}" class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="default" disabled="{{busy}}" bind:tap="cancel">取消预约</t-button>
+    </view>
+    <view class="grow">
+      <t-button block t-class="action-button" theme="primary" loading="{{busy}}" bind:tap="pay">去支付</t-button>
+    </view>
+  </view>
+  <view wx:elif="{{booking.canCancel}}" class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="default" loading="{{busy}}" bind:tap="cancel">取消预约</t-button>
+    </view>
+  </view>
+  <view wx:elif="{{booking.status === 'cancelled' || booking.status === 'expired'}}" class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="primary" bind:tap="rebook">重新预约</t-button>
+    </view>
+  </view>
+</view>
