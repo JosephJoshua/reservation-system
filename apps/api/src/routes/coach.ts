@@ -24,7 +24,14 @@ import {
   setSlotOpen,
 } from '../services/lessons'
 
-const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+// A real calendar date: Date.parse would quietly turn 2026-02-30 into March 2.
+const dateKey = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((d) => {
+    const ms = Date.parse(`${d}T00:00:00Z`)
+    return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(d)
+  }, '日期无效')
 const code = z.string().min(1).max(200)
 
 export const weeklyHoursBody = z.object({

@@ -435,6 +435,10 @@ describe('the coach schedule and lessons', () => {
       (await h.call('GET', '/coach/schedule?from=2026-10-27&to=2026-10-26', undefined, token))
         .status,
     ).toBe(400)
+    expect(
+      (await h.call('GET', '/coach/schedule?from=2026-02-30&to=2026-13-45', undefined, token))
+        .status,
+    ).toBe(400)
   })
 
   it('shows a lesson with the student and earlier lessons together', async () => {
