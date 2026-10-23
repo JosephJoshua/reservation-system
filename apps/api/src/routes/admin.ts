@@ -223,7 +223,11 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, lessonTypeBody)
     const existing = db.select().from(lessonTypes).where(eq(lessonTypes.id, id)).get()
     if (!existing) throw notFound('课程')
-    const used = db.select({ id: bookings.id }).from(bookings).where(eq(bookings.lessonTypeId, id)).get()
+    const used = db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(eq(bookings.lessonTypeId, id))
+      .get()
     if (used && body.durationMinutes !== existing.durationMinutes) {
       throw new ApiError(409, 'duration_locked', '已有预约的课程不能修改时长，请新建课程')
     }

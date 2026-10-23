@@ -857,13 +857,29 @@ describe('review fixes', () => {
     const h = setup()
     const { lesson } = h.seed()
     const admin = await h.admin()
-    const body = { name: '10 次课', lessonTypeId: lesson.id, lessonCount: 10, price: 180000, validityDays: 90 }
+    const body = {
+      name: '10 次课',
+      lessonTypeId: lesson.id,
+      lessonCount: 10,
+      price: 180000,
+      validityDays: 90,
+    }
     const product = (await h.call('POST', '/admin/package-products', body, admin)).json
     const t = await h.student('a')
     await h.call('POST', '/packages/purchase', { productId: product.id }, t)
-    const fewer = await h.call('PUT', `/admin/package-products/${product.id}`, { ...body, lessonCount: 5 }, admin)
+    const fewer = await h.call(
+      'PUT',
+      `/admin/package-products/${product.id}`,
+      { ...body, lessonCount: 5 },
+      admin,
+    )
     expect(fewer.json.error.code).toBe('product_in_payment')
-    const cheaper = await h.call('PUT', `/admin/package-products/${product.id}`, { ...body, price: 170000 }, admin)
+    const cheaper = await h.call(
+      'PUT',
+      `/admin/package-products/${product.id}`,
+      { ...body, price: 170000 },
+      admin,
+    )
     expect(cheaper.status).toBe(200)
   })
 })
