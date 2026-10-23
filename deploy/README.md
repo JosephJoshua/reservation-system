@@ -82,11 +82,11 @@ an error. Migrations run when the API starts.
 **Rolling back.** `rs.sh rollback` swaps production with the previous release (`rs.sh status`
 shows both), so running it again swaps back. If the release being undone changed the database
 (new files in `apps/api/drizzle/`), the old code may not work on the migrated database. Restore
-the copy taken just before the deploy instead, starting the previous release on it:
-`rs.sh restore app-<time>.db.gz <previous tag>` (find the copy with `rs.sh backups`). Do not run
-`rollback` after that: it would start the newer release on the restored database. Bookings and
-payments made since that copy are lost, so check the orders in the WeChat Pay merchant platform
-afterwards.
+instead, and start the release that ran before the bad deploy on the copy taken just before it:
+`rs.sh restore app-<time>.db.gz <tag>`. In `rs.sh backups`, that copy is the newest one older than
+the bad deploy. After such a restore, `rollback` has no previous release to offer, so the newer
+release cannot start on the restored database by accident. Bookings and payments made since that
+copy are lost, so check the orders in the WeChat Pay merchant platform afterwards.
 
 `compose.yml`, the `Caddyfile` and `rs.sh` in `/srv/rs` follow the production release: they are
 replaced when a release goes to production, not when one is shipped to staging, and `ship.sh`

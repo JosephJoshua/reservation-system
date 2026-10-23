@@ -69,7 +69,8 @@ fi
 # left in place they would corrupt the restored file. Copies, so a rerun after a failure here
 # never loses them.
 halfway() {
-  echo "restore failed halfway: $1; replaced databases are kept in /data as app.db.before-restore-*" >&2
+  if [ -n "${kept:-}" ]; then before="was kept as $kept"; else before="did not exist before"; fi
+  echo "restore failed halfway: $1; the previous $DB $before" >&2
   exit 99
 }
 if [ -f "$DB" ]; then

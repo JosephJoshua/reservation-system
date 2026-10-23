@@ -85,7 +85,7 @@ process.on('SIGTERM', () => {
   if ('closeIdleConnections' in server) server.closeIdleConnections()
   const swept = Promise.race([
     stopSweeper().then(() => true),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000).unref()),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000)),
   ]).then((done) => {
     if (!done) deps.log('shutdown: sweep still running, closing anyway')
   })
