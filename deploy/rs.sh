@@ -36,15 +36,19 @@ need_image() { docker image inspect "rs-app:$1" >/dev/null 2>&1 || die "no image
 prod_running() { [ -n "$(dc ps -q --status running app)" ]; }
 
 # compose.yml, the Caddyfile and this script follow the production release, so shipping a branch
-# to staging never changes how production runs. Copied then renamed: this script may be running.
+# to staging never changes how production runs. All copied first, then renamed: this script may
+# be running.
 install_config() {
   src=releases/$1/deploy
   [ -d "$src" ] || { echo "releases/$1 is gone, keeping the current compose.yml" >&2; return 0; }
   for file in compose.yml Caddyfile rs.sh; do
-    cp "$src/$file" ".$file.new" && mv ".$file.new" "$file"
+    cp "$src/$file" ".$file.new" || { rm -f .*.new; return 1; }
+  done
+  for file in compose.yml Caddyfile rs.sh; do
+    mv ".$file.new" "$file" || return 1
   done
   if [ -n "$(dc ps -q --status running caddy)" ]; then
-    dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+    dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile || return 1
   fi
 }
 
@@ -82,7 +86,7 @@ case $cmd in
     need_image "$1"
     # Without the AppSecret the API falls back to a development login that trusts any caller.
     grep -q '^WECHAT_APP_SECRET=.' staging.env || die "set WECHAT_APP_SECRET in staging.env first"
-    [ -f compose.yml ] || install_config "$1"
+    [ -f compose.yml ] || install_config "$1" || die "installing $1's config failed"
     set_var STAGING_TAG "$1"
     dc up -d --wait app-staging caddy
     echo "staging runs $1"
@@ -93,8 +97,8 @@ case $cmd in
     # A fresh copy first: a release may migrate the database, and this is the way back.
     if prod_running; then dc exec -T backup /app/api/backup/backup.sh; fi
     current=$(get APP_TAG)
+    install_config "$1" || die "installing $1's config failed; production still runs $current"
     remember_previous "$current" "$1"
-    install_config "$1"
     set_var APP_TAG "$1"
     dc up -d --wait app backup caddy
     echo "production runs $1"
@@ -140,10 +144,16 @@ then run: $(pwd)/rs.sh restore $1 $tag"
     # Started straight on the release meant for this database, so no other release migrates it.
     # Any earlier release ran on a different database, so none is offered as a rollback.
     set_var APP_PREV_TAG ""
-    if [ "$tag" != "$current" ]; then install_config "$tag"; fi
+    if [ "$tag" != "$current" ] && ! install_config "$tag"; then
+      die "the database is restored but installing $tag's config failed; production is stopped. Fix it, then run: $(pwd)/rs.sh restore $1 $tag"
+    fi
     set_var APP_TAG "$tag"
     dc up -d --wait app backup caddy
     echo "production runs $tag on the restored database"
+    staging=$(get STAGING_TAG)
+    if [ -n "$staging" ] && [ "$staging" != "$tag" ]; then
+      echo "staging still runs $staging: do not promote it until it works with this database" >&2
+    fi
     ;;
   restore-images)
     backup_tool /app/api/backup/restore.sh images

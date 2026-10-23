@@ -73,7 +73,7 @@ halfway() {
   if [ -n "${kept:-}" ]; then
     echo "this run moved the live database to $kept; move it back with any $kept-wal and $kept-shm" >&2
   else
-    echo "no live database was moved by this run; an earlier run's copy is the newest $DB.before-restore-* file" >&2
+    echo "this run did not move a live database aside" >&2
   fi
   exit 99
 }
