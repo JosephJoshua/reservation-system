@@ -1,4 +1,6 @@
 import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
+import { Hono } from 'hono'
 import { createApp } from './app'
 import { config } from './config'
 import { openDb } from './db/client'
@@ -35,8 +37,60 @@ const deps: Deps = {
 }
 
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')
-startSweeper(deps)
+const stopSweeper = startSweeper(deps)
 
-serve({ fetch: createApp(deps).fetch, port: config.port }, (info) => {
+// In a deployment the API also serves the built admin app, so one container holds one environment.
+const root = new Hono()
+if (config.adminDir) {
+  const adminDir = config.adminDir
+  root.get('/admin', (c) => c.redirect('/admin/'))
+  // Hashed bundles are cached for good; index.html is checked on every load.
+  root.use(
+    '/admin/*',
+    serveStatic({
+      root: adminDir,
+      rewriteRequestPath: (path) => path.replace(/^\/admin/, ''),
+      onFound: (path, c) =>
+        c.header(
+          'Cache-Control',
+          path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+        ),
+    }),
+  )
+  // Any other page path gets the app; a missing bundle (an old one after a deploy) stays a 404.
+  const index = serveStatic({
+    path: 'index.html',
+    root: adminDir,
+    onFound: (_path, c) => c.header('Cache-Control', 'no-cache'),
+  })
+  root.use('/admin/*', async (c, next) => {
+    if (c.req.path.startsWith('/admin/assets/')) return c.notFound()
+    return index(c, next)
+  })
+  root.get('/', (c) => c.redirect('/admin/'))
+}
+const api = createApp(deps)
+root.all('/api/*', (c) => api.fetch(c.req.raw, c.env))
+
+const server = serve({ fetch: root.fetch, port: config.port }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`)
+})
+
+// A deploy stops the container with SIGTERM: finish open requests and the sweep in progress (for
+// at most a few seconds, since a sweep waits on WeChat), then close the database so SQLite folds
+// its write-ahead log back into the file.
+process.on('SIGTERM', () => {
+  setTimeout(() => process.exit(1), 8000).unref()
+  const closed = new Promise((resolve) => server.close(resolve))
+  if ('closeIdleConnections' in server) server.closeIdleConnections()
+  const swept = Promise.race([
+    stopSweeper().then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000)),
+  ]).then((done) => {
+    if (!done) deps.log('shutdown: sweep still running, closing anyway')
+  })
+  Promise.all([closed, swept]).then(() => {
+    db.$client.close()
+    process.exit(0)
+  })
 })

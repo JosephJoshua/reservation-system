@@ -63,6 +63,8 @@ export const config = {
   port: Number(env.PORT ?? 8787),
   databasePath: env.DATABASE_PATH ?? 'data/dev.db',
   uploadsDir: env.UPLOADS_DIR ?? 'data/uploads',
+  /** Built admin app to serve at /admin/; unset in development, where Vite serves it. */
+  adminDir: env.ADMIN_DIR,
   adminPassword: adminPassword(),
   wechatAppId: env.WECHAT_APPID,
   wechatAppSecret: env.WECHAT_APP_SECRET,

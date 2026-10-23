@@ -26,6 +26,8 @@ export function runMigrations(db: Db) {
   if (existsSync(migrationsFolder)) migrate(db, { migrationsFolder })
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run as a script (pnpm db:migrate). Matched by file name, since in the bundled server this
+// module shares the entry file's URL.
+if (/[\\/]migrate\.ts$/.test(process.argv[1] ?? '')) {
   runMigrations(openDb(config.databasePath))
 }

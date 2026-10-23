@@ -8,6 +8,7 @@ Booking system for private table tennis lessons at one venue.
 - `packages/shared`: schemas and booking rules shared by all apps
 - `packages/theme`: brand tokens for TDesign
 - `qa/`: Playwright and mini program automation
+- `deploy/`: server setup, releases, backups; see `deploy/README.md`
 
 ## Development
 
