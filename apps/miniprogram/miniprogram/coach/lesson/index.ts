@@ -185,8 +185,8 @@ Page({
       title: '取消这节课？',
       content: `${refund}请同时电话告知学员。`,
       confirmText: '取消课程',
-      // TDesign's error colour in light; a lighter red keeps 4.5:1 on the dark modal.
-      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#d54941',
+      // Reds that keep 4.5:1 on the white and the dark modal.
+      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
       cancelText: '再想想',
     })
     if (!confirm) return
