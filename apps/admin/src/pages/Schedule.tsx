@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   MessagePlugin,
+  Popconfirm,
   Select,
   Space,
   Tag,
@@ -19,6 +20,26 @@ import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../forma
 import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel } from '../labels'
 import type { Coach, LessonType, Slot } from '../types'
+
+/** The second line of a slot in the week grid. */
+function slotLabel(s: Slot) {
+  const b = s.booking
+  if (!b) {
+    if (new Date(s.startsAt) <= new Date()) return '已过'
+    return s.open ? '可预约' : '已关闭'
+  }
+  const state =
+    b.status === 'pending_payment'
+      ? '待支付'
+      : b.status !== 'completed'
+        ? '已约'
+        : b.attendance
+          ? ATTENDANCE[b.attendance]
+          : '未签到'
+  return `${b.student?.name || '学员'} · ${state}`
+}
+
+const ATTENDANCE = { attended: '已到课', no_show: '缺席' } as const
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 // Matches the API's limit per request.
@@ -107,13 +128,7 @@ export function Schedule() {
                   >
                     {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
                     <br />
-                    {s.booking
-                      ? `${s.booking.student?.name || '学员'} · ${s.booking.status === 'pending_payment' ? '待支付' : '已约'}`
-                      : new Date(s.startsAt) <= new Date()
-                        ? '已过'
-                        : s.open
-                          ? '可预约'
-                          : '已关闭'}
+                    {slotLabel(s)}
                   </button>
                 ))}
               </div>
@@ -253,6 +268,7 @@ function CreateSlots({
         <Field label="日期">
           <DateRangePicker
             value={range}
+            disableDate={{ before: today() }}
             onChange={(v) => setRange([String(v[0] ?? ''), String(v[1] ?? '')])}
           />
         </Field>
@@ -387,9 +403,19 @@ function SlotDialog({
               maxlength={100}
               onChange={(v) => setReason(String(v))}
             />
-            <Button theme="danger" disabled={!reason.trim()} loading={submitting} onClick={cancel}>
-              确认取消并退款
-            </Button>
+            <Space>
+              <Button
+                theme="danger"
+                disabled={!reason.trim()}
+                loading={submitting}
+                onClick={cancel}
+              >
+                确认取消并退款
+              </Button>
+              <Button variant="outline" onClick={() => setCancelling(false)}>
+                返回
+              </Button>
+            </Space>
           </>
         )}
 
@@ -401,9 +427,16 @@ function SlotDialog({
           )}
           {/* Slots from weekly hours would come back at the next sync, so they are only closed. */}
           {!b && slot.source === 'manual' && (
-            <Button variant="text" theme="danger" loading={submitting} onClick={remove}>
-              删除时段
-            </Button>
+            <Popconfirm
+              content="删除这个时段？"
+              confirmBtn={{ content: '删除', theme: 'danger' }}
+              cancelBtn="返回"
+              onConfirm={remove}
+            >
+              <Button variant="text" theme="danger" loading={submitting}>
+                删除时段
+              </Button>
+            </Popconfirm>
           )}
         </Space>
         {slot.open && b && <span className="muted">关闭时段不影响已有预约</span>}

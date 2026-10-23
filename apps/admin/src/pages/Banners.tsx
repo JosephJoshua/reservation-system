@@ -138,7 +138,12 @@ export function Banners() {
                 >
                   编辑
                 </Button>
-                <Popconfirm content="删除这张轮播图？" onConfirm={() => remove(row.id)}>
+                <Popconfirm
+                  content="删除这张轮播图？"
+                  confirmBtn={{ content: '删除', theme: 'danger' }}
+                  cancelBtn="返回"
+                  onConfirm={() => remove(row.id)}
+                >
                   <Button variant="text" theme="danger">
                     删除
                   </Button>

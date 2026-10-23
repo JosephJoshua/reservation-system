@@ -11,6 +11,7 @@ import {
   DatePicker,
   Dialog,
   MessagePlugin,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -94,9 +95,16 @@ export function CoachBindingDialog({ coach, onClose }: { coach: Coach; onClose: 
         <Space>
           <Button onClick={generate}>{code ? '重新生成' : '生成绑定码'}</Button>
           {current.bound && (
-            <Button variant="outline" theme="danger" onClick={unbind}>
-              解除绑定
-            </Button>
+            <Popconfirm
+              content="解除后教练需重新绑定才能使用教练入口。"
+              confirmBtn={{ content: '解除绑定', theme: 'danger' }}
+              cancelBtn="返回"
+              onConfirm={unbind}
+            >
+              <Button variant="outline" theme="danger">
+                解除绑定
+              </Button>
+            </Popconfirm>
           )}
         </Space>
       </Space>

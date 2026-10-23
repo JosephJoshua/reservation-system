@@ -22,7 +22,7 @@ import {
 type BookingRow = typeof bookings.$inferSelect
 type PackageRow = typeof packages.$inferSelect
 
-export function bookingStatus(b: BookingRow, now: Date): BookingStatus {
+export function bookingStatus(b: Pick<BookingRow, 'status' | 'endsAt'>, now: Date): BookingStatus {
   return b.status === 'confirmed' && b.endsAt <= now ? 'completed' : b.status
 }
 

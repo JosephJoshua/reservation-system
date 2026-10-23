@@ -71,6 +71,11 @@ body {
   width: 360px;
 }
 
+.login-notice {
+  margin: 0 0 16px;
+  color: var(--td-warning-color);
+}
+
 .muted {
   color: var(--td-text-color-secondary);
   font-size: 12px;

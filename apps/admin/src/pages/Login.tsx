@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button, Card, Input, MessagePlugin } from 'tdesign-react'
 import { api, setToken } from '../api'
 
-export function Login({ onDone }: { onDone: () => void }) {
+export function Login({ notice, onDone }: { notice?: string; onDone: () => void }) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -23,6 +23,7 @@ export function Login({ onDone }: { onDone: () => void }) {
   return (
     <div className="login">
       <Card className="login-card" title="球馆管理" bordered>
+        {notice && <p className="login-notice">{notice}</p>}
         <form
           onSubmit={(e) => {
             e.preventDefault()

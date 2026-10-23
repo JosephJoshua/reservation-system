@@ -1199,3 +1199,42 @@ describe('review round 2', () => {
     expect((await h.call('POST', '/admin/login', { password: 'test-password' })).status).toBe(200)
   })
 })
+
+describe('admin booking list', () => {
+  it('lists the next lesson first, can flip the order and splits upcoming from completed', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const studentId = (await h.call('GET', '/me', undefined, await h.student('order'))).json.id
+    const at = (date: string, hour: number) => {
+      const slot = h.slot(coach.id, date, hour)
+      return h.db
+        .insert(bookings)
+        .values({
+          slotId: slot.id,
+          studentId,
+          lessonTypeId: lesson.id,
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          status: 'confirmed',
+          paidWith: 'order',
+          price: 0,
+        })
+        .returning()
+        .get().id
+    }
+    const later = at('2026-10-26', 10)
+    const first = at('2026-10-25', 10)
+    const second = at('2026-10-25', 12)
+    h.clock.now = new Date('2026-10-25T03:30:00Z') // 11:30 venue time, the first lesson is over
+    const admin = await h.admin()
+    const list = async (query: string) =>
+      (await h.call('GET', `/admin/bookings?${query}`, undefined, admin)).json.map(
+        (b: { id: number }) => b.id,
+      )
+
+    expect(await list('')).toEqual([first, second, later])
+    expect(await list('order=desc')).toEqual([later, second, first])
+    expect(await list('status=completed')).toEqual([first])
+    expect(await list('status=confirmed')).toEqual([second, later])
+  })
+})

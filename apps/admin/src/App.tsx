@@ -52,9 +52,14 @@ export function App() {
   useThemeMode()
   const [authed, setAuthed] = useState(() => !!getToken())
   const [page, setPage] = useState<PageKey>(currentPage)
+  // Set when the API turned the session away, so the login page can say why it is back.
+  const [expired, setExpired] = useState(false)
 
   useEffect(() => {
-    handleUnauthorized(() => setAuthed(false))
+    handleUnauthorized(() => {
+      setAuthed(false)
+      setExpired(true)
+    })
     const onHash = () => setPage(currentPage())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
@@ -71,7 +76,13 @@ export function App() {
   return (
     <ConfigProvider globalConfig={zhCN}>
       {!authed ? (
-        <Login onDone={() => setAuthed(true)} />
+        <Login
+          notice={expired ? '登录已过期，请重新登录' : undefined}
+          onDone={() => {
+            setAuthed(true)
+            setExpired(false)
+          }}
+        />
       ) : (
         <Layout className="admin-layout">
           <Layout.Aside width="200px" className="admin-aside">

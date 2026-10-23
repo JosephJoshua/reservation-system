@@ -184,6 +184,7 @@ function Decide({
         disabled: approve ? !amountValid : !note.trim(),
         loading: submitting,
       }}
+      cancelBtn="返回"
       onConfirm={submit}
       onClose={onClose}
     >
