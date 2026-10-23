@@ -1,0 +1,14 @@
+{
+  "name": "@rs/theme",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./brand.css": "./brand.css",
+    "./brand.wxss": "./brand.wxss",
+    "./tokens.json": "./tokens.json"
+  },
+  "scripts": {
+    "generate": "node generate.mjs",
+    "test": "node generate.mjs --check"
+  }
+}
