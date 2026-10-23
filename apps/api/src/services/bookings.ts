@@ -138,6 +138,7 @@ export async function createBooking(
         status:
           own.status === 'pending_payment' ? ('pending_payment' as const) : ('confirmed' as const),
         orderId: own.status === 'pending_payment' ? (order?.id ?? null) : null,
+        repeat: true,
       }
     }
     if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段不可预约')
@@ -285,8 +286,23 @@ export async function createBooking(
     }
   })
 
-  if (created.orderId === null) return { ...created, payment: null }
-  return { ...created, payment: await startPaymentOrRelease(deps, created.orderId, studentId) }
+  const { repeat, ...result } = { repeat: false, ...created }
+  if (result.orderId === null) return { ...result, payment: null }
+  const payment = await startPaymentOrRelease(deps, result.orderId, studentId, { release: !repeat })
+  return { ...result, payment }
+}
+
+/** Whether a booking was already cancelled by this same request: same side, same reason. */
+function repeatedCancel(
+  booking: { status: string; cancelledBy: CancelledBy | null; cancelReason: string | null },
+  by: CancelledBy,
+  options: CancelOptions,
+) {
+  return (
+    booking.status === 'cancelled' &&
+    booking.cancelledBy === by &&
+    booking.cancelReason === (options.reason ?? null)
+  )
 }
 
 /**
@@ -305,7 +321,7 @@ export async function cancelBooking(
   }
   // A repeat of a cancel that already went through is a no-op. A cancel by someone else still
   // fails, since the venue and the student cancel with different refunds.
-  if (existing.status === 'cancelled' && existing.cancelledBy === by) return
+  if (repeatedCancel(existing, by, options)) return
   // Set when the student cancelled what they saw as unpaid but the payment landed meanwhile.
   // They were told cancelling costs nothing, so the late-cancel rule does not apply.
   let paidWhileCancelling = false
@@ -324,7 +340,7 @@ export async function cancelBooking(
     // already being refunded in full and there is nothing left to cancel.
     if (paidWhileCancelling && booking.status === 'expired') return []
     // Two cancels by the same side racing: the first one did the work.
-    if (booking.status === 'cancelled' && booking.cancelledBy === by) return []
+    if (repeatedCancel(booking, by, options)) return []
     if (booking.status !== 'confirmed') throw new ApiError(409, 'not_cancellable', '该预约已取消')
     const order =
       booking.paidWith === 'order'

@@ -102,7 +102,7 @@ describe('Idempotency-Key', () => {
     expect(h.db.select().from(packages).get()?.lessonsRemaining).toBe(12)
   })
 
-  it('runs a request whose first attempt was cut off by a restart', async () => {
+  it('never reruns a request that was cut off, since its work may be done', async () => {
     const h = setup()
     const { pkg } = await boughtPackage(h)
     const admin = await h.admin()
@@ -113,8 +113,44 @@ describe('Idempotency-Key', () => {
     // Make the stored key look like a request that never finished.
     h.db.update(idempotencyKeys).set({ status: null, body: null }).run()
     h.clock.now = new Date(h.clock.now.getTime() + 3 * 60_000)
-    expect((await send()).status).toBe(204)
+    expect((await send()).json.error.code).toBe('in_progress')
+    expect(h.db.select().from(packages).get()?.lessonsRemaining).toBe(11)
+  })
+
+  it('refuses a reused key with a different body', async () => {
+    const h = setup()
+    const { pkg } = await boughtPackage(h)
+    const admin = await h.admin()
+    const grant = (lessons: number) =>
+      keyed(h, `/admin/packages/${pkg.id}/grant`, { lessons, note: 'a' }, admin, 'k')
+    expect((await grant(2)).status).toBe(204)
+    expect((await grant(3)).json.error.code).toBe('idempotency_key_reused')
     expect(h.db.select().from(packages).get()?.lessonsRemaining).toBe(12)
+  })
+
+  it('caches nothing for callers who are not signed in', async () => {
+    const h = setup()
+    h.seed()
+    const login = () =>
+      h.app.request('/api/auth/student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'shared' },
+        body: JSON.stringify({ code: 'dev:a' }),
+      })
+    const a = (await (await login()).json()) as { token: string }
+    const b = (await (await login()).json()) as { token: string }
+    expect(a.token).not.toBe(b.token)
+  })
+
+  it('does not replay to a signed-out token', async () => {
+    const h = setup()
+    const { pkg } = await boughtPackage(h)
+    const admin = await h.admin()
+    const send = () =>
+      keyed(h, `/admin/packages/${pkg.id}/grant`, { lessons: 1, note: 'a' }, admin, 'k')
+    expect((await send()).status).toBe(204)
+    await h.call('POST', '/admin/logout', undefined, admin)
+    expect((await send()).status).toBe(401)
   })
 })
 
@@ -256,5 +292,61 @@ describe('repeated requests without a key', () => {
         .get()?.status,
     ).toBe('succeeded')
     expect(h.gateway.refunds.size).toBe(2) // the failed attempt and the one retry
+  })
+
+  it('does not close the order a first tap is paying when a repeat cannot reach WeChat', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const body = { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id }
+    const first = await h.call('POST', '/bookings', body, t)
+    // The first tap is still waiting on WeChat: no prepay id yet, and WeChat now fails.
+    h.db.update(orders).set({ prepayId: null }).run()
+    h.gateway.failCreate = true
+    const repeat = await h.call('POST', '/bookings', body, t)
+    expect(repeat.status).toBe(502)
+    expect(h.db.select().from(orders).get()?.status).toBe('pending')
+    expect(h.db.select().from(bookings).get()?.status).toBe('pending_payment')
+    expect(first.status).toBe(201)
+  })
+
+  it('keeps a coach cancel apart from an admin cancel of the same lesson', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id, '2026-10-26').id, lessonTypeId: lesson.id },
+      t,
+    )
+    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    const admin = await h.admin()
+    const cancel = (reason: string) =>
+      h.call('POST', `/admin/bookings/${res.json.bookingId}/cancel`, { reason }, admin)
+    expect((await cancel('场地维修')).status).toBe(204)
+    expect((await cancel('场地维修')).status).toBe(204)
+    // Another venue cancel with its own reason did not happen, so it is not reported as done.
+    expect((await cancel('教练请假')).json.error.code).toBe('not_cancellable')
+    expect(h.db.select().from(refunds).all()).toHaveLength(1)
+  })
+
+  it('sends an approved refund to WeChat once when the approval is repeated', async () => {
+    const h = setup()
+    const { t, pkg } = await boughtPackage(h)
+    await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    const refund = h.db.select().from(refunds).get()
+    const admin = await h.admin()
+    let sent = 0
+    const original = h.gateway.refund.bind(h.gateway)
+    h.gateway.refund = async (input) => {
+      sent++
+      return original(input)
+    }
+    const approve = () =>
+      h.call('POST', `/admin/refunds/${refund?.id}/approve`, { amount: 100000 }, admin)
+    await Promise.all([approve(), approve()])
+    await approve()
+    expect(sent).toBe(1)
   })
 })

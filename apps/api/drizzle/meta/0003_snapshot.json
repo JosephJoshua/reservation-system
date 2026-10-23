@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c29e85ed-94ce-4567-a177-2048e23f050a",
+  "id": "65e96c53-9073-4234-ab13-57f8afc5b639",
   "prevId": "3fd258e1-d624-401e-9924-787f6b4377b9",
   "tables": {
     "banners": {
@@ -616,6 +616,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "body_hash": {
+          "name": "body_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
         "status": {
           "name": "status",
           "type": "integer",
@@ -645,7 +652,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idempotency_keys_created": {
+          "name": "idempotency_keys_created",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

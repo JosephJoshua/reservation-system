@@ -32,7 +32,7 @@ export async function purchasePackage(
   productId: number,
 ): Promise<{ orderId: number; payment: PaymentParams }> {
   const now = deps.now()
-  const orderId = immediate(deps.db, (tx) => {
+  const { id: orderId, repeat } = immediate(deps.db, (tx) => {
     const settings = getSettings(tx)
     if (!settings.payment.packagesEnabled) throw new ApiError(409, 'packages_off', '暂不出售课时包')
     const product = tx.select().from(packageProducts).where(eq(packageProducts.id, productId)).get()
@@ -70,8 +70,8 @@ export async function purchasePackage(
         ),
       )
       .get()
-    if (open) return open.id
-    return tx
+    if (open) return { id: open.id, repeat: true }
+    const created = tx
       .insert(orders)
       .values({
         outTradeNo: newOutTradeNo(now),
@@ -86,8 +86,10 @@ export async function purchasePackage(
       })
       .returning({ id: orders.id })
       .get().id
+    return { id: created, repeat: false }
   })
-  return { orderId, payment: await startPaymentOrRelease(deps, orderId, studentId) }
+  const payment = await startPaymentOrRelease(deps, orderId, studentId, { release: !repeat })
+  return { orderId, payment }
 }
 
 /**
@@ -193,12 +195,12 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
 /** Approves a package refund request with the amount the admin settled on, and closes the package. */
 export async function approvePackageRefund(deps: Deps, refundId: number, amount: number) {
   const now = deps.now()
-  immediate(deps.db, (tx) => {
+  const approvedNow = immediate(deps.db, (tx) => {
     const refund = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
     if (!refund?.packageId) throw notFound('退款申请')
     // A repeated approval of the same amount is a no-op; anything else was decided already.
-    const approved = ['pending', 'processing', 'succeeded'].includes(refund.status)
-    if (approved && refund.amount === amount) return
+    const approved = ['pending', 'processing', 'succeeded', 'failed'].includes(refund.status)
+    if (approved && refund.amount === amount) return false
     if (refund.status !== 'requested')
       throw new ApiError(409, 'refund_not_requested', '该申请已处理')
     const order = tx.select().from(orders).where(eq(orders.id, refund.orderId)).get()
@@ -223,8 +225,10 @@ export async function approvePackageRefund(deps: Deps, refundId: number, amount:
       })
       .where(eq(refunds.id, refund.id))
       .run()
+    return true
   })
-  await submitRefund(deps, refundId)
+  // A repeated approval leaves sending the refund to the first one (or the sweeper).
+  if (approvedNow) await submitRefund(deps, refundId)
 }
 
 export function rejectPackageRefund(deps: Deps, refundId: number, note: string) {

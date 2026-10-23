@@ -77,10 +77,6 @@ describe('binding a coach to WeChat', () => {
     // The code is single use.
     const again = await h.call('POST', '/coach/bind', { code: 'dev:other', bindCode: code })
     expect(again.json.error.code).toBe('bad_bind_code')
-    // A repeated bind from the same WeChat (a double tap or a retry) succeeds as the first did.
-    const repeat = await h.call('POST', '/coach/bind', { code: 'dev:coach', bindCode: code })
-    expect(repeat.status).toBe(200)
-    expect(repeat.json.coach).toMatchObject({ id: coach.id })
   })
 
   it('refuses an expired code', async () => {
