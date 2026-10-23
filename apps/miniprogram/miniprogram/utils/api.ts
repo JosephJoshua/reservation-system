@@ -97,6 +97,21 @@ export async function api<T>(method: Method, path: string, data?: unknown): Prom
   }
 }
 
+/**
+ * Calls the student API with the current session only, never logging in again, for a call that
+ * must not land on a different account than the one the student is looking at.
+ */
+export function apiOnce<T>(method: Method, path: string, data?: unknown): Promise<T> {
+  const token = wx.getStorageSync(TOKEN_KEY) as string
+  if (!token) return Promise.reject(new ApiError(401, 'unauthorized', '请重新登录'))
+  return request<T>(method, path, data, token)
+}
+
+/** Forgets the session, so the next call logs in afresh. */
+export function clearSession(): void {
+  wx.removeStorageSync(TOKEN_KEY)
+}
+
 /** Calls an endpoint that needs no login. */
 export function publicApi<T>(method: Method, path: string, data?: unknown): Promise<T> {
   return request<T>(method, path, data)

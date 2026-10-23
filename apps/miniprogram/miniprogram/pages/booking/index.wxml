@@ -102,3 +102,4 @@
   </block>
   <view class="bottom-space" />
 </view>
+<privacy-popup id="privacy-popup" />

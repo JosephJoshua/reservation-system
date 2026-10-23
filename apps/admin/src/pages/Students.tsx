@@ -78,7 +78,12 @@ export function Students() {
           {
             colKey: 'name',
             title: '姓名',
-            cell: ({ row }) => row.name || <span className="muted">未填写</span>,
+            cell: ({ row }) =>
+              row.deletedAt ? (
+                <span className="muted">已注销</span>
+              ) : (
+                row.name || <span className="muted">未填写</span>
+              ),
           },
           { colKey: 'phone', title: '手机号', cell: ({ row }) => row.phone || '-' },
           { colKey: 'createdAt', title: '注册时间', cell: ({ row }) => fmtDate(row.createdAt) },
@@ -135,7 +140,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
     <Drawer
       visible
       size={phone ? '100%' : '800px'}
-      header={s ? s.name || '学员' : '学员'}
+      header={s ? (s.deletedAt ? '已注销的学员' : s.name || '学员') : '学员'}
       footer={false}
       onClose={onClose}
     >
@@ -143,27 +148,35 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
       {!s && !detail.error && <Loading size="small" />}
       {s && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Space align="center">
-            <span>{s.phone || '未填写手机号'}</span>
-            <span className="muted">注册于 {fmtDate(s.createdAt)}</span>
-            <span className="muted">测试学员</span>
-            <Switch
-              size="small"
-              value={s.tester}
-              onChange={async (v) => {
-                if (await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v })))
-                  await detail.reload()
-              }}
-            />
-          </Space>
+          {s.deletedAt ? (
+            <span className="muted">
+              {fmtDate(s.deletedAt)} 注销，姓名、手机号和微信身份已删除。订单和上课记录保留。
+            </span>
+          ) : (
+            <Space align="center">
+              <span>{s.phone || '未填写手机号'}</span>
+              <span className="muted">注册于 {fmtDate(s.createdAt)}</span>
+              <span className="muted">测试学员</span>
+              <Switch
+                size="small"
+                value={s.tester}
+                onChange={async (v) => {
+                  if (await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v })))
+                    await detail.reload()
+                }}
+              />
+            </Space>
+          )}
 
           <Card
             title="课时包"
             bordered
             actions={
-              <Button size="small" onClick={() => setSelling(true)}>
-                前台售卖
-              </Button>
+              s.deletedAt ? null : (
+                <Button size="small" onClick={() => setSelling(true)}>
+                  前台售卖
+                </Button>
+              )
             }
           >
             <DataTable
@@ -204,9 +217,10 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                   width: 180,
                   cell: ({ row }) => (
                     <Space size={0} breakLine={false}>
-                      {row.status === 'active' ||
-                      row.status === 'used_up' ||
-                      row.status === 'expired' ? (
+                      {!s.deletedAt &&
+                      (row.status === 'active' ||
+                        row.status === 'used_up' ||
+                        row.status === 'expired') ? (
                         <>
                           <Button
                             size="small"

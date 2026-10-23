@@ -1,0 +1,54 @@
+@import '../../styles/common.wxss';
+
+.list {
+  padding: 8rpx 0;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  padding: 20rpx 32rpx;
+}
+
+.item-icon {
+  display: flex;
+  flex-shrink: 0;
+  height: 44rpx;
+  align-items: center;
+  color: var(--td-text-color-placeholder);
+}
+
+.item-text {
+  flex: 1;
+  margin-left: 16rpx;
+  font-size: 30rpx;
+  line-height: 44rpx;
+  color: var(--td-text-color-primary);
+}
+
+.blocker .item-icon {
+  color: var(--td-error-color);
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}
+
+/* TDesign's danger fills leave white text under 4.5:1 in both themes. */
+page {
+  --td-button-danger-bg-color: #c4362f;
+  --td-button-danger-border-color: #c4362f;
+  --td-button-danger-active-bg-color: #a32c26;
+  --td-button-danger-active-border-color: #a32c26;
+}
+
+@media (prefers-color-scheme: dark) {
+  page {
+    --td-button-danger-bg-color: #a8383d;
+    --td-button-danger-border-color: #a8383d;
+    --td-button-danger-active-bg-color: #8f2f33;
+    --td-button-danger-active-border-color: #8f2f33;
+  }
+}

@@ -14,6 +14,9 @@ import { ApiError, notFound } from '../errors'
 import { LIVE } from './bookings'
 import { bookingStatus } from './views'
 
+// What a coach sees in place of the name of a student who deleted their account.
+const DELETED_NAME = '已注销学员'
+
 const attendanceMessages = {
   not_confirmed: '该课程未在进行，无法签到',
   not_started: '课程开始后才能签到',
@@ -40,6 +43,7 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
         .select({
           booking: bookings,
           studentName: students.name,
+          studentDeletedAt: students.deletedAt,
           lessonTypeName: lessonTypes.name,
           isTrial: lessonTypes.isTrial,
         })
@@ -71,7 +75,7 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
             bookingId: l.booking.id,
             status: bookingStatus(l.booking, now),
             attendance: l.booking.attendance,
-            studentName: l.studentName,
+            studentName: l.studentDeletedAt ? DELETED_NAME : l.studentName,
             lessonTypeName: l.lessonTypeName,
             isTrial: l.isTrial,
           }
@@ -136,7 +140,11 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       name: lessonType?.name ?? '',
       isTrial: lessonType?.isTrial ?? false,
     },
-    student: { id: b.studentId, name: student?.name ?? '', phone: student?.phone ?? '' },
+    student: {
+      id: b.studentId,
+      name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
+      phone: student?.phone ?? '',
+    },
     paidWith: b.paidWith,
     price: b.price,
     packageName: pkg?.name ?? null,
@@ -190,6 +198,12 @@ export function setCoachNote(deps: Deps, bookingId: number, coachId: number, not
   if (booking.status === 'cancelled' || booking.status === 'expired') {
     throw new ApiError(409, 'not_live', '已取消的课程不能写备注')
   }
+  const student = deps.db
+    .select({ deletedAt: students.deletedAt })
+    .from(students)
+    .where(eq(students.id, booking.studentId))
+    .get()
+  if (student?.deletedAt) throw new ApiError(409, 'account_deleted', '该学员已注销')
   deps.db.update(bookings).set({ coachNote: note }).where(eq(bookings.id, bookingId)).run()
 }
 

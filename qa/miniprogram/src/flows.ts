@@ -125,7 +125,6 @@ try {
   const student = `qa_${Date.now()}`
   await miniProgram.callWxMethod('setStorageSync', 'devLogin', student)
   await miniProgram.callWxMethod('removeStorageSync', 'token')
-  await miniProgram.callWxMethod('removeStorageSync', 'agreedPolicies')
   await autoConfirmModals()
 
   await step('home shows banners, notice and lessons', async () => {
@@ -172,7 +171,7 @@ try {
     )
     await invoke('onName', { detail: { value: '测试学员' } })
     await invoke('onPhone', { detail: { value: '13800138000' } })
-    await tap(confirm, '.agree')
+    await invoke('onAgree', { detail: { checked: true } })
     await screenshot('confirm-trial-filled')
     await invoke('submit')
     const detail = await waitForPage(
@@ -297,6 +296,8 @@ try {
     await tap(book, '.slot', index)
     await waitForPage('pages/confirm/index')
     const rival = await call('POST', '/auth/student', { code: 'dev:qa_rival' })
+    const policies = await call('GET', '/policies')
+    await call('POST', '/me/consent', { version: policies.json.version }, rival.json.token)
     const taken = await call(
       'POST',
       '/bookings',
@@ -322,9 +323,41 @@ try {
     await waitForPage('pages/profile-edit/index', (d) => Boolean(d.name))
     await screenshot('profile-edit')
     await miniProgram.navigateBack()
-    await miniProgram.navigateTo('/pages/policy/index?kind=agreement')
-    await waitForPage('pages/policy/index')
-    await screenshot('agreement')
+    for (const kind of ['agreement', 'privacy']) {
+      await miniProgram.navigateTo(`/pages/policy/index?kind=${kind}`)
+      const policy = await waitForPage('pages/policy/index')
+      check(
+        ((await policy.data('lines')) as unknown[]).length > 0,
+        `${kind} text should not be empty`,
+      )
+      await screenshot(kind)
+      await miniProgram.navigateBack()
+    }
+  })
+
+  await step('account deletion', async () => {
+    // This student still has lessons and packages, so deletion is refused with the reasons.
+    await miniProgram.navigateTo('/pages/account-delete/index')
+    const blocked = await waitForPage('pages/account-delete/index')
+    check(
+      ((await blocked.data('blockers')) as string[]).length > 0,
+      'a student with lessons should see why deletion is refused',
+    )
+    await screenshot('account-delete-blocked')
+
+    // A fresh student can delete, and the next login is a new, empty account.
+    await miniProgram.callWxMethod('setStorageSync', 'devLogin', `${student}_gone`)
+    await miniProgram.callWxMethod('removeStorageSync', 'token')
+    await miniProgram.redirectTo('/pages/account-delete/index')
+    const page = await waitForPage('pages/account-delete/index')
+    check(((await page.data('blockers')) as string[]).length === 0, 'nothing should block')
+    await screenshot('account-delete')
+    const token = (await miniProgram.callWxMethod('getStorageSync', 'token')) as string
+    await invoke('confirmDelete')
+    await waitForPage('pages/booking/index')
+    check((await call('GET', '/me', undefined, token)).status === 401, 'old session should be gone')
+    await miniProgram.callWxMethod('setStorageSync', 'devLogin', student)
+    await miniProgram.callWxMethod('removeStorageSync', 'token')
   })
 
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)

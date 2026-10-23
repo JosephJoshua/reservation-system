@@ -1,0 +1,18 @@
+<t-popup visible="{{visible}}" placement="bottom" close-on-overlay-click="{{false}}">
+  <view class="sheet">
+    <view class="title">用户隐私保护提示</view>
+    <view class="body">
+      使用前请阅读<text class="link" bind:tap="openContract">{{contractName}}</text>，了解我们如何收集和使用你的信息。同意后才能使用相关功能。
+    </view>
+    <view class="actions">
+      <button class="btn btn-secondary" hover-class="btn-hover" bind:tap="disagree">拒绝</button>
+      <button
+        id="agree-privacy"
+        class="btn btn-primary"
+        hover-class="btn-hover"
+        open-type="agreePrivacyAuthorization"
+        bindagreeprivacyauthorization="agree"
+      >同意</button>
+    </view>
+  </view>
+</t-popup>

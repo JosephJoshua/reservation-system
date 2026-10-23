@@ -202,4 +202,12 @@ Page({
     this.setData({ state: 'loading' })
     this.load()
   },
+
+  onShareAppMessage() {
+    const { lessonTypeId, lessonName, coachId } = this.data
+    return {
+      title: lessonName || '课程预约',
+      path: `/pages/book/index?lessonTypeId=${lessonTypeId}${coachId ? `&coachId=${coachId}` : ''}`,
+    }
+  },
 })

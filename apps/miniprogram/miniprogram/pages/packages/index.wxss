@@ -71,10 +71,6 @@
   color: var(--td-text-color-secondary);
 }
 
-.link {
-  color: var(--td-text-color-link);
-}
-
 .retry {
   display: flex;
   justify-content: center;

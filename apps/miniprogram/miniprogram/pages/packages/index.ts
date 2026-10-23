@@ -1,8 +1,7 @@
 import { type CatalogDto, formatYuan, type PaymentParamsDto } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
-import { getCatalog, hasAgreed, setAgreed } from '../../utils/data'
+import { agreePolicies, getCatalog, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
-import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 import { ask } from '../../utils/tap'
 
@@ -28,7 +27,8 @@ Page({
     errorIcon: { name: 'error-circle', size: '112rpx' },
     products: [] as ProductView[],
     buying: 0,
-    hasAgreement: false,
+    showAgreement: false,
+    agreed: false,
   },
 
   highlight: 0,
@@ -43,7 +43,7 @@ Page({
 
   async load() {
     try {
-      const catalog = await getCatalog(true)
+      const [catalog, me] = await Promise.all([getCatalog(true), getMe()])
       this.catalog = catalog
       const typeNames = new Map(catalog.lessonTypes.map((t) => [t.id, t.name]))
       const coachNames = new Map(catalog.coaches.map((c) => [c.id, c.name]))
@@ -68,7 +68,7 @@ Page({
       this.setData({
         state: 'ready',
         products,
-        hasAgreement: Boolean(catalog.policies.agreement),
+        showAgreement: !me.agreedPolicies,
       })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -78,18 +78,22 @@ Page({
   async buy(e: WechatMiniprogram.TouchEvent) {
     const product = this.data.products.find((p) => p.id === Number(e.currentTarget.dataset.id))
     if (!product || this.data.buying) return
-    const needsAgreement = this.data.hasAgreement && !hasAgreed()
+    if (this.data.showAgreement && !this.data.agreed) {
+      wx.showToast({ title: '请先阅读并同意用户协议和隐私政策', icon: 'none' })
+      return
+    }
     const answer = await ask({
       title: product.name,
-      content: `${product.lessonCount} 节课，${product.validity}，共 ${product.price}。${
-        needsAgreement ? '支付即表示你同意《用户协议》。' : ''
-      }`,
+      content: `${product.lessonCount} 节课，${product.validity}，共 ${product.price}。`,
       confirmText: '去支付',
     })
     if (!answer?.confirm || this.data.buying) return
-    if (needsAgreement) setAgreed()
     this.setData({ buying: product.id })
     try {
+      if (this.data.showAgreement) {
+        await agreePolicies()
+        this.setData({ showAgreement: false })
+      }
       const res = await api<{ orderId: number; payment: PaymentParamsDto }>(
         'POST',
         '/packages/purchase',
@@ -115,8 +119,12 @@ Page({
     }
   },
 
-  openAgreement() {
-    navigateOnce('/pages/policy/index?kind=agreement')
+  onAgree(e: WechatMiniprogram.CustomEvent<{ checked: boolean }>) {
+    this.setData({ agreed: e.detail.checked })
+  },
+
+  onShareAppMessage() {
+    return { title: '课时包', path: '/pages/packages/index' }
   },
 
   retry() {

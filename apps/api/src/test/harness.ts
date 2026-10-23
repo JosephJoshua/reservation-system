@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { defaultSettings, type VenueSettings, venueInstant } from '@rs/shared'
+import { defaultSettings, POLICY_VERSION, type VenueSettings, venueInstant } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { createApp } from '../app'
 import { openDb } from '../db/client'
@@ -61,9 +61,12 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
     return { status: res.status, json }
   }
 
-  async function student(name: string) {
+  /** Logs a student in, having agreed to the policies unless `agreed` is false. */
+  async function student(name: string, { agreed = true } = {}) {
     const res = await call('POST', '/auth/student', { code: `dev:${name}` })
-    return res.json.token as string
+    const token = res.json.token as string
+    if (agreed) await call('POST', '/me/consent', { version: POLICY_VERSION }, token)
+    return token
   }
 
   async function admin() {

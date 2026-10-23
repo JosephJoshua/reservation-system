@@ -441,6 +441,21 @@ describe('the coach schedule and lessons', () => {
     ).toBe(400)
   })
 
+  it('shows a student who deleted their account without their details', async () => {
+    const h = setup()
+    const { student, token, bookingId } = await bookedLesson(h)
+    h.clock.now = new Date('2026-10-26T03:30:00Z') // after the lesson
+    expect((await h.call('DELETE', '/me', undefined, student)).status).toBe(204)
+    const lesson = (await h.call('GET', `/coach/lessons/${bookingId}`, undefined, token)).json
+    expect(lesson.student).toEqual({ id: 1, name: '已注销学员', phone: '' })
+    const [slot] = (
+      await h.call('GET', '/coach/schedule?from=2026-10-26&to=2026-10-26', undefined, token)
+    ).json
+    expect(slot.lesson.studentName).toBe('已注销学员')
+    const note = await h.call('PUT', `/coach/lessons/${bookingId}/note`, { note: '反手' }, token)
+    expect(note.json.error.code).toBe('account_deleted')
+  })
+
   it('shows a lesson with the student and earlier lessons together', async () => {
     const h = setup()
     const { coach, lesson, token, student, bookingId } = await bookedLesson(h)

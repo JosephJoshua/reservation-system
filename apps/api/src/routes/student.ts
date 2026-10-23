@@ -1,15 +1,20 @@
 import {
+  type AccountDeletionDto,
   bookingWindowError,
   type CatalogDto,
   type CoachDetailDto,
+  defaultAgreementText,
   type HomeDto,
   type LessonTypeDto,
   type MeDto,
   type OrderStatusDto,
   type PackageProductDto,
+  POLICY_VERSION,
   packagePrice,
+  privacyPolicyText,
   type SlotDto,
   studentNoticeKinds,
+  type VenueSettings,
   venueInstant,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm'
@@ -28,6 +33,13 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, idParam, notFound, parseBody, parseQuery } from '../errors'
+import {
+  agreePolicies,
+  deleteAccount,
+  deletionBlockers,
+  hasAgreedPolicies,
+  requireConsent,
+} from '../services/account'
 import { type AuthVars, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
 import { coachViews, visibleTo } from '../services/catalog'
@@ -38,6 +50,15 @@ import { bookingStatus, bookingViews, studentPackages } from '../services/views'
 
 const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const positiveId = z.coerce.number().int().positive()
+
+function policies(settings: VenueSettings): CatalogDto['policies'] {
+  return {
+    booking: settings.policies.booking,
+    agreement: settings.policies.agreement.trim() || defaultAgreementText(settings),
+    privacy: privacyPolicyText(settings),
+    version: POLICY_VERSION,
+  }
+}
 
 export function studentRoutes(deps: Deps) {
   const { db } = deps
@@ -81,6 +102,9 @@ export function studentRoutes(deps: Deps) {
     } satisfies HomeDto)
   })
 
+  // Public, so the policies can be read before anything is collected.
+  app.get('/policies', (c) => c.json(policies(getSettings(db))))
+
   app.use('/me', requireStudent(deps))
   app.use('/me/*', requireStudent(deps))
   app.use('/catalog', requireStudent(deps))
@@ -94,7 +118,7 @@ export function studentRoutes(deps: Deps) {
 
   const me = (studentId: number) => {
     const s = db.select().from(students).where(eq(students.id, studentId)).get()
-    if (!s) throw new ApiError(401, 'unauthorized', '请重新登录')
+    if (!s || s.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     return s
   }
 
@@ -117,6 +141,7 @@ export function studentRoutes(deps: Deps) {
           return id ? [[kind, id]] : []
         }),
       ),
+      agreedPolicies: hasAgreedPolicies(s),
     } satisfies MeDto)
   })
 
@@ -135,12 +160,30 @@ export function studentRoutes(deps: Deps) {
         })
         .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
+    requireConsent(db, c.get('studentId'))
     db.update(students)
       .set(body)
       .where(eq(students.id, c.get('studentId')))
       .run()
     const s = me(c.get('studentId'))
     return c.json({ id: s.id, name: s.name, phone: s.phone })
+  })
+
+  app.post('/me/consent', async (c) => {
+    const { version } = await parseBody(c, z.object({ version: z.string().max(20) }))
+    agreePolicies(deps, c.get('studentId'), version)
+    return c.body(null, 204)
+  })
+
+  app.get('/me/deletion', (c) =>
+    c.json({
+      blockers: deletionBlockers(db, me(c.get('studentId')).id, deps.now()),
+    } satisfies AccountDeletionDto),
+  )
+
+  app.delete('/me', (c) => {
+    deleteAccount(deps, c.get('studentId'))
+    return c.body(null, 204)
   })
 
   app.post('/me/logout', (c) => {
@@ -244,7 +287,7 @@ export function studentRoutes(deps: Deps) {
         cancelDeadlineHours: settings.booking.cancelDeadlineHours,
         lateCancel: settings.booking.lateCancel,
       },
-      policies: settings.policies,
+      policies: policies(settings),
     } satisfies CatalogDto)
   })
 
@@ -353,6 +396,7 @@ export function studentRoutes(deps: Deps) {
         payWith: z.enum(['package', 'wechat']).optional(),
       }),
     )
+    requireConsent(db, c.get('studentId'))
     return c.json(await createBooking(deps, c.get('studentId'), body), 201)
   })
 
@@ -449,6 +493,7 @@ export function studentRoutes(deps: Deps) {
 
   app.post('/packages/purchase', async (c) => {
     const { productId } = await parseBody(c, z.object({ productId: z.number().int().positive() }))
+    requireConsent(db, c.get('studentId'))
     return c.json(await purchasePackage(deps, c.get('studentId'), productId), 201)
   })
 

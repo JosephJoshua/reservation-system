@@ -1,0 +1,8 @@
+<view class="agree" bind:tap="toggle">
+  <view class="box {{checked ? 'checked' : ''}}">
+    <t-icon name="{{checked ? 'check-circle-filled' : 'circle'}}" size="36rpx" />
+  </view>
+  <view class="text">
+    我已阅读并同意<text class="link" data-kind="agreement" catch:tap="open">《用户协议》</text>和<text class="link" data-kind="privacy" catch:tap="open">《隐私政策》</text>
+  </view>
+</view>

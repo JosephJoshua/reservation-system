@@ -20,6 +20,12 @@ export const students = sqliteTable('students', {
   phone: text('phone').notNull().default(''),
   // Testers also see admin-only lesson types, for real-money test payments.
   tester: integer('tester', { mode: 'boolean' }).notNull().default(false),
+  // The POLICY_VERSION the student last agreed to, and when.
+  policyVersion: text('policy_version'),
+  policyAgreedAt: instant('policy_agreed_at'),
+  // A deleted account keeps its row for the orders and bookings that point at it, with the
+  // name and phone cleared and the openid replaced, so the same WeChat user starts afresh.
+  deletedAt: instant('deleted_at'),
   createdAt: createdAt(),
 })
 

@@ -10,7 +10,8 @@
     "pages/my-packages/index",
     "pages/profile-edit/index",
     "pages/policy/index",
-    "pages/coach-detail/index"
+    "pages/coach-detail/index",
+    "pages/account-delete/index"
   ],
   "subpackages": [
     {
@@ -19,6 +20,10 @@
       "pages": ["index/index", "lesson/index", "hours/index", "bind/index"]
     }
   ],
+  "usingComponents": {
+    "privacy-popup": "/components/privacy-popup/index",
+    "agree-check": "/components/agree-check/index"
+  },
   "window": {
     "navigationBarTitleText": "预约",
     "navigationBarBackgroundColor": "@navBgColor",

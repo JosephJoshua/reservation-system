@@ -1,5 +1,5 @@
 import type { CatalogDto, LateCancelRule, MeDto, StudentNoticeKind } from '../lib/shared'
-import { api } from './api'
+import { api, publicApi } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
 
@@ -52,12 +52,8 @@ export function cancelRuleText(hours: number, rule: LateCancelRule): string {
   return `开课前 ${hours} 小时可免费取消，${late}。`
 }
 
-const AGREED_KEY = 'agreedPolicies'
-
-export function hasAgreed(): boolean {
-  return wx.getStorageSync(AGREED_KEY) === true
-}
-
-export function setAgreed(): void {
-  wx.setStorageSync(AGREED_KEY, true)
+/** Records that the student agreed to the policies now in force, as the policy page shows them. */
+export async function agreePolicies(): Promise<void> {
+  const { version } = await publicApi<CatalogDto['policies']>('GET', '/policies')
+  await api<void>('POST', '/me/consent', { version })
 }

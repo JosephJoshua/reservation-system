@@ -110,19 +110,6 @@
   color: var(--td-text-color-link);
 }
 
-.agree {
-  display: flex;
-  align-items: flex-start;
-  padding: 0 32rpx 24rpx;
-}
-
-.agree-text {
-  margin-left: 12rpx;
-  font-size: 26rpx;
-  line-height: 36rpx;
-  color: var(--td-text-color-secondary);
-}
-
 .total-label {
   font-size: 26rpx;
   color: var(--td-text-color-secondary);
@@ -150,9 +137,4 @@
 .unchecked {
   display: flex;
   flex-shrink: 0;
-}
-
-.agree .checked,
-.agree .unchecked {
-  height: 36rpx;
 }

@@ -41,6 +41,10 @@ pnpm --filter @rs/api db:generate   # after schema changes
   `WX_APPID` override into the gitignored `project.private.config.json`. Tab bar icons are
   PNGs in `miniprogram/assets/tab` (TDesign icons, light and dark), wired through `theme.json`. Do not name a class
   `.page`: TDesign's theme file sets tokens on `.page`, which would undo the brand colors.
+- Privacy: a page that calls a WeChat privacy API (clipboard, images, location and so on) must
+  include `<privacy-popup id="privacy-popup" />`, which shows WeChat's consent sheet. New kinds
+  of personal data need the privacy policy in `packages/shared/src/policies.ts` updated, a new
+  `POLICY_VERSION`, and the matching declaration in the mini program console.
 - Follow WeChat design rules: keep the native navigation bar and capsule area, 44px minimum tap
   targets, main action in a fixed bottom bar, loading, empty and error states on every list,
   support dark mode.

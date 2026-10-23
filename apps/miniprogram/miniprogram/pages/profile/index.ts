@@ -12,7 +12,6 @@ Page({
     packagesEnabled: false,
     venue: null as HomeDto['venue'] | null,
     hasBookingPolicy: false,
-    hasAgreement: false,
     isCoach: false,
     meLoaded: false,
   },
@@ -46,7 +45,6 @@ Page({
         this.setData({
           packagesEnabled: catalog.payment.packagesEnabled,
           hasBookingPolicy: Boolean(catalog.policies.booking),
-          hasAgreement: Boolean(catalog.policies.agreement),
         }),
       )
       .catch(() => {})
