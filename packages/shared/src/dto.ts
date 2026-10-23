@@ -164,7 +164,8 @@ export interface StudentDto {
   phone: string
 }
 
-export type StudentNoticeKind = 'booked' | 'cancelled' | 'reminder' | 'moved' | 'feedback'
+export const studentNoticeKinds = ['booked', 'cancelled', 'reminder', 'moved', 'feedback'] as const
+export type StudentNoticeKind = (typeof studentNoticeKinds)[number]
 
 /** GET /me: the student, and whether the same WeChat user is a bound coach. */
 export interface MeDto extends StudentDto {

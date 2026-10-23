@@ -1,18 +1,9 @@
-import { venueParts } from '@rs/shared'
 import { and, eq, isNotNull, isNull } from 'drizzle-orm'
 import { bookings, coaches, lessonTypes, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
+import { lessonTime } from '../wx-notify'
 
 const BATCH = 50
-
-/** 2026年10月25日 14:00~15:00, the time format subscription messages accept. */
-export function lessonTime(startsAt: Date, endsAt: Date) {
-  const s = venueParts(startsAt)
-  const e = venueParts(endsAt)
-  const hm = (p: { hours: number; minutes: number }) =>
-    `${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}`
-  return `${s.year}年${s.month}月${s.day}日 ${hm(s)}~${hm(e)}`
-}
 
 /**
  * Tells coaches about new and cancelled lessons by subscription message. Each booking is looked

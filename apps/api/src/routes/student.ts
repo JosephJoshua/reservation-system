@@ -9,6 +9,7 @@ import {
   type PackageProductDto,
   packagePrice,
   type SlotDto,
+  studentNoticeKinds,
   venueInstant,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm'
@@ -23,7 +24,6 @@ import {
   orders,
   packageProducts,
   slots,
-  studentNoticeKinds,
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'

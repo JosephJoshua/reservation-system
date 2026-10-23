@@ -1,4 +1,5 @@
 // Run `pnpm db:generate` after changing tables. Money is integer fen; instants are UTC ms.
+import { studentNoticeKinds } from '@rs/shared'
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -171,8 +172,6 @@ export const bookings = sqliteTable(
   ],
 )
 
-export const studentNoticeKinds = ['booked', 'cancelled', 'reminder', 'moved', 'feedback'] as const
-
 /**
  * Subscription messages to students, sent by the sweeper. booked, cancelled and reminder rows
  * come from booking state and appear at most once per booking; other kinds are queued by the
@@ -189,6 +188,8 @@ export const studentNotices = sqliteTable(
     // Values fixed when the notice was queued, such as the old time of a moved lesson.
     data: text('data', { mode: 'json' }).$type<Record<string, string>>().notNull().default({}),
     createdAt: createdAt(),
+    // After a failed send, when to try again.
+    retryAt: instant('retry_at'),
     doneAt: instant('done_at'),
     result: text('result', { enum: ['sent', 'refused', 'skipped'] }),
   },

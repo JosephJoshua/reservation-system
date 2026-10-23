@@ -4,6 +4,7 @@ CREATE TABLE `student_notices` (
 	`kind` text NOT NULL,
 	`data` text DEFAULT '{}' NOT NULL,
 	`created_at` integer DEFAULT (unixepoch() * 1000) NOT NULL,
+	`retry_at` integer,
 	`done_at` integer,
 	`result` text,
 	FOREIGN KEY (`booking_id`) REFERENCES `bookings`(`id`) ON UPDATE no action ON DELETE no action

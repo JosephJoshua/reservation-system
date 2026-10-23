@@ -3,10 +3,10 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { immediate } from './db/client'
 import { bookings, packageProducts, studentNotices, students } from './db/schema'
-import { lessonTime } from './services/coach-notices'
 import { notifyStudents, queueStudentNotice } from './services/student-notices'
 import { type Harness, setup } from './test/harness'
 import type { NoticeKind, NoticeTemplate, NoticeValues, Notifier } from './wx-notify'
+import { lessonTime } from './wx-notify'
 
 type Sent = { openid: string; kind: string; page: string; values: NoticeValues }
 
@@ -114,6 +114,13 @@ describe('student notices', () => {
         values: { reason: '教练生病', refund: '¥200 原路退回', time: '2026年10月26日 10:00~11:00' },
       },
     ])
+
+    // A refund WeChat turned down is not reported as returned.
+    const third = await book(h, student, h.slot(coach.id, '2026-10-27', 10).id, lesson.id)
+    h.gateway.refundMode = 'fail'
+    await h.call('POST', `/admin/bookings/${third}/cancel`, { reason: '场地维修' }, admin)
+    await notifyStudents(h.deps)
+    expect(sent.at(-1)?.values.refund).toBe('退款处理中')
   })
 
   it('says the package lesson came back, and that an unpaid hold cost nothing', async () => {
@@ -198,15 +205,19 @@ describe('student notices', () => {
     expect(notices(h, late)).toEqual([{ kind: 'booked', result: 'sent' }])
   })
 
-  it('retries while WeChat is down and drops the message once the lesson starts', async () => {
+  it('retries every 5 minutes while WeChat is down and drops the message once the lesson starts', async () => {
     const h = setup()
     withNotifier(h, 'fail')
     const { coach, lesson } = h.seed()
     const id = await book(h, await h.student('a'), h.slot(coach.id, '2026-10-26', 10).id, lesson.id)
+    const failures = () => h.logs.filter((l) => l.message === 'student notice failed').length
     await notifyStudents(h.deps)
+    await notifyStudents(h.deps)
+    expect(failures()).toBe(1)
+    h.clock.now = new Date(h.clock.now.getTime() + 5 * 60_000)
     await notifyStudents(h.deps)
     expect(notices(h, id)).toEqual([{ kind: 'booked', result: null }])
-    expect(h.logs.filter((l) => l.message === 'student notice failed')).toHaveLength(2)
+    expect(failures()).toBe(2)
     h.clock.now = venueInstant('2026-10-26', 10 * 60)
     await notifyStudents(h.deps)
     expect(notices(h, id)).toEqual([{ kind: 'booked', result: 'skipped' }])

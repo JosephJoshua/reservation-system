@@ -1,6 +1,6 @@
 import { formatYuan } from '@rs/shared'
-import { and, eq, gt, inArray, isNull, lte, notExists, sql, sum } from 'drizzle-orm'
-import type { Q } from '../db/client'
+import { and, eq, gt, inArray, isNull, lte, notExists, or, sql } from 'drizzle-orm'
+import { immediate, type Q } from '../db/client'
 import {
   bookings,
   coaches,
@@ -12,14 +12,14 @@ import {
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
-import type { NoticeValues } from '../wx-notify'
-import { lessonTime } from './coach-notices'
+import { lessonTime, type NoticeValues } from '../wx-notify'
 import { getSettings } from './settings'
 
 const BATCH = 50
 export const REMINDER_MS = 2 * 3_600_000
 // A message that could not reach WeChat for this long is no longer news.
 const STALE_MS = 24 * 3_600_000
+const RETRY_MS = 5 * 60_000
 
 /**
  * Queues a message caused by something other than booking state, inside the caller's transaction.
@@ -49,7 +49,7 @@ export function queueStudentNotice(
 
 /** Queues and sends students' subscription messages. Run by the sweeper. */
 export async function notifyStudents(deps: Deps) {
-  queueFromBookings(deps)
+  immediate(deps.db, (tx) => queueFromBookings(tx, deps.now()))
   await sendPending(deps)
 }
 
@@ -70,9 +70,7 @@ function queue(db: Q, now: Date, kind: 'booked' | 'cancelled' | 'reminder', ids:
 }
 
 /** Finds bookings whose state calls for a message: new, cancelled by the venue, or close. */
-function queueFromBookings(deps: Deps) {
-  const { db } = deps
-  const at = deps.now()
+function queueFromBookings(db: Q, at: Date) {
   queue(
     db,
     at,
@@ -151,12 +149,17 @@ function refundText(db: Q, b: { bookingId: number; paidWith: 'order' | 'package'
       .get()
     return returned ? '课时已退回课时包' : '未退回课时'
   }
-  const refunded = db
-    .select({ amount: sum(refunds.amount).mapWith(Number) })
+  const rows = db
+    .select({ amount: refunds.amount, status: refunds.status })
     .from(refunds)
     .where(eq(refunds.bookingId, b.bookingId))
-    .get()?.amount
-  return refunded ? `¥${formatYuan(refunded)} 原路退回` : '未扣费'
+    .all()
+  if (rows.length === 0) return '未扣费'
+  // Failed refunds wait for the admin to try again.
+  const refunded = rows
+    .filter((r) => !['failed', 'rejected', 'requested'].includes(r.status))
+    .reduce((total, r) => total + r.amount, 0)
+  return refunded ? `¥${formatYuan(refunded)} 原路退回` : '退款处理中'
 }
 
 async function sendPending(deps: Deps) {
@@ -184,7 +187,12 @@ async function sendPending(deps: Deps) {
     .innerJoin(slots, eq(slots.id, bookings.slotId))
     .innerJoin(coaches, eq(coaches.id, slots.coachId))
     .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
-    .where(isNull(studentNotices.doneAt))
+    .where(
+      and(
+        isNull(studentNotices.doneAt),
+        or(isNull(studentNotices.retryAt), lte(studentNotices.retryAt, deps.now())),
+      ),
+    )
     .orderBy(studentNotices.id)
     .limit(BATCH)
     .all()
@@ -228,6 +236,10 @@ async function sendPending(deps: Deps) {
           kind: n.kind,
           error: (e as Error).message,
         })
+        db.update(studentNotices)
+          .set({ retryAt: new Date(now.getTime() + RETRY_MS) })
+          .where(eq(studentNotices.id, n.id))
+          .run()
         continue
       }
     }

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "75e79327-8747-497b-84d7-171255846358",
+  "id": "3fd258e1-d624-401e-9924-787f6b4377b9",
   "prevId": "980016f7-ec07-47f6-b702-22e08deae406",
   "tables": {
     "banners": {
@@ -1592,6 +1592,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(unixepoch() * 1000)"
+        },
+        "retry_at": {
+          "name": "retry_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "done_at": {
           "name": "done_at",

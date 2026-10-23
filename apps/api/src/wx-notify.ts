@@ -1,7 +1,7 @@
 // WeChat subscription messages (订阅消息). A user grants one message per tap on the mini program's
 // prompt, so the coach pages ask on every few taps; a send without a grant fails with 43101.
 
-import type { StudentNoticeKind } from '@rs/shared'
+import { type StudentNoticeKind, venueParts } from '@rs/shared'
 
 const VALUE_KEYS = [
   'student',
@@ -54,6 +54,15 @@ export function parseTemplate(value: string | undefined): NoticeTemplate | undef
   }
   if (Object.keys(fields).length === 0) throw new Error(`Notice template ${id} has no fields`)
   return { id, fields }
+}
+
+/** 2026年10月25日 14:00~15:00, the time format subscription messages accept. */
+export function lessonTime(startsAt: Date, endsAt: Date) {
+  const s = venueParts(startsAt)
+  const e = venueParts(endsAt)
+  const hm = (p: { hours: number; minutes: number }) =>
+    `${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}`
+  return `${s.year}年${s.month}月${s.day}日 ${hm(s)}~${hm(e)}`
 }
 
 const LIMITS: [prefix: string, chars: number][] = [

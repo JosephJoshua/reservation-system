@@ -34,8 +34,8 @@ example `WECHAT_NOTICE_STUDENT_REMINDER="AbC123 thing1=lesson time2=time thing3=
 | `WECHAT_NOTICE_STUDENT_BOOKED` | student | 预约成功 |
 | `WECHAT_NOTICE_STUDENT_CANCELLED` | student | 课程取消, by the coach or the venue |
 | `WECHAT_NOTICE_STUDENT_REMINDER` | student | 上课提醒, 2 hours before the lesson |
-| `WECHAT_NOTICE_STUDENT_MOVED` | student | 课程变更, the lesson moved to another time |
-| `WECHAT_NOTICE_STUDENT_FEEDBACK` | student | the coach wrote 课后点评 |
+| `WECHAT_NOTICE_STUDENT_MOVED` | student | 课程变更, the lesson moved to another time (with 改约) |
+| `WECHAT_NOTICE_STUDENT_FEEDBACK` | student | the coach wrote 课后点评 (with 课后点评) |
 
 Values: `student`, `lesson`, `time`, `oldTime` (moved), `coach`, `place` (venue name),
 `reason` (cancelled), `refund` (cancelled, such as `¥200 原路退回`), `note` (feedback).
