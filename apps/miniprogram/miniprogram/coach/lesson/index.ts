@@ -99,8 +99,9 @@ Page({
     const lesson = this.data.lesson
     if (!lesson || this.data.marking) return
     const picked = e.currentTarget.dataset.value as Attendance
-    // The second tap of a double tap would undo the mark the first one just made.
-    if (lesson.attendance === picked && Date.now() - this.markedAt < 1000) return
+    // The second tap of a double tap can land just after the first request returns; it would undo
+    // the mark the first one made. A deliberate undo comes later than this.
+    if (lesson.attendance === picked && Date.now() - this.markedAt < 400) return
     // Tapping the current mark again clears it.
     const attendance = lesson.attendance === picked ? null : picked
     this.setData({ marking: true })

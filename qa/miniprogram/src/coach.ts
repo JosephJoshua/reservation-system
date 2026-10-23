@@ -263,8 +263,8 @@ try {
       (d) => (d.lesson as { attendance: string | null }).attendance === 'attended',
     )
     await screenshot('lesson-attended')
-    // A second tap on the same mark within a second counts as a double tap and is ignored.
-    await sleep(1100)
+    // A second tap on the same mark right after the first counts as a double tap and is ignored.
+    await sleep(500)
     await invoke('mark', { currentTarget: { dataset: { value: 'attended' } } })
     await waitForPage(
       'coach/lesson/index',
