@@ -38,6 +38,8 @@ Page({
     coachId: 0,
     days: [] as { key: string; label: string; date: string }[],
     date: '',
+    /** The day before the selected one, so the selection is not flush with the screen edge. */
+    dayAnchor: '',
     slotsState: 'loading' as 'loading' | 'ready' | 'error',
     slots: [] as SlotView[],
     availableCount: 0,
@@ -141,7 +143,7 @@ Page({
       const days = this.data.days
       const next = days[days.findIndex((d) => d.key === date) + 1]
       if (this.autoAdvance && availableCount === 0 && next) {
-        this.setData({ date: next.key })
+        this.setData({ date: next.key, dayAnchor: `day-${date}` })
         this.loadSlots()
         return
       }

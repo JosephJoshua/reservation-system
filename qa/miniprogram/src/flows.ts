@@ -254,6 +254,9 @@ try {
       (d) => d.slotsState === 'ready' && Number(d.availableCount) > 0,
     )
     await screenshot('book-private')
+    await miniProgram.pageScrollTo(10000)
+    await screenshot('book-private-bottom')
+    await miniProgram.pageScrollTo(0)
     const slots = (await book.data('slots')) as { available: boolean }[]
     await tap(
       book,
