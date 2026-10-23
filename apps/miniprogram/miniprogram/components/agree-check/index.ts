@@ -8,7 +8,10 @@ Component({
 
   methods: {
     toggle() {
-      this.triggerEvent('change', { checked: !this.data.checked })
+      // Flipped here first, so a second tap before the page re-renders sees the new value.
+      const checked = !this.data.checked
+      this.setData({ checked })
+      this.triggerEvent('change', { checked })
     },
 
     open(e: WechatMiniprogram.TouchEvent) {

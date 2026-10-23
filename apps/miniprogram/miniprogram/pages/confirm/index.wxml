@@ -69,7 +69,7 @@
     </view>
   </view>
 
-  <agree-check wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
+  <agree-check id="agree-check" wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
 
   <view class="action-bar">
     <view class="grow">
