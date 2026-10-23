@@ -5,10 +5,12 @@ import { venueParts, venueSettings } from '@rs/shared'
 import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { immediate } from '../db/client'
+import { immediate, type Q } from '../db/client'
 import {
   banners,
   bookings,
+  categoryPrices,
+  coachCategories,
   coaches,
   coachLessonTypes,
   lessonTypes,
@@ -35,6 +37,7 @@ import {
 } from '../services/packages'
 import { retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
+import { cleanRichText } from '../services/rich-text'
 import { getSettings, saveSettings } from '../services/settings'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { weeklyHoursBody } from './coach'
@@ -46,14 +49,24 @@ const MAX_SLOTS_PER_REQUEST = 500
 
 const coachBody = z.object({
   name: z.string().trim().min(1).max(20),
+  categoryId: z.number().int().positive().nullable().default(null),
   title: z.string().trim().max(30).default(''),
-  bio: z.string().trim().max(500).default(''),
+  tags: z.array(z.string().trim().min(1).max(10)).max(6).default([]),
+  profile: z.string().max(50_000).transform(cleanRichText).default(''),
   avatarUrl: z.string().max(300).default(''),
   active: z.boolean().default(true),
   sort: z.number().int().default(0),
-  /** Lesson types this coach teaches, each with an optional own price. */
-  lessons: z
-    .array(z.object({ lessonTypeId: z.number().int().positive(), price: fen.nullable() }))
+  /** Lesson types this coach teaches. */
+  lessonTypeIds: z.array(z.number().int().positive()).max(100).default([]),
+})
+
+const categoryBody = z.object({
+  name: z.string().trim().min(1).max(10),
+  sort: z.number().int().default(0),
+  /** Prices for some lesson types; the rest use the lesson type's own price. */
+  prices: z
+    .array(z.object({ lessonTypeId: z.number().int().positive(), price: fen }))
+    .max(100)
     .default([]),
 })
 
@@ -154,16 +167,17 @@ export function adminRoutes(deps: Deps) {
   const coachView = (id: number) => {
     const row = db.select().from(coaches).where(eq(coaches.id, id)).get()
     if (!row) throw notFound('教练')
-    const lessons = db
-      .select({ lessonTypeId: coachLessonTypes.lessonTypeId, price: coachLessonTypes.price })
+    const lessonTypeIds = db
+      .select({ id: coachLessonTypes.lessonTypeId })
       .from(coachLessonTypes)
       .where(eq(coachLessonTypes.coachId, id))
       .all()
+      .map((r) => r.id)
     const { openid, bindCode, bindCodeExpiresAt, ...coach } = row
     const codeLive = bindCode && bindCodeExpiresAt && bindCodeExpiresAt > deps.now()
     return {
       ...coach,
-      lessons,
+      lessonTypeIds,
       bound: openid !== null,
       bindCode: codeLive ? bindCode : null,
       bindCodeExpiresAt: codeLive ? bindCodeExpiresAt : null,
@@ -181,11 +195,7 @@ export function adminRoutes(deps: Deps) {
     ),
   )
 
-  const saveCoachLessons = (
-    tx: Parameters<Parameters<typeof immediate>[1]>[0],
-    coachId: number,
-    lessons: z.infer<typeof coachBody>['lessons'],
-  ) => {
+  const checkLessonTypes = (tx: Q, ids: number[]) => {
     const known = new Set(
       tx
         .select({ id: lessonTypes.id })
@@ -193,35 +203,135 @@ export function adminRoutes(deps: Deps) {
         .all()
         .map((r) => r.id),
     )
-    if (lessons.some((l) => !known.has(l.lessonTypeId))) throw notFound('课程')
-    tx.delete(coachLessonTypes).where(eq(coachLessonTypes.coachId, coachId)).run()
-    const unique = new Map(lessons.map((l) => [l.lessonTypeId, l]))
-    for (const l of unique.values()) {
-      tx.insert(coachLessonTypes)
-        .values({ coachId, lessonTypeId: l.lessonTypeId, price: l.price })
-        .run()
+    if (ids.some((id) => !known.has(id))) throw notFound('课程')
+  }
+
+  const saveCoach = (tx: Q, id: number | null, body: z.infer<typeof coachBody>) => {
+    const { lessonTypeIds, ...fields } = body
+    checkLessonTypes(tx, lessonTypeIds)
+    if (
+      fields.categoryId !== null &&
+      !tx.select().from(coachCategories).where(eq(coachCategories.id, fields.categoryId)).get()
+    ) {
+      throw notFound('教练类别')
     }
+    const tags = [...new Set(fields.tags)]
+    let coachId = id
+    if (coachId === null) {
+      coachId = tx
+        .insert(coaches)
+        .values({ ...fields, tags })
+        .returning({ id: coaches.id })
+        .get().id
+    } else {
+      const changed = tx
+        .update(coaches)
+        .set({ ...fields, tags })
+        .where(eq(coaches.id, coachId))
+        .run()
+      if (changed.changes === 0) throw notFound('教练')
+    }
+    tx.delete(coachLessonTypes).where(eq(coachLessonTypes.coachId, coachId)).run()
+    for (const lessonTypeId of new Set(lessonTypeIds)) {
+      tx.insert(coachLessonTypes).values({ coachId, lessonTypeId }).run()
+    }
+    return coachId
   }
 
   app.post('/coaches', async (c) => {
-    const { lessons, ...body } = await parseBody(c, coachBody)
-    const id = immediate(db, (tx) => {
-      const coach = tx.insert(coaches).values(body).returning({ id: coaches.id }).get()
-      saveCoachLessons(tx, coach.id, lessons)
-      return coach.id
-    })
+    const body = await parseBody(c, coachBody)
+    const id = immediate(db, (tx) => saveCoach(tx, null, body))
     return c.json(coachView(id), 201)
   })
 
   app.put('/coaches/:id', async (c) => {
     const id = idParam(c)
-    const { lessons, ...body } = await parseBody(c, coachBody)
-    immediate(db, (tx) => {
-      const changed = tx.update(coaches).set(body).where(eq(coaches.id, id)).run()
-      if (changed.changes === 0) throw notFound('教练')
-      saveCoachLessons(tx, id, lessons)
-    })
+    const body = await parseBody(c, coachBody)
+    immediate(db, (tx) => saveCoach(tx, id, body))
     return c.json(coachView(id))
+  })
+
+  // Coach categories
+
+  const categoryViews = () => {
+    const prices = db.select().from(categoryPrices).all()
+    return db
+      .select()
+      .from(coachCategories)
+      .orderBy(asc(coachCategories.sort), asc(coachCategories.id))
+      .all()
+      .map((cat) => ({
+        ...cat,
+        prices: prices
+          .filter((p) => p.categoryId === cat.id)
+          .map(({ lessonTypeId, price }) => ({ lessonTypeId, price })),
+      }))
+  }
+
+  const categoryView = (id: number) => {
+    const view = categoryViews().find((cat) => cat.id === id)
+    if (!view) throw notFound('教练类别')
+    return view
+  }
+
+  const saveCategory = (tx: Q, id: number | null, body: z.infer<typeof categoryBody>) => {
+    const { prices, ...fields } = body
+    checkLessonTypes(
+      tx,
+      prices.map((p) => p.lessonTypeId),
+    )
+    let categoryId = id
+    if (categoryId === null) {
+      categoryId = tx
+        .insert(coachCategories)
+        .values(fields)
+        .returning({ id: coachCategories.id })
+        .get().id
+    } else {
+      const changed = tx
+        .update(coachCategories)
+        .set(fields)
+        .where(eq(coachCategories.id, categoryId))
+        .run()
+      if (changed.changes === 0) throw notFound('教练类别')
+    }
+    tx.delete(categoryPrices).where(eq(categoryPrices.categoryId, categoryId)).run()
+    const unique = new Map(prices.map((p) => [p.lessonTypeId, p.price]))
+    for (const [lessonTypeId, price] of unique) {
+      tx.insert(categoryPrices).values({ categoryId, lessonTypeId, price }).run()
+    }
+    return categoryId
+  }
+
+  app.get('/coach-categories', (c) => c.json(categoryViews()))
+
+  app.post('/coach-categories', async (c) => {
+    const body = await parseBody(c, categoryBody)
+    const id = immediate(db, (tx) => saveCategory(tx, null, body))
+    return c.json(categoryView(id), 201)
+  })
+
+  app.put('/coach-categories/:id', async (c) => {
+    const id = idParam(c)
+    const body = await parseBody(c, categoryBody)
+    immediate(db, (tx) => saveCategory(tx, id, body))
+    return c.json(categoryView(id))
+  })
+
+  app.delete('/coach-categories/:id', (c) => {
+    const id = idParam(c)
+    immediate(db, (tx) => {
+      const used = tx
+        .select({ id: coaches.id })
+        .from(coaches)
+        .where(eq(coaches.categoryId, id))
+        .get()
+      if (used) throw new ApiError(409, 'category_in_use', '还有教练属于该类别')
+      tx.delete(categoryPrices).where(eq(categoryPrices.categoryId, id)).run()
+      const changed = tx.delete(coachCategories).where(eq(coachCategories.id, id)).run()
+      if (changed.changes === 0) throw notFound('教练类别')
+    })
+    return c.body(null, 204)
   })
 
   app.post('/coaches/:id/bind-code', (c) => c.json(newBindCode(deps, idParam(c)), 201))

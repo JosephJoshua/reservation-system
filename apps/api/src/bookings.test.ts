@@ -213,15 +213,11 @@ describe('pay per class', () => {
     expect(h.db.select().from(bookings).all()).toHaveLength(0)
   })
 
-  it('uses the coach price and a running sale', async () => {
+  it('uses the category price and a running sale', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
-    const { coachLessonTypes, lessonTypes } = await import('./db/schema')
-    h.db
-      .update(coachLessonTypes)
-      .set({ price: 30000 })
-      .where(eq(coachLessonTypes.lessonTypeId, lesson.id))
-      .run()
+    const { lessonTypes } = await import('./db/schema')
+    h.category(coach.id, '主教练', [{ lessonTypeId: lesson.id, price: 30000 }])
     h.db
       .update(lessonTypes)
       .set({
@@ -865,16 +861,12 @@ describe('review fixes', () => {
     )
   })
 
-  it("values used package lessons at each coach's own price, skipping returned ones", async () => {
+  it("values used package lessons at each coach's category price, skipping returned ones", async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const { coachLessonTypes, coaches } = await import('./db/schema')
-    // 王教练 charges his own ¥300; 李教练 is on the ¥200 list price.
-    h.db
-      .update(coachLessonTypes)
-      .set({ price: 30000 })
-      .where(eq(coachLessonTypes.coachId, coach.id))
-      .run()
+    // 王教练 is a ¥300 主教练; 李教练 has no category and is on the ¥200 list price.
+    h.category(coach.id, '主教练', [{ lessonTypeId: lesson.id, price: 30000 }])
     const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
     h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
     const product = h.db

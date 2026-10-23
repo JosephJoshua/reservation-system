@@ -17,13 +17,16 @@ function saleRunning(sale: Sale, now: Date): boolean {
   return now >= sale.startsAt && now < sale.endsAt
 }
 
-/** Lesson price: the coach's own price if set, else the lesson type's, then any percent-off sale. */
+/**
+ * Lesson price: the price set for the coach's category if any, else the lesson type's, then any
+ * percent-off sale.
+ */
 export function lessonPrice(
   lessonType: { price: Fen; salePercent: number | null } & Sale,
-  coachPrice: Fen | null,
+  categoryPrice: Fen | null,
   now: Date,
 ): PriceTag {
-  const base = coachPrice ?? lessonType.price
+  const base = categoryPrice ?? lessonType.price
   if (lessonType.salePercent == null || !saleRunning(lessonType, now)) {
     return { price: base, originalPrice: null }
   }
@@ -56,7 +59,8 @@ export function formatYuan(fen: Fen): string {
 
 /**
  * Suggested refund for the unused part of a package: what was paid minus the paid lessons used,
- * each charged at the single-class price of the coach it was taken with, never below zero.
+ * each charged at the single-class price of the coach it was taken with (their category's price,
+ * else the list price), never below zero.
  * Granted lessons are treated as used last, so lessons used come out of the paid ones first.
  */
 export function suggestedPackageRefund(input: {

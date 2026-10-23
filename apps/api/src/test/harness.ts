@@ -2,10 +2,18 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defaultSettings, type VenueSettings, venueInstant } from '@rs/shared'
+import { eq } from 'drizzle-orm'
 import { createApp } from '../app'
 import { openDb } from '../db/client'
 import { runMigrations } from '../db/migrate'
-import { coaches, coachLessonTypes, lessonTypes, slots } from '../db/schema'
+import {
+  categoryPrices,
+  coachCategories,
+  coaches,
+  coachLessonTypes,
+  lessonTypes,
+  slots,
+} from '../db/schema'
 import type { Deps } from '../deps'
 import { FakeGateway } from '../pay/fake'
 import { saveSettings } from '../services/settings'
@@ -82,13 +90,24 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
       .values({ name: '体验课', durationMinutes: 60, price: 5000, isTrial: true })
       .returning()
       .get()
-    db.insert(coachLessonTypes)
-      .values({ coachId: coach.id, lessonTypeId: lesson.id, price: null })
-      .run()
-    db.insert(coachLessonTypes)
-      .values({ coachId: coach.id, lessonTypeId: trial.id, price: null })
-      .run()
+    db.insert(coachLessonTypes).values({ coachId: coach.id, lessonTypeId: lesson.id }).run()
+    db.insert(coachLessonTypes).values({ coachId: coach.id, lessonTypeId: trial.id }).run()
     return { coach, lesson, trial }
+  }
+
+  /** Puts a coach in a new category with the given prices. */
+  function category(
+    coachId: number,
+    name: string,
+    prices: { lessonTypeId: number; price: number }[],
+  ) {
+    const cat = db.insert(coachCategories).values({ name }).returning().get()
+    for (const p of prices)
+      db.insert(categoryPrices)
+        .values({ categoryId: cat.id, ...p })
+        .run()
+    db.update(coaches).set({ categoryId: cat.id }).where(eq(coaches.id, coachId)).run()
+    return cat
   }
 
   /** A 60-minute slot on a venue date at a venue hour. */
@@ -104,7 +123,21 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
       .get()
   }
 
-  return { db, deps, gateway, clock, logs, app, call, student, admin, settings, seed, slot }
+  return {
+    db,
+    deps,
+    gateway,
+    clock,
+    logs,
+    app,
+    call,
+    student,
+    admin,
+    settings,
+    seed,
+    category,
+    slot,
+  }
 }
 
 export type Harness = ReturnType<typeof setup>

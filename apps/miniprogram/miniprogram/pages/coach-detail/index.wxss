@@ -1,0 +1,160 @@
+@import '../../styles/common.wxss';
+
+.profile-head {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 24rpx;
+  padding: 32rpx;
+}
+
+.head-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 28rpx;
+}
+
+.head-name {
+  display: flex;
+  align-items: center;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.head-tag {
+  display: flex;
+  margin-left: 16rpx;
+}
+
+.head-title {
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.head-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 20rpx;
+}
+
+.lesson {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  padding: 24rpx 24rpx 24rpx 32rpx;
+}
+
+.lesson + .lesson::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 32rpx;
+  right: 0;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.lesson-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.lesson-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.lesson-name {
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+.lesson-meta {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.lesson-side {
+  margin-left: 24rpx;
+  text-align: right;
+  font-size: 32rpx;
+  white-space: nowrap;
+}
+
+.lesson-arrow {
+  display: flex;
+  margin-left: 8rpx;
+  color: var(--td-text-color-placeholder);
+}
+
+.profile-body {
+  padding: 28rpx 32rpx;
+  font-size: 30rpx;
+  line-height: 1.7;
+  color: var(--td-text-color-primary);
+  word-break: break-all;
+}
+
+/* Classes added to the profile HTML by utils/rich-text. */
+.rt-p {
+  margin: 8rpx 0;
+}
+
+.rt-h3 {
+  margin: 32rpx 0 8rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.rt-h3:first-child,
+.rt-p:first-child {
+  margin-top: 0;
+}
+
+.rt-ul,
+.rt-ol {
+  margin: 8rpx 0;
+  padding-left: 40rpx;
+}
+
+.rt-li .rt-p {
+  margin: 4rpx 0;
+}
+
+.rt-quote {
+  margin: 16rpx 0;
+  padding-left: 24rpx;
+  border-left: 6rpx solid var(--td-component-border);
+  color: var(--td-text-color-secondary);
+}
+
+.rt-hr {
+  margin: 24rpx 0;
+  border: none;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.rt-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 16rpx 0;
+  border-radius: 12rpx;
+}
+
+.inline-empty {
+  display: block;
+  padding: 48rpx 0;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}
+
+.bottom-space {
+  padding-bottom: 48rpx;
+}

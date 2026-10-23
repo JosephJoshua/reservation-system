@@ -9,7 +9,7 @@ const sale = {
 const noSale = { startsAt: null, endsAt: null }
 
 describe('lessonPrice', () => {
-  it('uses the coach price over the lesson type price', () => {
+  it('uses the category price over the lesson type price', () => {
     expect(lessonPrice({ price: 20000, salePercent: null, ...noSale }, 30000, now)).toEqual({
       price: 30000,
       originalPrice: null,
@@ -95,7 +95,7 @@ describe('suggestedPackageRefund', () => {
     ).toBe(90000)
   })
 
-  it("charges each used lesson at its coach's own price", () => {
+  it("charges each used lesson at its coach's category price", () => {
     // 3 lessons used: two with a ¥300 coach, one with a coach on the ¥200 list price.
     expect(
       suggestedPackageRefund({

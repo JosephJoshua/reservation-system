@@ -1,7 +1,7 @@
 import {
   bookingWindowError,
   type CatalogDto,
-  type CoachDto,
+  type CoachDetailDto,
   type HomeDto,
   type LessonTypeDto,
   type MeDto,
@@ -30,7 +30,7 @@ import type { Deps } from '../deps'
 import { ApiError, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { type AuthVars, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
-import { linkPrice, visibleTo } from '../services/catalog'
+import { coachViews, visibleTo } from '../services/catalog'
 import { startPayment, syncOrder } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { getSettings } from '../services/settings'
@@ -84,6 +84,7 @@ export function studentRoutes(deps: Deps) {
   app.use('/me', requireStudent(deps))
   app.use('/me/*', requireStudent(deps))
   app.use('/catalog', requireStudent(deps))
+  app.use('/coaches/*', requireStudent(deps))
   app.use('/slots', requireStudent(deps))
   app.use('/bookings', requireStudent(deps))
   app.use('/bookings/*', requireStudent(deps))
@@ -147,34 +148,44 @@ export function studentRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.get('/catalog', (c) => {
-    const now = deps.now()
-    const student = me(c.get('studentId'))
-    const settings = getSettings(db)
-    const types = db
-      .select()
-      .from(lessonTypes)
-      .orderBy(asc(lessonTypes.sort), asc(lessonTypes.id))
-      .all()
-      .filter((t) => visibleTo(t, student) && (!t.isTrial || settings.payment.trialEnabled))
-    const coachRows = db
+  const activeCoaches = () =>
+    db
       .select()
       .from(coaches)
       .where(eq(coaches.active, true))
       .orderBy(asc(coaches.sort), asc(coaches.id))
       .all()
-    const links = db.select().from(coachLessonTypes).all()
-    const coachDtos: CoachDto[] = coachRows.map((coach) => ({
-      id: coach.id,
-      name: coach.name,
-      title: coach.title,
-      bio: coach.bio,
-      avatarUrl: coach.avatarUrl,
-      lessons: types.flatMap((t) => {
-        const link = links.find((l) => l.coachId === coach.id && l.lessonTypeId === t.id)
-        return link ? [{ lessonTypeId: t.id, price: linkPrice(t, link.price, now) }] : []
-      }),
-    }))
+
+  /** Lesson types a student can book now. */
+  const bookableTypes = (student: { tester: boolean }) => {
+    const settings = getSettings(db)
+    return db
+      .select()
+      .from(lessonTypes)
+      .orderBy(asc(lessonTypes.sort), asc(lessonTypes.id))
+      .all()
+      .filter((t) => visibleTo(t, student) && (!t.isTrial || settings.payment.trialEnabled))
+  }
+
+  app.get('/coaches/:id', (c) => {
+    const student = me(c.get('studentId'))
+    const coach = db
+      .select()
+      .from(coaches)
+      .where(eq(coaches.id, idParam(c)))
+      .get()
+    if (!coach?.active) throw notFound('教练')
+    const [view] = coachViews(db, [coach], bookableTypes(student), deps.now())
+    if (!view) throw notFound('教练')
+    return c.json({ ...view, profile: coach.profile } satisfies CoachDetailDto)
+  })
+
+  app.get('/catalog', (c) => {
+    const now = deps.now()
+    const student = me(c.get('studentId'))
+    const settings = getSettings(db)
+    const types = bookableTypes(student)
+    const coachDtos = coachViews(db, activeCoaches(), types, now)
     const typeDtos: LessonTypeDto[] = types.map((t) => {
       const prices = coachDtos.flatMap((cd) => cd.lessons.filter((l) => l.lessonTypeId === t.id))
       const cheapest = prices.reduce<(typeof prices)[number] | null>(

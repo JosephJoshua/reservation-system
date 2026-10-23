@@ -29,6 +29,13 @@
       "when": 1792782829109,
       "tag": "0003_idempotency_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1792783516697,
+      "tag": "0004_coach_categories",
+      "breakpoints": true
     }
   ]
 }

@@ -61,6 +61,30 @@
     <view class="inline-empty"><t-empty icon="{{emptyIcon}}" description="暂无可预约的课程" /></view>
   </view>
 
+  <block wx:if="{{coaches.length}}">
+    <view class="section-title">教练团队</view>
+    <view class="card">
+      <view
+        wx:for="{{coaches}}"
+        wx:key="id"
+        class="lesson"
+        hover-class="lesson-hover"
+        data-id="{{item.id}}"
+        bind:tap="openCoach"
+      >
+        <t-avatar image="{{item.avatar}}" icon="{{item.avatar ? '' : 'user'}}" size="88rpx" />
+        <view class="lesson-main coach-main">
+          <view class="lesson-name">
+            <text>{{item.name}}</text>
+            <view wx:if="{{item.category}}" class="lesson-tag"><t-tag size="small" theme="primary" variant="light">{{item.category}}</t-tag></view>
+          </view>
+          <view wx:if="{{item.title}}" class="coach-title">{{item.title}}</view>
+        </view>
+        <view class="lesson-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+      </view>
+    </view>
+  </block>
+
   <block wx:if="{{packageCount}}">
     <view class="section-title">课时包</view>
     <t-cell-group theme="card">

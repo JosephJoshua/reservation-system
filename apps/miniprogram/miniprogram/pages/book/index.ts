@@ -7,6 +7,7 @@ import { navigateOnce } from '../../utils/nav'
 interface CoachOption {
   id: number
   name: string
+  category: string
   title: string
   avatar: string
   price: string
@@ -37,6 +38,8 @@ Page({
     duration: 0,
     coaches: [] as CoachOption[],
     coachId: 0,
+    /** The coach picked in the strip, for the line that links to their page. */
+    picked: null as CoachOption | null,
     days: [] as { key: string; label: string; date: string }[],
     date: '',
     /** The day before the selected one, so the selection is not flush with the screen edge. */
@@ -81,6 +84,7 @@ Page({
           {
             id: c.id,
             name: c.name,
+            category: c.category,
             title: c.title,
             avatar: c.avatarUrl ? assetUrl(c.avatarUrl) : '',
             ...priceText(lesson.price),
@@ -107,6 +111,7 @@ Page({
         duration: lessonType.durationMinutes,
         coaches,
         coachId,
+        picked: coaches.find((c) => c.id === coachId) ?? null,
         days,
         date: days[0]?.key ?? '',
       })
@@ -163,8 +168,13 @@ Page({
     const coachId = Number(e.currentTarget.dataset.id)
     if (coachId === this.data.coachId) return
     this.autoAdvance = false
-    this.setData({ coachId })
+    this.setData({ coachId, picked: this.data.coaches.find((c) => c.id === coachId) ?? null })
     this.loadSlots()
+  },
+
+  openCoach() {
+    const coach = this.data.picked
+    if (coach) navigateOnce(`/pages/coach-detail/index?id=${coach.id}`)
   },
 
   pickDate(e: WechatMiniprogram.TouchEvent) {

@@ -9,7 +9,8 @@
     "pages/packages/index",
     "pages/my-packages/index",
     "pages/profile-edit/index",
-    "pages/policy/index"
+    "pages/policy/index",
+    "pages/coach-detail/index"
   ],
   "subpackages": [
     {

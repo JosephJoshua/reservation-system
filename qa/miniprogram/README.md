@@ -42,3 +42,14 @@ QA_DB=../../apps/api/data/qa.db pnpm --filter @rs/qa-miniprogram coach
 ```
 
 It unbinds the first seeded coach before it starts and after it ends.
+
+## Coach pages
+
+Checks the coach list on the home page, a coach's page (category, tags, prices, rich text
+profile), booking from it and the link back from the booking page, saving screenshots to
+`qa/miniprogram/screenshots/coach-profile/`. It uses the same seeded API as the student flows.
+Run it once with DevTools in light mode and once in dark mode:
+
+```sh
+pnpm --filter @rs/qa-miniprogram coach-profile
+```

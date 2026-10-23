@@ -3,7 +3,8 @@ import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
-  coachLessonTypes,
+  categoryPrices,
+  coaches,
   lessonTypes,
   orders,
   packageLedger,
@@ -93,8 +94,8 @@ export async function purchasePackage(
 }
 
 /**
- * Single-class price of each lesson taken from a package, oldest first: the coach's own price for
- * the lesson type if set, else the list price. Taken means attended or forfeited by a late cancel;
+ * Single-class price of each lesson taken from a package, oldest first: the coach's category
+ * price for the lesson type if set, else the list price. Taken means attended or forfeited by a late cancel;
  * lessons returned to the package do not count.
  */
 function usedLessonPrices(tx: Q, pkg: { id: number; lessonTypeId: number }, listPrice: number) {
@@ -107,14 +108,15 @@ function usedLessonPrices(tx: Q, pkg: { id: number; lessonTypeId: number }, list
       .map((r) => r.bookingId),
   )
   return tx
-    .select({ id: bookings.id, coachPrice: coachLessonTypes.price })
+    .select({ id: bookings.id, categoryPrice: categoryPrices.price })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
+    .innerJoin(coaches, eq(coaches.id, slots.coachId))
     .leftJoin(
-      coachLessonTypes,
+      categoryPrices,
       and(
-        eq(coachLessonTypes.coachId, slots.coachId),
-        eq(coachLessonTypes.lessonTypeId, pkg.lessonTypeId),
+        eq(categoryPrices.categoryId, coaches.categoryId),
+        eq(categoryPrices.lessonTypeId, pkg.lessonTypeId),
       ),
     )
     .where(
@@ -123,7 +125,7 @@ function usedLessonPrices(tx: Q, pkg: { id: number; lessonTypeId: number }, list
     .orderBy(asc(bookings.startsAt), asc(bookings.id))
     .all()
     .filter((b) => !returned.has(b.id))
-    .map((b) => b.coachPrice ?? listPrice)
+    .map((b) => b.categoryPrice ?? listPrice)
 }
 
 /** A student asks for the unused part of a package back. The admin decides the amount. */

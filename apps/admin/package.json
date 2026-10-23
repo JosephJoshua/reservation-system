@@ -11,6 +11,10 @@
   "dependencies": {
     "@rs/shared": "workspace:*",
     "@rs/theme": "workspace:*",
+    "@tiptap/extension-image": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "tdesign-react": "1.18.5"

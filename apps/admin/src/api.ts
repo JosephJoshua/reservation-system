@@ -72,3 +72,13 @@ export async function api<T = unknown>(
   }
   return data as T
 }
+
+/** Uploads an image and returns its URL under /api/uploads/. */
+export async function uploadImage(file: File): Promise<string> {
+  // The API refuses these too; checking here saves uploading a large file first.
+  if (file.size > 2 * 1024 * 1024) throw new RequestError(400, 'too_large', '图片不能超过 2MB')
+  const form = new FormData()
+  form.append('file', file)
+  const { url } = await api<{ url: string }>('POST', '/admin/uploads', form)
+  return url
+}

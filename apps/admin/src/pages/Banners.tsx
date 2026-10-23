@@ -6,14 +6,13 @@ import {
   Dialog,
   Input,
   InputNumber,
-  MessagePlugin,
   Popconfirm,
   Select,
   Space,
   Switch,
   Tag,
 } from 'tdesign-react'
-import { api } from '../api'
+import { api, uploadImage } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
@@ -23,7 +22,6 @@ import type { Banner, LessonType, PackageProduct } from '../types'
 type BannerForm = Omit<Banner, 'id'>
 
 // Matches the API's upload limit.
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
 export function Banners() {
   const banners = useApi<Banner[]>('/admin/banners')
@@ -206,15 +204,9 @@ function BannerEditor({
 
   const upload = async (file: File | undefined) => {
     if (!file) return
-    if (file.size > MAX_IMAGE_BYTES) {
-      void MessagePlugin.error('图片不能超过 2MB')
-      return
-    }
     setUploading(true)
-    const form = new FormData()
-    form.append('file', file)
     await attempt(async () => {
-      const { url } = await api<{ url: string }>('POST', '/admin/uploads', form)
+      const url = await uploadImage(file)
       if (open.current) set({ imageUrl: url })
     })
     setUploading(false)
