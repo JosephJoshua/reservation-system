@@ -62,7 +62,7 @@ test('shows a paid booking and refunds it in full when the venue cancels', async
   request,
 }) => {
   const token = await student(request, `pay-${run}`)
-  await call(request, 'PATCH', '/me', token, { name: '王小明', phone: '13800000001' })
+  await call(request, 'PUT', '/me', token, { name: '王小明', phone: '13800000001' })
   const catalog = await call<CatalogDto>(request, 'GET', '/catalog', token)
   const lesson = catalog.lessonTypes.find((t) => t.name === lessonName)
   const coach = catalog.coaches.find((c) => c.name === coachName)
@@ -100,7 +100,7 @@ test('shows a paid booking and refunds it in full when the venue cancels', async
 
 test('records a front-desk sale and approves a package refund', async ({ page, request }) => {
   const token = await student(request, `pkg-${run}`)
-  await call(request, 'PATCH', '/me', token, { name: `前台${run}`, phone: '13800000002' })
+  await call(request, 'PUT', '/me', token, { name: `前台${run}`, phone: '13800000002' })
 
   await login(page)
   await page.goto('./#/students')
