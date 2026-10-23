@@ -14,6 +14,8 @@ unused abstractions.
 - `packages/shared`: zod schemas, types, booking rules, venue time helpers. Used by every app.
 - `packages/theme`: brand tokens. Edit `tokens.json`, then `pnpm --filter @rs/theme generate`.
 - `qa/e2e`: Playwright specs for admin. `qa/miniprogram`: automator scripts.
+- `deploy/`: Docker image, compose, Caddy, backups to COS and the runbook (`deploy/README.md`).
+  New env vars go in `deploy/README.md` and `deploy/env/*.example`.
 
 ## Commands
 

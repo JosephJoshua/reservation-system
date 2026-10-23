@@ -32,3 +32,10 @@ jobs:
           name: playwright-report
           path: qa/e2e/playwright-report
           retention-days: 7
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: shellcheck -S warning deploy/*.sh deploy/test/*.sh && (cd deploy/backup && shellcheck -x -S warning *.sh)
+      - run: deploy/test/drill.sh

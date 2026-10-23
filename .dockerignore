@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/data
+**/*.db*
+.git
+.env
+.env.*
+deploy/*.env
+qa/miniprogram/screenshots
+qa/e2e/test-results
+qa/e2e/playwright-report
+apps/miniprogram/miniprogram/miniprogram_npm
+apps/miniprogram/miniprogram/lib

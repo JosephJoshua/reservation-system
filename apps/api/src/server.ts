@@ -1,4 +1,6 @@
 import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
+import { Hono } from 'hono'
 import { createApp } from './app'
 import { config } from './config'
 import { openDb } from './db/client'
@@ -37,6 +39,37 @@ const deps: Deps = {
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')
 startSweeper(deps)
 
-serve({ fetch: createApp(deps).fetch, port: config.port }, (info) => {
+// In a deployment the API also serves the built admin app, so one container holds one environment.
+const root = new Hono()
+if (config.adminDir) {
+  const adminDir = config.adminDir
+  root.get('/admin', (c) => c.redirect('/admin/'))
+  // Hashed bundles are cached for good; index.html is checked on every load.
+  root.use(
+    '/admin/*',
+    serveStatic({
+      root: adminDir,
+      rewriteRequestPath: (path) => path.replace(/^\/admin/, ''),
+      onFound: (path, c) =>
+        c.header(
+          'Cache-Control',
+          path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+        ),
+    }),
+  )
+  root.get(
+    '/admin/*',
+    serveStatic({
+      path: 'index.html',
+      root: adminDir,
+      onFound: (_path, c) => c.header('Cache-Control', 'no-cache'),
+    }),
+  )
+  root.get('/', (c) => c.redirect('/admin/'))
+}
+const api = createApp(deps)
+root.all('/api/*', (c) => api.fetch(c.req.raw, c.env))
+
+serve({ fetch: root.fetch, port: config.port }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`)
 })

@@ -1,0 +1,48 @@
+# Production and staging on one server. deploy/rs.sh drives this file; see deploy/README.md.
+name: rs
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: 20m, max-file: "5" }
+
+services:
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?}
+      STAGING_DOMAIN: ${STAGING_DOMAIN:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    logging: *logging
+
+  app:
+    image: rs-app:${APP_TAG:-none}
+    restart: unless-stopped
+    env_file: prod.env
+    volumes: [prod-data:/data, ./secrets/prod:/secrets:ro]
+    logging: *logging
+
+  backup:
+    image: rs-backup:${APP_TAG:-none}
+    restart: unless-stopped
+    env_file: backup.env
+    volumes: [prod-data:/data]
+    logging: *logging
+
+  app-staging:
+    image: rs-app:${STAGING_TAG:-none}
+    restart: unless-stopped
+    env_file: staging.env
+    volumes: [staging-data:/data, ./secrets/staging:/secrets:ro]
+    logging: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:
+  prod-data:
+  staging-data:
