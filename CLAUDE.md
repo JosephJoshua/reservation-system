@@ -34,7 +34,8 @@ pnpm --filter @rs/api db:generate   # after schema changes
   venue dates. Never rely on the machine's time zone.
 - Booking rules live in `packages/shared` (pure functions) or the API, with Vitest coverage.
 - Mini program: run `pnpm --filter @rs/miniprogram build` before opening DevTools; it copies
-  TDesign into `miniprogram_npm` and bundles `@rs/shared` into `lib/`. Do not name a class
+  TDesign into `miniprogram_npm`, bundles `@rs/shared` into `lib/`, and writes `WX_APPID` into
+  the gitignored `project.private.config.json`. Do not name a class
   `.page`: TDesign's theme file sets tokens on `.page`, which would undo the brand colors.
 - Follow WeChat design rules: keep the native navigation bar and capsule area, 44px minimum tap
   targets, main action in a fixed bottom bar, loading, empty and error states on every list,

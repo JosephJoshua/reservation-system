@@ -1,5 +1,7 @@
 // Prepares files the WeChat DevTools project needs but cannot resolve from a pnpm workspace:
 // the TDesign component build, the shared package bundle, and the brand tokens.
+// Also writes the gitignored project.private.config.json with the AppID from WX_APPID,
+// since project.config.json only carries a placeholder that DevTools will not open.
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, relative } from 'node:path'
@@ -35,3 +37,9 @@ await build({
 })
 const typesPath = relative(libDir, sharedEntry).replace(/\\/g, '/').replace(/\.ts$/, '')
 writeFileSync(join(libDir, 'shared.d.ts'), `export * from '${typesPath}'\n`)
+
+const appid = process.env.WX_APPID?.trim()
+if (appid) {
+  const privateConfig = fileURLToPath(new URL('../project.private.config.json', import.meta.url))
+  writeFileSync(privateConfig, `${JSON.stringify({ appid }, null, 2)}\n`)
+}
