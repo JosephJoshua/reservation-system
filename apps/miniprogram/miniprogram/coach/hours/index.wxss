@@ -63,8 +63,11 @@
   color: var(--td-text-color-primary);
 }
 
+/* Wraps as a whole under the time when the row is too narrow, never word by word. */
 .window-sub {
+  display: inline-block;
   margin-left: 16rpx;
+  white-space: nowrap;
   font-size: 26rpx;
   color: var(--td-text-color-secondary);
 }

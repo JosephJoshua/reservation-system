@@ -560,6 +560,8 @@ describe('the coach schedule and lessons', () => {
       await h.student('z'),
     )
     expect(again.json.error.code).toBe('too_soon')
+    const note = await h.call('PUT', `/coach/lessons/${bookingId}/note`, { note: 'x' }, token)
+    expect(note.json.error.code).toBe('not_live')
     const empty = await h.call('POST', `/coach/lessons/${bookingId}/cancel`, { reason: '' }, token)
     expect(empty.status).toBe(400)
   })

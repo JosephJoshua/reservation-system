@@ -154,6 +154,12 @@ try {
   check(coach, 'seed the API first: no coaches')
   if (coach.bound) await call('DELETE', `/admin/coaches/${coach.id}/binding`, undefined, admin)
   const { code } = await call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)
+  // Start from no weekly hours and no days off, so the script can run again on the same database.
+  const before = await call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)
+  await call('PUT', `/admin/coaches/${coach.id}/hours`, { hours: [] }, admin)
+  for (const day of before.daysOff as string[]) {
+    await call('DELETE', `/admin/coaches/${coach.id}/days-off/${day}`, undefined, admin)
+  }
 
   // Two students with lessons: one two days out, one moved to an hour ago.
   const lessonTypes = (await call('GET', '/admin/lesson-types', undefined, admin)) as {
@@ -192,6 +198,11 @@ try {
   const past = await book(`qa_b_${run}`, 3)
   moveIntoPast(past)
 
+  // Let the launch login finish first, or it can write its own token back after we clear it.
+  for (let i = 0; i < 20 && !(await miniProgram.callWxMethod('getStorageSync', 'token')); i++) {
+    await sleep(250)
+  }
+  await sleep(500)
   await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_coach_${run}`)
   await miniProgram.callWxMethod('removeStorageSync', 'token')
   await miniProgram.callWxMethod('removeStorageSync', 'coachToken')

@@ -79,6 +79,7 @@ Page({
       together: l.lessonsTogether ? `与你的第 ${l.lessonsTogether + 1} 节课` : '第一次上你的课',
       cancelReason: l.cancelReason || (l.cancelledBy === 'student' ? '学员取消' : '场馆取消'),
       attendanceNote: attendanceNote(l),
+      noteEditable: l.status === 'confirmed' || l.status === 'pending_payment',
       history: l.history.map((h) => ({
         id: h.id,
         date: fullDate(h.startsAt),

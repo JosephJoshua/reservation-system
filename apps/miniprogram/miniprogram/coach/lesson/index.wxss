@@ -43,17 +43,23 @@
 }
 
 .note-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  position: relative;
+}
+
+.note-text {
+  padding: 28rpx 32rpx;
+  font-size: 32rpx;
+  white-space: pre-wrap;
 }
 
 .note-save {
-  /* 44px tall tap area without making the section title taller. */
+  /* 44px tall tap area laid over the title, so showing it does not move the textarea. */
+  position: absolute;
+  right: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   height: 88rpx;
-  margin: -24rpx -32rpx -24rpx 0;
   padding: 0 32rpx;
   font-size: 28rpx;
   color: var(--td-text-color-brand);

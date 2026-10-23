@@ -7,7 +7,7 @@
   <t-cell-group theme="card">
     <t-input label="绑定码" placeholder="8 位字母或数字" maxlength="{{9}}" value="{{code}}" confirm-type="done" bind:change="onCode" bind:enter="submit" />
   </t-cell-group>
-  <view class="footnote">绑定码 24 小时内有效，只能使用一次。一个微信只能绑定一位教练。</view>
+  <view class="footnote">绑定码 24 小时内有效，只能用一次。</view>
 </view>
 <view class="action-bar">
   <view class="grow">

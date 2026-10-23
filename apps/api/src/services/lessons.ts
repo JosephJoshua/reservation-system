@@ -186,7 +186,10 @@ export function setAttendance(
 }
 
 export function setCoachNote(deps: Deps, bookingId: number, coachId: number, note: string) {
-  ownBooking(deps, bookingId, coachId)
+  const { booking } = ownBooking(deps, bookingId, coachId)
+  if (booking.status === 'cancelled' || booking.status === 'expired') {
+    throw new ApiError(409, 'not_live', '已取消的课程不能写备注')
+  }
   deps.db.update(bookings).set({ coachNote: note }).where(eq(bookings.id, bookingId)).run()
 }
 

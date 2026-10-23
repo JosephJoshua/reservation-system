@@ -40,6 +40,7 @@
     <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用和课时。再点一次已选的按钮可撤销。</view>
   </block>
 
+  <block wx:if="{{noteEditable}}">
   <view class="section-title note-title">
     <text>课堂备注</text>
     <text wx:if="{{noteDirty}}" class="note-save" bind:tap="saveNote">{{savingNote ? '保存中' : '保存'}}</text>
@@ -56,6 +57,11 @@
       bind:blur="saveNote"
     />
   </view>
+  </block>
+  <block wx:elif="{{note}}">
+    <view class="section-title">课堂备注</view>
+    <view class="card note-text">{{note}}</view>
+  </block>
 
   <block wx:if="{{history.length}}">
     <view class="section-title">之前的课</view>
