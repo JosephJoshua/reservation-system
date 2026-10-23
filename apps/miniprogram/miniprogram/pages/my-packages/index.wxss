@@ -11,7 +11,7 @@
 
 .pkg-inactive .pkg-name,
 .pkg-inactive .pkg-remaining {
-  color: var(--td-text-color-placeholder);
+  color: var(--td-text-color-secondary);
 }
 
 .pkg-head {

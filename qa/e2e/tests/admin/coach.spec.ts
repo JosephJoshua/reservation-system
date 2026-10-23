@@ -12,7 +12,10 @@ const coachName = `教练${run}`
 const lessonName = `私教${run}`
 const shots = join(import.meta.dirname, '../../test-results/coach-shots')
 
-/** Moves a booking and its slot into the past, so it can be marked; the e2e API runs on real time. */
+/**
+ * Moves a booking and its slot into the past, so it can be marked; the e2e API runs on real time.
+ * Returns the new start, which falls on yesterday's venue date just after midnight.
+ */
 function moveIntoPast(bookingId: number) {
   const require = createRequire(join(import.meta.dirname, '../../../../apps/api/package.json'))
   const Database = require('better-sqlite3')
@@ -28,6 +31,7 @@ function moveIntoPast(bookingId: number) {
     'update slots set starts_at = ?, ends_at = ? where id = (select slot_id from bookings where id = ?)',
   ).run(start, end, bookingId)
   db.close()
+  return start
 }
 
 async function both(page: Page, name: string) {
@@ -42,6 +46,8 @@ async function both(page: Page, name: string) {
 let lessonTypeId = 0
 let coachToken = ''
 let bookingId = 0
+// The admin pages default to today's dates; pinned to the lesson's day so it is always listed.
+let lessonTime = 0
 
 test('binds a coach to WeChat with a code', async ({ page, request }) => {
   const admin = (
@@ -163,8 +169,9 @@ test('marks attendance and shows the coach note on bookings', async ({ page, req
   await call(request, 'PUT', `/coach/lessons/${bookingId}/note`, coachToken, {
     note: '正手很稳，下次练发球',
   })
-  moveIntoPast(bookingId)
+  lessonTime = moveIntoPast(bookingId)
 
+  await page.clock.setFixedTime(lessonTime)
   await login(page)
   await page.goto('./#/bookings')
   await page.locator('.toolbar .t-select').nth(1).click()
@@ -189,6 +196,7 @@ test('marks attendance and shows the coach note on bookings', async ({ page, req
 })
 
 test('shows the monthly report and exports it', async ({ page }) => {
+  await page.clock.setFixedTime(lessonTime)
   await login(page)
   await page.goto('./#/reports')
   const row = page.getByRole('row').filter({ hasText: coachName })

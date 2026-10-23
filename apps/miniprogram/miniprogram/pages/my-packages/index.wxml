@@ -29,7 +29,7 @@
       <text class="pkg-remaining">{{item.remaining}}</text>
       <text class="muted"> / {{item.total}} 节</text>
     </view>
-    <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" color="{{item.active ? 'var(--td-brand-color)' : 'var(--td-text-color-disabled)'}}" />
+    <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" color="{{item.active ? 'var(--rs-progress-color)' : 'var(--td-text-color-disabled)'}}" />
     <view class="pkg-foot">
       <view class="grow">
         <view class="pkg-meta">{{item.expires}}</view>
