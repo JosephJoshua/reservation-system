@@ -10,7 +10,7 @@
 <view wx:elif="{{state === 'error'}}" class="centered">
   <view>
     <t-empty icon="{{errorIcon}}" description="{{error}}" />
-    <view class="retry"><t-button theme="primary" variant="outline" bind:tap="load">重新加载</t-button></view>
+    <view class="retry"><t-button theme="light" bind:tap="load">重新加载</t-button></view>
   </view>
 </view>
 
@@ -18,7 +18,7 @@
   <view>
     <t-empty icon="{{emptyIcon}}" description="{{scope === 'upcoming' ? '还没有预约的课程' : '暂无历史课程'}}" />
     <view wx:if="{{scope === 'upcoming'}}" class="retry">
-      <t-button theme="primary" variant="outline" bind:tap="book">去预约</t-button>
+      <t-button theme="light" bind:tap="book">去预约</t-button>
     </view>
   </view>
 </view>
