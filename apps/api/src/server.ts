@@ -84,11 +84,11 @@ process.on('SIGTERM', () => {
   const closed = new Promise((resolve) => server.close(resolve))
   if ('closeIdleConnections' in server) server.closeIdleConnections()
   const swept = Promise.race([
-    stopSweeper(),
-    new Promise((resolve) =>
-      setTimeout(() => resolve(deps.log('shutdown: sweep still running, closing anyway')), 4000),
-    ),
-  ])
+    stopSweeper().then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4000).unref()),
+  ]).then((done) => {
+    if (!done) deps.log('shutdown: sweep still running, closing anyway')
+  })
   Promise.all([closed, swept]).then(() => {
     db.$client.close()
     process.exit(0)

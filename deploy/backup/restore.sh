@@ -13,8 +13,13 @@ die() { echo "restore failed: $1" >&2; exit 1; }
 [ -n "${COS_BUCKET:-}" ] || die "COS_BUCKET is not set"
 usage() { echo "usage: restore.sh list | images | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
 
-# Images are only ever added, so copying back what is missing is enough.
-copy_images() { rclone copy "$REMOTE/uploads" "$UPLOADS"; }
+# Images are only ever added, so copying back what is missing is enough. rclone exits with 3
+# when there is no uploads/ folder yet, which just means no images.
+copy_images() {
+  status=0
+  rclone copy "$REMOTE/uploads" "$UPLOADS" || status=$?
+  [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
+}
 
 case ${1:-} in
   list)
@@ -64,26 +69,26 @@ fi
 # left in place they would corrupt the restored file. Copies, so a rerun after a failure here
 # never loses them.
 halfway() {
-  echo "restore failed halfway: $1" >&2
-  echo "production stays stopped; the database being replaced is ${kept:-not there}" >&2
+  echo "restore failed halfway: $1; replaced databases are kept in /data as app.db.before-restore-*" >&2
   exit 99
 }
 if [ -f "$DB" ]; then
   kept="$DB.before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
   for suffix in -wal -shm; do
-    if [ -f "$DB$suffix" ]; then cp -p "$DB$suffix" "$kept$suffix" || die "could not copy $DB$suffix"; fi
+    if [ -f "$DB$suffix" ] && ! cp -p "$DB$suffix" "$kept$suffix"; then
+      rm -f "$kept-wal" "$kept-shm"
+      die "could not copy $DB$suffix"
+    fi
   done
-  mv "$DB" "$kept" || die "could not move the current database aside"
+  if ! mv "$DB" "$kept"; then
+    rm -f "$kept-wal" "$kept-shm"
+    die "could not move the current database aside"
+  fi
   echo "previous database kept as $kept"
 fi
 rm -f "$DB-wal" "$DB-shm" || halfway "could not remove the old WAL files"
 mv "$tmp/app.db" "$DB" || halfway "could not put db/$name in place"
 
 # The database is replaced from here on, so a failed image copy is a warning, not a failure.
-# rclone exits with 3 when there is no uploads/ folder yet, which just means no images.
-status=0
-copy_images || status=$?
-if [ "$status" -ne 0 ] && [ "$status" -ne 3 ]; then
-  echo "WARNING: some images were not copied back; run rs.sh restore-images" >&2
-fi
+copy_images || echo "WARNING: some images were not copied back; run rs.sh restore-images" >&2
 echo "restored db/$name"

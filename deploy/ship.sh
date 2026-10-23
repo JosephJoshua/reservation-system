@@ -5,7 +5,10 @@
 set -eu
 host=${RS_HOST:?set RS_HOST to the server, such as root@1.2.3.4 or an ssh config alias}
 ref=${1:-origin/main}
-git fetch -q origin || echo "could not fetch origin, shipping from local refs" >&2
+if ! git fetch -q origin; then
+  case $ref in origin/*) echo "could not fetch origin, so $ref may be stale" >&2; exit 1 ;; esac
+  echo "could not fetch origin, shipping the local $ref" >&2
+fi
 tag=$(git rev-parse --short=12 "$ref^{commit}")
 dir=/srv/rs/releases/$tag
 

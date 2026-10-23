@@ -79,13 +79,14 @@ A deploy restarts the container: the API finishes open requests and closes the d
 Caddy holds new requests for up to 15 seconds meanwhile, so users see a slow request rather than
 an error. Migrations run when the API starts.
 
-**Rolling back.** `rs.sh rollback` runs the previous production release again. If the release
-being undone changed the database (new files in `apps/api/drizzle/`), the old code may not work
-on the migrated database: pass the copy taken just before the deploy,
-`rs.sh rollback app-<time>.db.gz` (find it with `rs.sh backups`). That restores it and starts the
-previous release on it, so the newer release never touches it again. Bookings and payments made
-since that copy are lost, so check the orders in the WeChat Pay merchant platform afterwards.
-`rollback` swaps production with the previous release, so running it twice swaps back.
+**Rolling back.** `rs.sh rollback` swaps production with the previous release (`rs.sh status`
+shows both), so running it again swaps back. If the release being undone changed the database
+(new files in `apps/api/drizzle/`), the old code may not work on the migrated database. Restore
+the copy taken just before the deploy instead, starting the previous release on it:
+`rs.sh restore app-<time>.db.gz <previous tag>` (find the copy with `rs.sh backups`). Do not run
+`rollback` after that: it would start the newer release on the restored database. Bookings and
+payments made since that copy are lost, so check the orders in the WeChat Pay merchant platform
+afterwards.
 
 `compose.yml`, the `Caddyfile` and `rs.sh` in `/srv/rs` follow the production release: they are
 replaced when a release goes to production, not when one is shipped to staging, and `ship.sh`
@@ -173,8 +174,8 @@ puts the copy in place, copies back any missing images and starts both again. Ev
 after the copy was taken is lost. If the image copy fails, the database is still restored; run
 `rs.sh restore-images` to finish it. If a restore fails before the swap, production starts again
 on the database it had. If it fails in the middle of the swap (it says so), production stays
-stopped: look at `/data` as the message shows, then run the restore again; the replaced database
-and its WAL files are kept either way.
+stopped: look at `/data` and rerun the restore with the commands the message prints. The replaced
+database and its WAL files are kept either way.
 
 **Moving to a new server**, or after losing the old one: do the first setup, ship a release, then
 `rs.sh restore latest <tag>` with the tag `ship.sh` printed. That restores the newest copy and
