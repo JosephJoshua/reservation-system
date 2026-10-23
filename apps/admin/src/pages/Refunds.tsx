@@ -231,7 +231,7 @@ function Decide({
           </Field>
           <p className="muted">
             {refund.order.provider === 'offline'
-              ? '该课时包为前台付款，请线下退还，系统只记录。'
+              ? '该课时包为前台付款，当面退还后在列表中点“已退还”。'
               : '将原路退回学员微信。退款后课时包作废。'}
           </p>
         </div>
