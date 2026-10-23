@@ -2,7 +2,9 @@ import { type CatalogDto, formatYuan, type PaymentParamsDto } from '../../lib/sh
 import { api, errorMessage, showError } from '../../utils/api'
 import { getCatalog, hasAgreed, setAgreed } from '../../utils/data'
 import { yuan } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
+import { ask } from '../../utils/tap'
 
 interface ProductView {
   id: number
@@ -77,14 +79,14 @@ Page({
     const product = this.data.products.find((p) => p.id === Number(e.currentTarget.dataset.id))
     if (!product || this.data.buying) return
     const needsAgreement = this.data.hasAgreement && !hasAgreed()
-    const { confirm } = await wx.showModal({
+    const answer = await ask({
       title: product.name,
       content: `${product.lessonCount} 节课，${product.validity}，共 ${product.price}。${
         needsAgreement ? '支付即表示你同意《用户协议》。' : ''
       }`,
       confirmText: '去支付',
     })
-    if (!confirm) return
+    if (!answer?.confirm || this.data.buying) return
     if (needsAgreement) setAgreed()
     this.setData({ buying: product.id })
     try {
@@ -114,7 +116,7 @@ Page({
   },
 
   openAgreement() {
-    wx.navigateTo({ url: '/pages/policy/index?kind=agreement' })
+    navigateOnce('/pages/policy/index?kind=agreement')
   },
 
   retry() {

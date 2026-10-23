@@ -3,6 +3,8 @@ import { api, errorMessage, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { fullDate, yuan } from '../../utils/format'
 import { PACKAGE_STATUS, REFUND_STATUS } from '../../utils/labels'
+import { navigateOnce } from '../../utils/nav'
+import { ask } from '../../utils/tap'
 
 interface PackageView {
   id: number
@@ -79,12 +81,12 @@ Page({
   async requestRefund(e: WechatMiniprogram.TouchEvent) {
     const pkg = this.data.packages.find((p) => p.id === Number(e.currentTarget.dataset.id))
     if (!pkg || this.data.busy) return
-    const { confirm } = await wx.showModal({
+    const answer = await ask({
       title: '申请退款',
       content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计），由场馆审核后原路退回，申请后课时包将暂停使用。`,
       confirmText: '提交申请',
     })
-    if (!confirm) return
+    if (!answer?.confirm || this.data.busy) return
     this.setData({ busy: pkg.id })
     try {
       await api('POST', `/packages/${pkg.id}/refund-request`)
@@ -98,7 +100,7 @@ Page({
   },
 
   buy() {
-    wx.navigateTo({ url: '/pages/packages/index' })
+    navigateOnce('/pages/packages/index')
   },
 
   retry() {

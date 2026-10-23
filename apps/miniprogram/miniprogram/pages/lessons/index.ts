@@ -2,6 +2,7 @@ import type { BookingDto } from '../../lib/shared'
 import { api, errorMessage } from '../../utils/api'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { BOOKING_STATUS } from '../../utils/labels'
+import { navigateOnce } from '../../utils/nav'
 
 type Scope = 'upcoming' | 'past'
 
@@ -69,7 +70,7 @@ Page({
   },
 
   open(e: WechatMiniprogram.TouchEvent) {
-    wx.navigateTo({ url: `/pages/booking-detail/index?id=${e.currentTarget.dataset.id}` })
+    navigateOnce(`/pages/booking-detail/index?id=${e.currentTarget.dataset.id}`)
   },
 
   book() {

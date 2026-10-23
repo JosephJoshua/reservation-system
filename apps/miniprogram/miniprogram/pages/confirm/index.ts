@@ -9,6 +9,7 @@ import {
   setAgreed,
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
@@ -129,11 +130,11 @@ Page({
   },
 
   openPolicy(e: WechatMiniprogram.TouchEvent) {
-    wx.navigateTo({ url: `/pages/policy/index?kind=${e.currentTarget.dataset.kind}` })
+    navigateOnce(`/pages/policy/index?kind=${e.currentTarget.dataset.kind}`)
   },
 
   openPackages() {
-    wx.navigateTo({ url: `/pages/packages/index?lessonTypeId=${this.data.lessonTypeId}` })
+    navigateOnce(`/pages/packages/index?lessonTypeId=${this.data.lessonTypeId}`)
   },
 
   /** The first problem on the page, checked top to bottom, or '' when there is none. */
