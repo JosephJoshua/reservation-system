@@ -1,0 +1,239 @@
+/*
+ * Phone layout, below 768px (see useIsPhone). TDesign sets table column widths and some sizes
+ * as inline styles, so overriding them here needs !important.
+ */
+@media (max-width: 767px) {
+  .t-button {
+    min-height: 36px;
+  }
+
+  .admin-header {
+    padding: 0 12px 0 4px;
+  }
+
+  .admin-content {
+    padding: 12px;
+  }
+
+  .admin-menu-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .admin-header .t-button {
+    min-height: 44px;
+  }
+
+  .toolbar {
+    gap: 8px;
+  }
+
+  .toolbar > .t-select__wrap,
+  .toolbar > .t-select,
+  .toolbar > .t-date-range-picker,
+  .toolbar > .t-date-picker,
+  .toolbar > .t-input__wrap {
+    flex: 1 1 140px;
+    width: auto !important;
+    min-width: 0;
+  }
+
+  .toolbar > .t-date-range-picker {
+    flex-basis: 100%;
+  }
+
+  .toolbar .spacer {
+    display: none;
+  }
+
+  /* Coach and batch scheduling on the first row, week paging below. */
+  .week-nav {
+    order: 1;
+    flex-basis: 100%;
+    gap: 8px;
+  }
+
+  .week-nav > span {
+    flex: 1;
+    text-align: center;
+  }
+
+  .t-card__header {
+    padding: 12px 12px 0;
+  }
+
+  .t-card__body {
+    padding: 12px;
+  }
+
+  .login-card {
+    width: calc(100vw - 32px);
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .stat {
+    font-size: 22px;
+  }
+
+  .field {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field-body {
+    width: 100%;
+  }
+
+  .field-body .t-space {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .field-label {
+    flex: none;
+    text-align: left;
+    line-height: 1.5;
+  }
+
+  .field-body .t-input-number,
+  .field-body .t-input__wrap,
+  .field-body .t-select__wrap,
+  .field-body .t-date-picker,
+  .field-body .t-date-range-picker {
+    width: 100% !important;
+  }
+
+  /* Each row becomes a card; each cell shows its column title beside the value. */
+  .card-table .t-table__content {
+    overflow: visible;
+  }
+
+  .card-table table {
+    display: block;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .card-table colgroup,
+  .card-table thead {
+    display: none;
+  }
+
+  .card-table tbody {
+    display: block;
+  }
+
+  .card-table tbody tr {
+    display: block;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--td-component-stroke);
+    border-radius: 8px;
+    background: var(--td-bg-color-container);
+  }
+
+  .card-table tbody td {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: auto !important;
+    padding: 6px 0 !important;
+    border: none !important;
+    text-align: left !important;
+  }
+
+  .card-table tbody td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 64px;
+    color: var(--td-text-color-secondary);
+    font-size: 12px;
+    line-height: 22px;
+  }
+
+  .card-table tbody td[data-label=""]::before {
+    display: none;
+  }
+
+  .card-table tbody td:empty {
+    display: none;
+  }
+
+  .card-table tbody td > * {
+    min-width: 0;
+  }
+
+  /* Row actions line up with the values instead of their own button padding. */
+  .card-table tbody td .t-button--variant-text {
+    padding-left: 0;
+    padding-right: 20px;
+  }
+
+  .card-table .t-table__empty-row,
+  .card-table .t-table__empty-row td {
+    display: block;
+    border: none;
+    background: none;
+  }
+
+  .student-cell,
+  .note-line {
+    max-width: none;
+  }
+
+  /* Dialogs open as full-screen sheets. */
+  .t-dialog__position {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+
+  .t-dialog__position .t-dialog {
+    width: 100% !important;
+    max-width: 100%;
+    min-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+    display: flex !important;
+    flex-direction: column;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .t-dialog__position .t-dialog__body {
+    flex: 1;
+    max-height: none;
+  }
+
+  /* The actions sit at the bottom of the sheet, side by side and full width. */
+  .t-dialog__position .t-dialog__footer {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 12px;
+    padding-bottom: 12px;
+    background: var(--td-bg-color-container);
+  }
+
+  .t-dialog__footer .t-button {
+    flex: 1;
+    min-height: 44px;
+    margin: 0;
+  }
+
+  .pick-tag {
+    height: 36px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  .banner-thumb {
+    width: 100%;
+    max-width: 240px;
+    height: auto !important;
+    aspect-ratio: 5 / 2;
+  }
+}

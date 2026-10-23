@@ -96,6 +96,33 @@ test('a double click on 确认收款 records one sale at the running sale price'
   expect(detail.packages).toHaveLength(1)
 })
 
+test('a retry after a lost sale response records the sale once', async ({ page, request }) => {
+  await login(page)
+  await page.goto(`./#/students?id=${studentId}`)
+  await page.getByRole('button', { name: '前台售卖' }).click()
+  await field(dialog(page), '课时包').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: productName }).click()
+  // The first sale reaches the server, but its answer is lost on the way back.
+  let sent = 0
+  await page.route('**/api/admin/packages/offline-sale', async (route) => {
+    if (++sent > 1) return route.continue()
+    await route.fetch()
+    await route.abort('connectionreset')
+  })
+  await dialog(page).getByRole('button', { name: '确认收款' }).click()
+  await expect(page.getByText('网络异常，请检查网络后重试')).toBeVisible()
+  await dialog(page).getByRole('button', { name: '确认收款' }).click()
+  await expect(page.getByText('已记录')).toBeVisible()
+  expect(sent).toBe(2)
+  const detail = await call<{ packages: unknown[] }>(
+    request,
+    'GET',
+    `/admin/students/${studentId}`,
+    admin,
+  )
+  expect(detail.packages).toHaveLength(2)
+})
+
 test('back closes a student opened from the list', async ({ page }) => {
   await login(page)
   await page.goto('./#/students')
@@ -235,4 +262,75 @@ test('a banner title typed during an upload survives the upload', async ({ page 
   await expect(dialog(page).locator('img.banner-thumb')).toBeVisible()
   await expect(field(dialog(page), '标题').locator('input')).toHaveValue('双十一')
   await expect(dialog(page).getByRole('button', { name: '更换图片' })).toBeVisible()
+})
+
+test('a settings save from a stale tab is refused and keeps what was typed', async ({
+  page,
+  context,
+}) => {
+  await login(page)
+  const other = await context.newPage()
+  for (const p of [page, other]) {
+    await p.goto('./#/settings')
+    await expect(p.getByRole('button', { name: '保存设置' })).toBeVisible()
+  }
+  const notice = (p: Page) =>
+    field(p.locator('.t-card', { hasText: '首页公告' }), '公告').locator('input')
+  await notice(page).fill(`第一个标签页${run}`)
+  await page.getByRole('button', { name: '保存设置' }).click()
+  await expect(page.getByText('已保存')).toBeVisible()
+
+  await notice(other).fill(`第二个标签页${run}`)
+  await other.getByRole('button', { name: '保存设置' }).click()
+  await expect(other.getByText('已被其他人修改，请刷新后再改')).toBeVisible()
+  await expect(notice(other)).toHaveValue(`第二个标签页${run}`)
+  await page.reload()
+  await expect(notice(page)).toHaveValue(`第一个标签页${run}`)
+})
+
+test('an expired session says so on the login page', async ({ page }) => {
+  await login(page)
+  await page.evaluate(() => {
+    for (const k of Object.keys(localStorage)) localStorage.setItem(k, 'expired')
+  })
+  await page.goto('./#/bookings')
+  await expect(page.getByText('登录已过期，请重新登录')).toBeVisible()
+  await page.getByPlaceholder('管理密码').fill(ADMIN_PASSWORD)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await expect(page.getByText('登录已过期，请重新登录')).toHaveCount(0)
+})
+
+test('on a phone the menu is a drawer, lists fit the screen and dialog actions sit at the bottom', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await login(page)
+  const openMenu = page.locator('.admin-menu-drawer.t-drawer--open')
+  // The second tap is on the page already shown, which must close the menu too.
+  for (const item of ['预约', '预约']) {
+    await page.getByRole('button', { name: '菜单' }).click()
+    await expect(openMenu).toHaveCount(1)
+    await openMenu.getByText(item, { exact: true }).click()
+    await expect(openMenu).toHaveCount(0)
+    await expect(page.locator('.admin-header')).toContainText(item)
+  }
+  for (const route of ['bookings', 'students', 'orders', 'schedule', 'settings']) {
+    await page.goto(`./#/${route}`)
+    await page.waitForLoadState('networkidle')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  }
+  await page.goto('./#/schedule')
+  await page.locator('.t-select').first().click()
+  await page.getByRole('listitem').filter({ hasText: coachName }).click()
+  await page.getByRole('button', { name: '批量排课' }).click()
+  const confirm = dialog(page).getByRole('button', { name: /创建/ })
+  // Polled, since the sheet zooms in.
+  await expect
+    .poll(async () => {
+      const box = await confirm.boundingBox()
+      return box ? [box.y + box.height > 844 - 80, box.width > 120] : null
+    })
+    .toEqual([true, true])
 })

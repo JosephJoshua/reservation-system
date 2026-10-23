@@ -64,6 +64,9 @@ const STALE = new Set([
   'refund_not_failed',
   'package_not_active',
   'slot_has_bookings',
+  // An earlier submit of this dialog may have gone through: reload to see what it did.
+  'in_progress',
+  'idempotency_key_reused',
 ])
 
 /**
@@ -89,4 +92,36 @@ export async function attempt(
   } finally {
     setInFlight(key, false)
   }
+}
+
+/**
+ * A fresh Idempotency-Key. Works over plain http too, unlike crypto.randomUUID.
+ */
+export function newKey() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('')
+}
+
+/**
+ * One Idempotency-Key per dialog opening: a retry after a lost response returns the first
+ * result instead of recording the change twice.
+ */
+export function useIdempotencyKey() {
+  return useState(newKey)[0]
+}
+
+// Matches the breakpoint in phone.css.
+const phoneQuery = '(max-width: 767px)'
+
+/** True on a phone-sized screen, where the admin uses its one-column layout. */
+export function useIsPhone() {
+  return useSyncExternalStore(
+    (fn) => {
+      const media = window.matchMedia(phoneQuery)
+      media.addEventListener('change', fn)
+      return () => media.removeEventListener('change', fn)
+    },
+    () => window.matchMedia(phoneQuery).matches,
+  )
 }

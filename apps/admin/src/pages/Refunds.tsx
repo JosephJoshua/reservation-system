@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Button, Dialog, InputNumber, Select, Space, Table, Tag, Textarea } from 'tdesign-react'
+import { Button, Dialog, InputNumber, Select, Space, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { refundStatusLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
@@ -44,7 +45,7 @@ export function Refunds() {
           ]}
         />
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading}
         data={data ?? []}
@@ -157,20 +158,23 @@ function Decide({
   const [amount, setAmount] = useState<number | undefined>(toYuan(refund.amount || undefined))
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const fen = toFen(amount)
+  const amountValid = fen !== null && fen > 0 && fen <= refund.order.amount
 
   const submit = async () => {
     const ok = approve
-      ? fen !== null &&
-        fen > 0 &&
+      ? amountValid &&
         (await attempt(
-          () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }),
+          () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }, { key }),
           '已同意退款',
           { onStale: onDone },
         ))
-      : await attempt(() => api('POST', `/admin/refunds/${refund.id}/reject`, { note }), '已拒绝', {
-          onStale: onDone,
-        })
+      : await attempt(
+          () => api('POST', `/admin/refunds/${refund.id}/reject`, { note }, { key }),
+          '已拒绝',
+          { onStale: onDone },
+        )
     if (ok) onDone()
   }
 
@@ -181,9 +185,10 @@ function Decide({
       confirmBtn={{
         content: approve ? '确认退款' : '确认拒绝',
         theme: approve ? 'primary' : 'danger',
-        disabled: approve ? fen === null || fen <= 0 : !note.trim(),
+        disabled: approve ? !amountValid : !note.trim(),
         loading: submitting,
       }}
+      cancelBtn="返回"
       onConfirm={submit}
       onClose={onClose}
     >

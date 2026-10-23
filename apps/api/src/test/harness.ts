@@ -31,12 +31,19 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
   }
   const app = createApp(deps)
 
-  async function call(method: string, path: string, body?: unknown, token?: string) {
+  async function call(
+    method: string,
+    path: string,
+    body?: unknown,
+    token?: string,
+    headers: Record<string, string> = {},
+  ) {
     const res = await app.request(`/api${path}`, {
       method,
       headers: {
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })

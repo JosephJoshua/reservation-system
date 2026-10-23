@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Button, ConfigProvider, Layout, Menu } from 'tdesign-react'
+import { Button, ConfigProvider, Drawer, Layout, Menu } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
+import { useIsPhone } from './hooks'
 import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
 import { Catalog } from './pages/Catalog'
@@ -52,9 +53,16 @@ export function App() {
   useThemeMode()
   const [authed, setAuthed] = useState(() => !!getToken())
   const [page, setPage] = useState<PageKey>(currentPage)
+  // Set when the API turned the session away, so the login page can say why it is back.
+  const [expired, setExpired] = useState(false)
+  const phone = useIsPhone()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
-    handleUnauthorized(() => setAuthed(false))
+    handleUnauthorized(() => {
+      setAuthed(false)
+      setExpired(true)
+    })
     const onHash = () => setPage(currentPage())
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
@@ -68,31 +76,76 @@ export function App() {
 
   const Page = pages[page][1]
 
+  const menu = (
+    <Menu
+      value={page}
+      width="100%"
+      onChange={(v) => {
+        window.location.hash = `/${String(v)}`
+      }}
+    >
+      {Object.entries(pages).map(([key, [label]]) => (
+        // Closes the phone menu on every tap, the current page included.
+        <Menu.MenuItem key={key} value={key} onClick={() => setMenuOpen(false)}>
+          {label}
+        </Menu.MenuItem>
+      ))}
+    </Menu>
+  )
+
   return (
     <ConfigProvider globalConfig={zhCN}>
       {!authed ? (
-        <Login onDone={() => setAuthed(true)} />
+        <Login
+          notice={expired ? '登录已过期，请重新登录' : undefined}
+          onDone={() => {
+            setAuthed(true)
+            setExpired(false)
+          }}
+        />
       ) : (
         <Layout className="admin-layout">
-          <Layout.Aside width="200px" className="admin-aside">
-            <div className="admin-brand">球馆管理</div>
-            <Menu
-              value={page}
-              width="200px"
-              onChange={(v) => {
-                window.location.hash = `/${String(v)}`
-              }}
+          {phone ? (
+            <Drawer
+              visible={menuOpen}
+              placement="left"
+              size="240px"
+              header="球馆管理"
+              footer={false}
+              className="admin-menu-drawer"
+              onClose={() => setMenuOpen(false)}
             >
-              {Object.entries(pages).map(([key, [label]]) => (
-                <Menu.MenuItem key={key} value={key}>
-                  {label}
-                </Menu.MenuItem>
-              ))}
-            </Menu>
-          </Layout.Aside>
+              {menu}
+            </Drawer>
+          ) : (
+            <Layout.Aside width="200px" className="admin-aside">
+              <div className="admin-brand">球馆管理</div>
+              {menu}
+            </Layout.Aside>
+          )}
           <Layout className="admin-main">
             <Layout.Header className="admin-header">
-              <span>{pages[page][0]}</span>
+              <span className="admin-title">
+                {phone && (
+                  <Button
+                    variant="text"
+                    shape="square"
+                    aria-label="菜单"
+                    className="admin-menu-button"
+                    onClick={() => setMenuOpen(true)}
+                  >
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                      <path
+                        d="M4 6h16M4 12h16M4 18h16"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </Button>
+                )}
+                {pages[page][0]}
+              </span>
               <Button variant="text" onClick={logout}>
                 退出登录
               </Button>

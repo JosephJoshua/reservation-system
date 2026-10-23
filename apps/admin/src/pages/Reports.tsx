@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Button, Card, DatePicker, Space, Table } from 'tdesign-react'
+import { Button, Card, DatePicker, Space } from 'tdesign-react'
+import { DataTable } from '../DataTable'
 import { today, yuan } from '../format'
 import { useApi } from '../hooks'
 
@@ -135,7 +136,7 @@ export function Reports() {
         </Card>
       )}
       <Card bordered title="教练课时">
-        <Table
+        <DataTable
           rowKey="id"
           loading={loading}
           data={r ? coachRows(r) : []}

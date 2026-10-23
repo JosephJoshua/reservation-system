@@ -1,4 +1,4 @@
-import type { ApiErrorBody } from '@rs/shared'
+import { type ApiErrorBody, versionOf } from '@rs/shared'
 
 const TOKEN_KEY = 'rs-admin-token'
 
@@ -34,13 +34,14 @@ export function handleUnauthorized(fn: () => void) {
 
 /**
  * Calls the API. Pass `key` (one per dialog opening, say) to make repeated submits of the same
- * action safe: the server runs it once and answers repeats with the first result.
+ * action safe: the server runs it once and answers repeats with the first result. `ifMatch` is
+ * the record as it was loaded for editing: the save is refused if someone changed it since.
  */
 export async function api<T = unknown>(
   method: string,
   path: string,
   body?: unknown,
-  options: { key?: string } = {},
+  { key, ifMatch }: { key?: string; ifMatch?: unknown } = {},
 ): Promise<T> {
   const token = getToken()
   const isForm = body instanceof FormData
@@ -51,7 +52,8 @@ export async function api<T = unknown>(
       headers: {
         ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.key ? { 'Idempotency-Key': options.key } : {}),
+        ...(key ? { 'Idempotency-Key': key } : {}),
+        ...(ifMatch === undefined ? {} : { 'If-Match': versionOf(ifMatch) }),
       },
       body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
     })

@@ -1,3 +1,4 @@
+import { versionOf } from '@rs/shared'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { z } from 'zod'
@@ -116,6 +117,17 @@ export function idParam(c: Context, name = 'id'): number {
 }
 
 /** True for a SQLite unique-constraint violation. */
+/**
+ * Refuses a save made on top of a change the editor has not seen. The editor sends `If-Match` with
+ * `versionOf` the record it loaded; `current` is the record as the API would send it now.
+ */
+export function checkVersion(c: Context, current: unknown) {
+  const expected = c.req.header('If-Match')
+  if (expected && expected !== versionOf(current)) {
+    throw new ApiError(409, 'edited_elsewhere', '已被其他人修改，请刷新后再改')
+  }
+}
+
 export function isUniqueViolation(e: unknown): boolean {
   // Drizzle may wrap the driver error, so walk the cause chain.
   for (let err = e, depth = 0; err && depth < 5; depth++) {

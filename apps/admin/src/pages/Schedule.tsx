@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   MessagePlugin,
+  Popconfirm,
   Select,
   Space,
   Tag,
@@ -16,9 +17,29 @@ import {
 import { api } from '../api'
 import { Field } from '../Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import { bookingStatusLabel } from '../labels'
 import type { Coach, LessonType, Slot } from '../types'
+
+/** The second line of a slot in the week grid. */
+function slotLabel(s: Slot) {
+  const b = s.booking
+  if (!b) {
+    if (new Date(s.startsAt) <= new Date()) return '已过'
+    return s.open ? '可预约' : '已关闭'
+  }
+  const state =
+    b.status === 'pending_payment'
+      ? '待支付'
+      : b.status !== 'completed'
+        ? '已约'
+        : b.attendance
+          ? ATTENDANCE[b.attendance]
+          : '未签到'
+  return `${b.student?.name || '学员'} · ${state}`
+}
+
+const ATTENDANCE = { attended: '已到课', no_show: '缺席' } as const
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 // Matches the API's limit per request.
@@ -52,6 +73,10 @@ export function Schedule() {
   )
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(week, i)), [week])
+  // A phone shows one day of the week at a time.
+  const phone = useIsPhone()
+  const [day, setDay] = useState(today)
+  const shownDay = days.includes(day) ? day : (days[0] ?? day)
 
   return (
     <div>
@@ -63,18 +88,28 @@ export function Schedule() {
           options={active.map((c) => ({ label: c.name, value: c.id }))}
           onChange={(v) => setCoachId(Number(v))}
         />
-        <Button variant="outline" onClick={() => setWeek(addDays(week, -7))}>
-          上一周
-        </Button>
-        <span>
-          {week} 至 {addDays(week, 6)}
-        </span>
-        <Button variant="outline" onClick={() => setWeek(addDays(week, 7))}>
-          下一周
-        </Button>
-        <Button variant="text" onClick={() => setWeek(mondayOf(today()))}>
-          本周
-        </Button>
+        <div className="week-nav">
+          <Button variant="outline" onClick={() => setWeek(addDays(week, -7))}>
+            上一周
+          </Button>
+          <span>
+            {phone
+              ? `${week.slice(5)} 至 ${addDays(week, 6).slice(5)}`
+              : `${week} 至 ${addDays(week, 6)}`}
+          </span>
+          <Button variant="outline" onClick={() => setWeek(addDays(week, 7))}>
+            下一周
+          </Button>
+          <Button
+            variant="text"
+            onClick={() => {
+              setWeek(mondayOf(today()))
+              setDay(today())
+            }}
+          >
+            本周
+          </Button>
+        </div>
         <span className="spacer" />
         <Button disabled={!coachId} onClick={() => setCreating(true)}>
           批量排课
@@ -85,9 +120,27 @@ export function Schedule() {
         <p className="muted">先在“课程与教练”里添加教练</p>
       )}
 
+      {phone && (
+        <div className="day-strip">
+          {days.map((d, i) => (
+            <button
+              type="button"
+              key={d}
+              className={`day-tab${d === shownDay ? ' active' : ''}`}
+              onClick={() => setDay(d)}
+            >
+              周{WEEKDAYS[i]}
+              <br />
+              {d.slice(8)}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="week-scroll">
-        <div className="week-grid">
+        <div className={phone ? 'day-grid' : 'week-grid'}>
           {days.map((d, i) => {
+            if (phone && d !== shownDay) return null
             const daySlots = (slots.data ?? []).filter(
               (s) => venueDateKey(new Date(s.startsAt)) === d,
             )
@@ -107,13 +160,7 @@ export function Schedule() {
                   >
                     {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
                     <br />
-                    {s.booking
-                      ? `${s.booking.student?.name || '学员'} · ${s.booking.status === 'pending_payment' ? '待支付' : '已约'}`
-                      : new Date(s.startsAt) <= new Date()
-                        ? '已过'
-                        : s.open
-                          ? '可预约'
-                          : '已关闭'}
+                    {slotLabel(s)}
                   </button>
                 ))}
               </div>
@@ -191,6 +238,7 @@ function CreateSlots({
   const [times, setTimes] = useState('09:00, 10:00, 14:00, 15:00, 16:00')
   const [minutes, setMinutes] = useState(durations[0] ?? 60)
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
 
   const parsed = useMemo(() => parseTimes(times), [times])
   const dates = useMemo(() => {
@@ -235,7 +283,11 @@ function CreateSlots({
       return
     }
     if (
-      await attempt(() => api('POST', '/admin/slots', { slots: planned }), `已创建 ${count} 个时段`)
+      await attempt(
+        () => api('POST', '/admin/slots', { slots: planned }, { key }),
+        `已创建 ${count} 个时段`,
+        { onStale: onDone },
+      )
     )
       onDone()
   }
@@ -253,6 +305,7 @@ function CreateSlots({
         <Field label="日期">
           <DateRangePicker
             value={range}
+            disableDate={{ before: today() }}
             onChange={(v) => setRange([String(v[0] ?? ''), String(v[1] ?? '')])}
           />
         </Field>
@@ -288,7 +341,7 @@ function CreateSlots({
                 key={d}
                 variant={d === minutes ? 'dark' : 'outline'}
                 theme="primary"
-                style={{ cursor: 'pointer' }}
+                className="pick-tag"
                 onClick={() => setMinutes(d)}
               >
                 {d} 分钟
@@ -387,9 +440,19 @@ function SlotDialog({
               maxlength={100}
               onChange={(v) => setReason(String(v))}
             />
-            <Button theme="danger" disabled={!reason.trim()} loading={submitting} onClick={cancel}>
-              确认取消并退款
-            </Button>
+            <Space>
+              <Button
+                theme="danger"
+                disabled={!reason.trim()}
+                loading={submitting}
+                onClick={cancel}
+              >
+                确认取消并退款
+              </Button>
+              <Button variant="outline" onClick={() => setCancelling(false)}>
+                返回
+              </Button>
+            </Space>
           </>
         )}
 
@@ -401,9 +464,17 @@ function SlotDialog({
           )}
           {/* Slots from weekly hours would come back at the next sync, so they are only closed. */}
           {!b && slot.source === 'manual' && (
-            <Button variant="text" theme="danger" loading={submitting} onClick={remove}>
-              删除时段
-            </Button>
+            <Popconfirm
+              theme="danger"
+              content="删除这个时段？"
+              confirmBtn={{ content: '删除', theme: 'danger' }}
+              cancelBtn="返回"
+              onConfirm={remove}
+            >
+              <Button variant="text" theme="danger" loading={submitting}>
+                删除时段
+              </Button>
+            </Popconfirm>
           )}
         </Space>
         {slot.open && b && <span className="muted">关闭时段不影响已有预约</span>}

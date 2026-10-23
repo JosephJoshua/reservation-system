@@ -16,7 +16,7 @@ import {
 import { api } from '../api'
 import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, newKey, useApi } from '../hooks'
 
 function coordValid(text: string, limit: number) {
   if (text.trim() === '') return true
@@ -29,10 +29,13 @@ export function Settings() {
   const [s, setS] = useState<VenueSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const [coord, setCoord] = useState({ lat: '', lng: '' })
+  // One per loaded version, so a retry after a lost response is not saved twice.
+  const [key, setKey] = useState(newKey)
 
   useEffect(() => {
     if (!data) return
     setS(structuredClone(data))
+    setKey(newKey())
     setCoord({
       lat: data.venue.latitude?.toString() ?? '',
       lng: data.venue.longitude?.toString() ?? '',
@@ -56,7 +59,8 @@ export function Settings() {
     body.venue.latitude = coord.lat ? Number(coord.lat) : null
     body.venue.longitude = coord.lng ? Number(coord.lng) : null
     setSaving(true)
-    if (await attempt(() => api('PUT', '/admin/settings', body), '已保存')) await reload()
+    if (await attempt(() => api('PUT', '/admin/settings', body, { ifMatch: data, key }), '已保存'))
+      await reload()
     setSaving(false)
   }
 

@@ -1,7 +1,8 @@
 import { venueInstant } from '@rs/shared'
 import { useState } from 'react'
-import { Button, DateRangePicker, Dialog, Select, Table, Tag, Textarea } from 'tdesign-react'
+import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundStatusLabel } from '../labels'
@@ -12,6 +13,7 @@ export function Bookings() {
   const [range, setRange] = useState<[string, string]>([today(), addDays(today(), 13)])
   const [status, setStatus] = useState<string>('')
   const [coachId, setCoachId] = useState<number | null>(null)
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [reason, setReason] = useState('')
@@ -20,6 +22,7 @@ export function Bookings() {
   const params = new URLSearchParams({
     from: venueInstant(range[0], 0).toISOString(),
     to: venueInstant(range[1], 24 * 60).toISOString(),
+    order,
   })
   if (status) params.set('status', status)
   if (coachId) params.set('coachId', String(coachId))
@@ -77,6 +80,7 @@ export function Bookings() {
           options={[
             { label: '待支付', value: 'pending_payment' },
             { label: '已预约', value: 'confirmed' },
+            { label: '已完成', value: 'completed' },
             { label: '已取消', value: 'cancelled' },
             { label: '已超时', value: 'expired' },
           ]}
@@ -89,8 +93,17 @@ export function Bookings() {
           onChange={(v) => setCoachId(v ? Number(v) : null)}
           options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
         />
+        <Select
+          style={{ width: 120 }}
+          value={order}
+          onChange={(v) => setOrder(v === 'desc' ? 'desc' : 'asc')}
+          options={[
+            { label: '时间升序', value: 'asc' },
+            { label: '时间降序', value: 'desc' },
+          ]}
+        />
       </div>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading}
         data={data ?? []}

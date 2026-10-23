@@ -11,13 +11,13 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
 } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, newKey, useApi, useSubmitting } from '../hooks'
 import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
@@ -29,7 +29,12 @@ export function Banners() {
   const banners = useApi<Banner[]>('/admin/banners')
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
-  const [edit, setEdit] = useState<{ id: number | null; form: BannerForm } | null>(null)
+  const [edit, setEdit] = useState<{
+    id: number | null
+    form: BannerForm
+    loaded?: Banner
+    key: string
+  } | null>(null)
   const submitting = useSubmitting()
 
   const save = async () => {
@@ -40,6 +45,7 @@ export function Banners() {
           edit.id ? 'PUT' : 'POST',
           edit.id ? `/admin/banners/${edit.id}` : '/admin/banners',
           edit.form,
+          { ifMatch: edit.loaded, key: edit.key },
         ),
       '已保存',
     )
@@ -80,6 +86,7 @@ export function Banners() {
                 active: true,
                 sort: 0,
               },
+              key: newKey(),
             })
           }
         >
@@ -90,7 +97,7 @@ export function Banners() {
       <p className="muted" style={{ marginTop: 0 }}>
         建议尺寸 750×300。首页公告在“设置”里修改。
       </p>
-      <Table
+      <DataTable
         rowKey="id"
         loading={banners.loading}
         data={banners.data ?? []}
@@ -131,11 +138,19 @@ export function Banners() {
                 <Button
                   variant="text"
                   theme="primary"
-                  onClick={() => setEdit({ id: row.id, form: { ...row } })}
+                  onClick={() =>
+                    setEdit({ id: row.id, form: { ...row }, loaded: row, key: newKey() })
+                  }
                 >
                   编辑
                 </Button>
-                <Popconfirm content="删除这张轮播图？" onConfirm={() => remove(row.id)}>
+                <Popconfirm
+                  theme="danger"
+                  content="删除这张轮播图？"
+                  confirmBtn={{ content: '删除', theme: 'danger' }}
+                  cancelBtn="返回"
+                  onConfirm={() => remove(row.id)}
+                >
                   <Button variant="text" theme="danger">
                     删除
                   </Button>

@@ -11,14 +11,14 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import {
   bookingStatusLabel,
   ledgerKindLabel,
@@ -69,7 +69,7 @@ export function Students() {
         />
         <Button type="submit">搜索</Button>
       </form>
-      <Table
+      <DataTable
         rowKey="id"
         loading={list.loading}
         data={list.data ?? []}
@@ -129,11 +129,12 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
     packageId: number
   } | null>(null)
   const s = detail.data
+  const phone = useIsPhone()
 
   return (
     <Drawer
       visible
-      size="800px"
+      size={phone ? '100%' : '800px'}
       header={s ? s.name || '学员' : '学员'}
       footer={false}
       onClose={onClose}
@@ -165,7 +166,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
               </Button>
             }
           >
-            <Table
+            <DataTable
               rowKey="id"
               data={s.packages}
               empty="没有课时包"
@@ -240,7 +241,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
           </Card>
 
           <Card title="预约记录" bordered>
-            <Table
+            <DataTable
               rowKey="id"
               data={s.bookings}
               empty="没有预约"
@@ -329,20 +330,27 @@ function OfflineSale({
   const [method, setMethod] = useState<keyof typeof offlineMethodLabel>('alipay')
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const fen = toFen(amount)
 
   const submit = async () => {
     if (!productId || fen === null) return
     const ok = await attempt(
       () =>
-        api('POST', '/admin/packages/offline-sale', {
-          studentId,
-          productId,
-          amount: fen,
-          method,
-          note,
-        }),
+        api(
+          'POST',
+          '/admin/packages/offline-sale',
+          {
+            studentId,
+            productId,
+            amount: fen,
+            method,
+            note,
+          },
+          { key },
+        ),
       '已记录',
+      { onStale: onDone },
     )
     if (ok) onDone()
   }
@@ -414,9 +422,18 @@ function PackageAction({
   const [n, setN] = useState(1)
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  const key = useIdempotencyKey()
   const submit = async () => {
     const body = kind === 'grant' ? { lessons: n, note } : { days: n, note }
-    if (await attempt(() => api('POST', `/admin/packages/${packageId}/${kind}`, body), '已保存'))
+    if (
+      await attempt(
+        () => api('POST', `/admin/packages/${packageId}/${kind}`, body, { key }),
+        '已保存',
+        {
+          onStale: onDone,
+        },
+      )
+    )
       onDone()
   }
   return (
@@ -459,7 +476,7 @@ function Ledger({ packageId, onClose }: { packageId: number; onClose: () => void
   const { data, loading, error } = useApi<LedgerEntry[]>(`/admin/packages/${packageId}/ledger`)
   return (
     <Dialog visible width={560} header="课时记录" footer={false} onClose={onClose}>
-      <Table
+      <DataTable
         rowKey="id"
         loading={loading}
         data={data ?? []}

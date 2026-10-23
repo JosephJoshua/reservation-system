@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { venueParts, venueSettings } from '@rs/shared'
-import { and, asc, desc, eq, gt, gte, inArray, like, lt, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { immediate } from '../db/client'
@@ -21,7 +21,7 @@ import {
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
-import { ApiError, idParam, notFound, parseBody, parseQuery } from '../errors'
+import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { loginAdmin, logout, requireAdmin } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
@@ -36,7 +36,7 @@ import {
 import { retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { getSettings, saveSettings } from '../services/settings'
-import { bookingViews, packageViews } from '../services/views'
+import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { weeklyHoursBody } from './coach'
 
 const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
@@ -142,7 +142,10 @@ export function adminRoutes(deps: Deps) {
 
   app.put('/settings', async (c) => {
     const body = await parseBody(c, venueSettings)
-    saveSettings(db, body, deps.now())
+    immediate(db, (tx) => {
+      checkVersion(c, getSettings(tx))
+      saveSettings(tx, body, deps.now())
+    })
     return c.json(getSettings(db))
   })
 
@@ -313,6 +316,7 @@ export function adminRoutes(deps: Deps) {
             id: bookings.id,
             status: bookings.status,
             studentId: bookings.studentId,
+            attendance: bookings.attendance,
           })
           .from(bookings)
           .where(
@@ -342,13 +346,19 @@ export function adminRoutes(deps: Deps) {
         : [],
     )
     const bySlot = new Map(live.map((b) => [b.slotId, b]))
+    const now = deps.now()
     return c.json(
       rows.map((s) => {
         const b = bySlot.get(s.id)
         return {
           ...s,
           booking: b
-            ? { id: b.id, status: b.status, student: byStudent.get(b.studentId) ?? null }
+            ? {
+                id: b.id,
+                status: bookingStatus({ status: b.status, endsAt: s.endsAt }, now),
+                attendance: b.attendance,
+                student: byStudent.get(b.studentId) ?? null,
+              }
             : null,
         }
       }),
@@ -463,9 +473,22 @@ export function adminRoutes(deps: Deps) {
         to: instant.optional(),
         studentId: z.coerce.number().int().positive().optional(),
         coachId: z.coerce.number().int().positive().optional(),
-        status: z.enum(['pending_payment', 'confirmed', 'cancelled', 'expired']).optional(),
+        status: z
+          .enum(['pending_payment', 'confirmed', 'completed', 'cancelled', 'expired'])
+          .optional(),
+        order: z.enum(['asc', 'desc']).default('asc'),
       }),
     )
+    const now = deps.now()
+    // A confirmed booking that has ended shows as completed, so the two filters split on endsAt.
+    const status =
+      q.status === 'confirmed'
+        ? and(eq(bookings.status, 'confirmed'), gt(bookings.endsAt, now))
+        : q.status === 'completed'
+          ? and(eq(bookings.status, 'confirmed'), lte(bookings.endsAt, now))
+          : q.status
+            ? eq(bookings.status, q.status)
+            : undefined
     const rows = db
       .select({ booking: bookings })
       .from(bookings)
@@ -476,14 +499,17 @@ export function adminRoutes(deps: Deps) {
           q.to ? lt(bookings.startsAt, q.to) : undefined,
           q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
           q.coachId ? eq(slots.coachId, q.coachId) : undefined,
-          q.status ? eq(bookings.status, q.status) : undefined,
+          status,
         ),
       )
-      .orderBy(desc(bookings.startsAt))
+      .orderBy(
+        q.order === 'asc' ? asc(bookings.startsAt) : desc(bookings.startsAt),
+        asc(bookings.id),
+      )
       .limit(500)
       .all()
       .map((r) => r.booking)
-    const views = bookingViews(db, rows, getSettings(db).booking, deps.now())
+    const views = bookingViews(db, rows, getSettings(db).booking, now)
     const people = new Map(
       rows.length
         ? db
@@ -841,13 +867,13 @@ export function adminRoutes(deps: Deps) {
 
   app.put('/banners/:id', async (c) => {
     const body = await parseBody(c, bannerBody)
-    const row = db
-      .update(banners)
-      .set(body)
-      .where(eq(banners.id, idParam(c)))
-      .returning()
-      .get()
-    if (!row) throw notFound('轮播图')
+    const id = idParam(c)
+    const row = immediate(db, (tx) => {
+      const current = tx.select().from(banners).where(eq(banners.id, id)).get()
+      if (!current) throw notFound('轮播图')
+      checkVersion(c, current)
+      return tx.update(banners).set(body).where(eq(banners.id, id)).returning().get()
+    })
     return c.json(row)
   })
 
