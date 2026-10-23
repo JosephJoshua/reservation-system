@@ -209,7 +209,8 @@ Page({
       title: '取消预约',
       content: quote.message,
       confirmText: '确认取消',
-      confirmColor: '#d54941',
+      // Native modals don't read page tokens, so the dark red is picked here.
+      confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#d54941',
       cancelText: '再想想',
     })
     if (!confirm) return
