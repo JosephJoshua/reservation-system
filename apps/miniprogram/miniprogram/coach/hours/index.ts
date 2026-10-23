@@ -71,6 +71,7 @@ Page({
     addEnd: '12:00',
     addMinutes: 60,
     addHint: '',
+    addInvalid: false,
   },
 
   onLoad() {
@@ -162,7 +163,10 @@ Page({
     const d = this.draft()
     const count = Math.floor((d.endMinute - d.startMinute) / d.lessonMinutes)
     const error = weeklyHoursError([...this.data.hours, d])
-    this.setData({ addHint: error ?? `每${this.data.addName}生成 ${count} 节课` })
+    this.setData({
+      addHint: error ?? `每${this.data.addName}生成 ${count} 节课`,
+      addInvalid: !!error,
+    })
   },
 
   confirmAdd() {

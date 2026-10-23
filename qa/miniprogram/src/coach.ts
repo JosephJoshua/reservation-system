@@ -357,6 +357,7 @@ try {
       String(await page.data('addHint')) === '同一天的时间段不能重叠',
       'overlap should be explained',
     )
+    check((await page.data('addInvalid')) === true, '添加 should be disabled on overlap')
     await invoke('onPopup', { detail: { visible: false } })
     await invoke('openAdd', { currentTarget: { dataset: { weekday: 6 } } })
     await invoke('onStart', { detail: { value: '09:00' } })

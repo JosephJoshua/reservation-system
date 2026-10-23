@@ -186,3 +186,13 @@
   justify-content: center;
   margin-top: 32rpx;
 }
+
+.sheet-hint-error {
+  color: var(--td-error-color);
+}
+
+@media (prefers-color-scheme: dark) {
+  .sheet-hint-error {
+    color: var(--rs-dark-error-text);
+  }
+}
