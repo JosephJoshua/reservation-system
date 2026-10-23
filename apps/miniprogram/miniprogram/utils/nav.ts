@@ -1,6 +1,5 @@
 let navigating = false
-let landed: unknown
-let landedAt = 0
+let last: { key: string; page: unknown; at: number } | undefined
 
 function topPage(): unknown {
   const pages = getCurrentPages()
@@ -11,27 +10,27 @@ function topPage(): unknown {
  * Runs one navigation and ignores further ones until it settles, so a quick double tap does not
  * push a page twice or go back two pages.
  */
-function once(go: (complete: () => void) => void): void {
+function once(key: string, go: (complete: () => void) => void): void {
   if (navigating) return
-  // The new page is shown a moment after complete, so a late second tap is still ignored for a
-  // short while. Once the user has left that page, for example by going back, taps count again.
-  if (topPage() === landed && Date.now() - landedAt < 500) return
+  // The new page is shown a moment after complete, so a late second tap of the same link is
+  // still ignored for a short while. Any other navigation, or any tap after the user has left
+  // that page, goes through.
+  if (last && last.key === key && last.page === topPage() && Date.now() - last.at < 500) return
   navigating = true
   go(() => {
     navigating = false
-    landed = topPage()
-    landedAt = Date.now()
+    last = { key, page: topPage(), at: Date.now() }
   })
 }
 
 export function navigateOnce(url: string): void {
-  once((complete) => wx.navigateTo({ url, complete }))
+  once(`to:${url}`, (complete) => wx.navigateTo({ url, complete }))
 }
 
 export function navigateBackOnce(delta = 1): void {
-  once((complete) => wx.navigateBack({ delta, complete }))
+  once(`back:${delta}`, (complete) => wx.navigateBack({ delta, complete }))
 }
 
 export function switchTabOnce(url: string): void {
-  once((complete) => wx.switchTab({ url, complete }))
+  once(`tab:${url}`, (complete) => wx.switchTab({ url, complete }))
 }
