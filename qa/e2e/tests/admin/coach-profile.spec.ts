@@ -221,7 +221,7 @@ test('refuses to delete a category that has coaches', async ({ page }) => {
   await login(page)
   await page.goto('./#/catalog')
   await categoryRow(page).getByRole('button', { name: '删除' }).click()
-  await page.locator('.t-popconfirm').getByRole('button', { name: '确定' }).click()
+  await page.locator('.t-popconfirm').getByRole('button', { name: '删除' }).click()
   await expect(page.locator('.t-message')).toContainText('还有教练属于该类别')
   await expect(categoryRow(page)).toBeVisible()
 })

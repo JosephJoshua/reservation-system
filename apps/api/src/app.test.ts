@@ -80,4 +80,73 @@ describe('edits from two tabs', () => {
     })
     expect(again.status).toBe(200)
   })
+
+  it('refuses stale catalog saves, versioned as the admin lists load them', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const post = async (path: string, body: object) =>
+      (await h.call('POST', path, body, admin)).json as { id: number }
+    const lesson = { name: '一对一', durationMinutes: 60, price: 30000 }
+    const lessonTypeId = (await post('/admin/lesson-types', lesson)).id
+    const category = { name: '金牌', prices: [{ lessonTypeId, price: 40000 }] }
+    const categoryId = (await post('/admin/coach-categories', category)).id
+    const coach = { name: '王教练', categoryId, lessonTypeIds: [lessonTypeId] }
+    const coachId = (await post('/admin/coaches', coach)).id
+    const product = {
+      name: '十次卡',
+      lessonTypeId,
+      lessonCount: 10,
+      price: 280000,
+      validityDays: 180,
+    }
+    const productId = (await post('/admin/package-products', product)).id
+
+    const cases = [
+      { list: '/admin/lesson-types', id: lessonTypeId, body: lesson, edit: { name: '一对一私教' } },
+      { list: '/admin/coach-categories', id: categoryId, body: category, edit: { name: '银牌' } },
+      { list: '/admin/coaches', id: coachId, body: coach, edit: { title: '国家二级' } },
+      { list: '/admin/package-products', id: productId, body: product, edit: { sort: 2 } },
+    ]
+    for (const { list, id, body, edit } of cases) {
+      const loaded = async () =>
+        ((await h.call('GET', list, undefined, admin)).json as { id: number }[]).find(
+          (r) => r.id === id,
+        )
+      // As the coach editor does: binding state is not part of the edit.
+      const editable = async () => {
+        const {
+          bound: _b,
+          bindCode: _c,
+          bindCodeExpiresAt: _e,
+          ...rest
+        } = (await loaded()) as {
+          bound?: unknown
+          bindCode?: unknown
+          bindCodeExpiresAt?: unknown
+        }
+        return list === '/admin/coaches' ? rest : await loaded()
+      }
+      const tab = { 'If-Match': versionOf(await editable()) }
+      const first = await h.call('PUT', `${list}/${id}`, { ...body, ...edit }, admin, tab)
+      expect(first.status, list).toBe(200)
+      const stale = await h.call('PUT', `${list}/${id}`, { ...body, sort: 5 }, admin, tab)
+      expect(stale.json?.error?.code, list).toBe('edited_elsewhere')
+      const fresh = await h.call('PUT', `${list}/${id}`, { ...body, ...edit, sort: 5 }, admin, {
+        'If-Match': versionOf(await editable()),
+      })
+      expect(fresh.status, list).toBe(200)
+    }
+  })
+
+  it('does not count a bind code made meanwhile as a coach edit', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const coach = (await h.call('POST', '/admin/coaches', { name: '李教练' }, admin)).json
+    const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...editable } = coach
+    await h.call('POST', `/admin/coaches/${coach.id}/bind-code`, undefined, admin)
+    const save = await h.call('PUT', `/admin/coaches/${coach.id}`, { name: '李指导' }, admin, {
+      'If-Match': versionOf(editable),
+    })
+    expect(save.status).toBe(200)
+  })
 })

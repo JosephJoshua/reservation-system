@@ -291,6 +291,34 @@ test('a settings save from a stale tab is refused and keeps what was typed', asy
   await expect(notice(page)).toHaveValue(`第一个标签页${run}`)
 })
 
+test('a lesson edit from a stale tab is refused and keeps what was typed', async ({
+  page,
+  context,
+}) => {
+  await login(page)
+  const other = await context.newPage()
+  const description = (p: Page) => field(dialog(p), '简介').locator('textarea')
+  for (const p of [page, other]) {
+    await p.goto('./#/catalog')
+    // The lesson list is the first card; coach rows mention the lesson too.
+    await p
+      .locator('.t-card')
+      .first()
+      .locator('tbody tr', { hasText: lessonName })
+      .getByRole('button', { name: '编辑' })
+      .click()
+    await expect(description(p)).toBeVisible()
+  }
+  await description(page).fill(`第一个标签页${run}`)
+  await dialog(page).locator('.t-dialog__confirm').click()
+  await expect(page.getByText('已保存')).toBeVisible()
+
+  await description(other).fill(`第二个标签页${run}`)
+  await dialog(other).locator('.t-dialog__confirm').click()
+  await expect(other.getByText('已被其他人修改，请刷新后再改')).toBeVisible()
+  await expect(description(other)).toHaveValue(`第二个标签页${run}`)
+})
+
 test('an expired session says so on the login page', async ({ page }) => {
   await login(page)
   await page.evaluate(() => {

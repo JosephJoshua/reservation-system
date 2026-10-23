@@ -28,9 +28,13 @@ export function Products() {
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const categories = useApi<CoachCategory[]>('/admin/coach-categories')
-  const [edit, setEdit] = useState<{ id: number | null; key: string; form: ProductForm } | null>(
-    null,
-  )
+  const [edit, setEdit] = useState<{
+    id: number | null
+    key: string
+    form: ProductForm
+    // The product as listed when the edit began, so a save over someone else's change is refused.
+    loaded?: PackageProduct
+  } | null>(null)
   const submitting = useSubmitting()
 
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
@@ -48,7 +52,7 @@ export function Products() {
           edit.id ? 'PUT' : 'POST',
           edit.id ? `/admin/package-products/${edit.id}` : '/admin/package-products',
           edit.form,
-          { key: edit.key },
+          { key: edit.key, ifMatch: edit.loaded },
         ),
       '已保存',
       {
@@ -149,7 +153,9 @@ export function Products() {
               <Button
                 variant="text"
                 theme="primary"
-                onClick={() => setEdit({ key: newKey(), id: row.id, form: { ...row } })}
+                onClick={() =>
+                  setEdit({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
+                }
               >
                 编辑
               </Button>
