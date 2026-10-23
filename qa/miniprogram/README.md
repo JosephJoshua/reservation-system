@@ -29,3 +29,16 @@ pnpm --filter @rs/qa-miniprogram flows
 ```
 
 The mini program calls `API_BASE_URL` (default `http://localhost:8787`), baked in by the build.
+
+## Coach flows
+
+Binds a coach with a code from the admin API, marks attendance, writes a note, cancels a lesson,
+and sets weekly hours and a day off, saving screenshots to `qa/miniprogram/screenshots/coach/`.
+It uses the same seeded API as the student flows, and `QA_DB` must point at that API's database
+file, because attendance needs a lesson that has started and the script moves one into the past:
+
+```sh
+QA_DB=../../apps/api/data/qa.db pnpm --filter @rs/qa-miniprogram coach
+```
+
+It unbinds the first seeded coach before it starts and after it ends.
