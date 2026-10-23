@@ -1,4 +1,6 @@
 export * from './api'
+export * from './availability'
+export * from './coach'
 export * from './dto'
 export * from './pricing'
 export * from './rules'

@@ -24,6 +24,8 @@ import type { Deps } from '../deps'
 import { ApiError, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { loginAdmin, logout, requireAdmin } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
+import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
+import { setAttendance } from '../services/lessons'
 import {
   approvePackageRefund,
   extendPackage,
@@ -32,8 +34,10 @@ import {
   sellPackageOffline,
 } from '../services/packages'
 import { retryRefund } from '../services/refunds'
+import { monthlyReport } from '../services/reports'
 import { getSettings, saveSettings } from '../services/settings'
 import { bookingViews, packageViews } from '../services/views'
+import { weeklyHoursBody } from './coach'
 
 const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
 const nullableInstant = instant.nullable()
@@ -145,14 +149,22 @@ export function adminRoutes(deps: Deps) {
   // Coaches
 
   const coachView = (id: number) => {
-    const coach = db.select().from(coaches).where(eq(coaches.id, id)).get()
-    if (!coach) throw notFound('教练')
+    const row = db.select().from(coaches).where(eq(coaches.id, id)).get()
+    if (!row) throw notFound('教练')
     const lessons = db
       .select({ lessonTypeId: coachLessonTypes.lessonTypeId, price: coachLessonTypes.price })
       .from(coachLessonTypes)
       .where(eq(coachLessonTypes.coachId, id))
       .all()
-    return { ...coach, lessons }
+    const { openid, bindCode, bindCodeExpiresAt, ...coach } = row
+    const codeLive = bindCode && bindCodeExpiresAt && bindCodeExpiresAt > deps.now()
+    return {
+      ...coach,
+      lessons,
+      bound: openid !== null,
+      bindCode: codeLive ? bindCode : null,
+      bindCodeExpiresAt: codeLive ? bindCodeExpiresAt : null,
+    }
   }
 
   app.get('/coaches', (c) =>
@@ -208,6 +220,28 @@ export function adminRoutes(deps: Deps) {
     })
     return c.json(coachView(id))
   })
+
+  app.post('/coaches/:id/bind-code', (c) => c.json(newBindCode(deps, idParam(c)), 201))
+
+  app.delete('/coaches/:id/binding', (c) => {
+    unbindCoach(deps, idParam(c))
+    return c.body(null, 204)
+  })
+
+  app.get('/coaches/:id/hours', (c) => c.json(hoursView(deps, idParam(c))))
+
+  app.put('/coaches/:id/hours', async (c) => {
+    const { hours } = await parseBody(c, weeklyHoursBody)
+    return c.json(saveHours(deps, idParam(c), hours))
+  })
+
+  app.put('/coaches/:id/days-off/:date', (c) =>
+    c.json(setDayOff(deps, idParam(c), c.req.param('date'), true)),
+  )
+
+  app.delete('/coaches/:id/days-off/:date', (c) =>
+    c.json(setDayOff(deps, idParam(c), c.req.param('date'), false)),
+  )
 
   // Lesson types
 
@@ -409,23 +443,27 @@ export function adminRoutes(deps: Deps) {
         from: instant.optional(),
         to: instant.optional(),
         studentId: z.coerce.number().int().positive().optional(),
+        coachId: z.coerce.number().int().positive().optional(),
         status: z.enum(['pending_payment', 'confirmed', 'cancelled', 'expired']).optional(),
       }),
     )
     const rows = db
-      .select()
+      .select({ booking: bookings })
       .from(bookings)
+      .innerJoin(slots, eq(slots.id, bookings.slotId))
       .where(
         and(
           q.from ? gte(bookings.startsAt, q.from) : undefined,
           q.to ? lt(bookings.startsAt, q.to) : undefined,
           q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
+          q.coachId ? eq(slots.coachId, q.coachId) : undefined,
           q.status ? eq(bookings.status, q.status) : undefined,
         ),
       )
       .orderBy(desc(bookings.startsAt))
       .limit(500)
       .all()
+      .map((r) => r.booking)
     const views = bookingViews(db, rows, getSettings(db).booking, deps.now())
     const people = new Map(
       rows.length
@@ -443,8 +481,21 @@ export function adminRoutes(deps: Deps) {
         : [],
     )
     return c.json(
-      views.map((v, i) => ({ ...v, student: people.get(rows[i]?.studentId ?? 0) ?? null })),
+      views.map((v, i) => ({
+        ...v,
+        student: people.get(rows[i]?.studentId ?? 0) ?? null,
+        coachNote: rows[i]?.coachNote ?? '',
+      })),
     )
+  })
+
+  app.put('/bookings/:id/attendance', async (c) => {
+    const { attendance } = await parseBody(
+      c,
+      z.object({ attendance: z.enum(['attended', 'no_show']).nullable() }),
+    )
+    setAttendance(deps, idParam(c), attendance, 'admin')
+    return c.body(null, 204)
   })
 
   app.post('/bookings/:id/cancel', async (c) => {
@@ -801,6 +852,11 @@ export function adminRoutes(deps: Deps) {
     mkdirSync(deps.uploadsDir, { recursive: true })
     writeFileSync(join(deps.uploadsDir, name), Buffer.from(await file.arrayBuffer()))
     return c.json({ url: `/api/uploads/${name}` }, 201)
+  })
+
+  app.get('/reports/monthly', (c) => {
+    const { month } = parseQuery(c, z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    return c.json(monthlyReport(deps, month))
   })
 
   // Dashboard numbers for the admin home page.

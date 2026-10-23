@@ -8,6 +8,13 @@
       "when": 1792761844734,
       "tag": "0000_payments_and_booking_core",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1792767176575,
+      "tag": "0001_coach_mode",
+      "breakpoints": true
     }
   ]
 }

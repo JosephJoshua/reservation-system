@@ -1,5 +1,6 @@
 import type { Db } from './db/client'
 import type { PaymentGateway } from './pay/gateway'
+import type { Notifier } from './wx-notify'
 
 export interface Deps {
   db: Db
@@ -10,4 +11,6 @@ export interface Deps {
   adminPassword: string
   uploadsDir: string
   log: (message: string, detail?: unknown) => void
+  /** Subscription messages to coaches; left out when WeChat is not configured. */
+  notifier?: Notifier
 }

@@ -7,6 +7,7 @@ import type { Deps } from './deps'
 import { ApiError } from './errors'
 import { FakeGateway } from './pay/fake'
 import { adminRoutes } from './routes/admin'
+import { coachRoutes } from './routes/coach'
 import { devPayRoutes, payRoutes } from './routes/pay'
 import { studentRoutes } from './routes/student'
 
@@ -52,6 +53,7 @@ export function createApp(deps: Deps) {
   app.route('/', payRoutes(deps))
   if (deps.gateway instanceof FakeGateway) app.route('/', devPayRoutes(deps, deps.gateway))
   app.route('/admin', adminRoutes(deps))
+  app.route('/coach', coachRoutes(deps))
   app.route('/', studentRoutes(deps))
 
   return app

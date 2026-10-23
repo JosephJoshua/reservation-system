@@ -1,4 +1,5 @@
 // Response shapes of the student API. Instants are ISO strings; money is fen.
+import type { Attendance } from './availability'
 import type { PriceTag } from './pricing'
 import type { LateCancelRule } from './settings'
 
@@ -102,6 +103,8 @@ export interface BookingDto {
   cancelledBy: 'student' | 'venue' | null
   late: boolean
   refund: { amount: number; status: RefundStatus } | null
+  /** Marked by the coach or the venue once the lesson has started. */
+  attendance: Attendance | null
 }
 
 export type PackageStatus = 'active' | 'expired' | 'used_up' | 'refund_requested' | 'refunded'
@@ -159,6 +162,11 @@ export interface StudentDto {
   id: number
   name: string
   phone: string
+}
+
+/** GET /me: the student, and whether the same WeChat user is a bound coach. */
+export interface MeDto extends StudentDto {
+  isCoach: boolean
 }
 
 export interface ApiErrorBody {

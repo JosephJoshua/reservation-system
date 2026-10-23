@@ -116,6 +116,7 @@ export function bookingViews(
       cancelledBy: b.cancelledBy,
       late: b.late,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
+      attendance: b.attendance,
     }
   })
 }

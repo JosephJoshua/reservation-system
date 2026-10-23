@@ -1,0 +1,139 @@
+// The coach mode of the mini program. PUT and DELETE only, since wx.request cannot send PATCH.
+import { eq } from 'drizzle-orm'
+import { Hono } from 'hono'
+import { z } from 'zod'
+import { bookings } from '../db/schema'
+import type { Deps } from '../deps'
+import { ApiError, idParam, parseBody, parseQuery } from '../errors'
+import { type CoachVars, logout, requireCoach } from '../services/auth'
+import { cancelBooking } from '../services/bookings'
+import {
+  bindCoach,
+  coachProfile,
+  hoursView,
+  loginCoach,
+  saveHours,
+  setDayOff,
+} from '../services/coaches'
+import {
+  coachLesson,
+  coachSchedule,
+  ownBooking,
+  setAttendance,
+  setCoachNote,
+  setSlotOpen,
+} from '../services/lessons'
+
+const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+const code = z.string().min(1).max(200)
+
+export const weeklyHoursBody = z.object({
+  hours: z
+    .array(
+      z.object({
+        weekday: z.number().int().min(0).max(6),
+        startMinute: z
+          .number()
+          .int()
+          .min(0)
+          .max(24 * 60),
+        endMinute: z
+          .number()
+          .int()
+          .min(0)
+          .max(24 * 60),
+        lessonMinutes: z.number().int().min(15).max(480),
+      }),
+    )
+    .max(50),
+})
+
+export function coachRoutes(deps: Deps) {
+  const app = new Hono<CoachVars>()
+
+  app.post('/login', async (c) => {
+    const body = await parseBody(c, z.object({ code }))
+    return c.json(await loginCoach(deps, body.code))
+  })
+
+  app.post('/bind', async (c) => {
+    const body = await parseBody(c, z.object({ code, bindCode: z.string().trim().min(1).max(20) }))
+    return c.json(await bindCoach(deps, body.code, body.bindCode))
+  })
+
+  app.use('*', async (c, next) => {
+    if (c.req.path.endsWith('/coach/login') || c.req.path.endsWith('/coach/bind')) return next()
+    return requireCoach(deps)(c, next)
+  })
+
+  app.get('/me', (c) => c.json(coachProfile(deps, c.get('coachId'))))
+
+  app.post('/logout', (c) => {
+    logout(deps, c.req.header('Authorization'))
+    return c.body(null, 204)
+  })
+
+  app.get('/schedule', (c) => {
+    const q = parseQuery(c, z.object({ from: dateKey, to: dateKey }))
+    const days = (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000
+    if (!(days >= 0 && days <= 62)) throw new ApiError(400, 'invalid_query', '日期范围无效')
+    return c.json(coachSchedule(deps, c.get('coachId'), q.from, q.to))
+  })
+
+  app.get('/lessons/:id', (c) => c.json(coachLesson(deps, idParam(c), c.get('coachId'))))
+
+  app.put('/lessons/:id/attendance', async (c) => {
+    const { attendance } = await parseBody(
+      c,
+      z.object({ attendance: z.enum(['attended', 'no_show']).nullable() }),
+    )
+    const coachId = c.get('coachId')
+    setAttendance(deps, idParam(c), attendance, { coachId })
+    return c.json(coachLesson(deps, idParam(c), coachId))
+  })
+
+  app.put('/lessons/:id/note', async (c) => {
+    const { note } = await parseBody(c, z.object({ note: z.string().trim().max(500) }))
+    const coachId = c.get('coachId')
+    setCoachNote(deps, idParam(c), coachId, note)
+    return c.json(coachLesson(deps, idParam(c), coachId))
+  })
+
+  app.post('/lessons/:id/cancel', async (c) => {
+    const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
+    const id = idParam(c)
+    const coachId = c.get('coachId')
+    ownBooking(deps, id, coachId)
+    await cancelBooking(deps, id, 'venue', { reason: `教练取消：${reason}` })
+    // The coach cancelled it, so they need no message about it.
+    deps.db
+      .update(bookings)
+      .set({ coachToldCancelledAt: deps.now() })
+      .where(eq(bookings.id, id))
+      .run()
+    return c.json(coachLesson(deps, id, coachId))
+  })
+
+  app.put('/slots/:id', async (c) => {
+    const { open } = await parseBody(c, z.object({ open: z.boolean() }))
+    setSlotOpen(deps, idParam(c), c.get('coachId'), open)
+    return c.body(null, 204)
+  })
+
+  app.get('/hours', (c) => c.json(hoursView(deps, c.get('coachId'))))
+
+  app.put('/hours', async (c) => {
+    const { hours } = await parseBody(c, weeklyHoursBody)
+    return c.json(saveHours(deps, c.get('coachId'), hours))
+  })
+
+  app.put('/days-off/:date', (c) =>
+    c.json(setDayOff(deps, c.get('coachId'), c.req.param('date'), true)),
+  )
+
+  app.delete('/days-off/:date', (c) =>
+    c.json(setDayOff(deps, c.get('coachId'), c.req.param('date'), false)),
+  )
+
+  return app
+}
