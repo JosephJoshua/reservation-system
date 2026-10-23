@@ -15,6 +15,8 @@ page {
   --td-tag-warning-color: #a65000;
   /* Cell values are content, not hints; TDesign's placeholder grey is below 4.5:1. */
   --td-cell-note-color: var(--td-text-color-secondary);
+  /* TDesign redeclares its progress colour on the component, so pages pass this one instead. */
+  --rs-progress-color: var(--td-brand-color);
   background-color: var(--td-bg-color-page);
   color: var(--td-text-color-primary);
   font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', sans-serif;
@@ -36,6 +38,6 @@ page {
     --td-button-light-color: var(--td-brand-color-9);
     --td-button-primary-outline-color: var(--td-brand-color-9);
     --td-tab-item-active-color: var(--td-brand-color-9);
-    --td-progress-inner-bg-color: var(--td-brand-color-8);
+    --rs-progress-color: var(--td-brand-color-8);
   }
 }
