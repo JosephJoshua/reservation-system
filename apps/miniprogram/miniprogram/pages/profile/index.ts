@@ -2,6 +2,7 @@ import type { CatalogDto, HomeDto, MeDto, PackageDto } from '../../lib/shared'
 import { api, publicApi } from '../../utils/api'
 import { getCatalog, getMe } from '../../utils/data'
 import { maskPhone } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 
 Page({
   data: {
@@ -59,7 +60,7 @@ Page({
   },
 
   openCoach() {
-    wx.navigateTo({ url: '/coach/index/index' })
+    navigateOnce('/coach/index/index')
   },
 
   openMyPackages() {

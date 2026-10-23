@@ -48,6 +48,8 @@ Page({
   },
 
   id: 0,
+  cancelAsking: false,
+  markedAt: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -97,6 +99,8 @@ Page({
     const lesson = this.data.lesson
     if (!lesson || this.data.marking) return
     const picked = e.currentTarget.dataset.value as Attendance
+    // The second tap of a double tap would undo the mark the first one just made.
+    if (lesson.attendance === picked && Date.now() - this.markedAt < 1000) return
     // Tapping the current mark again clears it.
     const attendance = lesson.attendance === picked ? null : picked
     this.setData({ marking: true })
@@ -104,6 +108,7 @@ Page({
       this.show(
         await coachApi<CoachLessonDto>('PUT', `/lessons/${this.id}/attendance`, { attendance }),
       )
+      this.markedAt = Date.now()
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
     } catch (err) {
       showError(err)
@@ -123,10 +128,14 @@ Page({
     if (!this.data.noteDirty || this.data.savingNote) return
     this.setData({ savingNote: true })
     try {
+      const sent = this.data.note
       const saved = await coachApi<CoachLessonDto>('PUT', `/lessons/${this.id}/note`, {
-        note: this.data.note,
+        note: sent,
       })
-      this.show(saved, false)
+      // Text typed while the save was on its way stays, and is still unsaved.
+      const typed = this.data.note !== sent
+      this.show(saved, typed)
+      if (typed) this.setData({ noteDirty: this.data.note.trim() !== saved.coachNote })
       wx.showToast({ title: '备注已保存', icon: 'none' })
     } catch (err) {
       showError(err)
@@ -143,7 +152,17 @@ Page({
   async cancel() {
     askForNotices()
     const lesson = this.data.lesson
-    if (!lesson || this.data.cancelling) return
+    if (!lesson || this.data.cancelling || this.cancelAsking) return
+    // Held across both modals, so a double tap cannot start a second cancel.
+    this.cancelAsking = true
+    try {
+      await this.askAndCancel(lesson)
+    } finally {
+      this.cancelAsking = false
+    }
+  },
+
+  async askAndCancel(lesson: CoachLessonDto) {
     const asked = await wx.showModal({
       title: '取消原因',
       editable: true,
