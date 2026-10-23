@@ -156,6 +156,8 @@ export function BookForStudent({
   const [method, setMethod] = useState<Method>('alipay')
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
+  // One key per dialog: a retry after a lost response gets the booking already made.
+  const [requestKey] = useState(() => `book-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const activeCoaches = (coaches.data ?? []).filter((c) => c.active)
   const coach = (coaches.data ?? []).find((c) => c.id === slot?.coachId)
@@ -211,7 +213,11 @@ export function BookForStudent({
       payWith === 'package'
         ? { ...target, payWith }
         : { ...target, payWith, amount: fen, method, note }
-    if (await attempt(() => api('POST', '/admin/bookings', body), '已代约')) onDone()
+    const booked = await attempt(
+      () => api('POST', '/admin/bookings', body, { key: requestKey }),
+      '已代约',
+    )
+    if (booked) onDone()
   }
 
   return (

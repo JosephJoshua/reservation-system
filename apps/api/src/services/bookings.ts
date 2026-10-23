@@ -97,6 +97,57 @@ export function quoteBooking(deps: Deps, studentId: number, slotId: number, less
 }
 
 /**
+ * The checks a booking passes whoever makes it: the lesson fits the slot, the coach teaches it,
+ * the slot is free, the student has nothing else then, and a trial is still allowed. Returns the
+ * price. `who` names the student in messages: the student themself, or the front desk's student.
+ */
+export function checkBookable(
+  tx: Q,
+  now: Date,
+  b: {
+    studentId: number
+    slot: typeof slots.$inferSelect
+    lessonType: typeof lessonTypes.$inferSelect
+  },
+  who: '你' | '该学员',
+) {
+  const { studentId, slot, lessonType } = b
+  const minutes = (slot.endsAt.getTime() - slot.startsAt.getTime()) / 60_000
+  if (minutes !== lessonType.durationMinutes) {
+    throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
+  }
+  const price = priceFor(tx, slot.coachId, lessonType, now)
+  if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
+  const taken = tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.slotId, slot.id), inArray(bookings.status, LIVE)))
+    .get()
+  if (taken) throw new ApiError(409, 'slot_taken', '该时段已被预约')
+  const clash = tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        inArray(bookings.status, LIVE),
+        lt(bookings.startsAt, slot.endsAt),
+        gt(bookings.endsAt, slot.startsAt),
+      ),
+    )
+    .get()
+  if (clash) throw new ApiError(409, 'student_clash', `${who}在这个时间已有预约`)
+  if (lessonType.isTrial) {
+    const settings = getSettings(tx)
+    if (!settings.payment.trialEnabled) throw new ApiError(409, 'trial_off', '暂不提供体验课')
+    if (trialsUsed(tx, studentId) >= settings.payment.trialLimitPerStudent) {
+      throw new ApiError(409, 'trial_used', `${who === '你' ? '' : who}体验课次数已用完`)
+    }
+  }
+  return price
+}
+
+/**
  * Books a slot. Everything that decides whether the booking is allowed runs in one IMMEDIATE
  * transaction, and a partial unique index allows one live booking per slot, so concurrent
  * requests for the same slot get exactly one winner. Paid bookings hold the slot as
@@ -149,42 +200,9 @@ export async function createBooking(
       .where(eq(lessonTypes.id, input.lessonTypeId))
       .get()
     if (!lessonType || !visibleTo(lessonType, student)) throw notFound('课程')
-    const minutes = (slot.endsAt.getTime() - slot.startsAt.getTime()) / 60_000
-    if (minutes !== lessonType.durationMinutes) {
-      throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
-    }
-    const price = priceFor(tx, slot.coachId, lessonType, now)
-    if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
     const windowError = bookingWindowError(slot.startsAt, now, settings.booking)
     if (windowError) throw new ApiError(409, windowError, windowMessages[windowError])
-
-    const taken = tx
-      .select({ id: bookings.id })
-      .from(bookings)
-      .where(and(eq(bookings.slotId, slot.id), inArray(bookings.status, LIVE)))
-      .get()
-    if (taken) throw new ApiError(409, 'slot_taken', '该时段已被预约')
-
-    const clash = tx
-      .select({ id: bookings.id })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.studentId, studentId),
-          inArray(bookings.status, LIVE),
-          lt(bookings.startsAt, slot.endsAt),
-          gt(bookings.endsAt, slot.startsAt),
-        ),
-      )
-      .get()
-    if (clash) throw new ApiError(409, 'student_clash', '你在这个时间已有预约')
-
-    if (lessonType.isTrial) {
-      if (!settings.payment.trialEnabled) throw new ApiError(409, 'trial_off', '暂不提供体验课')
-      if (trialsUsed(tx, studentId) >= settings.payment.trialLimitPerStudent) {
-        throw new ApiError(409, 'trial_used', '体验课次数已用完')
-      }
-    }
+    const price = checkBookable(tx, now, { studentId, slot, lessonType }, '你')
 
     const pkg =
       lessonType.isTrial || input.payWith === 'wechat'
@@ -309,6 +327,7 @@ function repeatedCancel(
 /**
  * Cancels a booking. An unpaid booking is closed with its order. A confirmed one follows the
  * venue's cancellation rules: money goes back to WeChat Pay, lessons back to the package.
+ * Returns false when this call cancelled nothing, as with a repeat of a cancel that went through.
  */
 export async function cancelBooking(
   deps: Deps,
@@ -322,14 +341,14 @@ export async function cancelBooking(
   }
   // A repeat of a cancel that already went through is a no-op. A cancel by someone else still
   // fails, since the venue and the student cancel with different refunds.
-  if (repeatedCancel(existing, by, options)) return
+  if (repeatedCancel(existing, by, options)) return false
   // Set when the student cancelled what they saw as unpaid but the payment landed meanwhile.
   // They were told cancelling costs nothing, so the late-cancel rule does not apply.
   let paidWhileCancelling = false
   if (existing.status === 'pending_payment') {
     const order = deps.db.select().from(orders).where(eq(orders.bookingId, bookingId)).get()
     const cancel = { by, reason: options.reason ?? null }
-    if (order && (await closeOrder(deps, order.id, cancel)) === 'closed') return
+    if (order && (await closeOrder(deps, order.id, cancel)) === 'closed') return true
     paidWhileCancelling = true
   }
 
@@ -339,9 +358,9 @@ export async function cancelBooking(
     if (!booking) throw notFound('预约')
     // The payment that landed could not confirm the booking (the slot was gone), so it is
     // already being refunded in full and there is nothing left to cancel.
-    if (paidWhileCancelling && booking.status === 'expired') return []
+    if (paidWhileCancelling && booking.status === 'expired') return null
     // Two cancels by the same side racing: the first one did the work.
-    if (repeatedCancel(booking, by, options)) return []
+    if (repeatedCancel(booking, by, options)) return null
     if (booking.status !== 'confirmed') throw new ApiError(409, 'not_cancellable', '该预约已取消')
     const order =
       booking.paidWith === 'order'
@@ -420,5 +439,7 @@ export async function cancelBooking(
     }
     return []
   })
+  if (refundIds === null) return false
   for (const id of refundIds) await submitRefund(deps, id)
+  return true
 }

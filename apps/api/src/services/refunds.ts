@@ -158,22 +158,27 @@ export async function retryRefund(deps: Deps, refundId: number) {
       .from(refunds)
       .where(eq(refunds.id, refundId))
       .get()
-    if (row && ['pending', 'processing', 'succeeded'].includes(row.status)) return
+    if (row && ['pending', 'processing', 'succeeded'].includes(row.status)) return false
     throw new ApiError(409, 'refund_not_failed', '只能重试失败的退款')
   }
   await submitRefund(deps, refundId)
+  return true
 }
 
-/** Staff handed an offline refund back at the front desk. */
+/**
+ * Staff handed an offline refund back at the front desk. Returns false for a repeat of a
+ * hand-back already recorded.
+ */
 export function markOfflineRefundPaid(deps: Deps, refundId: number) {
   const now = deps.now()
-  immediate(deps.db, (tx) => {
+  return immediate(deps.db, (tx) => {
     const row = tx
       .select({ status: refunds.status, provider: orders.provider })
       .from(refunds)
       .innerJoin(orders, eq(orders.id, refunds.orderId))
       .where(eq(refunds.id, refundId))
       .get()
+    if (row?.provider === 'offline' && row.status === 'succeeded') return false
     if (row?.provider !== 'offline' || row.status !== 'pending') {
       throw new ApiError(409, 'refund_not_pending', '该退款已处理')
     }
@@ -181,5 +186,6 @@ export function markOfflineRefundPaid(deps: Deps, refundId: number) {
       .set({ status: 'succeeded', updatedAt: now })
       .where(eq(refunds.id, refundId))
       .run()
+    return true
   })
 }

@@ -258,8 +258,17 @@ describe('action log', () => {
     const packageId = await sellPackage(h, admin, 1, product(h, lesson.id).id)
     await h.call('POST', `/packages/${packageId}/refund-request`, undefined, t)
     const refund = h.db.select().from(refunds).get()
-    await h.call('POST', `/admin/refunds/${refund?.id}/approve`, { amount: 150000 }, admin)
+    for (let i = 0; i < 2; i++) {
+      const approved = await h.call(
+        'POST',
+        `/admin/refunds/${refund?.id}/approve`,
+        { amount: 150000 },
+        admin,
+      )
+      expect(approved.status).toBe(204)
+    }
     expect(h.db.select().from(refunds).get()?.status).toBe('pending')
+    await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
     await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
     expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
     expect(
@@ -267,6 +276,27 @@ describe('action log', () => {
         .map((e) => e.summary)
         .slice(-2),
     ).toEqual(['同意课时包「10 次课」退款 ¥1500', '课时包「10 次课」线下退还 ¥1500'])
+    expect(log(h).filter((e) => e.action.startsWith('refund.'))).toHaveLength(2)
+  })
+
+  it('logs a repeated rejection once', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const admin = await h.admin()
+    const t = await h.student('a')
+    const packageId = await sellPackage(h, admin, 1, product(h, lesson.id).id)
+    await h.call('POST', `/packages/${packageId}/refund-request`, undefined, t)
+    const refund = h.db.select().from(refunds).get()
+    for (let i = 0; i < 2; i++) {
+      const res = await h.call(
+        'POST',
+        `/admin/refunds/${refund?.id}/reject`,
+        { note: '已上课' },
+        admin,
+      )
+      expect(res.status).toBe(204)
+    }
+    expect(log(h).filter((e) => e.action === 'refund.reject')).toHaveLength(1)
   })
 
   it('writes nothing when the change is refused', async () => {
@@ -543,8 +573,11 @@ describe('front-desk booking', () => {
       amount: 20000,
       studentId: 1,
     })
+    // A repeated tap is answered like the first and logged once.
+    const entries = log(h).length
     const again = await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
-    expect(again.json.error.code).toBe('refund_not_pending')
+    expect(again.status).toBe(204)
+    expect(log(h)).toHaveLength(entries)
   })
 
   it('says a venue cancel returned the package lesson', async () => {
@@ -557,10 +590,45 @@ describe('front-desk booking', () => {
       { studentId: 1, slotId: slot.id, lessonTypeId: lesson.id, payWith: 'package' },
       admin,
     )
-    await h.call('POST', `/admin/bookings/${res.json.bookingId}/cancel`, { reason: '停电' }, admin)
+    for (let i = 0; i < 2; i++) {
+      const cancel = `/admin/bookings/${res.json.bookingId}/cancel`
+      expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(204)
+    }
     expect(log(h).at(-1)?.summary).toBe(
       '10月25日 10:00 王教练 一对一私教，原因：停电，退回课时 1 节',
     )
+    expect(log(h).filter((e) => e.action === 'booking.cancel')).toHaveLength(1)
+  })
+
+  it('books once when the desk repeats a submit with the same key', async () => {
+    const h = setup()
+    const { lesson, admin, slot } = await ready(h)
+    const body = {
+      studentId: 1,
+      slotId: slot.id,
+      lessonTypeId: lesson.id,
+      payWith: 'offline',
+      amount: 20000,
+      method: 'cash',
+    }
+    const send = () =>
+      h.app.request('/api/admin/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${admin}`,
+          'Idempotency-Key': 'book-1',
+        },
+        body: JSON.stringify(body),
+      })
+    const [a, b] = await Promise.all([send(), send()])
+    expect([a.status, b.status]).toEqual([201, 201])
+    expect(((await a.json()) as { bookingId: number }).bookingId).toBe(
+      ((await b.json()) as { bookingId: number }).bookingId,
+    )
+    expect(h.db.select().from(bookings).all()).toHaveLength(1)
+    expect(h.db.select().from(orders).all()).toHaveLength(1)
+    expect(log(h).filter((e) => e.action === 'booking.create')).toHaveLength(1)
   })
 
   it('books a free lesson without an order', async () => {

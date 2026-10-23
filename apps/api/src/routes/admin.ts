@@ -1010,10 +1010,11 @@ export function adminRoutes(deps: Deps) {
   app.post('/bookings/:id/cancel', async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
-    await cancelBooking(deps, id, 'venue', { reason })
+    const cancelled = await cancelBooking(deps, id, 'venue', { reason })
     const booking = db.select().from(bookings).where(eq(bookings.id, id)).get()
-    // A payment that landed meanwhile may have expired the booking instead: nothing was cancelled.
-    if (booking?.status !== 'cancelled' || booking.cancelledBy !== 'venue') {
+    // A repeat cancelled nothing, and a payment that landed meanwhile may have expired the
+    // booking instead.
+    if (!cancelled || booking?.status !== 'cancelled' || booking.cancelledBy !== 'venue') {
       return c.body(null, 204)
     }
     const { what, studentId } = describeBooking(db, id)
@@ -1420,7 +1421,7 @@ export function adminRoutes(deps: Deps) {
   app.post('/refunds/:id/approve', async (c) => {
     const { amount } = await parseBody(c, z.object({ amount: fen.min(1) }))
     const id = idParam(c)
-    await approvePackageRefund(deps, id, amount)
+    if (!(await approvePackageRefund(deps, id, amount))) return c.body(null, 204)
     const r = refundContext(id)
     log(c.get('staffId'), {
       action: 'refund.approve',
@@ -1435,7 +1436,7 @@ export function adminRoutes(deps: Deps) {
   app.post('/refunds/:id/reject', async (c) => {
     const { note } = await parseBody(c, z.object({ note: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
-    rejectPackageRefund(deps, id, note)
+    if (!rejectPackageRefund(deps, id, note)) return c.body(null, 204)
     const r = refundContext(id)
     log(c.get('staffId'), {
       action: 'refund.reject',
@@ -1448,7 +1449,7 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/refunds/:id/paid-back', (c) => {
     const id = idParam(c)
-    markOfflineRefundPaid(deps, id)
+    if (!markOfflineRefundPaid(deps, id)) return c.body(null, 204)
     const r = refundContext(id)
     log(c.get('staffId'), {
       action: 'refund.paid_back',
@@ -1462,7 +1463,7 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/refunds/:id/retry', async (c) => {
     const id = idParam(c)
-    await retryRefund(deps, id)
+    if (!(await retryRefund(deps, id))) return c.body(null, 204)
     const r = refundContext(id)
     log(c.get('staffId'), {
       action: 'refund.retry',

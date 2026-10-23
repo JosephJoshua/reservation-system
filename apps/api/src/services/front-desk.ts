@@ -1,5 +1,5 @@
 import type { OfflineMethod } from '@rs/shared'
-import { and, eq, gt, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, gt, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -13,10 +13,8 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import { describeBooking, logAction, yuan } from './action-log'
-import { LIVE, usablePackage } from './bookings'
-import { priceFor, trialsUsed } from './catalog'
+import { checkBookable, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
-import { getSettings } from './settings'
 
 export interface FrontDeskBookingInput {
   studentId: number
@@ -51,37 +49,7 @@ function check(
     .where(eq(lessonTypes.id, input.lessonTypeId))
     .get()
   if (!lessonType?.active) throw notFound('课程')
-  if ((slot.endsAt.getTime() - slot.startsAt.getTime()) / 60_000 !== lessonType.durationMinutes) {
-    throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
-  }
-  const price = priceFor(tx, slot.coachId, lessonType, now)
-  if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
-  const taken = tx
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(and(eq(bookings.slotId, slot.id), inArray(bookings.status, LIVE)))
-    .get()
-  if (taken) throw new ApiError(409, 'slot_taken', '该时段已被预约')
-  const clash = tx
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.studentId, student.id),
-        inArray(bookings.status, LIVE),
-        lt(bookings.startsAt, slot.endsAt),
-        gt(bookings.endsAt, slot.startsAt),
-      ),
-    )
-    .get()
-  if (clash) throw new ApiError(409, 'student_clash', '该学员在这个时间已有预约')
-  const settings = getSettings(tx)
-  if (lessonType.isTrial) {
-    if (!settings.payment.trialEnabled) throw new ApiError(409, 'trial_off', '体验课已关闭')
-    if (trialsUsed(tx, student.id) >= settings.payment.trialLimitPerStudent) {
-      throw new ApiError(409, 'trial_used', '该学员体验课次数已用完')
-    }
-  }
+  const price = checkBookable(tx, now, { studentId: student.id, slot, lessonType }, '该学员')
   const pkg = lessonType.isTrial ? undefined : usablePackage(tx, student.id, lessonType.id, slot)
   return { student, slot, lessonType, price, pkg }
 }
