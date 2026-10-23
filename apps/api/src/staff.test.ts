@@ -14,6 +14,7 @@ import {
   sessions,
   slots,
 } from './db/schema'
+import { updateStaff } from './services/staff'
 import { type Harness, setup } from './test/harness'
 
 const PASSWORD = 'front-desk-1'
@@ -173,6 +174,39 @@ describe('staff logins', () => {
     expect((await h.call('GET', '/admin/me', undefined, admin)).status).toBe(200)
   })
 
+  it('always keeps one active login', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const li = await addStaff(h, admin)
+    await h.call('PATCH', `/admin/staff/${li.id}`, { active: false }, admin)
+    // As if 小李 had deactivated the admin at the same moment.
+    expect(() => updateStaff(h.deps, li.id, 1, { active: false })).toThrow(
+      '至少要保留一个启用的账号',
+    )
+    expect((await h.call('GET', '/admin/me', undefined, admin)).status).toBe(200)
+  })
+
+  it('limits guesses at the current password', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    for (let i = 0; i < 10; i++) {
+      const res = await h.call(
+        'PUT',
+        '/admin/me/password',
+        { current: `guess${i}`, password: 'new-pass-1' },
+        admin,
+      )
+      expect(res.status).toBe(403)
+    }
+    const right = await h.call(
+      'PUT',
+      '/admin/me/password',
+      { current: 'test-password', password: 'new-pass-1' },
+      admin,
+    )
+    expect(right.status).toBe(429)
+  })
+
   it('refuses a session from before staff logins', async () => {
     const h = setup()
     h.db
@@ -214,6 +248,25 @@ describe('action log', () => {
       createdAt: '2026-10-23T02:00:00.000Z',
     })
     expect(entries[1].summary).toBe('课时包「10 次课」赠送 2 节：补课')
+  })
+
+  it('waits for the desk to hand back an approved offline package refund', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const admin = await h.admin()
+    const t = await h.student('a')
+    const packageId = await sellPackage(h, admin, 1, product(h, lesson.id).id)
+    await h.call('POST', `/packages/${packageId}/refund-request`, undefined, t)
+    const refund = h.db.select().from(refunds).get()
+    await h.call('POST', `/admin/refunds/${refund?.id}/approve`, { amount: 150000 }, admin)
+    expect(h.db.select().from(refunds).get()?.status).toBe('pending')
+    await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
+    expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
+    expect(
+      log(h)
+        .map((e) => e.summary)
+        .slice(-2),
+    ).toEqual(['同意课时包「10 次课」退款 ¥1500', '课时包「10 次课」线下退还 ¥1500'])
   })
 
   it('writes nothing when the change is refused', async () => {
@@ -451,14 +504,15 @@ describe('front-desk booking', () => {
       amount: 18000,
     })
 
-    // A venue cancel pays it back at the desk, so the refund is done at once.
+    // The money goes back at the desk, so the refund waits until staff say it was handed back.
     await h.call(
       'POST',
       `/admin/bookings/${res.json.bookingId}/cancel`,
       { reason: '场地维修' },
       admin,
     )
-    expect(h.db.select().from(refunds).get()).toMatchObject({ amount: 18000, status: 'succeeded' })
+    expect(h.db.select().from(refunds).get()).toMatchObject({ amount: 18000, status: 'pending' })
+    expect(log(h).at(-1)?.summary).toContain('待线下退还 ¥180')
   })
 
   it('leaves the refund for the desk to pay back when the student cancels', async () => {

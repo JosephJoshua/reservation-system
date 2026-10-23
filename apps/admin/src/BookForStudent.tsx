@@ -107,7 +107,7 @@ function SlotPicker({
       />
       {slots.error ? (
         <span className="muted">{slots.error}</span>
-      ) : slots.loading && !slots.data ? (
+      ) : slots.loading ? (
         <span className="muted">加载中</span>
       ) : free.length === 0 ? (
         <span className="muted">这天没有可约时段</span>
@@ -246,7 +246,11 @@ export function BookForStudent({
         </Field>
         {slot && (
           <Field label="课程">
-            {fitting.length === 0 ? (
+            {coaches.error || types.error ? (
+              <span className="field-text danger-text">{coaches.error ?? types.error}</span>
+            ) : !coaches.data || !types.data ? (
+              <span className="field-text muted">加载中</span>
+            ) : fitting.length === 0 ? (
               <span className="field-text muted">该教练没有与时段时长一致的课程</span>
             ) : (
               <Select

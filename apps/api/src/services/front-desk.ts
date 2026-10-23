@@ -3,7 +3,6 @@ import { and, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
-  coaches,
   lessonTypes,
   orders,
   packageLedger,
@@ -13,7 +12,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
-import { logAction, venueMoment, yuan } from './action-log'
+import { describeBooking, logAction, yuan } from './action-log'
 import { LIVE, usablePackage } from './bookings'
 import { priceFor, trialsUsed } from './catalog'
 import { newOutTradeNo } from './ids'
@@ -115,11 +114,6 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const { slot, lessonType, price, pkg } = check(tx, now, input)
-    const coach = tx
-      .select({ name: coaches.name })
-      .from(coaches)
-      .where(eq(coaches.id, slot.coachId))
-      .get()
     const base = {
       slotId: slot.id,
       studentId: input.studentId,
@@ -129,7 +123,6 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
       status: 'confirmed' as const,
       bookedByStaffId: staffId,
     }
-    const what = `${venueMoment(slot.startsAt)} ${coach?.name ?? ''} ${lessonType.name}`
     try {
       if (input.payWith === 'package') {
         if (!pkg) throw new ApiError(409, 'no_package', '该学员没有可用于这节课的课时包')
@@ -154,6 +147,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
             actor: 'admin',
           })
           .run()
+        const { what } = describeBooking(tx, booking.id)
         logAction(tx, now, staffId, {
           action: 'booking.create',
           summary: `${what}，扣课时包「${pkg.name}」1 节`,
@@ -188,6 +182,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
           })
           .run()
       }
+      const { what } = describeBooking(tx, booking.id)
       logAction(tx, now, staffId, {
         action: 'booking.create',
         summary:

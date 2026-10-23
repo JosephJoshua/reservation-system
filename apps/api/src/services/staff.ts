@@ -93,6 +93,10 @@ export function updateStaff(
     if (!before) throw notFound('员工')
     const after = tx.update(staff).set(patch).where(eq(staff.id, id)).returning().get()
     if (!after) throw notFound('员工')
+    // Two people deactivating each other at once would otherwise lock everyone out.
+    if (!tx.select({ id: staff.id }).from(staff).where(eq(staff.active, true)).get()) {
+      throw new ApiError(409, 'last_active_staff', '至少要保留一个启用的账号')
+    }
     if (!after.active) tx.delete(sessions).where(eq(sessions.staffId, id)).run()
     return { before, after }
   })

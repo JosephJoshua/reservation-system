@@ -45,3 +45,8 @@ export const ledgerKindLabel = {
   extend: '延期',
   refund: '退款',
 } as const
+
+/** A refund's status, where an offline one waits for the front desk to hand the money back. */
+export function refundLabel(status: RefundStatus, offline: boolean): [string, Theme] {
+  return offline && status === 'pending' ? ['待线下退还', 'warning'] : refundStatusLabel[status]
+}

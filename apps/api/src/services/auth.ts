@@ -42,28 +42,42 @@ const MAX_FAILED_LOGINS = 10
 // Kept per app instance, so separate test apps never share counts.
 const failedLoginsByApp = new WeakMap<Deps, Map<string, { count: number; since: number }>>()
 
-/** `client` identifies the caller, such as the address the reverse proxy saw. */
-export function loginAdmin(deps: Deps, username: string, password: string, client: string) {
+/**
+ * Runs a password check under the failed-attempt limit for `key`. `check` returns whether the
+ * password was right; a wrong one counts against the key and throws `wrong`.
+ */
+export function limitedCheck(deps: Deps, key: string, check: () => boolean, wrong: ApiError) {
   const now = deps.now().getTime()
   let failedLogins = failedLoginsByApp.get(deps)
   if (!failedLogins) {
     failedLogins = new Map()
     failedLoginsByApp.set(deps, failedLogins)
   }
-  for (const [key, entry] of failedLogins) {
-    if (now - entry.since > LOGIN_WINDOW_MS) failedLogins.delete(key)
+  for (const [k, entry] of failedLogins) {
+    if (now - entry.since > LOGIN_WINDOW_MS) failedLogins.delete(k)
   }
-  const failed = failedLogins.get(client)
+  const failed = failedLogins.get(key)
   if (failed && failed.count >= MAX_FAILED_LOGINS) {
     throw new ApiError(429, 'too_many_attempts', '尝试次数过多，请 15 分钟后再试')
   }
+  if (!check()) {
+    failedLogins.set(key, { count: (failed?.count ?? 0) + 1, since: failed?.since ?? now })
+    throw wrong
+  }
+  failedLogins.delete(key)
+}
+
+/** `client` identifies the caller, such as the address the reverse proxy saw. */
+export function loginAdmin(deps: Deps, username: string, password: string, client: string) {
   const member = deps.db.select().from(staff).where(eq(staff.username, username)).get()
   // The hash is checked even for an unknown name, so timing does not reveal which names exist.
-  if (!verifyPassword(password, member?.passwordHash) || !member?.active) {
-    failedLogins.set(client, { count: (failed?.count ?? 0) + 1, since: failed?.since ?? now })
-    throw new ApiError(401, 'bad_password', '登录名或密码错误')
-  }
-  failedLogins.delete(client)
+  limitedCheck(
+    deps,
+    `login:${client}`,
+    () => verifyPassword(password, member?.passwordHash) && member?.active === true,
+    new ApiError(401, 'bad_password', '登录名或密码错误'),
+  )
+  if (!member) throw new ApiError(401, 'bad_password', '登录名或密码错误')
   const token = newToken()
   deps.db
     .insert(sessions)

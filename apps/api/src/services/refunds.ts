@@ -22,9 +22,8 @@ export function refundedSoFar(tx: Q, orderId: number): number {
 }
 
 /**
- * Adds a refund row inside the caller's transaction. Offline orders are refunded by hand at the
- * front desk: recorded as done when staff pay it back on the spot (`paidBack`), otherwise left
- * pending until staff mark it paid back.
+ * Adds a pending refund row inside the caller's transaction. WeChat Pay refunds are then sent;
+ * offline ones stay pending until staff mark them paid back at the front desk.
  */
 export function createRefund(
   tx: Q,
@@ -35,7 +34,6 @@ export function createRefund(
     reason: string
     bookingId?: number
     packageId?: number
-    paidBack?: boolean
   },
 ): number {
   const order = tx.select().from(orders).where(eq(orders.id, input.orderId)).get()
@@ -43,7 +41,6 @@ export function createRefund(
   if (input.amount <= 0 || input.amount > order.amount - refundedSoFar(tx, order.id)) {
     throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
   }
-  const status = order.provider === 'offline' && input.paidBack ? 'succeeded' : 'pending'
   const row = tx
     .insert(refunds)
     .values({
@@ -51,7 +48,7 @@ export function createRefund(
       orderId: order.id,
       amount: input.amount,
       reason: input.reason,
-      status,
+      status: 'pending',
       bookingId: input.bookingId,
       packageId: input.packageId,
       updatedAt: now,
@@ -121,7 +118,15 @@ export async function sweepRefunds(deps: Deps) {
   const rows = deps.db
     .select({ id: refunds.id, outRefundNo: refunds.outRefundNo, status: refunds.status })
     .from(refunds)
-    .where(and(inArray(refunds.status, ['pending', 'processing']), lt(refunds.updatedAt, cutoff)))
+    // Offline refunds wait for the front desk, not for WeChat Pay.
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
+    .where(
+      and(
+        inArray(refunds.status, ['pending', 'processing']),
+        lt(refunds.updatedAt, cutoff),
+        eq(orders.provider, 'wechat'),
+      ),
+    )
     .all()
   for (const row of rows) {
     try {

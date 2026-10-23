@@ -5,7 +5,7 @@ import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
-import { refundStatusLabel } from '../labels'
+import { refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
 
@@ -94,11 +94,7 @@ export function Refunds() {
             colKey: 'status',
             title: '状态',
             cell: ({ row }) => {
-              // An offline refund waits for the desk to hand the money back.
-              const [label, theme] =
-                row.status === 'pending' && row.order.provider === 'offline'
-                  ? (['待线下退还', 'warning'] as const)
-                  : refundStatusLabel[row.status]
+              const [label, theme] = refundLabel(row.status, row.order.provider === 'offline')
               return (
                 <span>
                   <Tag theme={theme} variant="light">

@@ -33,7 +33,14 @@ import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
 import { accountDeleted } from '../services/account'
-import { type AdminVars, bearer, loginAdmin, logout, requireAdmin } from '../services/auth'
+import {
+  type AdminVars,
+  bearer,
+  limitedCheck,
+  loginAdmin,
+  logout,
+  requireAdmin,
+} from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
@@ -221,9 +228,13 @@ export function adminRoutes(deps: Deps) {
   app.put('/me/password', async (c) => {
     const body = await parseBody(c, z.object({ current: z.string().max(200), password }))
     const me = findStaff(db, c.get('staffId'))
-    if (!verifyPassword(body.current, me.passwordHash)) {
-      throw new ApiError(403, 'bad_password', '当前密码不对')
-    }
+    // Limited like logins, so a session left open cannot guess its way to the password.
+    limitedCheck(
+      deps,
+      `password:${me.id}`,
+      () => verifyPassword(body.current, me.passwordHash),
+      new ApiError(403, 'bad_password', '当前密码不对'),
+    )
     // Sessions on other devices end; this one stays.
     setStaffPassword(deps, me.id, body.password, ownToken(c))
     log(me.id, {
@@ -912,12 +923,32 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
+    // Paid at the front desk, so a refund is handed back there.
+    const paidOffline = new Set(
+      rows.length
+        ? db
+            .select({ bookingId: orders.bookingId })
+            .from(orders)
+            .where(
+              and(
+                inArray(
+                  orders.bookingId,
+                  rows.map((r) => r.id),
+                ),
+                eq(orders.provider, 'offline'),
+              ),
+            )
+            .all()
+            .map((o) => o.bookingId)
+        : [],
+    )
     return c.json(
       views.map((v, i) => ({
         ...v,
         student: people.get(rows[i]?.studentId ?? 0) ?? null,
         coachNote: rows[i]?.coachNote ?? '',
         bookedBy: bookedBy.get(rows[i]?.bookedByStaffId ?? 0) ?? null,
+        paidOffline: paidOffline.has(v.id),
       })),
     )
   })
@@ -987,8 +1018,9 @@ export function adminRoutes(deps: Deps) {
     }
     const { what, studentId } = describeBooking(db, id)
     const refund = db
-      .select({ amount: refunds.amount })
+      .select({ amount: refunds.amount, provider: orders.provider })
       .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
       .where(eq(refunds.bookingId, id))
       .orderBy(desc(refunds.id))
       .get()
@@ -998,7 +1030,11 @@ export function adminRoutes(deps: Deps) {
       .where(and(eq(packageLedger.bookingId, id), eq(packageLedger.kind, 'return')))
       .get()
     // An unpaid hold was simply released.
-    const outcome = refund ? `，退款 ${yuan(refund.amount)}` : returned ? '，退回课时 1 节' : ''
+    const outcome = refund
+      ? `，${refund.provider === 'offline' ? '待线下退还' : '退款'} ${yuan(refund.amount)}`
+      : returned
+        ? '，退回课时 1 节'
+        : ''
     log(c.get('staffId'), {
       action: 'booking.cancel',
       summary: `${what}，原因：${reason}${outcome}`,

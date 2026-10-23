@@ -6,7 +6,7 @@ import { DataTable } from '../DataTable'
 import { BookForStudent } from '../BookForStudent'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
-import { bookingStatusLabel, refundStatusLabel } from '../labels'
+import { bookingStatusLabel, refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { AdminBooking, Coach } from '../types'
 
@@ -149,7 +149,7 @@ export function Bookings() {
             title: '状态',
             cell: ({ row }) => {
               const [label, theme] = bookingStatusLabel[row.status]
-              const refund = row.refund ? refundStatusLabel[row.refund.status] : null
+              const refund = row.refund ? refundLabel(row.refund.status, row.paidOffline) : null
               return (
                 <span>
                   <Tag theme={theme} variant="light">
@@ -238,7 +238,9 @@ export function Bookings() {
             {cancelling.student?.name} {fmtDateTime(cancelling.startsAt)}{' '}
             {cancelling.lessonType.name}
           </p>
-          <p className="muted">场馆取消时，已付款项全额退回微信，课时包课时退回。</p>
+          <p className="muted">
+            场馆取消时，已付款项全额退款，课时包课时退回。前台收款的，请在退款页确认当面退还。
+          </p>
           <Textarea
             placeholder="取消原因，学员可见"
             value={reason}

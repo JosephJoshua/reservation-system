@@ -221,13 +221,9 @@ export async function approvePackageRefund(deps: Deps, refundId: number, amount:
     tx.insert(packageLedger)
       .values({ packageId: pkg.id, delta: -pkg.lessonsRemaining, kind: 'refund', actor: 'admin' })
       .run()
-    // Offline payments are paid back at the front desk, so the refund is done once approved.
+    // Offline payments stay pending until staff mark them paid back at the front desk.
     tx.update(refunds)
-      .set({
-        amount,
-        status: order.provider === 'offline' ? 'succeeded' : 'pending',
-        updatedAt: now,
-      })
+      .set({ amount, status: 'pending', updatedAt: now })
       .where(eq(refunds.id, refund.id))
       .run()
     return true

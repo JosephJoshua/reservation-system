@@ -415,8 +415,6 @@ export async function cancelBooking(
           amount: outcome.refund,
           reason: by === 'venue' ? '场馆取消课程' : '取消预约',
           bookingId: booking.id,
-          // Staff cancelling at the desk pay offline money back there and then.
-          paidBack: by === 'venue',
         }),
       ]
     }
