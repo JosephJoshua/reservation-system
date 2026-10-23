@@ -45,6 +45,8 @@ Page({
 
   catalog: null as CatalogDto | null,
   request: 0,
+  /** Until the student picks a day, skip ahead past days with nothing to book. */
+  autoAdvance: true,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -135,11 +137,16 @@ Page({
           // Too close to start to book online, as opposed to booked by someone else.
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
         }))
-      this.setData({
-        slotsState: 'ready',
-        slots,
-        availableCount: slots.filter((s) => s.available).length,
-      })
+      const availableCount = slots.filter((s) => s.available).length
+      const days = this.data.days
+      const next = days[days.findIndex((d) => d.key === date) + 1]
+      if (this.autoAdvance && availableCount === 0 && next) {
+        this.setData({ date: next.key })
+        this.loadSlots()
+        return
+      }
+      this.autoAdvance = false
+      this.setData({ slotsState: 'ready', slots, availableCount })
     } catch (e) {
       if (request !== this.request) return
       this.setData({ slotsState: 'error', error: errorMessage(e) })
@@ -149,6 +156,7 @@ Page({
   pickCoach(e: WechatMiniprogram.TouchEvent) {
     const coachId = Number(e.currentTarget.dataset.id)
     if (coachId === this.data.coachId) return
+    this.autoAdvance = false
     this.setData({ coachId })
     this.loadSlots()
   },
@@ -156,6 +164,7 @@ Page({
   pickDate(e: WechatMiniprogram.TouchEvent) {
     const date = e.currentTarget.dataset.key as string
     if (date === this.data.date) return
+    this.autoAdvance = false
     this.setData({ date })
     this.loadSlots()
   },

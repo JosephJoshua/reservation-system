@@ -14,7 +14,7 @@
 .summary-when {
   margin-top: 12rpx;
   font-size: 32rpx;
-  color: var(--rs-hint-color);
+  color: var(--td-text-color-primary);
 }
 
 .coach {

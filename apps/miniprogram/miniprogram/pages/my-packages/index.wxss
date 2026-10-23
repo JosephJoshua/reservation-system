@@ -54,6 +54,19 @@
   min-width: 0;
 }
 
+.refund-link {
+  flex-shrink: 0;
+  margin-left: 24rpx;
+  padding: 16rpx 0 16rpx 24rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-link);
+}
+
+.refund-hover,
+.refund-busy {
+  opacity: 0.5;
+}
+
 .pkg-meta {
   font-size: 24rpx;
   line-height: 1.6;

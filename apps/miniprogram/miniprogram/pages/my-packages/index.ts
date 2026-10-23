@@ -1,7 +1,7 @@
 import type { PackageDto } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
-import { dateText, yuan } from '../../utils/format'
+import { fullDate, yuan } from '../../utils/format'
 import { PACKAGE_STATUS, REFUND_STATUS } from '../../utils/labels'
 
 interface PackageView {
@@ -27,7 +27,7 @@ function view(p: PackageDto): PackageView {
     remaining: p.lessonsRemaining,
     purchased: p.lessonsPurchased,
     percent: p.lessonsPurchased ? Math.round((p.lessonsRemaining / p.lessonsPurchased) * 100) : 0,
-    expires: `${dateText(p.expiresAt)} 到期`,
+    expires: `${fullDate(p.expiresAt)}到期`,
     status: PACKAGE_STATUS[p.status],
     tone:
       p.status === 'active' ? 'primary' : p.status === 'refund_requested' ? 'warning' : 'default',

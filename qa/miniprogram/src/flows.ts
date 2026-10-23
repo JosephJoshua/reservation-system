@@ -14,6 +14,9 @@ mkdirSync(outDir, { recursive: true })
 type MiniProgram = Awaited<ReturnType<typeof automator.launch>>
 type Page = NonNullable<Awaited<ReturnType<MiniProgram['currentPage']>>>
 
+// Runs inside the mini program, through evaluate.
+declare function getCurrentPages(): unknown[]
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function check(condition: unknown, message: string): asserts condition {
@@ -63,7 +66,12 @@ async function waitForPage(
   while (Date.now() < until) {
     const page = await miniProgram.currentPage()
     last = page?.path ?? ''
-    if (page && page.path === path && ready(await page.data())) return page
+    if (page && page.path === path) {
+      // A page that just opened may not answer data() until it has finished loading.
+      await sleep(500)
+      const data = await page.data().catch(() => null)
+      if (data && ready(data)) return page
+    }
     await sleep(250)
   }
   throw new Error(`Timed out waiting for ${path} (on ${last})`)
@@ -79,6 +87,25 @@ async function autoConfirmModals() {
       if (typeof options.complete === 'function') options.complete(res)
       return Promise.resolve(res)
     },
+  )
+}
+
+/**
+ * Calls a method on the current page without waiting for it. Page.callMethod fails on async
+ * methods ("No context found for objectId"), so this goes through evaluate instead.
+ */
+async function invoke(method: string, ...args: unknown[]) {
+  await miniProgram.evaluate(
+    (name: string, params: unknown[]) => {
+      const pages = getCurrentPages()
+      const page = pages[pages.length - 1] as unknown as Record<
+        string,
+        (...a: unknown[]) => unknown
+      >
+      page[name]?.(...params)
+    },
+    method,
+    args,
   )
 }
 
@@ -137,17 +164,17 @@ try {
     check(data.payWith === 'wechat' && data.isTrial, 'trial should be paid by WeChat Pay')
     check(data.needName && data.needPhone && data.showAgreement, 'new student should see the form')
     await screenshot('confirm-trial')
-    await confirm.callMethod('submit')
+    await invoke('submit')
     await sleep(300)
     check(
       (await miniProgram.currentPage())?.path === 'pages/confirm/index',
       'submitting without the form filled in should stay on the page',
     )
-    await confirm.callMethod('onName', { detail: { value: '测试学员' } })
-    await confirm.callMethod('onPhone', { detail: { value: '13800138000' } })
+    await invoke('onName', { detail: { value: '测试学员' } })
+    await invoke('onPhone', { detail: { value: '13800138000' } })
     await tap(confirm, '.agree')
     await screenshot('confirm-trial-filled')
-    await confirm.callMethod('submit')
+    await invoke('submit')
     const detail = await waitForPage(
       'pages/booking-detail/index',
       (d) => (d.booking as { status?: string } | null)?.status === 'confirmed',
@@ -186,8 +213,8 @@ try {
 
   await step('cancel the trial and get a refund', async () => {
     await miniProgram.navigateTo(`/pages/booking-detail/index?id=${trialBookingId}`)
-    const detail = await waitForPage('pages/booking-detail/index')
-    await detail.callMethod('cancel')
+    await waitForPage('pages/booking-detail/index')
+    await invoke('cancel')
     const done = await waitForPage(
       'pages/booking-detail/index',
       (d) => (d.booking as { status?: string } | null)?.status === 'cancelled',
@@ -204,7 +231,7 @@ try {
     const products = (await packages.data('products')) as { id: number; lessonCount: number }[]
     const ten = products.find((p) => p.lessonCount === 10)
     check(ten, 'seeded 10-lesson package missing')
-    await packages.callMethod('buy', { currentTarget: { dataset: { id: ten.id } } })
+    await invoke('buy', { currentTarget: { dataset: { id: ten.id } } })
     const mine = await waitForPage('pages/my-packages/index', (d) => d.state === 'ready')
     const rows = (await mine.data('packages')) as { remaining: number; active: boolean }[]
     check(
@@ -238,7 +265,7 @@ try {
     check(data.payWith === 'package' && data.pkg, 'package should be chosen by default')
     check(!data.showAgreement && !data.needName, 'returning student should not see the form again')
     await screenshot('confirm-package')
-    await confirm.callMethod('submit')
+    await invoke('submit')
     const detail = await waitForPage(
       'pages/booking-detail/index',
       (d) => (d.booking as { status?: string } | null)?.status === 'confirmed',
@@ -263,7 +290,7 @@ try {
     const slot = slots[index]
     check(slot, 'no slot to race for')
     await tap(book, '.slot', index)
-    const confirm = await waitForPage('pages/confirm/index')
+    await waitForPage('pages/confirm/index')
     const rival = await call('POST', '/auth/student', { code: 'dev:qa_rival' })
     const taken = await call(
       'POST',
@@ -272,7 +299,7 @@ try {
       rival.json.token,
     )
     check(taken.status === 201, `rival booking failed: ${JSON.stringify(taken.json)}`)
-    await confirm.callMethod('submit')
+    await invoke('submit')
     // The page explains the slot is gone and goes back to the time picker, now showing it full.
     const back = await waitForPage('pages/book/index', (d) => d.slotsState === 'ready')
     const after = (await back.data('slots')) as { id: number; available: boolean }[]

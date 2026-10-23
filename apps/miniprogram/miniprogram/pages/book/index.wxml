@@ -40,11 +40,12 @@
       </view>
     </scroll-view>
 
-    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="day-scroll">
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="day-{{date}}" class="day-scroll">
       <view class="day-row">
         <view
           wx:for="{{days}}"
           wx:key="key"
+          id="day-{{item.key}}"
           class="day {{date === item.key ? 'day-active' : ''}}"
           data-key="{{item.key}}"
           bind:tap="pickDate"

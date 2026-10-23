@@ -59,7 +59,7 @@ Page({
             price: yuan(p.price.price),
             original: p.price.originalPrice == null ? '' : yuan(p.price.originalPrice),
             amount: p.price.price,
-            unit: `约 ¥${formatYuan(Math.round(p.price.price / p.lessonCount))}/节`,
+            unit: `¥${formatYuan(Math.round(p.price.price / p.lessonCount))}/节`,
             highlighted: p.id === this.highlight,
           }
         })

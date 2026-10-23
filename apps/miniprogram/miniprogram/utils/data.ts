@@ -42,10 +42,10 @@ export function usablePackage(
 export function cancelRuleText(hours: number, rule: LateCancelRule): string {
   const late =
     rule.kind === 'forfeit'
-      ? '之后取消不退款，课时包课时照常扣除'
+      ? '逾期不退费用和课时'
       : rule.percent === 100
-        ? '之后取消也全额退款'
-        : `之后取消退还 ${rule.percent}%，课时包课时照常扣除`
+        ? '逾期也全额退款'
+        : `逾期退 ${rule.percent}% 费用，不退课时`
   return `开课前 ${hours} 小时可免费取消，${late}。`
 }
 

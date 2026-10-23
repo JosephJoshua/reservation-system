@@ -135,37 +135,36 @@ Page({
     wx.navigateTo({ url: `/pages/packages/index?lessonTypeId=${this.data.lessonTypeId}` })
   },
 
+  /** The first problem on the page, checked top to bottom, or '' when there is none. */
+  problem(): string {
+    const { needName, needPhone, showAgreement, agreed } = this.data
+    if (needName && !this.data.name.trim()) return '请填写姓名'
+    if (needPhone && !/^1\d{10}$/.test(this.data.phone.trim())) return '请填写正确的手机号'
+    if (showAgreement && !agreed) return '请先阅读并同意相关条款'
+    return ''
+  },
+
   /** Saves the name and phone the venue needs before the first booking. */
-  async saveProfile(): Promise<boolean> {
+  async saveProfile() {
     const { needName, needPhone } = this.data
-    const name = this.data.name.trim()
-    const phone = this.data.phone.trim()
-    if (needName && !name) {
-      wx.showToast({ title: '请填写姓名', icon: 'none' })
-      return false
-    }
-    if (needPhone && !/^1\d{10}$/.test(phone)) {
-      wx.showToast({ title: '请填写正确的手机号', icon: 'none' })
-      return false
-    }
-    if (!needName && !needPhone) return true
+    if (!needName && !needPhone) return
     await api<StudentDto>('PUT', '/me', {
-      ...(needName ? { name } : {}),
-      ...(needPhone ? { phone } : {}),
+      ...(needName ? { name: this.data.name.trim() } : {}),
+      ...(needPhone ? { phone: this.data.phone.trim() } : {}),
     })
     this.setData({ needName: false, needPhone: false })
-    return true
   },
 
   async submit() {
     if (this.data.submitting) return
-    if (this.data.showAgreement && !this.data.agreed) {
-      wx.showToast({ title: '请先阅读并同意相关条款', icon: 'none' })
+    const problem = this.problem()
+    if (problem) {
+      wx.showToast({ title: problem, icon: 'none' })
       return
     }
     this.setData({ submitting: true })
     try {
-      if (!(await this.saveProfile())) return
+      await this.saveProfile()
       if (this.data.showAgreement) setAgreed()
       const res = await api<CreateBookingResponse>('POST', '/bookings', {
         slotId: this.data.slotId,
@@ -173,14 +172,12 @@ Page({
         payWith: this.data.payWith,
       })
       if (res.status === 'pending_payment' && res.orderId) {
-        const result = await payOrder(res.orderId, this.data.price, res.payment).catch((e) => {
-          showError(e)
-          return 'cancelled' as const
-        })
-        this.finish(res.bookingId, result === 'paid' ? '预约成功' : '')
+        // A failed or cancelled payment still lands on the booking, which can be paid from there.
+        await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
+        this.finish(res.bookingId)
         return
       }
-      this.finish(res.bookingId, '预约成功')
+      this.finish(res.bookingId)
     } catch (e) {
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
@@ -194,13 +191,8 @@ Page({
   },
 
   /** Replaces this page with the booking, so going back lands on the time picker. */
-  finish(bookingId: number, toast: string) {
-    wx.redirectTo({
-      url: `/pages/booking-detail/index?id=${bookingId}`,
-      success: () => {
-        if (toast) wx.showToast({ title: toast, icon: 'success' })
-      },
-    })
+  finish(bookingId: number) {
+    wx.redirectTo({ url: `/pages/booking-detail/index?id=${bookingId}` })
   },
 
   retry() {

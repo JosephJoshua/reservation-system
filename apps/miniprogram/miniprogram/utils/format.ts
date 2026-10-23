@@ -62,6 +62,14 @@ export function dateTime(iso: string): string {
   return `${p.month}月${p.day}日 ${p.hh}:${p.mm}`
 }
 
+/** 4月22日, with the year when it is not this year: 2027年4月22日 */
+export function fullDate(iso: string | Date, now = new Date()): string {
+  const d = new Date(new Date(iso).getTime() + OFFSET_MS)
+  const year = d.getUTCFullYear()
+  const thisYear = new Date(now.getTime() + OFFSET_MS).getUTCFullYear()
+  return `${year === thisYear ? '' : `${year}年`}${d.getUTCMonth() + 1}月${d.getUTCDate()}日`
+}
+
 export function weekday(iso: string | Date): string {
   return parts(iso).weekday
 }

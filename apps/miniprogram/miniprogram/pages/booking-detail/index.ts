@@ -151,8 +151,7 @@ Page({
     if (!b?.orderId || this.data.busy) return
     this.setData({ busy: true })
     try {
-      const result = await payOrder(b.orderId, b.price)
-      if (result === 'paid') wx.showToast({ title: '支付成功', icon: 'success' })
+      await payOrder(b.orderId, b.price)
       await this.load()
     } catch (e) {
       showError(e)
@@ -203,7 +202,6 @@ Page({
     try {
       const updated = await api<BookingDto>('POST', `/bookings/${b.id}/cancel`)
       this.show(updated)
-      wx.showToast({ title: '已取消', icon: 'success' })
     } catch (e) {
       showError(e)
       await this.load()

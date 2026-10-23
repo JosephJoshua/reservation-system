@@ -35,6 +35,10 @@
   color: var(--td-text-color-secondary);
 }
 
+.action-button {
+  width: 100% !important;
+}
+
 .venue {
   margin-top: 24rpx;
 }

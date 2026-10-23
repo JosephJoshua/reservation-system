@@ -108,7 +108,7 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16rpx;
-  padding: 0 32rpx 48rpx;
+  padding: 0 32rpx calc(48rpx + env(safe-area-inset-bottom));
 }
 
 .slot {
@@ -131,7 +131,11 @@
 .slot-sub {
   margin-top: 4rpx;
   font-size: 24rpx;
-  color: var(--rs-hint-color);
+  color: var(--td-text-color-secondary);
+}
+
+.slot-full {
+  background-color: var(--td-bg-color-secondarycontainer);
 }
 
 .slot-full .slot-time,

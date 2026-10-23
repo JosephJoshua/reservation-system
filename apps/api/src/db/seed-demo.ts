@@ -58,7 +58,7 @@ saveSettings(
     ...defaultSettings,
     venue: {
       name: '飞羽乒乓球馆',
-      address: '北京市海淀区中关村大街 59 号 B1',
+      address: '海淀区中关村大街59号B1层',
       phone: '010-62345678',
       latitude: 39.9606,
       longitude: 116.3163,
@@ -91,14 +91,14 @@ const [private1, trial] = db
   .values([
     {
       name: '一对一私教',
-      description: '根据你的水平定制训练内容，含多球和对练。',
+      description: '按你的水平定制训练，含多球和对练',
       durationMinutes: 60,
       price: 30000,
       sort: 1,
     },
     {
       name: '体验课',
-      description: '首次来馆专享，教练评估水平并给出训练建议。',
+      description: '首次来馆专享，教练评估你的水平',
       durationMinutes: 60,
       price: 4900,
       isTrial: true,
@@ -125,7 +125,7 @@ const [tenPack] = db
   .values([
     {
       name: '私教 10 次卡',
-      description: '李静、赵鹏教练通用。',
+      description: '适合每周练一到两次',
       lessonTypeId: private1.id,
       coachIds: [li.id, zhao.id],
       lessonCount: 10,
@@ -138,11 +138,11 @@ const [tenPack] = db
     },
     {
       name: '私教 20 次卡',
-      description: '全部教练通用。',
+      description: '适合系统提升，单节最划算',
       lessonTypeId: private1.id,
       coachIds: [],
       lessonCount: 20,
-      price: 520000,
+      price: 480000,
       validityDays: 365,
       sort: 2,
     },

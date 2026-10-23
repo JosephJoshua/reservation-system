@@ -29,20 +29,19 @@
       <text class="pkg-remaining">{{item.remaining}}</text>
       <text class="muted"> / {{item.purchased}} 节</text>
     </view>
-    <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" />
+    <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" color="{{item.active ? 'var(--td-brand-color)' : 'var(--td-text-color-disabled)'}}" />
     <view class="pkg-foot">
       <view class="grow">
         <view class="pkg-meta">{{item.expires}}</view>
         <view wx:if="{{item.refund}}" class="pkg-meta">{{item.refund}}</view>
       </view>
-      <t-button
+      <view
         wx:if="{{item.canRefund}}"
-        size="extra-small"
-        variant="text"
-        loading="{{busy === item.id}}"
+        class="refund-link {{busy === item.id ? 'refund-busy' : ''}}"
+        hover-class="refund-hover"
         data-id="{{item.id}}"
         bind:tap="requestRefund"
-      >申请退款</t-button>
+      >申请退款</view>
     </view>
   </view>
 </view>
