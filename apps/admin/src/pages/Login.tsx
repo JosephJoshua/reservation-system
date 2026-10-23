@@ -3,14 +3,19 @@ import { Button, Card, Input, MessagePlugin } from 'tdesign-react'
 import { api, setToken } from '../api'
 
 export function Login({ notice, onDone }: { notice?: string; onDone: () => void }) {
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const ready = username.trim() !== '' && password !== ''
 
   const submit = async () => {
-    if (!password) return
+    if (!ready || busy) return
     setBusy(true)
     try {
-      const { token } = await api<{ token: string }>('POST', '/admin/login', { password })
+      const { token } = await api<{ token: string }>('POST', '/admin/login', {
+        username,
+        password,
+      })
       setToken(token)
       onDone()
     } catch (e) {
@@ -25,19 +30,29 @@ export function Login({ notice, onDone }: { notice?: string; onDone: () => void 
       <Card className="login-card" title="球馆管理" bordered>
         {notice && <p className="login-notice">{notice}</p>}
         <form
+          className="fields"
           onSubmit={(e) => {
             e.preventDefault()
             void submit()
           }}
         >
           <Input
-            type="password"
-            placeholder="管理密码"
-            value={password}
-            onChange={(v) => setPassword(String(v))}
+            name="username"
+            autocomplete="username"
+            placeholder="登录名"
+            value={username}
+            onChange={(v) => setUsername(String(v))}
             autofocus
           />
-          <Button type="submit" block loading={busy} style={{ marginTop: 16 }} disabled={!password}>
+          <Input
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="密码"
+            value={password}
+            onChange={(v) => setPassword(String(v))}
+          />
+          <Button type="submit" block loading={busy} disabled={!ready}>
             登录
           </Button>
         </form>

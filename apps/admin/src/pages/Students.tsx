@@ -16,6 +16,7 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
+import { BookForStudent } from '../BookForStudent'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
@@ -129,6 +130,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const detail = useApi<StudentDetail>(`/admin/students/${id}`)
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const [selling, setSelling] = useState(false)
+  const [booking, setBooking] = useState(false)
   const [action, setAction] = useState<{
     kind: 'grant' | 'extend' | 'ledger'
     packageId: number
@@ -254,7 +256,15 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             />
           </Card>
 
-          <Card title="预约记录" bordered>
+          <Card
+            title="预约记录"
+            bordered
+            actions={
+              <Button size="small" onClick={() => setBooking(true)}>
+                代约
+              </Button>
+            }
+          >
             <DataTable
               rowKey="id"
               data={s.bookings}
@@ -284,6 +294,16 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
         </Space>
       )}
 
+      {booking && s && (
+        <BookForStudent
+          student={s}
+          onClose={() => setBooking(false)}
+          onDone={() => {
+            setBooking(false)
+            void detail.reload()
+          }}
+        />
+      )}
       {selling && s && (
         <OfflineSale
           studentId={s.id}

@@ -15,6 +15,7 @@ import {
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
+import { BookForStudent } from '../BookForStudent'
 import { Field } from '../Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
 import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
@@ -365,6 +366,7 @@ function SlotDialog({
 }) {
   const [reason, setReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [booking, setBooking] = useState(false)
   const submitting = useSubmitting()
   const b = slot.booking
   const status = b ? bookingStatusLabel[b.status as keyof typeof bookingStatusLabel] : null
@@ -456,6 +458,8 @@ function SlotDialog({
           </>
         )}
 
+        {!b && slot.open && !started && <Button onClick={() => setBooking(true)}>代约</Button>}
+
         <Space>
           {!started && (
             <Button variant="outline" loading={submitting} onClick={toggle}>
@@ -479,6 +483,9 @@ function SlotDialog({
         </Space>
         {slot.open && b && <span className="muted">关闭时段不影响已有预约</span>}
       </Space>
+      {booking && (
+        <BookForStudent slot={slot} onClose={() => setBooking(false)} onDone={onChanged} />
+      )}
     </Dialog>
   )
 }

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
+import { BookForStudent } from '../BookForStudent'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundStatusLabel } from '../labels'
@@ -17,6 +18,7 @@ export function Bookings() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [reason, setReason] = useState('')
+  const [booking, setBooking] = useState(false)
   const submitting = useSubmitting()
 
   const params = new URLSearchParams({
@@ -102,6 +104,8 @@ export function Bookings() {
             { label: '时间降序', value: 'desc' },
           ]}
         />
+        <span className="spacer" />
+        <Button onClick={() => setBooking(true)}>代约</Button>
       </div>
       <DataTable
         rowKey="id"
@@ -129,12 +133,16 @@ export function Bookings() {
           {
             colKey: 'paid',
             title: '支付',
-            cell: ({ row }) =>
-              row.paidWith === 'package'
-                ? `课时包 ${row.packageName ?? ''}`
-                : row.price
-                  ? yuan(row.price)
-                  : '免费',
+            cell: ({ row }) => (
+              <div>
+                {row.paidWith === 'package'
+                  ? `课时包 ${row.packageName ?? ''}`
+                  : row.price
+                    ? yuan(row.price)
+                    : '免费'}
+                {row.bookedBy && <div className="muted nowrap">{row.bookedBy.name} 代约</div>}
+              </div>
+            ),
           },
           {
             colKey: 'status',
@@ -238,6 +246,15 @@ export function Bookings() {
             onChange={(v) => setReason(String(v))}
           />
         </Dialog>
+      )}
+      {booking && (
+        <BookForStudent
+          onClose={() => setBooking(false)}
+          onDone={() => {
+            setBooking(false)
+            void reload()
+          }}
+        />
       )}
     </div>
   )

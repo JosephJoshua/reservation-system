@@ -3,10 +3,10 @@ import { type APIRequestContext, expect, type Locator, type Page } from '@playwr
 export const API = 'http://localhost:8787/api'
 export const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin'
 
-export async function login(page: Page) {
+export async function login(page: Page, username = 'admin', password = ADMIN_PASSWORD) {
   await page.goto('./')
-  await page.getByPlaceholder('登录名').fill('admin')
-  await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD)
+  await page.getByPlaceholder('登录名').fill(username)
+  await page.getByPlaceholder('密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
 }
