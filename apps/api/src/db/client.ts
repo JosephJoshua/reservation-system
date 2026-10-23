@@ -14,3 +14,14 @@ export function openDb(path: string) {
   sqlite.pragma('foreign_keys = ON')
   return drizzle(sqlite, { schema })
 }
+
+/** The query surface shared by the database and a transaction. */
+export type Q = Pick<Db, 'select' | 'insert' | 'update' | 'delete'>
+
+/**
+ * Runs `fn` in an IMMEDIATE transaction: it takes the write lock up front, so two requests can
+ * never both read "slot free" and then both write. `fn` must be synchronous.
+ */
+export function immediate<T>(db: Db, fn: (tx: Q) => T): T {
+  return db.transaction((tx) => fn(tx), { behavior: 'immediate' })
+}
