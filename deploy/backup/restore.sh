@@ -60,10 +60,15 @@ if [ -f "$DB" ]; then
   echo "previous database kept as $kept"
 fi
 rm -f "$DB-wal" "$DB-shm"
-mv "$tmp/app.db" "$DB"
+if ! mv "$tmp/app.db" "$DB"; then
+  if [ -n "${kept:-}" ]; then mv "$kept" "$DB"; fi
+  die "could not put db/$name in place; the previous database is back"
+fi
 
+# The database is replaced from here on, so a failed image copy is a warning, not a failure.
 # Images are only ever added, so copying back what is missing is enough.
-if [ -n "$(rclone lsf "$REMOTE/uploads" --max-depth 1 2>/dev/null | head -n 1)" ]; then
-  rclone copy "$REMOTE/uploads" "$UPLOADS"
+if [ -n "$(rclone lsf "$REMOTE/uploads" --max-depth 1 2>/dev/null | head -n 1)" ] &&
+  ! rclone copy "$REMOTE/uploads" "$UPLOADS"; then
+  echo "WARNING: some images were not copied back; run rs.sh restore-images" >&2
 fi
 echo "restored db/$name"

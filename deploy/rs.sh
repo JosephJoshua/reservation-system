@@ -17,6 +17,7 @@ usage: rs.sh <command>
   verify [backup]           download a backup (default: latest), check it and count its rows
   restore <backup> [tag]    stop production, restore a backup (or "latest"), start production
                             again on [tag] (default: the current release)
+  restore-images            copy back uploaded images missing from production
   status                    show containers and releases
   logs [service]            follow logs (app, app-staging, backup, caddy)
   prune                     remove releases and images other than the newest five
@@ -45,6 +46,15 @@ install_config() {
   done
   if [ -n "$(dc ps -q --status running caddy)" ]; then
     dc exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+  fi
+}
+
+# Records the release being replaced as the one to roll back to; a rollback forgets it instead.
+remember_previous() {
+  if [ -n "${RS_ROLLBACK:-}" ]; then
+    set_var APP_PREV_TAG ""
+  elif [ -n "$1" ] && [ "$1" != "$2" ]; then
+    set_var APP_PREV_TAG "$1"
   fi
 }
 
@@ -88,7 +98,7 @@ case $cmd in
     # A fresh copy first: a release may migrate the database, and this is the way back.
     if prod_running; then dc exec -T backup /app/api/backup/backup.sh; fi
     current=$(get APP_TAG)
-    if [ -n "$current" ] && [ "$current" != "$1" ]; then set_var APP_PREV_TAG "$current"; fi
+    remember_previous "$current" "$1"
     install_config "$1"
     set_var APP_TAG "$1"
     dc up -d --wait app backup caddy
@@ -102,6 +112,8 @@ case $cmd in
   rollback)
     tag=$(get APP_PREV_TAG)
     [ -n "$tag" ] || die "no previous release"
+    # The undone release is not offered as the next rollback.
+    export RS_ROLLBACK=1
     if [ $# -eq 1 ]; then exec "$(pwd)/rs.sh" restore "$1" "$tag"; fi
     exec "$(pwd)/rs.sh" prod "$tag"
     ;;
@@ -120,20 +132,24 @@ case $cmd in
     tag=${2:-$current}
     [ -n "$tag" ] || die "no production release yet: rs.sh restore <backup> <tag>"
     need_image "$tag"
-    dc stop app
+    # The scheduled backup must not copy the database while it is being swapped.
+    dc stop app backup
     if ! APP_TAG=$tag dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1"; then
-      # Nothing was replaced: bring production back as it was.
-      if [ -n "$current" ]; then dc up -d --wait app; fi
+      # restore.sh only fails before the swap: bring production back as it was.
+      if [ -n "$current" ]; then dc up -d --wait app backup; fi
       exit 1
     fi
     # Started straight on the release meant for this database, so no other release migrates it.
     if [ "$tag" != "$current" ]; then
-      [ -z "$current" ] || set_var APP_PREV_TAG "$current"
+      remember_previous "$current" "$tag"
       install_config "$tag"
       set_var APP_TAG "$tag"
     fi
     dc up -d --wait app backup caddy
     echo "production runs $tag on the restored database"
+    ;;
+  restore-images)
+    dc run --rm --no-deps backup sh -c '. /app/api/backup/common.sh && rclone copy "$REMOTE/uploads" "$UPLOADS"'
     ;;
   status)
     dc ps

@@ -37,7 +37,7 @@ const deps: Deps = {
 }
 
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')
-startSweeper(deps)
+const stopSweeper = startSweeper(deps)
 
 // In a deployment the API also serves the built admin app, so one container holds one environment.
 const root = new Hono()
@@ -64,7 +64,7 @@ if (config.adminDir) {
     onFound: (_path, c) => c.header('Cache-Control', 'no-cache'),
   })
   root.use('/admin/*', async (c, next) => {
-    if (/\.\w+$/.test(c.req.path)) return c.notFound()
+    if (c.req.path.startsWith('/admin/assets/')) return c.notFound()
     return index(c, next)
   })
   root.get('/', (c) => c.redirect('/admin/'))
@@ -76,13 +76,14 @@ const server = serve({ fetch: root.fetch, port: config.port }, (info) => {
   console.log(`api listening on http://localhost:${info.port}`)
 })
 
-// A deploy stops the container with SIGTERM: finish open requests, then close the database so
-// SQLite folds its write-ahead log back into the file.
+// A deploy stops the container with SIGTERM: finish open requests and the sweep in progress, then
+// close the database so SQLite folds its write-ahead log back into the file.
 process.on('SIGTERM', () => {
-  setTimeout(() => process.exit(1), 5000).unref()
-  server.close(() => {
+  setTimeout(() => process.exit(1), 8000).unref()
+  const closed = new Promise((resolve) => server.close(resolve))
+  if ('closeIdleConnections' in server) server.closeIdleConnections()
+  Promise.all([closed, stopSweeper()]).then(() => {
     db.$client.close()
     process.exit(0)
   })
-  if ('closeIdleConnections' in server) server.closeIdleConnections()
 })

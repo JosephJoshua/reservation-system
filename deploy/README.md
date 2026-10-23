@@ -85,10 +85,13 @@ on the migrated database: pass the copy taken just before the deploy,
 `rs.sh rollback app-<time>.db.gz` (find it with `rs.sh backups`). That restores it and starts the
 previous release on it, so the newer release never touches it again. Bookings and payments made
 since that copy are lost, so check the orders in the WeChat Pay merchant platform afterwards.
+A rollback is not itself offered as the next rollback: running it twice does not bring the undone
+release back.
 
 `compose.yml`, the `Caddyfile` and `rs.sh` in `/srv/rs` follow the production release: they are
-replaced when a release goes to production, not when one is shipped to staging. A release that
-changes them is tested on staging with the old ones.
+replaced when a release goes to production, not when one is shipped to staging, and `ship.sh`
+always runs the server's `rs.sh`. A release that changes them is tested on staging with the old
+ones.
 
 `rs.sh prune` removes releases and images other than the newest five. The disk fills up slowly
 without it; run it every month or so.
@@ -165,9 +168,11 @@ After changing a settings file, apply it with `docker compose -f compose.yml up 
 A backup is an online SQLite copy (safe while the app writes), checked with `integrity_check`,
 gzipped and stored as `db/app-<UTC time>.db.gz`. Uploaded images are copied to `uploads/`.
 
-`restore` stops production, downloads and checks the copy, keeps the current database next to it
-as `app.db.before-restore-<time>` in the volume, puts the copy in place, copies back any missing
-images and starts production again. Everything written after the copy was taken is lost.
+`restore` stops production and the backup schedule, downloads and checks the copy, keeps the
+current database (with its WAL files) next to it as `app.db.before-restore-<time>` in the volume,
+puts the copy in place, copies back any missing images and starts both again. Everything written
+after the copy was taken is lost. If the image copy fails, the database is still restored; run
+`rs.sh restore-images` to finish it.
 
 **Moving to a new server**, or after losing the old one: do the first setup, ship a release, then
 `rs.sh restore latest <tag>` with the tag `ship.sh` printed. That restores the newest copy and

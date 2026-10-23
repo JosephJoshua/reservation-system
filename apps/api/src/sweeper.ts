@@ -27,19 +27,20 @@ export async function sweep(deps: Deps) {
   await sweepRefunds(deps)
 }
 
+/** Starts sweeping; the returned stop function resolves once a sweep in progress has finished. */
 export function startSweeper(deps: Deps, intervalMs = 30_000) {
-  let running = false
-  const timer = setInterval(async () => {
+  let running: Promise<void> | null = null
+  const timer = setInterval(() => {
     if (running) return
-    running = true
-    try {
-      await sweep(deps)
-    } catch (e) {
-      deps.log('sweep failed', (e as Error).message)
-    } finally {
-      running = false
-    }
+    running = sweep(deps)
+      .catch((e) => deps.log('sweep failed', (e as Error).message))
+      .finally(() => {
+        running = null
+      })
   }, intervalMs)
   timer.unref()
-  return () => clearInterval(timer)
+  return async () => {
+    clearInterval(timer)
+    await running
+  }
 }

@@ -17,8 +17,11 @@ ENV npm_config_registry=$NPM_REGISTRY \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /src
+# Packages are fetched from the lockfile alone, so this layer is reused until dependencies change.
+COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc package.json ./
+RUN pnpm fetch --ignore-scripts
 COPY . .
-RUN pnpm install --frozen-lockfile --ignore-scripts --filter "@rs/api..." --filter "@rs/admin..." \
+RUN pnpm install --offline --frozen-lockfile --ignore-scripts --filter "@rs/api..." --filter "@rs/admin..." \
  && pnpm --filter @rs/admin build \
  && pnpm --filter @rs/api build \
  && mkdir -p /out/node_modules \
