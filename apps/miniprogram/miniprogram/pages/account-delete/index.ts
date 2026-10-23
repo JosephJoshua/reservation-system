@@ -1,5 +1,6 @@
 import type { AccountDeletionDto } from '../../lib/shared'
 import { api, apiOnce, clearSession, errorMessage, showError } from '../../utils/api'
+import { ask } from '../../utils/tap'
 
 Page({
   data: {
@@ -33,14 +34,14 @@ Page({
     if (this.data.deleting || this.data.blockers.length) return
     this.setData({ deleting: true })
     try {
-      const { confirm } = await wx.showModal({
+      const answer = await ask({
         title: '确认注销账号？',
         content: '注销后无法恢复。',
         confirmText: '注销',
         // Error red that keeps its contrast on the light and dark dialog.
         confirmColor: wx.getAppBaseInfo().theme === 'dark' ? '#f07075' : '#c4362f',
       })
-      if (!confirm) return
+      if (!answer?.confirm) return
       await apiOnce('DELETE', '/me')
       clearSession()
       wx.reLaunch({

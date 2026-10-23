@@ -1,3 +1,5 @@
+import { navigateOnce } from '../../utils/nav'
+
 // The consent row shown before the student's details are first collected.
 Component({
   properties: {
@@ -10,7 +12,7 @@ Component({
     },
 
     open(e: WechatMiniprogram.TouchEvent) {
-      wx.navigateTo({ url: `/pages/policy/index?kind=${e.currentTarget.dataset.kind}` })
+      navigateOnce(`/pages/policy/index?kind=${e.currentTarget.dataset.kind}`)
     },
   },
 })

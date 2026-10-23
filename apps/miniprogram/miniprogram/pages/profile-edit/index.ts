@@ -1,5 +1,6 @@
 import { api, showError } from '../../utils/api'
 import { agreePolicies, getMe } from '../../utils/data'
+import { navigateOnce } from '../../utils/nav'
 
 Page({
   data: {
@@ -62,6 +63,6 @@ Page({
   },
 
   openDelete() {
-    wx.navigateTo({ url: '/pages/account-delete/index' })
+    navigateOnce('/pages/account-delete/index')
   },
 })
