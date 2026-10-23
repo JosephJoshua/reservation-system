@@ -2,8 +2,7 @@
 
 Booking system for private table tennis lessons at one venue.
 
-- `apps/miniprogram`: WeChat mini program for students
-- `apps/coach`: web app for coaches (phone first)
+- `apps/miniprogram`: WeChat mini program for students, with a coach mode for coaches
 - `apps/admin`: web app for the venue admin
 - `apps/api`: HTTP API and database
 - `packages/shared`: schemas and booking rules shared by all apps

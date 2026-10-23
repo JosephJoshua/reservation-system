@@ -329,6 +329,9 @@ export async function cancelBooking(
         cancelledBy: by,
         cancelReason: options.reason ?? null,
         late: outcome.late,
+        // A venue cancel mid-lesson drops a mark the coach already made.
+        attendance: null,
+        attendanceAt: null,
       })
       .where(and(eq(bookings.id, booking.id), eq(bookings.status, 'confirmed')))
       .run()

@@ -9,6 +9,10 @@ export interface Coach {
   active: boolean
   sort: number
   lessons: { lessonTypeId: number; price: number | null }[]
+  /** Whether a WeChat user is linked; the coach mode of the mini program needs one. */
+  bound: boolean
+  bindCode: string | null
+  bindCodeExpiresAt: string | null
 }
 
 export interface LessonType {
@@ -57,7 +61,7 @@ export interface Slot {
   booking: { id: number; status: string; student: Person | null } | null
 }
 
-export type AdminBooking = BookingDto & { student: Person | null }
+export type AdminBooking = BookingDto & { student: Person | null; coachNote: string }
 
 export interface StudentDetail extends Person {
   tester: boolean

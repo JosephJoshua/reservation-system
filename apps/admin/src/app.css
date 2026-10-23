@@ -195,3 +195,44 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
+.bind-code-box {
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+  background: var(--td-bg-color-secondarycontainer);
+}
+
+.bind-code-box .muted {
+  margin-top: 8px;
+}
+
+.bind-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  color: var(--td-text-color-primary);
+}
+
+.danger-text {
+  color: var(--td-error-color);
+}
+
+.note-line {
+  max-width: 200px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subhead {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.stat + .muted {
+  margin-top: 4px;
+}

@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter ./apps/api --filter ./apps/admin --filter ./apps/coach dev",
+    "dev": "pnpm --parallel --filter ./apps/api --filter ./apps/admin dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",

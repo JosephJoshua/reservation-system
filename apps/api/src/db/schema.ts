@@ -24,8 +24,9 @@ export const students = sqliteTable('students', {
 
 export const sessions = sqliteTable('sessions', {
   token: text('token').primaryKey(),
-  role: text('role', { enum: ['student', 'admin'] }).notNull(),
+  role: text('role', { enum: ['student', 'admin', 'coach'] }).notNull(),
   studentId: integer('student_id').references(() => students.id),
+  coachId: integer('coach_id').references(() => coaches.id),
   expiresAt: instant('expires_at').notNull(),
 })
 
@@ -37,8 +38,40 @@ export const coaches = sqliteTable('coaches', {
   avatarUrl: text('avatar_url').notNull().default(''),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   sort: integer('sort').notNull().default(0),
+  // The coach's WeChat identity in the mini program, set when they enter a bind code.
+  openid: text('openid').unique(),
+  bindCode: text('bind_code').unique(),
+  bindCodeExpiresAt: instant('bind_code_expires_at'),
   createdAt: createdAt(),
 })
+
+/** Weekly hours a coach takes lessons in. Slots are generated from them. */
+export const coachHours = sqliteTable(
+  'coach_hours',
+  {
+    id: id(),
+    coachId: integer('coach_id')
+      .notNull()
+      .references(() => coaches.id),
+    weekday: integer('weekday').notNull(),
+    startMinute: integer('start_minute').notNull(),
+    endMinute: integer('end_minute').notNull(),
+    lessonMinutes: integer('lesson_minutes').notNull(),
+  },
+  (t) => [index('coach_hours_coach').on(t.coachId)],
+)
+
+/** Venue dates a coach takes off; no slots are generated for them. */
+export const coachDaysOff = sqliteTable(
+  'coach_days_off',
+  {
+    coachId: integer('coach_id')
+      .notNull()
+      .references(() => coaches.id),
+    date: text('date').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.coachId, t.date] })],
+)
 
 export const lessonTypes = sqliteTable('lesson_types', {
   id: id(),
@@ -83,6 +116,12 @@ export const slots = sqliteTable(
     endsAt: instant('ends_at').notNull(),
     // Closed slots take no new bookings; existing bookings stay.
     open: integer('open', { mode: 'boolean' }).notNull().default(true),
+    // Generated slots follow the coach's weekly hours; manual ones are left alone.
+    source: text('source', { enum: ['manual', 'hours'] })
+      .notNull()
+      .default('manual'),
+    // Closed by the weekly hours or a day off rather than by a person, so it can reopen itself.
+    closedBySync: integer('closed_by_sync', { mode: 'boolean' }).notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [index('slots_coach_time').on(t.coachId, t.startsAt)],
@@ -114,6 +153,13 @@ export const bookings = sqliteTable(
     cancelledBy: text('cancelled_by', { enum: ['student', 'venue'] }),
     cancelReason: text('cancel_reason'),
     late: integer('late', { mode: 'boolean' }).notNull().default(false),
+    attendance: text('attendance', { enum: ['attended', 'no_show'] }),
+    attendanceAt: instant('attendance_at'),
+    // Private to the coach and the venue.
+    coachNote: text('coach_note').notNull().default(''),
+    // When the coach was told about the booking and its cancellation, or decided not to be.
+    coachToldBookedAt: instant('coach_told_booked_at'),
+    coachToldCancelledAt: instant('coach_told_cancelled_at'),
     createdAt: createdAt(),
   },
   (t) => [

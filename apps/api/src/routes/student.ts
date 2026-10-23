@@ -97,7 +97,13 @@ export function studentRoutes(deps: Deps) {
 
   app.get('/me', (c) => {
     const s = me(c.get('studentId'))
-    return c.json({ id: s.id, name: s.name, phone: s.phone })
+    // Coaches use the same WeChat account, so the profile page can offer the coach mode.
+    const coach = db
+      .select({ id: coaches.id })
+      .from(coaches)
+      .where(and(eq(coaches.openid, s.openid), eq(coaches.active, true)))
+      .get()
+    return c.json({ id: s.id, name: s.name, phone: s.phone, isCoach: Boolean(coach) })
   })
 
   // PUT rather than PATCH because wx.request cannot send PATCH. Fields left out are kept.

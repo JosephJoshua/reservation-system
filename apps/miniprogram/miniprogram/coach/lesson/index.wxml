@@ -1,0 +1,85 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="primary" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="{{lesson.canCancel ? 'has-action-bar' : 'page-bottom'}}">
+  <view class="status">
+    <view class="status-text-block">
+      <view class="status-title">{{lesson.student.name || '未填写姓名'}}</view>
+      <view class="status-text">{{when}}</view>
+    </view>
+    <t-tag size="large" theme="{{tag.tone}}" variant="light">{{tag.text}}</t-tag>
+  </view>
+
+  <t-cell-group theme="card">
+    <t-cell title="课程" note="{{lessonName}}" />
+    <t-cell wx:if="{{lesson.student.phone}}" title="电话" note="{{lesson.student.phone}}" arrow hover bind:click="call" />
+    <t-cell title="支付" note="{{payment}}" />
+    <t-cell title="上课次数" note="{{together}}" />
+    <t-cell wx:if="{{lesson.status === 'cancelled'}}" title="取消原因" description="{{cancelReason}}" />
+  </t-cell-group>
+
+  <block wx:if="{{lesson.status === 'confirmed' || lesson.status === 'completed'}}">
+    <view class="section-title">签到</view>
+    <view wx:if="{{lesson.canMarkAttendance}}" class="attendance">
+      <view class="grow">
+        <t-button block t-class="action-button" theme="primary" variant="{{lesson.attendance === 'attended' ? 'base' : 'outline'}}" icon="{{lesson.attendance === 'attended' ? 'check' : ''}}" disabled="{{marking}}" data-value="attended" bind:tap="mark">到课</t-button>
+      </view>
+      <view class="grow">
+        <t-button block t-class="action-button" theme="danger" variant="{{lesson.attendance === 'no_show' ? 'base' : 'outline'}}" icon="{{lesson.attendance === 'no_show' ? 'check' : ''}}" disabled="{{marking}}" data-value="no_show" bind:tap="mark">缺席</t-button>
+      </view>
+    </view>
+    <view wx:else class="card attendance-note">{{attendanceNote}}</view>
+    <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用和课时。再点一次已选的按钮可撤销。</view>
+  </block>
+
+  <block wx:if="{{noteEditable}}">
+  <view class="section-title note-title">
+    <text>课堂备注</text>
+    <text wx:if="{{noteDirty}}" class="note-save" bind:tap="saveNote">{{savingNote ? '保存中' : '保存'}}</text>
+  </view>
+  <view class="card">
+    <t-textarea
+      value="{{note}}"
+      placeholder="练了什么、下次注意什么，仅你和场馆可见"
+      maxlength="{{500}}"
+      indicator
+      autosize="{{noteSize}}"
+      disableDefaultPadding
+      bind:change="onNote"
+      bind:blur="saveNote"
+    />
+  </view>
+  </block>
+  <block wx:elif="{{note}}">
+    <view class="section-title">课堂备注</view>
+    <view class="card note-text">{{note}}</view>
+  </block>
+
+  <block wx:if="{{history.length}}">
+    <view class="section-title">之前的课</view>
+    <view class="card">
+      <view wx:for="{{history}}" wx:key="id" class="history">
+        <view class="history-head">
+          <text class="history-date">{{item.date}}</text>
+          <text class="history-lesson">{{item.lesson}}</text>
+          <text wx:if="{{item.attendance}}" class="history-mark {{item.attendanceClass}}">{{item.attendance}}</text>
+        </view>
+        <view wx:if="{{item.note}}" class="history-note">{{item.note}}</view>
+      </view>
+    </view>
+  </block>
+
+  <view wx:if="{{lesson.canCancel}}" class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="danger" variant="outline" loading="{{cancelling}}" bind:tap="cancel">取消这节课</t-button>
+    </view>
+  </view>
+</view>

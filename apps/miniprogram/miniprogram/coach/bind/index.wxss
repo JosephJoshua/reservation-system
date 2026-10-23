@@ -1,0 +1,26 @@
+@import '../../styles/common.wxss';
+
+.intro {
+  padding: 64rpx 48rpx 48rpx;
+  text-align: center;
+}
+
+.intro-icon {
+  display: flex;
+  justify-content: center;
+  color: var(--td-brand-color);
+}
+
+.intro-title {
+  margin-top: 24rpx;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.intro-text {
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+}

@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "教练入口",
+  "usingComponents": {
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
+    "t-icon": "tdesign-miniprogram/icon/icon",
+    "t-input": "tdesign-miniprogram/input/input"
+  }
+}

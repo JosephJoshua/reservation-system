@@ -1,0 +1,187 @@
+@import '../../styles/common.wxss';
+
+.day {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  min-height: 112rpx;
+  padding: 28rpx 24rpx 28rpx 32rpx;
+  box-sizing: border-box;
+}
+
+.day + .day::before,
+.off + .off::before,
+.has-days .off-add::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 32rpx;
+  right: 0;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.day-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.day-name {
+  width: 96rpx;
+  flex-shrink: 0;
+  font-size: 32rpx;
+  line-height: 56rpx;
+  color: var(--td-text-color-primary);
+}
+
+.day-windows {
+  flex: 1;
+  min-width: 0;
+}
+
+.day-off {
+  font-size: 28rpx;
+  line-height: 56rpx;
+  color: var(--td-text-color-placeholder);
+}
+
+.window {
+  display: flex;
+  align-items: center;
+  min-height: 56rpx;
+}
+
+.window + .window {
+  margin-top: 12rpx;
+}
+
+.window-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.window-time {
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+/* Wraps as a whole under the time when the row is too narrow, never word by word. */
+.window-sub {
+  display: inline-block;
+  margin-left: 16rpx;
+  white-space: nowrap;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+/* 88rpx square: a 44px tap target around a small icon. */
+.window-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  height: 88rpx;
+  margin: -16rpx 0;
+  color: var(--td-text-color-placeholder);
+}
+
+.day-add {
+  display: flex;
+  align-items: center;
+  height: 56rpx;
+  margin-left: 8rpx;
+  color: var(--td-text-color-brand);
+}
+
+.off {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 112rpx;
+  padding: 0 32rpx;
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+.off-remove {
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  padding-left: 32rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-brand);
+}
+
+.off-add {
+  justify-content: flex-start;
+  gap: 12rpx;
+  color: var(--td-text-color-brand);
+}
+
+.sheet {
+  padding: 32rpx 0 calc(24rpx + env(safe-area-inset-bottom));
+  background-color: var(--td-bg-color-container);
+  border-radius: 24rpx 24rpx 0 0;
+}
+
+.sheet-title {
+  padding: 0 32rpx 24rpx;
+  font-size: 34rpx;
+  font-weight: 600;
+  text-align: center;
+  color: var(--td-text-color-primary);
+}
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 112rpx;
+  padding: 0 32rpx;
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.sheet-value {
+  color: var(--td-text-color-brand);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 16rpx;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  height: 72rpx;
+  padding: 0 28rpx;
+  border-radius: 36rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+  background-color: var(--td-bg-color-secondarycontainer);
+}
+
+.chip-active {
+  color: var(--td-text-color-brand);
+  background-color: var(--td-brand-color-light);
+}
+
+.sheet-hint {
+  min-height: 40rpx;
+  padding: 8rpx 32rpx 24rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.sheet-actions {
+  padding: 0 32rpx;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

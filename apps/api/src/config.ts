@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import type { WechatPayConfig } from './pay/wechat'
+import { parseTemplate } from './wx-notify'
 
 const env = process.env
 const production = env.NODE_ENV === 'production'
@@ -43,6 +44,20 @@ function adminPassword() {
   return 'admin'
 }
 
+function notices() {
+  // Which build of the mini program a tapped message opens.
+  const states = ['developer', 'trial', 'formal'] as const
+  const state = states.find((s) => s === (env.WECHAT_MINIPROGRAM_STATE ?? 'formal'))
+  if (!state) throw new Error('WECHAT_MINIPROGRAM_STATE must be developer, trial or formal')
+  return {
+    state,
+    templates: {
+      booked: parseTemplate(env.WECHAT_NOTICE_COACH_BOOKED),
+      cancelled: parseTemplate(env.WECHAT_NOTICE_COACH_CANCELLED),
+    },
+  }
+}
+
 export const config = {
   production,
   port: Number(env.PORT ?? 8787),
@@ -52,6 +67,7 @@ export const config = {
   wechatAppId: env.WECHAT_APPID,
   wechatAppSecret: env.WECHAT_APP_SECRET,
   wechatPay: wechatPay(),
+  notices: notices(),
 }
 
 if (production && (!config.wechatPay || !config.wechatAppSecret)) {

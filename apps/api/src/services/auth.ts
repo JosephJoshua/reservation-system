@@ -1,15 +1,17 @@
 import { timingSafeEqual } from 'node:crypto'
 import { and, eq, gt, lt } from 'drizzle-orm'
 import type { MiddlewareHandler } from 'hono'
-import { sessions, students } from '../db/schema'
+import { coaches, sessions, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { newToken } from './ids'
 
 const STUDENT_SESSION_MS = 30 * 86_400_000
 const ADMIN_SESSION_MS = 12 * 3_600_000
+const COACH_SESSION_MS = 30 * 86_400_000
 
 export type AuthVars = { Variables: { studentId: number } }
+export type CoachVars = { Variables: { coachId: number } }
 
 export async function loginStudent(deps: Deps, code: string) {
   const openid = await deps.wxLogin(code)
@@ -69,11 +71,26 @@ export function loginAdmin(deps: Deps, password: string, client: string) {
   return { token }
 }
 
+/** Starts a session for a coach bound to the WeChat user who just logged in. */
+export function startCoachSession(deps: Deps, coachId: number) {
+  const token = newToken()
+  deps.db
+    .insert(sessions)
+    .values({
+      token,
+      role: 'coach',
+      coachId,
+      expiresAt: new Date(deps.now().getTime() + COACH_SESSION_MS),
+    })
+    .run()
+  return token
+}
+
 function bearer(header: string | undefined) {
   return header?.startsWith('Bearer ') ? header.slice(7) : undefined
 }
 
-function session(deps: Deps, token: string | undefined, role: 'student' | 'admin') {
+function session(deps: Deps, token: string | undefined, role: 'student' | 'admin' | 'coach') {
   if (!token) return undefined
   return deps.db
     .select()
@@ -98,6 +115,19 @@ export function requireAdmin(deps: Deps): MiddlewareHandler {
     if (!session(deps, bearer(c.req.header('Authorization')), 'admin')) {
       throw new ApiError(401, 'unauthorized', '请重新登录')
     }
+    await next()
+  }
+}
+
+export function requireCoach(deps: Deps): MiddlewareHandler<CoachVars> {
+  return async (c, next) => {
+    const s = session(deps, bearer(c.req.header('Authorization')), 'coach')
+    // A coach who was unbound or deactivated loses access at once.
+    const coach = s?.coachId
+      ? deps.db.select().from(coaches).where(eq(coaches.id, s.coachId)).get()
+      : undefined
+    if (!coach?.openid || !coach.active) throw new ApiError(401, 'unauthorized', '请重新登录')
+    c.set('coachId', coach.id)
     await next()
   }
 }
