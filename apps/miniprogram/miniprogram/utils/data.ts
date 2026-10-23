@@ -15,10 +15,12 @@ export function getMe(): Promise<MeDto> {
   return api<MeDto>('GET', '/me')
 }
 
+const NOTICE_PROMPT_MAX_MS = 10_000
+
 /**
  * Asks to send the student the given messages, one each. WeChat only shows the prompt when this
  * starts inside a tap handler, before any await. Resolves once the prompt is closed, so a payment
- * sheet does not open on top of it.
+ * sheet does not open on top of it, or after 10 seconds at most.
  */
 export function askForNotices(
   templates: MeDto['noticeTemplates'],
@@ -27,7 +29,15 @@ export function askForNotices(
   const tmplIds = kinds.flatMap((kind) => templates[kind] ?? [])
   if (!tmplIds.length) return Promise.resolve()
   return new Promise((resolve) => {
-    wx.requestSubscribeMessage({ tmplIds: tmplIds.slice(0, 3), complete: () => resolve() })
+    // Booking must never hang on the prompt, should WeChat not report back.
+    const fallback = setTimeout(resolve, NOTICE_PROMPT_MAX_MS)
+    wx.requestSubscribeMessage({
+      tmplIds: tmplIds.slice(0, 3),
+      complete: () => {
+        clearTimeout(fallback)
+        resolve()
+      },
+    })
   })
 }
 
