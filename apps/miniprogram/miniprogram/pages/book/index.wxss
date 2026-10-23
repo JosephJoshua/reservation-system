@@ -65,6 +65,11 @@
   margin-top: 24rpx;
 }
 
+.day-start {
+  display: inline-block;
+  width: 0;
+}
+
 .day {
   width: 104rpx;
   padding: 16rpx 0;

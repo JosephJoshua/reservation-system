@@ -254,9 +254,6 @@ try {
       (d) => d.slotsState === 'ready' && Number(d.availableCount) > 0,
     )
     await screenshot('book-private')
-    await miniProgram.pageScrollTo(10000)
-    await screenshot('book-private-bottom')
-    await miniProgram.pageScrollTo(0)
     const slots = (await book.data('slots')) as { available: boolean }[]
     await tap(
       book,
@@ -288,6 +285,9 @@ try {
       'pages/book/index',
       (d) => d.slotsState === 'ready' && Number(d.availableCount) > 0,
     )
+    await miniProgram.pageScrollTo(10000)
+    await screenshot('book-all-coaches-bottom')
+    await miniProgram.pageScrollTo(0)
     const slots = (await book.data('slots')) as { id: number; available: boolean }[]
     const index = slots.findIndex((s) => s.available)
     const slot = slots[index]

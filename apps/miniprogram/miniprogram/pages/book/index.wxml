@@ -41,6 +41,7 @@
     </scroll-view>
 
     <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="{{dayAnchor}}" class="day-scroll">
+      <view id="day-start" class="day-start" />
       <view class="day-row">
         <view
           wx:for="{{days}}"

@@ -143,7 +143,10 @@ Page({
       const days = this.data.days
       const next = days[days.findIndex((d) => d.key === date) + 1]
       if (this.autoAdvance && availableCount === 0 && next) {
-        this.setData({ date: next.key, dayAnchor: `day-${date}` })
+        // Days on the first screen keep the strip at its start; later ones scroll the day
+        // before into view, so the picked day keeps some room on its left.
+        const index = days.indexOf(next)
+        this.setData({ date: next.key, dayAnchor: index < 4 ? 'day-start' : `day-${date}` })
         this.loadSlots()
         return
       }
