@@ -329,7 +329,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="用户协议" help="首次付款前展示">
+          <Field label="用户协议" help="留空则使用内置协议，首次预约或购买前需同意">
             <Textarea
               value={s.policies.agreement}
               maxlength={5000}
@@ -337,6 +337,33 @@ export function Settings() {
               onChange={(v) =>
                 set((d) => {
                   d.policies.agreement = String(v)
+                })
+              }
+            />
+          </Field>
+        </div>
+      </Card>
+
+      <Card title="运营主体" bordered>
+        <div className="fields form-narrow">
+          <Field label="主体名称" help="与小程序后台的主体一致，写入隐私政策。留空则用场馆名称">
+            <Input
+              value={s.legal.operator}
+              maxlength={60}
+              onChange={(v) =>
+                set((d) => {
+                  d.legal.operator = String(v)
+                })
+              }
+            />
+          </Field>
+          <Field label="隐私联系方式" help="处理个人信息问题的电话或邮箱。留空则用场馆电话">
+            <Input
+              value={s.legal.contact}
+              maxlength={60}
+              onChange={(v) =>
+                set((d) => {
+                  d.legal.contact = String(v)
                 })
               }
             />

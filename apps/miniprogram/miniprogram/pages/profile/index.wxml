@@ -27,13 +27,15 @@
   </t-cell-group>
 </view>
 
-<view wx:if="{{hasBookingPolicy || hasAgreement}}" class="group">
+<view class="group">
   <t-cell-group theme="card">
     <t-cell wx:if="{{hasBookingPolicy}}" title="预约须知" left-icon="file" arrow hover data-kind="booking" bind:click="openPolicy" />
-    <t-cell wx:if="{{hasAgreement}}" title="用户协议" left-icon="file-safety" arrow hover data-kind="agreement" bind:click="openPolicy" />
+    <t-cell title="用户协议" left-icon="file-safety" arrow hover data-kind="agreement" bind:click="openPolicy" />
+    <t-cell title="隐私政策" left-icon="secured" arrow hover data-kind="privacy" bind:click="openPolicy" />
   </t-cell-group>
 </view>
 
 <view wx:if="{{meLoaded && !isCoach}}" class="coach-entry">
   <text class="coach-link" bind:tap="openCoach">教练入口</text>
 </view>
+<privacy-popup id="privacy-popup" />

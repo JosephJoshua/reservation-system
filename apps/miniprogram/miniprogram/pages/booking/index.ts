@@ -123,4 +123,9 @@ Page({
     const phone = this.data.venue?.phone
     if (phone) wx.makePhoneCall({ phoneNumber: phone })
   },
+
+  onShareAppMessage() {
+    const name = this.data.venue?.name
+    return { title: name ? `${name} · 课程预约` : '课程预约', path: '/pages/booking/index' }
+  },
 })

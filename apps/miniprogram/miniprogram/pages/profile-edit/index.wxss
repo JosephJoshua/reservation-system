@@ -3,3 +3,19 @@
 .form {
   padding-top: 24rpx;
 }
+
+.delete-entry {
+  display: flex;
+  justify-content: center;
+  padding-top: 48rpx;
+}
+
+/* Quiet, but still a 44px tap target. */
+.delete-link {
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  padding: 0 32rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-placeholder);
+}

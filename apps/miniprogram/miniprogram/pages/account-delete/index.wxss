@@ -1,0 +1,37 @@
+@import '../../styles/common.wxss';
+
+.list {
+  padding: 8rpx 0;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  padding: 20rpx 32rpx;
+}
+
+.item-icon {
+  display: flex;
+  flex-shrink: 0;
+  height: 44rpx;
+  align-items: center;
+  color: var(--td-text-color-placeholder);
+}
+
+.item-text {
+  flex: 1;
+  margin-left: 16rpx;
+  font-size: 30rpx;
+  line-height: 44rpx;
+  color: var(--td-text-color-primary);
+}
+
+.blocker .item-icon {
+  color: var(--td-error-color);
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

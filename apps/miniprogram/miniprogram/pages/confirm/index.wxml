@@ -64,17 +64,12 @@
 
   <view class="footnote">
     <view>{{cancelRule}}</view>
-    <view wx:if="{{hasPolicies && !showAgreement}}" class="links">
+    <view wx:if="{{hasBookingPolicy}}" class="links">
       <text class="link" data-kind="booking" bind:tap="openPolicy">预约须知</text>
     </view>
   </view>
 
-  <view wx:if="{{showAgreement}}" class="agree" bind:tap="toggleAgree">
-    <view class="{{agreed ? 'checked' : 'unchecked'}}"><t-icon name="{{agreed ? 'check-circle-filled' : 'circle'}}" size="36rpx" /></view>
-    <view class="agree-text">
-      我已阅读并同意<text class="link" data-kind="agreement" catch:tap="openPolicy">《用户协议》</text>和<text class="link" data-kind="booking" catch:tap="openPolicy">《预约须知》</text>
-    </view>
-  </view>
+  <agree-check wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
 
   <view class="action-bar">
     <view class="grow">

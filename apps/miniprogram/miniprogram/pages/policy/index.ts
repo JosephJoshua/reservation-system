@@ -1,7 +1,8 @@
-import { errorMessage } from '../../utils/api'
-import { getCatalog } from '../../utils/data'
+import type { CatalogDto } from '../../lib/shared'
+import { errorMessage, publicApi } from '../../utils/api'
 
-const TITLES = { booking: '预约须知', agreement: '用户协议' } as const
+const TITLES = { booking: '预约须知', agreement: '用户协议', privacy: '隐私政策' } as const
+type Kind = keyof typeof TITLES
 
 Page({
   data: {
@@ -12,11 +13,12 @@ Page({
   },
 
   async onLoad(query: Record<string, string | undefined>) {
-    const kind = query.kind === 'agreement' ? 'agreement' : 'booking'
+    const kind = (['agreement', 'privacy'] as Kind[]).find((k) => k === query.kind) ?? 'booking'
     wx.setNavigationBarTitle({ title: TITLES[kind] })
     try {
-      const catalog = await getCatalog()
-      this.setData({ state: 'ready', text: catalog.policies[kind] })
+      // Public, so the policies can be read before logging in or agreeing to anything.
+      const policies = await publicApi<CatalogDto['policies']>('GET', '/policies')
+      this.setData({ state: 'ready', text: policies[kind] })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }

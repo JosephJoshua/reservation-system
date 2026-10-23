@@ -4,6 +4,10 @@
     <t-input label="手机号" placeholder="用于课程变动通知" type="number" maxlength="{{11}}" value="{{phone}}" bind:change="onPhone" />
   </t-cell-group>
   <view class="footnote">仅场馆工作人员可见，用于上课联系和课程变动通知。</view>
+  <agree-check wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
+  <view class="delete-entry">
+    <text class="delete-link" bind:tap="openDelete">注销账号</text>
+  </view>
 </view>
 <view class="action-bar">
   <view class="grow">

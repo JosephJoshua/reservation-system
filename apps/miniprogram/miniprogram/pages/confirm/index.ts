@@ -1,13 +1,6 @@
 import type { BookingQuoteDto, CreateBookingResponse, MeDto, StudentDto } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
-import {
-  askForNotices,
-  cancelRuleText,
-  getCatalog,
-  getMe,
-  hasAgreed,
-  setAgreed,
-} from '../../utils/data'
+import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
@@ -43,7 +36,7 @@ Page({
     needPhone: false,
     name: '',
     phone: '',
-    hasPolicies: false,
+    hasBookingPolicy: false,
     showAgreement: false,
     agreed: false,
     noticeTemplates: {} as MeDto['noticeTemplates'],
@@ -82,7 +75,6 @@ Page({
         return
       }
       const { price, package: pkg, perClassEnabled } = quote
-      const hasPolicies = Boolean(catalog.policies.booking || catalog.policies.agreement)
       this.setData({
         state: 'ready',
         lessonName: lessonType.name,
@@ -100,8 +92,8 @@ Page({
         cancelRule: cancelRuleText(catalog.booking.cancelDeadlineHours, catalog.booking.lateCancel),
         needName: !me.name,
         needPhone: !me.phone,
-        hasPolicies,
-        showAgreement: hasPolicies && !hasAgreed(),
+        hasBookingPolicy: Boolean(catalog.policies.booking),
+        showAgreement: !me.agreedPolicies,
         noticeTemplates: me.noticeTemplates,
       })
     } catch (e) {
@@ -125,8 +117,8 @@ Page({
     this.setData({ phone: e.detail.value })
   },
 
-  toggleAgree() {
-    this.setData({ agreed: !this.data.agreed })
+  onAgree(e: WechatMiniprogram.CustomEvent<{ checked: boolean }>) {
+    this.setData({ agreed: e.detail.checked })
   },
 
   openPolicy(e: WechatMiniprogram.TouchEvent) {
@@ -142,7 +134,7 @@ Page({
     const { needName, needPhone, showAgreement, agreed } = this.data
     if (needName && !this.data.name.trim()) return '请填写姓名'
     if (needPhone && !/^1\d{10}$/.test(this.data.phone.trim())) return '请填写正确的手机号'
-    if (showAgreement && !agreed) return '请先阅读并同意相关条款'
+    if (showAgreement && !agreed) return '请先阅读并同意用户协议和隐私政策'
     return ''
   },
 
@@ -166,9 +158,14 @@ Page({
     }
     this.setData({ submitting: true })
     try {
+      // Asked first, while the tap still counts as the user's action for WeChat.
       await askForNotices(this.data.noticeTemplates, ['booked', 'reminder', 'cancelled'])
+      // Consent comes before the contact details, which the API refuses without it.
+      if (this.data.showAgreement) {
+        await agreePolicies()
+        this.setData({ showAgreement: false })
+      }
       await this.saveProfile()
-      if (this.data.showAgreement) setAgreed()
       const res = await api<CreateBookingResponse>('POST', '/bookings', {
         slotId: this.data.slotId,
         lessonTypeId: this.data.lessonTypeId,

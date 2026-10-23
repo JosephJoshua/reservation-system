@@ -1,0 +1,28 @@
+/* The row is the tap target, so it is at least 44px tall. */
+.agree {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  padding: 0 32rpx;
+}
+
+.box {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--td-text-color-placeholder);
+}
+
+.box.checked {
+  color: var(--td-brand-color);
+}
+
+.text {
+  margin-left: 12rpx;
+  font-size: 26rpx;
+  line-height: 36rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.link {
+  color: var(--td-text-color-link);
+}

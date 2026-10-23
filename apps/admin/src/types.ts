@@ -83,6 +83,7 @@ export type AdminBooking = BookingDto & { student: Person | null; coachNote: str
 
 export interface StudentDetail extends Person {
   tester: boolean
+  deletedAt: string | null
   createdAt: string
   packages: PackageDto[]
   bookings: BookingDto[]
@@ -90,6 +91,7 @@ export interface StudentDetail extends Person {
 
 export interface StudentRow extends Person {
   tester: boolean
+  deletedAt: string | null
   createdAt: string
 }
 

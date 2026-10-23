@@ -54,3 +54,4 @@
     </view>
   </view>
 </view>
+<privacy-popup id="privacy-popup" />

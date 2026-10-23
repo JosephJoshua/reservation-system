@@ -175,6 +175,8 @@ try {
   check(lesson, 'no 60-minute lesson type')
   const book = async (name: string, days: number) => {
     const token = (await call('POST', '/auth/student', { code: `dev:${name}` })).token
+    const { version } = await call('GET', '/policies')
+    await call('POST', '/me/consent', { version }, token)
     await call(
       'PUT',
       '/me',

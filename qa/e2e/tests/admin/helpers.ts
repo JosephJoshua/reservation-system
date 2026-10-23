@@ -29,11 +29,17 @@ export function dialog(page: Page) {
   return page.locator('.t-dialog:visible')
 }
 
-/** Signs in a student through the development login and returns their token. */
+/** Signs in a student through the development login, agrees to the policies, returns the token. */
 export async function student(request: APIRequestContext, name: string) {
   const res = await request.post(`${API}/auth/student`, { data: { code: `dev:${name}` } })
   expect(res.ok()).toBeTruthy()
   const { token } = await res.json()
+  const { version } = await (await request.get(`${API}/policies`)).json()
+  const consent = await request.post(`${API}/me/consent`, {
+    data: { version },
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  expect(consent.ok()).toBeTruthy()
   return token as string
 }
 

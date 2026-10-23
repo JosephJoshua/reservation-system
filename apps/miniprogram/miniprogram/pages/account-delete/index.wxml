@@ -1,0 +1,56 @@
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="has-action-bar">
+  <view wx:if="{{blockers.length}}">
+    <view class="section-title">暂时无法注销</view>
+    <view class="card list">
+      <view wx:for="{{blockers}}" wx:key="*this" class="item blocker">
+        <view class="item-icon"><t-icon name="error-circle" size="36rpx" /></view>
+        <view class="item-text">{{item}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="section-title">注销后</view>
+  <view class="card list">
+    <view class="item">
+      <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
+      <view class="item-text">删除你的姓名、手机号和微信登录信息</view>
+    </view>
+    <view class="item">
+      <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
+      <view class="item-text">删除教练对你的课堂备注</view>
+    </view>
+    <view class="item">
+      <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
+      <view class="item-text">订单、支付和退款记录按法规要求匿名保存</view>
+    </view>
+    <view class="item">
+      <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
+      <view class="item-text">账号无法恢复。再次打开小程序将作为新用户</view>
+    </view>
+  </view>
+  <view class="footnote">如需导出上课记录，请在注销前联系场馆。</view>
+
+  <view class="action-bar">
+    <view class="grow">
+      <t-button
+        theme="danger"
+        block
+        t-class="action-button"
+        loading="{{deleting}}"
+        disabled="{{blockers.length > 0}}"
+        bind:tap="confirmDelete"
+      >注销账号</t-button>
+    </view>
+  </view>
+</view>
