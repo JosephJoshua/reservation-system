@@ -111,7 +111,8 @@ export async function createBooking(
   const created = immediate(deps.db, (tx) => {
     const settings = getSettings(tx)
     const student = tx.select().from(students).where(eq(students.id, studentId)).get()
-    if (!student) throw notFound('用户')
+    // Deleted while this request was on its way.
+    if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
     if (!slot) throw notFound('时段')
     // A repeated tap or a retry after a lost response gets the booking it already made, rather

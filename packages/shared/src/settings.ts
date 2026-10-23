@@ -45,6 +45,11 @@ export const venueSettings = z.object({
     booking: z.string().max(2000),
     agreement: z.string().max(5000),
   }),
+  // Who runs the mini program, as named in the privacy policy and the mini program console.
+  legal: z.object({
+    operator: z.string().max(60),
+    contact: z.string().max(60),
+  }),
 })
 
 export type VenueSettings = z.infer<typeof venueSettings>
@@ -77,4 +82,5 @@ export const defaultSettings: VenueSettings = {
     booking: '课前 24 小时以上取消，全额退款或退回课时；之后取消视为已上课。',
     agreement: '',
   },
+  legal: { operator: '', contact: '' },
 }

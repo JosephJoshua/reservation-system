@@ -24,6 +24,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
+import { accountDeleted } from '../services/account'
 import { loginAdmin, logout, requireAdmin } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
@@ -732,6 +733,7 @@ export function adminRoutes(deps: Deps) {
           name: students.name,
           phone: students.phone,
           tester: students.tester,
+          deletedAt: students.deletedAt,
           createdAt: students.createdAt,
         })
         .from(students)
@@ -765,6 +767,7 @@ export function adminRoutes(deps: Deps) {
       name: student.name,
       phone: student.phone,
       tester: student.tester,
+      deletedAt: student.deletedAt,
       createdAt: student.createdAt,
       packages: packageViews(db, pkgRows, now),
       bookings: bookingViews(db, bookingRows, getSettings(db).booking, now),
@@ -786,12 +789,17 @@ export function adminRoutes(deps: Deps) {
         })
         .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
-    const changed = db
-      .update(students)
+    const student = db
+      .select({ deletedAt: students.deletedAt })
+      .from(students)
+      .where(eq(students.id, idParam(c)))
+      .get()
+    if (!student) throw notFound('学员')
+    if (student.deletedAt) throw accountDeleted()
+    db.update(students)
       .set(body)
       .where(eq(students.id, idParam(c)))
       .run()
-    if (changed.changes === 0) throw notFound('学员')
     return c.body(null, 204)
   })
 

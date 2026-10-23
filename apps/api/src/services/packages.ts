@@ -17,6 +17,7 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import type { PaymentParams } from '../pay/gateway'
+import { accountDeleted, refuseDeletedOwner } from './account'
 import { newOutRefundNo, newOutTradeNo } from './ids'
 import { createPackageFromOrder, startPaymentOrRelease } from './orders'
 import { refundedSoFar, submitRefund } from './refunds'
@@ -44,7 +45,9 @@ export async function purchasePackage(
       .where(eq(lessonTypes.id, product.lessonTypeId))
       .get()
     const student = tx.select().from(students).where(eq(students.id, studentId)).get()
-    if (!lessonType?.active || !student || (lessonType.adminOnly && !student.tester)) {
+    // Deleted while this request was on its way.
+    if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
+    if (!lessonType?.active || (lessonType.adminOnly && !student.tester)) {
       throw notFound('课时包')
     }
     const price = packagePrice(
@@ -254,6 +257,7 @@ export function rejectPackageRefund(deps: Deps, refundId: number, note: string) 
 /** Admin adds lessons to a package, for make-up lessons or goodwill. */
 export function grantLessons(deps: Deps, packageId: number, lessons: number, note: string) {
   immediate(deps.db, (tx) => {
+    refuseDeletedOwner(tx, packageId)
     const changed = tx
       .update(packages)
       .set({ lessonsRemaining: sql`${packages.lessonsRemaining} + ${lessons}` })
@@ -269,6 +273,7 @@ export function grantLessons(deps: Deps, packageId: number, lessons: number, not
 
 export function extendPackage(deps: Deps, packageId: number, days: number, note: string) {
   immediate(deps.db, (tx) => {
+    refuseDeletedOwner(tx, packageId)
     const pkg = tx.select().from(packages).where(eq(packages.id, packageId)).get()
     if (pkg?.status !== 'active')
       throw new ApiError(409, 'package_not_active', '只能延长使用中的课时包')
@@ -306,11 +311,12 @@ export function sellPackageOffline(
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const student = tx
-      .select({ id: students.id })
+      .select({ id: students.id, deletedAt: students.deletedAt })
       .from(students)
       .where(eq(students.id, input.studentId))
       .get()
     if (!student) throw notFound('学员')
+    if (student.deletedAt) throw accountDeleted()
     const product = tx
       .select()
       .from(packageProducts)

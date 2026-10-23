@@ -51,7 +51,8 @@ export interface CatalogDto {
     cancelDeadlineHours: number
     lateCancel: LateCancelRule
   }
-  policies: { booking: string; agreement: string }
+  /** `agreement` falls back to the built-in text; `version` is what a consent agrees to. */
+  policies: { booking: string; agreement: string; privacy: string; version: string }
 }
 
 export interface BannerDto {
@@ -179,6 +180,13 @@ export interface MeDto extends StudentDto {
   isCoach: boolean
   /** Subscription message template IDs that are set up, for the pages that ask for them. */
   noticeTemplates: Partial<Record<StudentNoticeKind, string>>
+  /** Whether the student agreed to the current user agreement and privacy policy. */
+  agreedPolicies: boolean
+}
+
+/** GET /me/deletion: why the account cannot be deleted yet; empty when it can. */
+export interface AccountDeletionDto {
+  blockers: string[]
 }
 
 export interface ApiErrorBody {
