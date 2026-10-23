@@ -12,14 +12,19 @@ let lastSlotSync = 0
  * 30 seconds; slots from coaches' weekly hours roll forward once an hour.
  */
 export async function sweep(deps: Deps) {
+  // Coach chores run on their own, so a failure in payments does not stop them, or the reverse.
+  try {
+    const now = deps.now().getTime()
+    if (Math.abs(now - lastSlotSync) >= SLOT_SYNC_MS) {
+      lastSlotSync = now
+      syncAllSlots(deps)
+    }
+    await notifyCoaches(deps)
+  } catch (e) {
+    deps.log('coach sweep failed', (e as Error).message)
+  }
   await expireOrders(deps)
   await sweepRefunds(deps)
-  await notifyCoaches(deps)
-  const now = deps.now().getTime()
-  if (Math.abs(now - lastSlotSync) >= SLOT_SYNC_MS) {
-    lastSlotSync = now
-    syncAllSlots(deps)
-  }
 }
 
 export function startSweeper(deps: Deps, intervalMs = 30_000) {

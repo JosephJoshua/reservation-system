@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8b345831-8964-41c7-a920-d6d27a24867d",
+  "id": "980016f7-ec07-47f6-b702-22e08deae406",
   "prevId": "9f19953e-f0b6-48f6-b750-1e42fcb06af2",
   "tables": {
     "banners": {
@@ -1506,6 +1506,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'manual'"
+        },
+        "closed_by_sync": {
+          "name": "closed_by_sync",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

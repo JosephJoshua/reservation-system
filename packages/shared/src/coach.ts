@@ -50,9 +50,9 @@ export interface CoachLessonDto {
   canCancel: boolean
   cancelledBy: 'student' | 'venue' | null
   cancelReason: string | null
-  /** Lessons this student has taken with this coach, this one excluded. */
+  /** Earlier lessons this student came to with this coach, no-shows left out. */
   lessonsTogether: number
-  /** The student's earlier lessons with this coach, newest first. */
+  /** The student's earlier lessons with this coach that have ended, newest first. */
   history: {
     id: number
     startsAt: string

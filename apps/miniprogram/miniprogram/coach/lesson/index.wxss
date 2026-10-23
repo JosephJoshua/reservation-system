@@ -49,7 +49,12 @@
 }
 
 .note-save {
-  padding: 8rpx 0 8rpx 32rpx;
+  /* 44px tall tap area without making the section title taller. */
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  margin: -24rpx -32rpx -24rpx 0;
+  padding: 0 32rpx;
   font-size: 28rpx;
   color: var(--td-text-color-brand);
 }

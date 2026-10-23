@@ -76,7 +76,8 @@ export function coachRoutes(deps: Deps) {
   app.get('/schedule', (c) => {
     const q = parseQuery(c, z.object({ from: dateKey, to: dateKey }))
     const days = (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000
-    if (!(days >= 0 && days <= 62)) throw new ApiError(400, 'invalid_query', '日期范围无效')
+    // A week back plus the longest booking window the settings allow.
+    if (!(days >= 0 && days <= 100)) throw new ApiError(400, 'invalid_query', '日期范围无效')
     return c.json(coachSchedule(deps, c.get('coachId'), q.from, q.to))
   })
 
@@ -103,14 +104,22 @@ export function coachRoutes(deps: Deps) {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     const coachId = c.get('coachId')
-    ownBooking(deps, id, coachId)
-    await cancelBooking(deps, id, 'venue', { reason: `教练取消：${reason}` })
-    // The coach cancelled it, so they need no message about it.
-    deps.db
-      .update(bookings)
-      .set({ coachToldCancelledAt: deps.now() })
-      .where(eq(bookings.id, id))
-      .run()
+    const { booking } = ownBooking(deps, id, coachId)
+    // Once the lesson starts, only the venue can cancel it.
+    if (booking.startsAt <= deps.now()) {
+      throw new ApiError(409, 'started', '课程已开始，如需取消请联系场馆')
+    }
+    // Marked before cancelling, so the sweeper never tells the coach about their own cancel.
+    const told = (at: Date | null) =>
+      deps.db.update(bookings).set({ coachToldCancelledAt: at }).where(eq(bookings.id, id)).run()
+    told(deps.now())
+    try {
+      await cancelBooking(deps, id, 'venue', { reason: `教练取消：${reason}` })
+    } catch (e) {
+      const now = deps.db.select().from(bookings).where(eq(bookings.id, id)).get()
+      if (now?.status !== 'cancelled') told(null)
+      throw e
+    }
     return c.json(coachLesson(deps, id, coachId))
   })
 

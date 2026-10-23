@@ -28,5 +28,8 @@ CREATE UNIQUE INDEX `coaches_openid_unique` ON `coaches` (`openid`);--> statemen
 CREATE UNIQUE INDEX `coaches_bind_code_unique` ON `coaches` (`bind_code`);--> statement-breakpoint
 ALTER TABLE `sessions` ADD `coach_id` integer REFERENCES coaches(id);--> statement-breakpoint
 ALTER TABLE `slots` ADD `source` text DEFAULT 'manual' NOT NULL;--> statement-breakpoint
--- Bookings made before coach notifications existed are not announced.
-UPDATE `bookings` SET `coach_told_booked_at` = unixepoch() * 1000, `coach_told_cancelled_at` = unixepoch() * 1000;
+ALTER TABLE `slots` ADD `closed_by_sync` integer DEFAULT false NOT NULL;--> statement-breakpoint
+-- Bookings made before coach notices existed are not announced as new, except unpaid holds,
+-- which are announced once paid. Their cancellations are announced as usual.
+UPDATE `bookings` SET `coach_told_booked_at` = unixepoch() * 1000 WHERE `status` <> 'pending_payment';--> statement-breakpoint
+UPDATE `bookings` SET `coach_told_cancelled_at` = unixepoch() * 1000 WHERE `status` IN ('cancelled', 'expired');

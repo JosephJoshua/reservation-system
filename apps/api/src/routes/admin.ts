@@ -412,7 +412,7 @@ export function adminRoutes(deps: Deps) {
     const { open } = await parseBody(c, z.object({ open: z.boolean() }))
     const changed = db
       .update(slots)
-      .set({ open })
+      .set({ open, closedBySync: false })
       .where(eq(slots.id, idParam(c)))
       .run()
     if (changed.changes === 0) throw notFound('时段')
@@ -428,6 +428,19 @@ export function adminRoutes(deps: Deps) {
         .where(eq(bookings.slotId, id))
         .get()
       if (used) throw new ApiError(409, 'slot_has_bookings', '该时段有预约记录，只能关闭，不能删除')
+      // Deleting it would only bring it back at the next sync.
+      const generated = tx
+        .select({ id: slots.id })
+        .from(slots)
+        .where(and(eq(slots.id, id), eq(slots.source, 'hours')))
+        .get()
+      if (generated) {
+        throw new ApiError(
+          409,
+          'slot_from_hours',
+          '该时段来自教练的每周时间，请关闭时段或修改每周时间',
+        )
+      }
       const changed = tx.delete(slots).where(eq(slots.id, id)).run()
       if (changed.changes === 0) throw notFound('时段')
     })

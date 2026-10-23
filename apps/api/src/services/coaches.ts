@@ -167,7 +167,8 @@ export function hoursView(deps: Deps, coachId: number): CoachHoursDto {
  * Brings a coach's future slots in line with their weekly hours and days off: adds the lessons
  * that are missing, removes generated slots nobody ever booked, and closes generated slots that
  * have booking history. Booked lessons are never touched. Manual slots are left alone, except that
- * open ones nobody holds are closed on days off.
+ * open ones nobody holds are closed on days off. Slots this closed open again once they are wanted;
+ * slots a person closed stay closed.
  */
 export function syncSlots(tx: Q, coachId: number, now: Date): SlotSyncDto {
   const settings = getSettings(tx)
@@ -199,30 +200,44 @@ export function syncSlots(tx: Q, coachId: number, now: Date): SlotSyncDto {
   const key = (s: { startsAt: Date; endsAt: Date }) =>
     `${s.startsAt.getTime()}-${s.endsAt.getTime()}`
   const wanted = new Set(desired.map(key))
+  let created = 0
   let removed = 0
+  const setOpen = (id: number, open: boolean) =>
+    tx.update(slots).set({ open, closedBySync: !open }).where(eq(slots.id, id)).run()
   const kept: { startsAt: Date; endsAt: Date }[] = []
   for (const s of existing) {
-    const future = s.startsAt > now
-    const offDay = daysOff.has(venueDateKey(s.startsAt))
-    if (future && s.source === 'hours' && !wanted.has(key(s)) && !live.has(s.id)) {
-      if (everBooked.has(s.id)) {
-        if (s.open) tx.update(slots).set({ open: false }).where(eq(slots.id, s.id)).run()
-        kept.push(s)
+    kept.push(s)
+    if (s.startsAt <= now || live.has(s.id)) continue
+    if (s.source === 'hours') {
+      if (wanted.has(key(s))) {
+        if (s.closedBySync) {
+          setOpen(s.id, true)
+          created++
+        }
+      } else if (everBooked.has(s.id)) {
+        // Booking history keeps the row; closing it takes it off sale.
+        if (s.open) {
+          setOpen(s.id, false)
+          removed++
+        }
       } else {
         tx.delete(slots).where(eq(slots.id, s.id)).run()
+        kept.pop()
+        removed++
       }
-      removed++
       continue
     }
-    if (future && s.source === 'manual' && offDay && s.open && !live.has(s.id)) {
-      tx.update(slots).set({ open: false }).where(eq(slots.id, s.id)).run()
+    const offDay = daysOff.has(venueDateKey(s.startsAt))
+    if (offDay && s.open) {
+      setOpen(s.id, false)
       removed++
+    } else if (!offDay && s.closedBySync) {
+      setOpen(s.id, true)
+      created++
     }
-    kept.push(s)
   }
 
   const have = new Set(existing.filter((s) => s.source === 'hours').map(key))
-  let created = 0
   for (const lesson of desired) {
     if (have.has(key(lesson))) continue
     // Never double-book the coach: a manual slot or a lesson kept from old hours wins.
@@ -295,5 +310,11 @@ export function syncAllSlots(deps: Deps) {
     .innerJoin(coaches, eq(coaches.id, coachHours.coachId))
     .where(eq(coaches.active, true))
     .all()
-  for (const { id } of ids) immediate(deps.db, (tx) => syncSlots(tx, id, now))
+  for (const { id } of ids) {
+    try {
+      immediate(deps.db, (tx) => syncSlots(tx, id, now))
+    } catch (e) {
+      deps.log('slot sync failed', { coachId: id, error: (e as Error).message })
+    }
+  }
 }

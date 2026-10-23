@@ -230,6 +230,35 @@ describe('weekly hours', () => {
     ])
   })
 
+  it('reopens a slot with history when its hours come back', async () => {
+    const h = setup()
+    const { coach, lesson, token, admin } = await withCoach(h)
+    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
+    const [first] = coachSlots(h, coach.id)
+    if (!first) throw new Error('no slot')
+    const student = await h.student('a')
+    const cancelled = await book(h, student, first.id, lesson.id)
+    await h.call('POST', `/bookings/${cancelled}/cancel`, undefined, student)
+
+    await h.call('PUT', '/coach/hours', { hours: [] }, token)
+    expect(h.db.select().from(slots).where(eq(slots.id, first.id)).get()?.open).toBe(false)
+    const back = await h.call(
+      'PUT',
+      '/coach/hours',
+      { hours: [hours(MON, '14:00', '15:00')] },
+      token,
+    )
+    expect(back.json).toEqual({ created: 2, removed: 0, bookedOnDaysOff: 0 })
+    expect(h.db.select().from(slots).where(eq(slots.id, first.id)).get()?.open).toBe(true)
+    const [, fresh] = coachSlots(h, coach.id)
+    if (!fresh) throw new Error('no slot')
+
+    // Deleting a generated slot would only bring it back on the next sync.
+    const del = await h.call('DELETE', `/admin/slots/${fresh.id}`, undefined, admin)
+    expect(del.status).toBe(409)
+    expect(del.json.error.code).toBe('slot_from_hours')
+  })
+
   it('never puts a generated slot over a manual one', async () => {
     const h = setup()
     const { coach, token } = await withCoach(h)
@@ -306,7 +335,19 @@ describe('days off', () => {
     ])
 
     const back = await h.call('DELETE', '/coach/days-off/2026-10-26', undefined, token)
-    expect(back.json).toEqual({ created: 2, removed: 0, bookedOnDaysOff: 0 })
+    expect(back.json).toEqual({ created: 3, removed: 0, bookedOnDaysOff: 0 })
+    expect(h.db.select().from(slots).where(eq(slots.id, manual.id)).get()?.open).toBe(true)
+  })
+
+  it('leaves a slot the coach closed by hand closed after the day off', async () => {
+    const h = setup()
+    const { coach, token } = await withCoach(h)
+    const manual = h.slot(coach.id, '2026-10-26', 9)
+    await h.call('PUT', `/coach/slots/${manual.id}`, { open: false }, token)
+    await h.call('PUT', '/coach/days-off/2026-10-26', undefined, token)
+    const back = await h.call('DELETE', '/coach/days-off/2026-10-26', undefined, token)
+    expect(back.json.created).toBe(0)
+    expect(h.db.select().from(slots).where(eq(slots.id, manual.id)).get()?.open).toBe(false)
   })
 
   it('refuses past and far dates', async () => {
@@ -387,7 +428,7 @@ describe('the coach schedule and lessons', () => {
       },
     ])
     expect(
-      (await h.call('GET', '/coach/schedule?from=2026-10-26&to=2026-12-31', undefined, token))
+      (await h.call('GET', '/coach/schedule?from=2026-10-26&to=2027-03-31', undefined, token))
         .status,
     ).toBe(400)
     expect(
@@ -400,7 +441,7 @@ describe('the coach schedule and lessons', () => {
     const h = setup()
     const { coach, lesson, token, student, bookingId } = await bookedLesson(h)
     const later = await book(h, student, h.slot(coach.id, '2026-10-28', 10).id, lesson.id)
-    h.clock.now = new Date('2026-10-26T02:30:00Z')
+    h.clock.now = new Date('2026-10-26T03:30:00Z')
     await h.call('PUT', `/coach/lessons/${bookingId}/note`, { note: '反手要多练' }, token)
 
     const res = await h.call('GET', `/coach/lessons/${later}`, undefined, token)
@@ -415,6 +456,14 @@ describe('the coach schedule and lessons', () => {
       lessonsTogether: 1,
       history: [{ id: bookingId, coachNote: '反手要多练', attendance: null }],
     })
+    // The earlier lesson does not see the later one, which has not happened yet.
+    expect(
+      (await h.call('GET', `/coach/lessons/${bookingId}`, undefined, token)).json.history,
+    ).toEqual([])
+    await h.call('PUT', `/coach/lessons/${bookingId}/attendance`, { attendance: 'no_show' }, token)
+    const after = (await h.call('GET', `/coach/lessons/${later}`, undefined, token)).json
+    expect(after.lessonsTogether).toBe(0)
+    expect(after.history).toMatchObject([{ id: bookingId, attendance: 'no_show' }])
   })
 
   it('hides other coaches lessons', async () => {
@@ -513,6 +562,25 @@ describe('the coach schedule and lessons', () => {
     expect(again.json.error.code).toBe('too_soon')
     const empty = await h.call('POST', `/coach/lessons/${bookingId}/cancel`, { reason: '' }, token)
     expect(empty.status).toBe(400)
+  })
+
+  it('does not let the coach cancel a lesson that has started', async () => {
+    const h = setup()
+    const { token, bookingId } = await bookedLesson(h)
+    h.clock.now = new Date('2026-10-26T02:10:00Z')
+    expect(
+      (await h.call('GET', `/coach/lessons/${bookingId}`, undefined, token)).json.canCancel,
+    ).toBe(false)
+    const res = await h.call(
+      'POST',
+      `/coach/lessons/${bookingId}/cancel`,
+      { reason: '生病' },
+      token,
+    )
+    expect(res.status).toBe(409)
+    expect(res.json.error.code).toBe('started')
+    const row = h.db.select().from(bookings).where(eq(bookings.id, bookingId)).get()
+    expect(row).toMatchObject({ status: 'confirmed', coachToldCancelledAt: null })
   })
 
   it('opens and closes the coach own future slots', async () => {

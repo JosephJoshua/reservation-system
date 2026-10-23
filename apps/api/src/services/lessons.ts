@@ -6,7 +6,7 @@ import {
   type CoachSlotDto,
   venueInstant,
 } from '@rs/shared'
-import { and, asc, desc, eq, gte, inArray, lt, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lt, lte, ne } from 'drizzle-orm'
 import { immediate } from '../db/client'
 import { bookings, lessonTypes, packages, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
@@ -101,7 +101,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
   const pkg = b.packageId
     ? db.select({ name: packages.name }).from(packages).where(eq(packages.id, b.packageId)).get()
     : undefined
-  // Earlier lessons of this student with this coach that took place.
+  // Earlier lessons of this student with this coach that have ended, newest first.
   const together = db
     .select({
       id: bookings.id,
@@ -120,6 +120,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
         eq(bookings.status, 'confirmed'),
         ne(bookings.id, b.id),
         lt(bookings.startsAt, b.startsAt),
+        lte(bookings.endsAt, now),
       ),
     )
     .orderBy(desc(bookings.startsAt))
@@ -142,10 +143,10 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     attendance: b.attendance,
     coachNote: b.coachNote,
     canMarkAttendance: attendanceError(b, now, 'coach') === null,
-    canCancel: (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.endsAt,
+    canCancel: (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.startsAt,
     cancelledBy: b.cancelledBy,
     cancelReason: b.cancelReason,
-    lessonsTogether: together.length,
+    lessonsTogether: together.filter((h) => h.attendance !== 'no_show').length,
     history: together.slice(0, 10).map((h) => ({
       id: h.id,
       startsAt: h.startsAt.toISOString(),
@@ -194,5 +195,5 @@ export function setSlotOpen(deps: Deps, slotId: number, coachId: number, open: b
   const slot = deps.db.select().from(slots).where(eq(slots.id, slotId)).get()
   if (!slot || slot.coachId !== coachId) throw notFound('时段')
   if (slot.startsAt <= deps.now()) throw new ApiError(409, 'slot_started', '时段已开始')
-  deps.db.update(slots).set({ open }).where(eq(slots.id, slotId)).run()
+  deps.db.update(slots).set({ open, closedBySync: false }).where(eq(slots.id, slotId)).run()
 }

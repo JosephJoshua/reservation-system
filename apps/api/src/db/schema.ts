@@ -120,6 +120,8 @@ export const slots = sqliteTable(
     source: text('source', { enum: ['manual', 'hours'] })
       .notNull()
       .default('manual'),
+    // Closed by the weekly hours or a day off rather than by a person, so it can reopen itself.
+    closedBySync: integer('closed_by_sync', { mode: 'boolean' }).notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [index('slots_coach_time').on(t.coachId, t.startsAt)],
