@@ -1,0 +1,21 @@
+{
+  "name": "reservation-system",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter ./apps/api --filter ./apps/admin --filter ./apps/coach dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "pnpm -r --filter !@rs/e2e test",
+    "e2e": "pnpm --filter ./qa/e2e test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2",
+    "typescript": "7.0.2"
+  }
+}

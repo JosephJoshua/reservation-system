@@ -1,0 +1,3 @@
+<view class="container">
+  <t-empty icon="{{emptyIcon}}" description="暂无课程" />
+</view>
