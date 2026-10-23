@@ -68,7 +68,7 @@ const lessonTypeBody = z
     sort: z.number().int().default(0),
   })
   .refine((v) => saleDatesValid(v.salePercent, v.saleStartsAt, v.saleEndsAt), {
-    message: 'sale needs a start before its end',
+    message: '折扣需要设置开始和结束时间',
   })
 
 const productBody = z
@@ -87,19 +87,24 @@ const productBody = z
     sort: z.number().int().default(0),
   })
   .refine((v) => saleDatesValid(v.salePrice, v.saleStartsAt, v.saleEndsAt), {
-    message: 'sale needs a start before its end',
+    message: '限时价需要设置开始和结束时间',
   })
 
-const bannerBody = z.object({
-  imageUrl: z.string().min(1).max(300),
-  title: z.string().trim().max(30).default(''),
-  linkKind: z.enum(['none', 'package', 'lesson_type']).default('none'),
-  linkId: z.number().int().positive().nullable().default(null),
-  startsAt: nullableInstant.default(null),
-  endsAt: nullableInstant.default(null),
-  active: z.boolean().default(true),
-  sort: z.number().int().default(0),
-})
+const bannerBody = z
+  .object({
+    imageUrl: z.string().min(1).max(300),
+    title: z.string().trim().max(30).default(''),
+    linkKind: z.enum(['none', 'package', 'lesson_type']).default('none'),
+    linkId: z.number().int().positive().nullable().default(null),
+    startsAt: nullableInstant.default(null),
+    endsAt: nullableInstant.default(null),
+    active: z.boolean().default(true),
+    sort: z.number().int().default(0),
+  })
+  .refine((v) => (v.linkKind === 'none') === (v.linkId === null), { message: '请选择跳转目标' })
+  .refine((v) => !v.startsAt || !v.endsAt || v.startsAt < v.endsAt, {
+    message: '结束时间需晚于开始时间',
+  })
 
 function saleDatesValid(value: number | null, startsAt: Date | null, endsAt: Date | null) {
   if (value === null) return true
@@ -321,6 +326,7 @@ export function adminRoutes(deps: Deps) {
           .max(MAX_SLOTS_PER_REQUEST),
       }),
     )
+    const now = deps.now()
     const created = immediate(db, (tx) => {
       const coachIds = new Set(
         tx
@@ -332,8 +338,10 @@ export function adminRoutes(deps: Deps) {
       const ids: number[] = []
       body.slots.forEach((s, i) => {
         if (!coachIds.has(s.coachId)) throw notFound('教练')
-        if (s.endsAt <= s.startsAt)
+        if (s.endsAt <= s.startsAt) {
           throw new ApiError(400, 'invalid_slot', '结束时间需晚于开始时间')
+        }
+        if (s.startsAt <= now) throw new ApiError(400, 'slot_in_past', '不能给已过去的时间排课')
         if (s.endsAt.getTime() - s.startsAt.getTime() > 8 * 3_600_000) {
           throw new ApiError(400, 'invalid_slot', '单个时段不能超过 8 小时')
         }

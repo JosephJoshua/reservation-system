@@ -623,6 +623,23 @@ describe('slots', () => {
     expect(res.json.error.code).toBe('slot_overlap')
     expect(h.db.select().from(slots).all()).toHaveLength(0)
   })
+
+  it('refuses slots in the past', async () => {
+    const h = setup()
+    const { coach } = h.seed()
+    const admin = await h.admin()
+    const res = await h.call(
+      'POST',
+      '/admin/slots',
+      {
+        slots: [
+          { coachId: coach.id, startsAt: '2026-10-23T01:00:00Z', endsAt: '2026-10-23T02:00:00Z' },
+        ],
+      },
+      admin,
+    )
+    expect(res.json.error.code).toBe('slot_in_past')
+  })
 })
 
 describe('auth', () => {

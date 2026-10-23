@@ -25,7 +25,10 @@ export async function parseBody<T extends z.ZodType>(c: Context, schema: T): Pro
   const result = schema.safeParse(raw)
   if (!result.success) {
     const issue = result.error.issues[0]
-    throw new ApiError(400, 'invalid_body', `请求格式错误：${issue?.path.join('.') ?? ''}`)
+    // Custom checks carry a message written for people; the rest name the field.
+    const message =
+      issue?.code === 'custom' ? issue.message : `请求格式错误：${issue?.path.join('.') ?? ''}`
+    throw new ApiError(400, 'invalid_body', message)
   }
   return result.data
 }
