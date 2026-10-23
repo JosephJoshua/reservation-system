@@ -11,15 +11,15 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   TagInput,
   Textarea,
 } from 'tdesign-react'
 import { api, uploadImage } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, newKey, useApi, useSubmitting } from '../hooks'
 import { RichText } from '../RichText'
 import type { Coach, CoachCategory, LessonType } from '../types'
 import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
@@ -73,19 +73,29 @@ export function Catalog() {
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const categories = useApi<CoachCategory[]>('/admin/coach-categories')
-  const [category, setCategory] = useState<{ id: number | null; form: CategoryForm } | null>(null)
-  const [lesson, setLesson] = useState<{ id: number | null; form: LessonForm } | null>(null)
-  const [coach, setCoach] = useState<{ id: number | null; form: CoachForm } | null>(null)
+  const [category, setCategory] = useState<{
+    id: number | null
+    key: string
+    form: CategoryForm
+  } | null>(null)
+  const [lesson, setLesson] = useState<{ id: number | null; key: string; form: LessonForm } | null>(
+    null,
+  )
+  const [coach, setCoach] = useState<{ id: number | null; key: string; form: CoachForm } | null>(
+    null,
+  )
   const [binding, setBinding] = useState<Coach | null>(null)
   const [hoursOf, setHoursOf] = useState<Coach | null>(null)
   const submitting = useSubmitting()
 
   const saveLesson = async () => {
     if (!lesson) return
-    const { id, form } = lesson
+    const { id, key, form } = lesson
     const ok = await attempt(
       () =>
-        api(id ? 'PUT' : 'POST', id ? `/admin/lesson-types/${id}` : '/admin/lesson-types', form),
+        api(id ? 'PUT' : 'POST', id ? `/admin/lesson-types/${id}` : '/admin/lesson-types', form, {
+          key,
+        }),
       '已保存',
       { onStale: () => closeAndReload(setLesson, types.reload) },
     )
@@ -97,9 +107,9 @@ export function Catalog() {
 
   const saveCoach = async () => {
     if (!coach) return
-    const { id, form } = coach
+    const { id, key, form } = coach
     const ok = await attempt(
-      () => api(id ? 'PUT' : 'POST', id ? `/admin/coaches/${id}` : '/admin/coaches', form),
+      () => api(id ? 'PUT' : 'POST', id ? `/admin/coaches/${id}` : '/admin/coaches', form, { key }),
       '已保存',
       { onStale: () => closeAndReload(setCoach, coaches.reload) },
     )
@@ -111,13 +121,14 @@ export function Catalog() {
 
   const saveCategory = async () => {
     if (!category) return
-    const { id, form } = category
+    const { id, key, form } = category
     const ok = await attempt(
       () =>
         api(
           id ? 'PUT' : 'POST',
           id ? `/admin/coach-categories/${id}` : '/admin/coach-categories',
           form,
+          { key },
         ),
       '已保存',
       { onStale: () => closeAndReload(setCategory, categories.reload) },
@@ -146,12 +157,12 @@ export function Catalog() {
         title="课程"
         bordered
         actions={
-          <Button onClick={() => setLesson({ id: null, form: { ...emptyLesson } })}>
+          <Button onClick={() => setLesson({ key: newKey(), id: null, form: { ...emptyLesson } })}>
             新建课程
           </Button>
         }
       >
-        <Table
+        <DataTable
           rowKey="id"
           loading={types.loading}
           data={types.data ?? []}
@@ -205,7 +216,7 @@ export function Catalog() {
                 <Button
                   variant="text"
                   theme="primary"
-                  onClick={() => setLesson({ id: row.id, form: { ...row } })}
+                  onClick={() => setLesson({ key: newKey(), id: row.id, form: { ...row } })}
                 >
                   编辑
                 </Button>
@@ -219,12 +230,16 @@ export function Catalog() {
         title="教练类别"
         bordered
         actions={
-          <Button onClick={() => setCategory({ id: null, form: { ...emptyCategory, prices: [] } })}>
+          <Button
+            onClick={() =>
+              setCategory({ key: newKey(), id: null, form: { ...emptyCategory, prices: [] } })
+            }
+          >
             新建类别
           </Button>
         }
       >
-        <Table
+        <DataTable
           rowKey="id"
           loading={categories.loading}
           data={categories.data ?? []}
@@ -262,6 +277,7 @@ export function Catalog() {
                     theme="primary"
                     onClick={() =>
                       setCategory({
+                        key: newKey(),
                         id: row.id,
                         form: {
                           name: row.name,
@@ -291,14 +307,18 @@ export function Catalog() {
         actions={
           <Button
             onClick={() =>
-              setCoach({ id: null, form: { ...emptyCoach, tags: [], lessonTypeIds: [] } })
+              setCoach({
+                key: newKey(),
+                id: null,
+                form: { ...emptyCoach, tags: [], lessonTypeIds: [] },
+              })
             }
           >
             新建教练
           </Button>
         }
       >
-        <Table
+        <DataTable
           rowKey="id"
           loading={coaches.loading}
           data={coaches.data ?? []}
@@ -374,6 +394,7 @@ export function Catalog() {
                     onClick={() => {
                       const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...form } = row
                       setCoach({
+                        key: newKey(),
                         id: row.id,
                         form: {
                           ...form,
@@ -655,6 +676,7 @@ function CoachEditor({
   onChange: (patch: Partial<CoachForm>) => void
 }) {
   const [uploading, setUploading] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   // Set in the effect, not the initial value, so StrictMode's remount turns it back on.
   const open = useRef(false)
   useEffect(() => {
@@ -688,14 +710,19 @@ function CoachEditor({
         <Space align="center">
           {f.avatarUrl && <img className="avatar-thumb" src={f.avatarUrl} alt="" />}
           <input
+            ref={fileInput}
+            hidden
             type="file"
             accept="image/jpeg,image/png,image/webp"
-            disabled={uploading}
             onChange={(e) => {
               void upload(e.target.files?.[0])
+              // Lets the same file be picked again after a failed upload.
               e.target.value = ''
             }}
           />
+          <Button variant="outline" loading={uploading} onClick={() => fileInput.current?.click()}>
+            {f.avatarUrl ? '更换照片' : '选择照片'}
+          </Button>
           {f.avatarUrl && (
             <Button variant="text" theme="danger" onClick={() => set({ avatarUrl: '' })}>
               移除

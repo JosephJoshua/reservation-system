@@ -11,14 +11,14 @@ import {
   Select,
   Space,
   Switch,
-  Table,
   Tag,
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
+import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, newKey, useApi, useSubmitting } from '../hooks'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 
 type ProductForm = Omit<PackageProduct, 'id'>
@@ -28,7 +28,9 @@ export function Products() {
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const categories = useApi<CoachCategory[]>('/admin/coach-categories')
-  const [edit, setEdit] = useState<{ id: number | null; form: ProductForm } | null>(null)
+  const [edit, setEdit] = useState<{ id: number | null; key: string; form: ProductForm } | null>(
+    null,
+  )
   const submitting = useSubmitting()
 
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
@@ -46,6 +48,7 @@ export function Products() {
           edit.id ? 'PUT' : 'POST',
           edit.id ? `/admin/package-products/${edit.id}` : '/admin/package-products',
           edit.form,
+          { key: edit.key },
         ),
       '已保存',
       {
@@ -63,6 +66,7 @@ export function Products() {
 
   const create = () =>
     setEdit({
+      key: newKey(),
       id: null,
       form: {
         name: '',
@@ -92,7 +96,7 @@ export function Products() {
         </Button>
       }
     >
-      <Table
+      <DataTable
         rowKey="id"
         loading={products.loading}
         data={products.data ?? []}
@@ -145,7 +149,7 @@ export function Products() {
               <Button
                 variant="text"
                 theme="primary"
-                onClick={() => setEdit({ id: row.id, form: { ...row } })}
+                onClick={() => setEdit({ key: newKey(), id: row.id, form: { ...row } })}
               >
                 编辑
               </Button>
