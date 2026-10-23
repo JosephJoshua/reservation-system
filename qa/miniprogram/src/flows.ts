@@ -180,6 +180,8 @@ try {
       (d) => (d.booking as { status?: string } | null)?.status === 'confirmed',
     )
     trialBookingId = ((await detail.data('booking')) as { id: number }).id
+    // The icon font loads late on the first booking-detail page.
+    await sleep(1500)
     await screenshot('trial-confirmed')
   })
 
