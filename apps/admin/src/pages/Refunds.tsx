@@ -158,11 +158,11 @@ function Decide({
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   const fen = toFen(amount)
+  const amountValid = fen !== null && fen > 0 && fen <= refund.order.amount
 
   const submit = async () => {
     const ok = approve
-      ? fen !== null &&
-        fen > 0 &&
+      ? amountValid &&
         (await attempt(
           () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }),
           '已同意退款',
@@ -181,7 +181,7 @@ function Decide({
       confirmBtn={{
         content: approve ? '确认退款' : '确认拒绝',
         theme: approve ? 'primary' : 'danger',
-        disabled: approve ? fen === null || fen <= 0 : !note.trim(),
+        disabled: approve ? !amountValid : !note.trim(),
         loading: submitting,
       }}
       onConfirm={submit}
