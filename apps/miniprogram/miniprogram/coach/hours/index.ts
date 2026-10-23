@@ -71,7 +71,10 @@ Page({
     addEnd: '12:00',
     addMinutes: 60,
     addHint: '',
+    addInvalid: false,
   },
+
+  dayOffBusy: false,
 
   onLoad() {
     this.load()
@@ -162,7 +165,10 @@ Page({
     const d = this.draft()
     const count = Math.floor((d.endMinute - d.startMinute) / d.lessonMinutes)
     const error = weeklyHoursError([...this.data.hours, d])
-    this.setData({ addHint: error ?? `每${this.data.addName}生成 ${count} 节课` })
+    this.setData({
+      addHint: error ?? `每${this.data.addName}生成 ${count} 节课`,
+      addInvalid: !!error,
+    })
   },
 
   confirmAdd() {
@@ -185,8 +191,10 @@ Page({
     if (!this.data.dirty || this.data.saving) return
     this.setData({ saving: true })
     try {
-      const result = await coachApi<SlotSyncDto>('PUT', '/hours', { hours: this.data.hours })
-      this.setDirty(false)
+      const sent = this.data.hours
+      const result = await coachApi<SlotSyncDto>('PUT', '/hours', { hours: sent })
+      // Changes made while saving are still unsaved.
+      this.setDirty(this.data.hours !== sent)
       if (!warnBooked(result)) {
         const changes = [
           result.created ? `新增 ${result.created} 个时段` : '',
@@ -203,24 +211,31 @@ Page({
 
   async addDayOff(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
     const date = e.detail.value
-    if (this.data.daysOff.some((d) => d.key === date)) return
+    if (this.dayOffBusy || this.data.daysOff.some((d) => d.key === date)) return
+    this.dayOffBusy = true
     try {
       const result = await coachApi<SlotSyncDto>('PUT', `/days-off/${date}`)
       this.setDaysOff([...this.data.daysOff.map((d) => d.key), date].sort())
       if (!warnBooked(result)) wx.showToast({ title: '已设为休息日', icon: 'none' })
     } catch (err) {
       showError(err)
+    } finally {
+      this.dayOffBusy = false
     }
   },
 
   async removeDayOff(e: WechatMiniprogram.TouchEvent) {
     const date = e.currentTarget.dataset.key as string
+    if (this.dayOffBusy) return
+    this.dayOffBusy = true
     try {
       await coachApi<SlotSyncDto>('DELETE', `/days-off/${date}`)
       this.setDaysOff(this.data.daysOff.map((d) => d.key).filter((k) => k !== date))
       wx.showToast({ title: '已恢复接课', icon: 'none' })
     } catch (err) {
       showError(err)
+    } finally {
+      this.dayOffBusy = false
     }
   },
 

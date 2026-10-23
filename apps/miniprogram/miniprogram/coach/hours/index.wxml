@@ -78,9 +78,9 @@
         <view wx:for="{{lessonMinutes}}" wx:key="*this" class="chip {{addMinutes === item ? 'chip-active' : ''}}" data-minutes="{{item}}" bind:tap="onMinutes">{{item}} 分钟</view>
       </view>
     </view>
-    <view class="sheet-hint">{{addHint}}</view>
+    <view class="sheet-hint {{addInvalid ? 'sheet-hint-error' : ''}}">{{addHint}}</view>
     <view class="sheet-actions">
-      <t-button block t-class="action-button" theme="primary" bind:tap="confirmAdd">添加</t-button>
+      <t-button block t-class="action-button" theme="primary" disabled="{{addInvalid}}" bind:tap="confirmAdd">添加</t-button>
     </view>
   </view>
 </t-popup>

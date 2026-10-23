@@ -1,6 +1,7 @@
 import { type CoachMeDto, type CoachSlotDto, venueDateKey } from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 import { askForNotices, coachApi, isNotBound, remember } from '../utils/coach-api'
 import { lessonTag } from '../utils/labels'
 
@@ -77,14 +78,21 @@ Page({
   me: null as CoachMeDto | null,
   schedule: [] as CoachSlotDto[],
   request: 0,
+  slotBusy: false,
 
   onLoad() {
     this.load()
   },
 
   onShow() {
+    if (this.data.state !== 'ready') return
+    // Left open past midnight: today and the day strip have moved.
+    if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date())) {
+      this.load()
+      return
+    }
     // Back from a lesson: attendance or a cancel changes the list.
-    if (this.data.state === 'ready') this.loadSchedule()
+    this.loadSchedule()
   },
 
   onPullDownRefresh() {
@@ -179,9 +187,12 @@ Page({
     if (!slot || slot.kind === 'past') return
     askForNotices()
     if (slot.kind === 'lesson') {
-      wx.navigateTo({ url: `/coach/lesson/index?id=${slot.bookingId}` })
+      navigateOnce(`/coach/lesson/index?id=${slot.bookingId}`)
       return
     }
+    if (this.slotBusy) return
+    // Held from the sheet until the change is saved, so a double tap acts once.
+    this.slotBusy = true
     const open = slot.kind === 'closed'
     wx.showActionSheet({
       itemList: [open ? '开放此时段' : '关闭此时段'],
@@ -189,17 +200,22 @@ Page({
         try {
           await coachApi('PUT', `/slots/${slot.id}`, { open })
           wx.showToast({ title: open ? '已开放' : '已关闭', icon: 'success' })
-          await this.loadSchedule()
         } catch (err) {
           showError(err)
+        } finally {
+          this.slotBusy = false
         }
+        await this.loadSchedule()
+      },
+      fail: () => {
+        this.slotBusy = false
       },
     })
   },
 
   openHours() {
     askForNotices()
-    wx.navigateTo({ url: '/coach/hours/index' })
+    navigateOnce('/coach/hours/index')
   },
 
   retry() {

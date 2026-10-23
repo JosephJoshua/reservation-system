@@ -198,5 +198,14 @@ export function setSlotOpen(deps: Deps, slotId: number, coachId: number, open: b
   const slot = deps.db.select().from(slots).where(eq(slots.id, slotId)).get()
   if (!slot || slot.coachId !== coachId) throw notFound('时段')
   if (slot.startsAt <= deps.now()) throw new ApiError(409, 'slot_started', '时段已开始')
+  // The coach saw it free, but a student may have booked it since the list loaded.
+  const booked = deps.db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(eq(bookings.slotId, slotId), inArray(bookings.status, ['pending_payment', 'confirmed'])),
+    )
+    .get()
+  if (!open && booked) throw new ApiError(409, 'slot_booked', '这个时段刚被预约，请刷新')
   deps.db.update(slots).set({ open, closedBySync: false }).where(eq(slots.id, slotId)).run()
 }

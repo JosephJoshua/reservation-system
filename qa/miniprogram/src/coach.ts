@@ -43,13 +43,17 @@ async function call(method: string, path: string, body?: unknown, token?: string
   return json
 }
 
-/** Moves a booking and its slot to start an hour ago, so attendance can be marked. */
+/**
+ * Moves a booking and its slot to start an hour ago, so attendance can be marked. Never before the
+ * venue's midnight, so the lesson stays on today's schedule just after midnight too.
+ */
 function moveIntoPast(bookingId: number) {
   check(dbPath, 'set QA_DB to the API database file to test attendance')
   const require = createRequire(new URL('../../../apps/api/package.json', import.meta.url))
   const Database = require('better-sqlite3')
   const db = new Database(dbPath)
-  const start = Date.now() - 3_600_000
+  const now = Date.now()
+  const start = Math.max(now - 3_600_000, Date.parse(`${venueDate(now)}T00:00:00+08:00`))
   db.prepare('update bookings set starts_at = ?, ends_at = ? where id = ?').run(
     start,
     start + 3_600_000,
@@ -198,7 +202,9 @@ try {
   const past = await book(`qa_b_${run}`, 3)
   moveIntoPast(past)
 
-  // Let the launch login finish first, or it can write its own token back after we clear it.
+  // Let the launch login finish first, or it can write its own token back after we clear it. The
+  // token is cleared before waiting, so a token left by an earlier run does not end the wait early.
+  await miniProgram.callWxMethod('removeStorageSync', 'token')
   for (let i = 0; i < 20 && !(await miniProgram.callWxMethod('getStorageSync', 'token')); i++) {
     await sleep(250)
   }
@@ -257,6 +263,8 @@ try {
       (d) => (d.lesson as { attendance: string | null }).attendance === 'attended',
     )
     await screenshot('lesson-attended')
+    // A second tap on the same mark right after the first counts as a double tap and is ignored.
+    await sleep(500)
     await invoke('mark', { currentTarget: { dataset: { value: 'attended' } } })
     await waitForPage(
       'coach/lesson/index',
@@ -268,12 +276,11 @@ try {
       (d) => (d.lesson as { attendance: string | null }).attendance === 'no_show',
     )
     await miniProgram.navigateBack()
-    const back = await waitForPage('coach/index/index', (d) => d.state === 'ready')
-    await sleep(800)
-    const rows = (await back.data('slots')) as { bookingId: number; tag: string }[]
-    check(
-      rows.find((s) => s.bookingId === past)?.tag === '缺席',
-      'list should show 缺席 after going back',
+    // The list reloads on show; waitForPage fails with a timeout if 缺席 never appears.
+    await waitForPage('coach/index/index', (d) =>
+      (d.slots as { bookingId: number; tag: string }[]).some(
+        (s) => s.bookingId === past && s.tag === '缺席',
+      ),
     )
   })
 
@@ -286,7 +293,9 @@ try {
       '.day',
       days.findIndex((d) => d.key === target),
     )
-    await sleep(300)
+    await waitForPage('coach/index/index', (d) =>
+      (d.slots as { bookingId: number }[]).some((s) => s.bookingId === future),
+    )
     await screenshot('schedule-future-day')
     const slots = (await home.data('slots')) as { bookingId: number }[]
     await tap(
@@ -351,6 +360,7 @@ try {
       String(await page.data('addHint')) === '同一天的时间段不能重叠',
       'overlap should be explained',
     )
+    check((await page.data('addInvalid')) === true, '添加 should be disabled on overlap')
     await invoke('onPopup', { detail: { visible: false } })
     await invoke('openAdd', { currentTarget: { dataset: { weekday: 6 } } })
     await invoke('onStart', { detail: { value: '09:00' } })
@@ -391,5 +401,9 @@ try {
   console.log('all coach flows passed')
 } finally {
   await miniProgram.restoreWxMethod('showModal').catch(() => {})
+  // The next run, or a person opening DevTools, starts from a normal student login.
+  for (const key of ['devLogin', 'token', 'coachToken']) {
+    await miniProgram.callWxMethod('removeStorageSync', key).catch(() => {})
+  }
   await miniProgram.close()
 }

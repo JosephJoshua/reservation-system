@@ -627,7 +627,7 @@ describe('the coach schedule and lessons', () => {
 
   it('opens and closes the coach own future slots', async () => {
     const h = setup()
-    const { coach, token } = await withCoach(h)
+    const { coach, lesson, token } = await withCoach(h)
     const slot = h.slot(coach.id, '2026-10-26', 10)
     expect((await h.call('PUT', `/coach/slots/${slot.id}`, { open: false }, token)).status).toBe(
       204,
@@ -635,8 +635,12 @@ describe('the coach schedule and lessons', () => {
     expect(h.db.select().from(slots).where(eq(slots.id, slot.id)).get()?.open).toBe(false)
     h.clock.now = new Date('2026-10-26T02:00:00Z')
     expect((await h.call('PUT', `/coach/slots/${slot.id}`, { open: true }, token)).status).toBe(409)
+    const booked = h.slot(coach.id, '2026-10-27', 10)
+    await book(h, await h.student('a'), booked.id, lesson.id)
+    const late = await h.call('PUT', `/coach/slots/${booked.id}`, { open: false }, token)
+    expect(late.json.error.code).toBe('slot_booked')
     const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
-    const theirs = h.slot(other.id, '2026-10-27', 10)
+    const theirs = h.slot(other.id, '2026-10-28', 10)
     expect((await h.call('PUT', `/coach/slots/${theirs.id}`, { open: false }, token)).status).toBe(
       404,
     )
