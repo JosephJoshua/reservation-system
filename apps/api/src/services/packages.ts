@@ -1,14 +1,16 @@
 import { packagePrice, suggestedPackageRefund, validityEnd } from '@rs/shared'
-import { and, eq, gt, inArray, sql } from 'drizzle-orm'
-import { immediate } from '../db/client'
+import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm'
+import { immediate, type Q } from '../db/client'
 import {
   bookings,
+  coachLessonTypes,
   lessonTypes,
   orders,
   packageLedger,
   packageProducts,
   packages,
   refunds,
+  slots,
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
@@ -69,15 +71,38 @@ export async function purchasePackage(
   return { orderId, payment: await startPaymentOrRelease(deps, orderId, studentId) }
 }
 
-/** Per-class price used to value lessons already taken from a package. */
-function perClassPrice(deps: Deps, lessonTypeId: number) {
-  return (
-    deps.db
-      .select({ price: lessonTypes.price })
-      .from(lessonTypes)
-      .where(eq(lessonTypes.id, lessonTypeId))
-      .get()?.price ?? 0
+/**
+ * Single-class price of each lesson taken from a package, oldest first: the coach's own price for
+ * the lesson type if set, else the list price. Taken means attended or forfeited by a late cancel;
+ * lessons returned to the package do not count.
+ */
+function usedLessonPrices(tx: Q, pkg: { id: number; lessonTypeId: number }, listPrice: number) {
+  const returned = new Set(
+    tx
+      .select({ bookingId: packageLedger.bookingId })
+      .from(packageLedger)
+      .where(and(eq(packageLedger.packageId, pkg.id), eq(packageLedger.kind, 'return')))
+      .all()
+      .map((r) => r.bookingId),
   )
+  return tx
+    .select({ id: bookings.id, coachPrice: coachLessonTypes.price })
+    .from(bookings)
+    .innerJoin(slots, eq(slots.id, bookings.slotId))
+    .leftJoin(
+      coachLessonTypes,
+      and(
+        eq(coachLessonTypes.coachId, slots.coachId),
+        eq(coachLessonTypes.lessonTypeId, pkg.lessonTypeId),
+      ),
+    )
+    .where(
+      and(eq(bookings.packageId, pkg.id), inArray(bookings.status, ['confirmed', 'cancelled'])),
+    )
+    .orderBy(asc(bookings.startsAt), asc(bookings.id))
+    .all()
+    .filter((b) => !returned.has(b.id))
+    .map((b) => b.coachPrice ?? listPrice)
 }
 
 /** A student asks for the unused part of a package back. The admin decides the amount. */
@@ -104,13 +129,20 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
     if (upcoming) throw new ApiError(409, 'package_in_use', '请先取消使用该课时包的预约')
     const order = tx.select().from(orders).where(eq(orders.id, pkg.orderId)).get()
     if (!order) throw notFound('订单')
+    const listPrice =
+      tx
+        .select({ price: lessonTypes.price })
+        .from(lessonTypes)
+        .where(eq(lessonTypes.id, pkg.lessonTypeId))
+        .get()?.price ?? 0
     const amount = suggestedPackageRefund({
       pricePaid: pkg.pricePaid,
       alreadyRefunded: refundedSoFar(tx, order.id),
       lessonsPurchased: pkg.lessonsPurchased,
       lessonsGranted: grantedLessons(tx, [pkg.id]).get(pkg.id) ?? 0,
       lessonsRemaining: pkg.lessonsRemaining,
-      perClassPrice: perClassPrice(deps, pkg.lessonTypeId),
+      usedLessonPrices: usedLessonPrices(tx, pkg, listPrice),
+      listPrice,
     })
     tx.update(packages).set({ status: 'refund_requested' }).where(eq(packages.id, pkg.id)).run()
     // A zero suggestion still goes to the admin, who may decide to refund something anyway.

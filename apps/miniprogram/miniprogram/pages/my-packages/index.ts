@@ -81,7 +81,7 @@ Page({
     if (!pkg || this.data.busy) return
     const { confirm } = await wx.showModal({
       title: '申请退款',
-      content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节原价，由场馆审核后原路退回，申请后课时包将暂停使用。`,
+      content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计），由场馆审核后原路退回，申请后课时包将暂停使用。`,
       confirmText: '提交申请',
     })
     if (!confirm) return

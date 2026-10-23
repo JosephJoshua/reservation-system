@@ -184,7 +184,7 @@ function Decide({
         <div className="fields">
           <Field
             label="退款金额"
-            help={`建议金额 = 实付 − 已上课时 × 单次价。最多 ${yuan(refund.order.amount)}`}
+            help={`建议金额 = 实付 − 已上课时按所上教练的单次价合计。最多 ${yuan(refund.order.amount)}`}
           >
             <InputNumber
               theme="normal"

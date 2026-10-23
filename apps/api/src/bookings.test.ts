@@ -848,6 +848,47 @@ describe('review fixes', () => {
     )
   })
 
+  it("values used package lessons at each coach's own price, skipping returned ones", async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const { coachLessonTypes, coaches } = await import('./db/schema')
+    // 王教练 charges his own ¥300; 李教练 is on the ¥200 list price.
+    h.db
+      .update(coachLessonTypes)
+      .set({ price: 30000 })
+      .where(eq(coachLessonTypes.coachId, coach.id))
+      .run()
+    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 250000,
+        validityDays: 90,
+      })
+      .returning()
+      .get()
+    const t = await h.student('a')
+    const bought = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await pay(h, bought.json.orderId)
+    await book(h, t, h.slot(coach.id, '2026-10-25', 10).id, lesson.id)
+    await book(h, t, h.slot(other.id, '2026-10-25', 12).id, lesson.id)
+    // Cancelled early, so the lesson goes back and is not charged.
+    const returned = await book(h, t, h.slot(coach.id, '2026-10-26', 10).id, lesson.id)
+    await h.call('POST', `/bookings/${returned.json.bookingId}/cancel`, undefined, t)
+    h.clock.now = new Date('2026-10-25T06:00:00Z') // after both lessons on the 25th
+    const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
+    expect(pkg.lessonsRemaining).toBe(8)
+    await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    // 2500 paid, one lesson at 300 and one at 200: 2000.
+    expect(h.db.select().from(refunds).where(eq(refunds.packageId, pkg.id)).get()?.amount).toBe(
+      200000,
+    )
+  })
+
   it('locks the trial flag once a lesson type has bookings', async () => {
     const h = setup()
     const { coach, trial } = h.seed()

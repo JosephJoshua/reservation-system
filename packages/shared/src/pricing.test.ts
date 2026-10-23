@@ -55,14 +55,15 @@ describe('formatYuan', () => {
 })
 
 describe('suggestedPackageRefund', () => {
-  it('charges used lessons at the per-class price', () => {
+  it('charges used lessons at the list price when no booking says otherwise', () => {
     const input = {
       pricePaid: 180000,
       alreadyRefunded: 0,
       lessonsPurchased: 10,
       lessonsGranted: 0,
       lessonsRemaining: 7,
-      perClassPrice: 20000,
+      usedLessonPrices: [],
+      listPrice: 20000,
     }
     expect(suggestedPackageRefund(input)).toBe(120000)
     expect(suggestedPackageRefund({ ...input, lessonsRemaining: 0 })).toBe(0)
@@ -76,7 +77,8 @@ describe('suggestedPackageRefund', () => {
         lessonsPurchased: 10,
         lessonsGranted: 2,
         lessonsRemaining: 12,
-        perClassPrice: 20000,
+        usedLessonPrices: [],
+        listPrice: 20000,
       }),
     ).toBe(180000)
     // 2 granted, 3 used: the 3 come out of the paid lessons, so 7 paid lessons are refunded.
@@ -87,8 +89,36 @@ describe('suggestedPackageRefund', () => {
         lessonsPurchased: 10,
         lessonsGranted: 2,
         lessonsRemaining: 9,
-        perClassPrice: 20000,
+        usedLessonPrices: [],
+        listPrice: 20000,
       }),
     ).toBe(90000)
+  })
+
+  it("charges each used lesson at its coach's own price", () => {
+    // 3 lessons used: two with a ¥300 coach, one with a coach on the ¥200 list price.
+    expect(
+      suggestedPackageRefund({
+        pricePaid: 250000,
+        alreadyRefunded: 0,
+        lessonsPurchased: 10,
+        lessonsGranted: 0,
+        lessonsRemaining: 7,
+        usedLessonPrices: [30000, 20000, 30000],
+        listPrice: 20000,
+      }),
+    ).toBe(170000)
+    // Only paid lessons are charged: with 1 granted lesson, the 4th booking is the granted one.
+    expect(
+      suggestedPackageRefund({
+        pricePaid: 250000,
+        alreadyRefunded: 0,
+        lessonsPurchased: 3,
+        lessonsGranted: 1,
+        lessonsRemaining: 0,
+        usedLessonPrices: [30000, 30000, 30000, 30000],
+        listPrice: 20000,
+      }),
+    ).toBe(160000)
   })
 })

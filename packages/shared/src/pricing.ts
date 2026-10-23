@@ -55,9 +55,9 @@ export function formatYuan(fen: Fen): string {
 }
 
 /**
- * Suggested refund for the unused part of a package: what was paid minus the paid lessons used at
- * the per-class price, never below zero. Granted lessons are treated as used last, so lessons
- * used come out of the paid ones first.
+ * Suggested refund for the unused part of a package: what was paid minus the paid lessons used,
+ * each charged at the single-class price of the coach it was taken with, never below zero.
+ * Granted lessons are treated as used last, so lessons used come out of the paid ones first.
  */
 export function suggestedPackageRefund(input: {
   pricePaid: Fen
@@ -65,9 +65,14 @@ export function suggestedPackageRefund(input: {
   lessonsPurchased: number
   lessonsGranted: number
   lessonsRemaining: number
-  perClassPrice: Fen
+  /** Single-class price of each lesson taken from the package, oldest first. */
+  usedLessonPrices: Fen[]
+  /** Price for a used lesson with no booking behind it, such as an admin adjustment. */
+  listPrice: Fen
 }): Fen {
   const used = input.lessonsPurchased + input.lessonsGranted - input.lessonsRemaining
   const paidUsed = Math.min(input.lessonsPurchased, Math.max(0, used))
-  return Math.max(0, input.pricePaid - input.alreadyRefunded - paidUsed * input.perClassPrice)
+  let charged = 0
+  for (let i = 0; i < paidUsed; i++) charged += input.usedLessonPrices[i] ?? input.listPrice
+  return Math.max(0, input.pricePaid - input.alreadyRefunded - charged)
 }
