@@ -29,7 +29,9 @@ export function Banners() {
   const banners = useApi<Banner[]>('/admin/banners')
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
-  const [edit, setEdit] = useState<{ id: number | null; form: BannerForm } | null>(null)
+  const [edit, setEdit] = useState<{ id: number | null; form: BannerForm; loaded?: Banner } | null>(
+    null,
+  )
   const submitting = useSubmitting()
 
   const save = async () => {
@@ -40,6 +42,7 @@ export function Banners() {
           edit.id ? 'PUT' : 'POST',
           edit.id ? `/admin/banners/${edit.id}` : '/admin/banners',
           edit.form,
+          { ifMatch: edit.loaded },
         ),
       '已保存',
     )
@@ -131,7 +134,7 @@ export function Banners() {
                 <Button
                   variant="text"
                   theme="primary"
-                  onClick={() => setEdit({ id: row.id, form: { ...row } })}
+                  onClick={() => setEdit({ id: row.id, form: { ...row }, loaded: row })}
                 >
                   编辑
                 </Button>

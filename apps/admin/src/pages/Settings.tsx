@@ -56,7 +56,8 @@ export function Settings() {
     body.venue.latitude = coord.lat ? Number(coord.lat) : null
     body.venue.longitude = coord.lng ? Number(coord.lng) : null
     setSaving(true)
-    if (await attempt(() => api('PUT', '/admin/settings', body), '已保存')) await reload()
+    if (await attempt(() => api('PUT', '/admin/settings', body, { ifMatch: data }), '已保存'))
+      await reload()
     setSaving(false)
   }
 

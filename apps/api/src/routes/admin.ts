@@ -21,7 +21,7 @@ import {
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
-import { ApiError, idParam, notFound, parseBody, parseQuery } from '../errors'
+import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { loginAdmin, logout, requireAdmin } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
@@ -142,7 +142,10 @@ export function adminRoutes(deps: Deps) {
 
   app.put('/settings', async (c) => {
     const body = await parseBody(c, venueSettings)
-    saveSettings(db, body, deps.now())
+    immediate(db, (tx) => {
+      checkVersion(c, getSettings(tx))
+      saveSettings(tx, body, deps.now())
+    })
     return c.json(getSettings(db))
   })
 
@@ -841,13 +844,13 @@ export function adminRoutes(deps: Deps) {
 
   app.put('/banners/:id', async (c) => {
     const body = await parseBody(c, bannerBody)
-    const row = db
-      .update(banners)
-      .set(body)
-      .where(eq(banners.id, idParam(c)))
-      .returning()
-      .get()
-    if (!row) throw notFound('轮播图')
+    const id = idParam(c)
+    const row = immediate(db, (tx) => {
+      const current = tx.select().from(banners).where(eq(banners.id, id)).get()
+      if (!current) throw notFound('轮播图')
+      checkVersion(c, current)
+      return tx.update(banners).set(body).where(eq(banners.id, id)).returning().get()
+    })
     return c.json(row)
   })
 

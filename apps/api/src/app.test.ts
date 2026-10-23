@@ -1,4 +1,4 @@
-import { healthResponse } from '@rs/shared'
+import { healthResponse, versionOf } from '@rs/shared'
 import { describe, expect, it } from 'vitest'
 import { setup } from './test/harness'
 
@@ -34,5 +34,50 @@ describe('validation messages', () => {
     settings.booking.advanceDays = 500
     const range = await h.call('PUT', '/admin/settings', settings, admin)
     expect(range.json.error.message).toBe('可提前预约天数超出允许范围')
+  })
+})
+
+describe('edits from two tabs', () => {
+  it('refuses a settings save made on top of a change the editor has not seen', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const loaded = (await h.call('GET', '/admin/settings', undefined, admin)).json
+    const ifMatch = { 'If-Match': versionOf(loaded) }
+
+    const first = structuredClone(loaded)
+    first.venue.name = '第一个标签页'
+    expect((await h.call('PUT', '/admin/settings', first, admin, ifMatch)).status).toBe(200)
+
+    const second = structuredClone(loaded)
+    second.notice.text = '第二个标签页'
+    const stale = await h.call('PUT', '/admin/settings', second, admin, ifMatch)
+    expect(stale.status).toBe(409)
+    expect(stale.json.error.code).toBe('edited_elsewhere')
+    const now = (await h.call('GET', '/admin/settings', undefined, admin)).json
+    expect(now.venue.name).toBe('第一个标签页')
+
+    // A save on top of what is there now goes through.
+    second.venue.name = now.venue.name
+    const fresh = await h.call('PUT', '/admin/settings', second, admin, {
+      'If-Match': versionOf(now),
+    })
+    expect(fresh.status).toBe(200)
+  })
+
+  it('refuses a banner save made on top of a change the editor has not seen', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const body = { imageUrl: '/api/uploads/a.png', title: '双十一' }
+    const created = (await h.call('POST', '/admin/banners', body, admin)).json
+    const ifMatch = { 'If-Match': versionOf(created) }
+    const path = `/admin/banners/${created.id}`
+    const first = await h.call('PUT', path, { ...body, title: '双十二' }, admin, ifMatch)
+    expect(first.status).toBe(200)
+    const stale = await h.call('PUT', path, { ...body, sort: 3 }, admin, ifMatch)
+    expect(stale.json.error.code).toBe('edited_elsewhere')
+    const again = await h.call('PUT', path, { ...body, sort: 3 }, admin, {
+      'If-Match': versionOf(first.json),
+    })
+    expect(again.status).toBe(200)
   })
 })
