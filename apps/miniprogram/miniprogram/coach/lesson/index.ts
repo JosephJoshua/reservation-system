@@ -109,7 +109,7 @@ Page({
       together: l.lessonsTogether ? `与你的第 ${l.lessonsTogether + 1} 节课` : '第一次上你的课',
       cancelReason: l.cancelReason || (l.cancelledBy === 'student' ? '学员取消' : '场馆取消'),
       attendanceNote: attendanceNote(l),
-      noteEditable: l.status === 'confirmed' || l.status === 'pending_payment',
+      noteEditable: l.status !== 'cancelled' && l.status !== 'expired',
       feedbackNote: feedbackNote(l),
       feedbackClosed: feedbackClosed(l),
       feedbackPhotos: l.feedback?.photos.map(assetUrl) ?? [],
