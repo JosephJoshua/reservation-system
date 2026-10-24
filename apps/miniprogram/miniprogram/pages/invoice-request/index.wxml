@@ -1,3 +1,4 @@
+<theme-root>
 <view wx:if="{{state === 'loading'}}" class="centered">
   <t-loading theme="circular" size="48rpx" />
 </view>
@@ -50,3 +51,4 @@
     </view>
   </view>
 </block>
+</theme-root>
