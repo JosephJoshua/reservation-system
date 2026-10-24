@@ -27,6 +27,31 @@ type InvoiceRow = typeof invoices.$inferSelect
 const OPEN_REFUNDS = ['requested', 'pending', 'processing', 'failed'] as const
 const MAX_PDF_BYTES = 10 * 1024 * 1024
 
+/**
+ * Closes a request still waiting on an order that is now fully refunded: there is nothing left
+ * to invoice, and an open request would hold up the student's account deletion. Run in the
+ * transaction that settles a refund.
+ */
+export function closeRefundedRequests(tx: Q, orderId: number) {
+  const order = tx
+    .select({ amount: orders.amount })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .get()
+  if (!order) return
+  const refunded =
+    tx
+      .select({ total: sql<number | null>`sum(${refunds.amount})` })
+      .from(refunds)
+      .where(and(eq(refunds.orderId, orderId), eq(refunds.status, 'succeeded')))
+      .get()?.total ?? 0
+  if (order.amount - Number(refunded) > 0) return
+  tx.update(invoices)
+    .set({ status: 'rejected', rejectReason: '订单已全额退款' })
+    .where(and(eq(invoices.orderId, orderId), eq(invoices.status, 'requested')))
+    .run()
+}
+
 export const invoicesDir = (deps: Pick<Deps, 'uploadsDir'>) => join(deps.uploadsDir, 'invoices')
 
 /** Refund totals per order: what went back, and whether more is still on its way. */
