@@ -1,5 +1,5 @@
-// 学员档案: what the venue records about a student for teaching. Staff edit it in admin, coaches
-// read it on the lesson page, and the student never sees it.
+// 学员档案: what the venue records about a student for teaching. Coaches keep it up to date from
+// their lesson pages, staff from the admin, and the student never sees it.
 
 export const studentLevelLabels = {
   beginner: '零基础',
@@ -25,7 +25,7 @@ export const PROFILE_MAX_TAGS = 8
 export const PROFILE_TAG_LENGTH = 10
 export const PROFILE_NOTE_LENGTH = 500
 
-/** The part of the profile staff edit. */
+/** The part of the profile coaches and staff edit. */
 export interface StudentProfileEdit {
   level: StudentLevel | null
   grip: Grip | null
@@ -38,6 +38,11 @@ export interface StudentProfileDto extends StudentProfileEdit {
   lessons: number
   /** Lessons marked 缺席. */
   noShows: number
+  /** 课后点评 the student sees, from every coach. */
+  feedbackCount: number
+  /** Who saved it last, and when; null before anyone has, or for saves made before this was kept. */
+  updatedBy: { kind: 'coach' | 'staff'; name: string } | null
+  updatedAt: string | null
 }
 
 /** Length in characters as people count them, so an emoji is one, like the admin's counters. */

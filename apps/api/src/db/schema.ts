@@ -61,6 +61,9 @@ export const studentProfiles = sqliteTable('student_profiles', {
   tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default([]),
   note: text('note').notNull().default(''),
   updatedAt: instant('updated_at').notNull(),
+  // Who saved it last: a coach from a lesson page or staff in the admin. Both null on older rows.
+  updatedByCoach: integer('updated_by_coach').references(() => coaches.id),
+  updatedByStaff: integer('updated_by_staff').references(() => staff.id),
 })
 
 /** Front-desk and management logins for the admin app. `roles` decides what each may do. */

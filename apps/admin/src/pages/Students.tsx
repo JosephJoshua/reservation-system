@@ -1,5 +1,6 @@
 import {
   cleanTags,
+  type FeedbackItemDto,
   gripLabels,
   grips,
   PROFILE_MAX_TAGS,
@@ -39,6 +40,7 @@ import { BookForStudent } from '../BookForStudent'
 import { DataTable, LoadMore } from '../DataTable'
 import { BindWechatDialog, NewStudentDialog } from '../DeskStudent'
 import { ExportButton } from '../ExportButton'
+import { FeedbackPhotos } from '../FeedbackPhotos'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import {
@@ -460,6 +462,12 @@ function StudentDrawer({
             <ProfileView profile={s.profile} deleted={Boolean(s.deletedAt)} />
           </Card>
 
+          {s.feedback.length > 0 && (
+            <Card title={`课后点评（${s.profile.feedbackCount}）`} bordered>
+              <FeedbackList key={s.id} items={s.feedback} total={s.profile.feedbackCount} />
+            </Card>
+          )}
+
           <Card
             title="课时包"
             bordered
@@ -674,14 +682,49 @@ function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; dele
       )}
       {p.note && <div className="profile-note">{p.note}</div>}
       {!deleted && !traits.length && !p.tags.length && !p.note && (
-        <div className="muted">还没有填写水平、握拍、标签和备注。填写后，教练上课前就能看到。</div>
+        <div className="muted">
+          还没有填写水平、握拍、标签和备注。教练可以在小程序的课程页填写，场馆也可以在这里填写。
+        </div>
       )}
       <div className="muted">{profileCounts(p)}</div>
+      {p.updatedBy && p.updatedAt && (
+        <div className="muted">
+          {p.updatedBy.kind === 'coach' ? `${p.updatedBy.name}（教练）` : p.updatedBy.name} 修改于{' '}
+          {fmtDateTime(p.updatedAt)}
+        </div>
+      )}
     </div>
   )
 }
 
-/** Staff fill in the profile; coaches read it on the lesson page, students never see it. */
+/** The 课后点评 the student sees, from every coach, newest first; the latest few until opened. */
+function FeedbackList({ items, total }: { items: FeedbackItemDto[]; total: number }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? items : items.slice(0, 3)
+  return (
+    <div className="student-feedback">
+      {shown.map((f) => (
+        <div key={f.bookingId} className="feedback-cell">
+          <div className="muted">
+            {fmtDateTime(f.startsAt)} · {f.coachName} · {f.lessonTypeName}
+          </div>
+          <div className="feedback-text">{f.text}</div>
+          <FeedbackPhotos photos={f.photos} />
+        </div>
+      ))}
+      {items.length > shown.length && (
+        <Button variant="text" theme="primary" onClick={() => setAll(true)}>
+          {items.length < total ? `显示最近 ${items.length} 条` : `显示全部 ${items.length} 条`}
+        </Button>
+      )}
+      {all && items.length < total && (
+        <div className="muted">更早的点评可在课后点评页按日期查看</div>
+      )}
+    </div>
+  )
+}
+
+/** Coaches keep the profile from their lesson pages and staff here; students never see it. */
 function ProfileDialog({
   studentId,
   loaded,

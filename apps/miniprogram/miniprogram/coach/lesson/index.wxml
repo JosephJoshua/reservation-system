@@ -29,15 +29,24 @@
   </t-cell-group>
 
   <block wx:if="{{profile}}">
-    <view class="section-title">学员档案</view>
+    <view class="section-title note-title">
+      <text>学员档案</text>
+      <text class="note-save" bind:tap="editProfile">{{profile.empty ? '填写' : '编辑'}}</text>
+    </view>
     <view class="card profile">
       <view wx:if="{{profile.chips.length}}" class="profile-chips">
         <t-tag wx:for="{{profile.chips}}" wx:key="key" theme="{{item.trait ? 'primary' : 'default'}}" variant="{{item.trait ? 'light' : 'outline'}}">{{item.text}}</t-tag>
       </view>
       <view wx:if="{{profile.note}}" class="profile-note {{profile.long && !noteOpen ? 'profile-note-clamped' : ''}}">{{profile.note}}</view>
       <view wx:if="{{profile.long}}" class="profile-more" bind:tap="toggleNote">{{noteOpen ? '收起' : '展开'}}</view>
-      <view wx:if="{{profile.empty}}" class="profile-empty">场馆还没有填写学员档案</view>
+      <view wx:if="{{profile.empty}}" class="profile-empty">还没有填写。记下水平和训练要点，其他教练上课前也能看到。</view>
       <view class="profile-counts">{{profile.counts}}</view>
+      <view wx:if="{{profile.edited}}" class="profile-edited">{{profile.edited}}</view>
+    </view>
+    <view wx:if="{{profile.feedbackCount}}" class="profile-feedback">
+      <t-cell-group theme="card">
+        <t-cell title="历次课后点评" note="{{profile.feedbackCount}} 条" arrow hover bind:click="openStudentFeedback" />
+      </t-cell-group>
     </view>
   </block>
 

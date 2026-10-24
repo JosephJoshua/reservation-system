@@ -35,8 +35,13 @@ async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
 }
 
 /** Calls the coach API. Fails with code `not_bound` when this WeChat user is not a coach yet. */
-export function coachApi<T>(method: Method, path: string, data?: unknown): Promise<T> {
-  return withToken((token) => request<T>(method, `/coach${path}`, data, token))
+export function coachApi<T>(
+  method: Method,
+  path: string,
+  data?: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  return withToken((token) => request<T>(method, `/coach${path}`, data, token, headers))
 }
 
 /** Uploads a local file to the coach API, like coachApi. */
@@ -50,6 +55,16 @@ export async function bind(bindCode: string): Promise<CoachMeDto> {
   wx.setStorageSync(TOKEN_KEY, res.token)
   remember(res.coach)
   return res.coach
+}
+
+/**
+ * The lesson changed so its 学员档案 is no longer the coach's to see here: cancelled, over a week
+ * old, moved to another coach, or the student deleted their account. Retrying cannot help.
+ */
+export function profileClosed(e: unknown): e is ApiError {
+  return (
+    e instanceof ApiError && ['profile_closed', 'account_deleted', 'not_found'].includes(e.code)
+  )
 }
 
 export function isNotBound(e: unknown): boolean {

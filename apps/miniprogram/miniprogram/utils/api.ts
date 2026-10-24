@@ -30,13 +30,15 @@ export function request<T>(
   path: string,
   data?: unknown,
   token?: string,
+  /** Extra headers, such as If-Match for a save checked against what the page loaded. */
+  headers: Record<string, string> = {},
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     wx.request({
       url: `${apiBaseUrl}/api${path}`,
       method,
       data: data as WechatMiniprogram.IAnyObject | undefined,
-      header: token ? { Authorization: `Bearer ${token}` } : {},
+      header: token ? { ...headers, Authorization: `Bearer ${token}` } : headers,
       timeout: 15000,
       success(res) {
         if (res.statusCode >= 200 && res.statusCode < 300) {

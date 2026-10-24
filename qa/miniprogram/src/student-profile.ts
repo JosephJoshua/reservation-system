@@ -1,7 +1,8 @@
 // Drives 学员档案 on the coach lesson page against a local API seeded with
-// `pnpm --filter @rs/api db:seed`: an empty profile, one the venue filled in, the longest one the
-// admin allows, a refresh after the venue changes it, and the student's own lesson page, which
-// must not show any of it. One lesson is moved into the past in the API's SQLite file to count, so
+// `pnpm --filter @rs/api db:seed`: an empty profile, the coach filling it in from the lesson page
+// (with a double tap on 保存), one the venue filled in, a coach save refused because the venue
+// changed it meanwhile, the student's 课后点评 from every coach, the longest profile the admin
+// allows, and the student's own lesson page, which must not show any of it. One lesson is moved into the past in the API's SQLite file to count, so
 // set QA_DB to it. Saves a screenshot of each screen to screenshots/student-profile/. Run it once
 // with DevTools in light and once in dark, or force the theme with QA_THEME.
 import { mkdirSync } from 'node:fs'
@@ -140,6 +141,19 @@ interface ProfileView {
   note: string
   empty: boolean
   counts: string
+  edited: string
+  feedbackCount: number
+}
+
+/** Picks the option at `tapIndex` in the next action sheet. */
+async function pickInSheet(method: string, tapIndex: number) {
+  await miniProgram.mockWxMethod('showActionSheet', { tapIndex, errMsg: 'showActionSheet:ok' })
+  try {
+    await invoke(method)
+    await sleep(300)
+  } finally {
+    await miniProgram.restoreWxMethod('showActionSheet')
+  }
 }
 
 const NOTE = '反手推挡偏慢，多练步法。\n目标：下个月区赛。'
@@ -214,6 +228,109 @@ try {
     await screenshot('empty')
   })
 
+  await step('the coach fills it in from the lesson page, double tapping 保存', async () => {
+    await invoke('editProfile')
+    page = await waitForPage('coach/profile/index', (d) => d.state === 'ready')
+    check((await page.data()).edited === '', 'nobody has saved it yet')
+    await screenshot('editor-empty')
+    await pickInSheet('pickLevel', 1)
+    await pickInSheet('pickGrip', 0)
+    for (const tag of ['发球好', '  ', '发球好', '一二三四五六七八九十一']) {
+      await invoke('onTyping', { detail: { value: tag } })
+      await invoke('addTag')
+    }
+    await invoke('onNote', { detail: { value: '  正手稳定，反手要多练。  ' } })
+    await sleep(300)
+    let data = await page.data()
+    check(data.levelText === '初级' && data.gripText === '横拍', `picked: ${data.levelText}`)
+    // The repeat is dropped and the over-long tag stays typed, refused with a toast.
+    check(JSON.stringify(data.tags) === '["发球好"]', `tags: ${JSON.stringify(data.tags)}`)
+    await invoke('onTyping', { detail: { value: '' } })
+    data = await page.data()
+    check(data.canSave === true, 'should be saveable')
+    await screenshot('editor-filled')
+    // Unpicking the level shows 不填 last.
+    await pickInSheet('pickLevel', 4)
+    check((await page.data()).levelText === '未填', 'level should be cleared')
+    await pickInSheet('pickLevel', 1)
+    await invoke('save')
+    await invoke('save')
+    page = await waitForPage('coach/lesson/index', (d) => (d.profile as ProfileView).edited !== '')
+    const profile = await profileOf()
+    check(
+      profile?.chips.map((c) => c.text).join(',') === '初级,横拍,发球好',
+      `chips: ${JSON.stringify(profile?.chips)}`,
+    )
+    check(profile.note === '正手稳定，反手要多练。', `note: ${profile.note}`)
+    check(profile.edited.endsWith('修改'), `edited: ${profile.edited}`)
+    const pages = (await miniProgram.evaluate(() => getCurrentPages().length)) as number
+    check(pages === 2, `the double tap went back twice or not at all: ${pages} pages`)
+    await screenshot('saved-by-coach')
+  })
+
+  await step(
+    'a save on top of the venue change keeps the coach edit and takes theirs',
+    async () => {
+      await invoke('editProfile')
+      page = await waitForPage('coach/profile/index', (d) => d.state === 'ready')
+      await invoke('onNote', { detail: { value: '教练这边的改动' } })
+      await call(
+        'PUT',
+        `/admin/students/${studentId}/profile`,
+        { level: 'elementary', grip: 'shakehand', tags: ['发球好'], note: '场馆先改了' },
+        admin,
+      )
+      await miniProgram.mockWxMethod('showModal', { confirm: true, errMsg: 'showModal:ok' })
+      try {
+        await invoke('save')
+        page = await waitForPage(
+          'coach/profile/index',
+          (d) => d.state === 'ready' && d.levelText === '初级',
+        )
+      } finally {
+        await miniProgram.restoreWxMethod('showModal')
+      }
+      const data = await page.data()
+      check(data.note === '教练这边的改动', `the coach's note was lost: ${data.note}`)
+      check(data.gripText === '横拍' && JSON.stringify(data.tags) === '["发球好"]', 'not merged')
+      check(String(data.edited).startsWith('场馆'), `edited: ${data.edited}`)
+      check(data.canSave === true, 'the merged form should be saveable')
+      await screenshot('conflict-merged')
+      await invoke('save')
+      page = await waitForPage(
+        'coach/lesson/index',
+        (d) => (d.profile as ProfileView)?.note === '教练这边的改动',
+      )
+    },
+  )
+
+  await step('the student 课后点评 from every coach are listed', async () => {
+    const coachToken = (await call('POST', '/coach/login', { code: `dev:qa_sp_coach_${run}` }))
+      .token as string
+    await call(
+      'PUT',
+      `/coach/lessons/${past}/feedback`,
+      { text: '发球旋转更强了，下次练接发球。', photos: [] },
+      coachToken,
+    )
+    await invoke('load')
+    page = await waitForPage(
+      'coach/lesson/index',
+      (d) => (d.profile as ProfileView).feedbackCount === 1,
+    )
+    await screenshot('feedback-count')
+    await invoke('openStudentFeedback')
+    await invoke('openStudentFeedback')
+    const list = await waitForPage('coach/student-feedback/index', (d) => d.state === 'ready')
+    const items = (await list.data()).items as { text: string; lesson: string }[]
+    check(items.length === 1 && items[0]?.text.startsWith('发球旋转'), JSON.stringify(items))
+    const pages = (await miniProgram.evaluate(() => getCurrentPages().length)) as number
+    check(pages === 3, `the double tap opened the list twice: ${pages} pages`)
+    await screenshot('feedback-list')
+    await miniProgram.navigateBack()
+    page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
+  })
+
   await step('the venue fills it in and a pull-down refresh shows it', async () => {
     await call(
       'PUT',
@@ -222,7 +339,7 @@ try {
       admin,
     )
     await invoke('onPullDownRefresh')
-    page = await waitForPage('coach/lesson/index', (d) => !(d.profile as ProfileView).empty)
+    page = await waitForPage('coach/lesson/index', (d) => (d.profile as ProfileView).note === NOTE)
     const profile = await profileOf()
     check(
       profile?.chips.map((c) => c.text).join(',') === '中级,直拍,反手弱,备赛',

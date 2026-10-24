@@ -880,6 +880,16 @@ a:hover {
   gap: 12px;
 }
 
+.student-feedback {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+.student-feedback .feedback-cell {
+  justify-self: stretch;
+}
+
 .profile-note {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

@@ -3,26 +3,88 @@ import {
   type CoachLessonDto,
   type CoachSessionDto,
   type CoachSlotDto,
+  type StudentProfileDto,
+  type StudentProfileEdit,
   venueInstant,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne } from 'drizzle-orm'
 import { bookings, lessonFeedback, lessonTypes, packages, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
-import { DELETED_NAME } from './account'
+import { accountDeleted, DELETED_NAME } from './account'
 import { coachCanMark } from './attendance'
 import { LIVE } from './bookings'
-import { feedbackOf, feedbackView, writeBlock } from './feedback'
+import { feedbackOf, feedbackView, studentFeedback, writeBlock } from './feedback'
 import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
 import { assertNoSessionOverlap } from './sessions'
 import { getSettings } from './settings'
-import { studentProfile } from './student-profiles'
+import { saveStudentProfile, studentProfile } from './student-profiles'
 import { slotsWithoutTable } from './tables'
 import { bookingStatus } from './views'
 
-/** How long after a lesson its coach still sees the student's 学员档案 on it. */
+/** How long after a lesson its coach still sees and keeps the student's 学员档案 on it. */
 const PROFILE_DAYS_AFTER = 7
+
+/**
+ * Whether the coach reads and edits the student's 学员档案 on this lesson: only around a paid
+ * lesson they teach, not before it is paid or once it was cancelled, and not for lessons that ended
+ * more than a week ago, so a coach does not keep a student they no longer teach.
+ */
+function profileOpen(
+  b: Pick<typeof bookings.$inferSelect, 'status' | 'endsAt'>,
+  studentDeletedAt: Date | null,
+  now: Date,
+) {
+  return (
+    !studentDeletedAt &&
+    b.status === 'confirmed' &&
+    b.endsAt.getTime() > now.getTime() - PROFILE_DAYS_AFTER * 86_400_000
+  )
+}
+
+/** The profile as coaches get it: staff who saved it show as the venue, not by name. */
+function coachView(db: Deps['db'], studentId: number, now: Date): StudentProfileDto {
+  const p = studentProfile(db, studentId, now)
+  return p.updatedBy?.kind === 'staff' ? { ...p, updatedBy: { kind: 'staff', name: '场馆' } } : p
+}
+
+/** The lesson's student, or a refusal when the coach no longer has their 学员档案 on it. */
+function profileStudent(deps: Deps, bookingId: number, coachId: number) {
+  const { booking } = ownBooking(deps, bookingId, coachId)
+  const student = deps.db
+    .select({ deletedAt: students.deletedAt })
+    .from(students)
+    .where(eq(students.id, booking.studentId))
+    .get()
+  if (student?.deletedAt) throw accountDeleted()
+  if (!profileOpen(booking, student?.deletedAt ?? null, deps.now())) {
+    throw new ApiError(409, 'profile_closed', '这节课已不能查看学员档案')
+  }
+  return booking.studentId
+}
+
+/** Saves the 学员档案 from a lesson page; returns the lesson as it is now. */
+export function saveCoachProfile(
+  deps: Deps,
+  bookingId: number,
+  coachId: number,
+  edit: StudentProfileEdit,
+  check: (current: StudentProfileEdit) => void,
+): CoachLessonDto {
+  const studentId = profileStudent(deps, bookingId, coachId)
+  saveStudentProfile(deps, studentId, edit, { coachId }, (current) => {
+    // Again inside the save's transaction, so a lesson cancelled or moved meanwhile refuses it.
+    if (profileStudent(deps, bookingId, coachId) !== studentId) throw notFound('课程')
+    check(current)
+  })
+  return coachLesson(deps, bookingId, coachId)
+}
+
+/** Every 课后点评 the lesson's student sees, from any coach, newest first. */
+export function coachStudentFeedback(deps: Deps, bookingId: number, coachId: number) {
+  return studentFeedback(deps.db, profileStudent(deps, bookingId, coachId))
+}
 
 /** A coach's slots between two venue dates, inclusive, with the lesson booked in each. */
 export function coachSchedule(
@@ -190,15 +252,8 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
       phone: student?.phone ?? '',
     },
-    // Only around a lesson the coach teaches: not once it was cancelled, and not for lessons that
-    // ended more than a week ago, so an old lesson does not show what the venue writes later.
     profile:
-      student &&
-      !student.deletedAt &&
-      (LIVE as readonly string[]).includes(b.status) &&
-      b.endsAt.getTime() > now.getTime() - PROFILE_DAYS_AFTER * 86_400_000
-        ? studentProfile(db, student.id, now)
-        : null,
+      student && profileOpen(b, student.deletedAt, now) ? coachView(db, student.id, now) : null,
     paidWith: b.paidWith,
     price: b.price,
     packageName: pkg?.name ?? null,
