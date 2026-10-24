@@ -1,3 +1,4 @@
+<theme-root>
 <view class="me" hover-class="me-hover" bind:tap="editProfile">
   <t-avatar icon="user" size="112rpx" />
   <view class="me-text">
@@ -29,6 +30,12 @@
 
 <view class="group">
   <t-cell-group theme="card">
+    <t-cell title="外观" note="{{themeLabel}}" left-icon="mode-dark" arrow hover bind:click="openTheme" />
+  </t-cell-group>
+</view>
+
+<view class="group">
+  <t-cell-group theme="card">
     <t-cell wx:if="{{hasBookingPolicy}}" title="预约须知" left-icon="file" arrow hover data-kind="booking" bind:click="openPolicy" />
     <t-cell title="用户协议" left-icon="file-safety" arrow hover data-kind="agreement" bind:click="openPolicy" />
     <t-cell title="隐私政策" left-icon="secured" arrow hover data-kind="privacy" bind:click="openPolicy" />
@@ -39,3 +46,4 @@
   <text class="coach-link" bind:tap="openCoach">教练入口</text>
 </view>
 <privacy-popup id="privacy-popup" />
+</theme-root>

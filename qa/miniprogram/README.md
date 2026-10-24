@@ -12,7 +12,9 @@ pnpm --filter @rs/qa-miniprogram smoke
 To use a different AppID (for example a sandbox test AppID), set `WX_APPID`; the build writes it to
 the gitignored `project.private.config.json`.
 
-Screenshots are written to `qa/miniprogram/screenshots/`. Set `WECHAT_DEVTOOLS_CLI` if DevTools
+Screenshots are written to `qa/miniprogram/screenshots/`; the smoke run opens each tab and the 外观
+page following the system, then forced light and dark, saving them under `system/`, `light/` and
+`dark/`. Set `WECHAT_DEVTOOLS_CLI` if DevTools
 is not installed in the default location.
 
 ## Student flows
@@ -53,3 +55,18 @@ Run it once with DevTools in light mode and once in dark mode:
 ```sh
 pnpm --filter @rs/qa-miniprogram coach-profile
 ```
+
+## Forcing a theme
+
+The 外观 setting under 我的 is stored in the `rs:theme` storage key: `light`, `dark`, or absent to
+follow the system. Any script can force a theme without touching the DevTools or system setting:
+
+```ts
+await miniProgram.callWxMethod('setStorageSync', 'rs:theme', 'dark')
+await miniProgram.reLaunch('/pages/booking/index')
+// ...
+await miniProgram.callWxMethod('removeStorageSync', 'rs:theme') // back to following the system
+```
+
+Following the system is the default, so a release still needs one run with DevTools itself in dark
+mode and the key removed. Native dialogs such as `wx.showModal` always follow the system theme.

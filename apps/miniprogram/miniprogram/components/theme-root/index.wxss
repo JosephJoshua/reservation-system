@@ -1,0 +1,17 @@
+:host {
+  display: block;
+}
+
+/* Covers the page so its background follows the setting, not just the system. */
+.theme-root {
+  min-height: 100vh;
+  background-color: var(--td-bg-color-page);
+  color: var(--td-text-color-primary);
+}
+
+/* Keeps a first child's top margin inside the wrapper, where it would otherwise show the page. */
+.theme-root::before,
+.theme-root::after {
+  content: '';
+  display: table;
+}

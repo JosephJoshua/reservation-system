@@ -11,7 +11,8 @@
     "pages/profile-edit/index",
     "pages/policy/index",
     "pages/coach-detail/index",
-    "pages/account-delete/index"
+    "pages/account-delete/index",
+    "pages/theme/index"
   ],
   "subpackages": [
     {
@@ -22,7 +23,8 @@
   ],
   "usingComponents": {
     "privacy-popup": "/components/privacy-popup/index",
-    "agree-check": "/components/agree-check/index"
+    "agree-check": "/components/agree-check/index",
+    "theme-root": "/components/theme-root/index"
   },
   "window": {
     "navigationBarTitleText": "预约",

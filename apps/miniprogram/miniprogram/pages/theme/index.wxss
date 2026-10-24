@@ -1,0 +1,5 @@
+@import '../../styles/common.wxss';
+
+.group {
+  margin-top: 24rpx;
+}

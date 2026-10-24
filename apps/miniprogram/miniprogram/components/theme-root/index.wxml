@@ -1,0 +1,1 @@
+<view class="theme-root {{theme ? 'theme-' + theme : ''}}"><slot /></view>

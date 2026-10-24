@@ -3,6 +3,7 @@ import { api, publicApi } from '../../utils/api'
 import { getCatalog, getMe } from '../../utils/data'
 import { maskPhone } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
+import { THEME_SETTING_LABELS, themeSetting } from '../../utils/theme'
 
 Page({
   data: {
@@ -14,9 +15,11 @@ Page({
     hasBookingPolicy: false,
     isCoach: false,
     meLoaded: false,
+    themeLabel: '',
   },
 
   onShow() {
+    this.setData({ themeLabel: THEME_SETTING_LABELS[themeSetting()] })
     this.load()
   },
 
@@ -67,6 +70,10 @@ Page({
 
   openPackages() {
     navigateOnce('/pages/packages/index')
+  },
+
+  openTheme() {
+    navigateOnce('/pages/theme/index')
   },
 
   openPolicy(e: WechatMiniprogram.TouchEvent) {

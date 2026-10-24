@@ -1,0 +1,70 @@
+/* App token overrides on top of TDesign and the brand. Not imported directly: the build copies it
+   into lib/theme.wxss along with forced .theme-light and .theme-dark versions, so rerun
+   `pnpm --filter @rs/miniprogram build` after editing. Only custom properties on page belong here. */
+page {
+  --td-bg-color-page: #ededed;
+  /* Empty states: a light icon over darker copy, close to WeUI proportions. */
+  --td-empty-icon-color: var(--td-text-color-disabled);
+  --td-empty-description-color: var(--td-text-color-secondary);
+  --td-empty-description-margin-top: 24rpx;
+  /* WeChat asks for 44px tap targets; TDesign's medium button is 40px. */
+  --td-button-medium-height: 88rpx;
+  /* Light buttons sit on the grey page, so they take the card colour to stand out. */
+  --td-button-light-bg-color: var(--td-bg-color-container);
+  /* TDesign's warning orange is too light for small tag text on its pale fill. */
+  --td-tag-warning-color: #a65000;
+  /* Cell values are content, not hints; TDesign's placeholder grey is below 4.5:1. */
+  --td-cell-note-color: var(--td-text-color-secondary);
+  /* TDesign redeclares its progress colour on the component, so pages pass this one instead. */
+  --rs-progress-color: var(--td-brand-color);
+  /* TDesign's danger fills leave white text under 4.5:1 in both themes. */
+  --td-button-danger-bg-color: #c4362f;
+  --td-button-danger-border-color: #c4362f;
+  --td-button-danger-active-bg-color: #a32c26;
+  --td-button-danger-active-border-color: #a32c26;
+  /* Status text such as attendance marks, and the success and danger tags and outline buttons:
+     TDesign's light greens and reds fall under 4.5:1 on their pale tag fills. */
+  --rs-success-text-color: #2a7a4b;
+  --rs-error-text-color: #c4362f;
+  --td-tag-success-color: var(--rs-success-text-color);
+  --td-tag-danger-color: var(--rs-error-text-color);
+  --td-button-danger-outline-color: var(--rs-error-text-color);
+  --td-button-danger-outline-border-color: var(--rs-error-text-color);
+  /* Long text such as the policies reads on white in light mode. */
+  --rs-reading-bg-color: var(--td-bg-color-container);
+}
+
+@media (prefers-color-scheme: dark) {
+  page {
+    --td-bg-color-page: #111111;
+    /* TDesign's dark brand is a light blue that washes out white button text, so fills use a
+       deeper step and text on dark surfaces uses a lighter one. */
+    --td-brand-color: var(--td-brand-color-7);
+    --td-brand-color-active: var(--td-brand-color-6);
+    --td-text-color-brand: var(--td-brand-color-9);
+    --td-text-color-link: var(--td-brand-color-9);
+    --td-tag-primary-color: var(--td-brand-color-9);
+    --td-tag-warning-color: var(--rs-hint-color);
+    /* TDesign keeps light-mode text colours on outline buttons, light tags and active tabs, which
+       fall under 4.5:1 on dark cards, so these take lighter shades. The progress bar is a non-text
+       mark and needs 3:1. */
+    --td-button-danger-bg-color: #a8383d;
+    --td-button-danger-border-color: #a8383d;
+    --td-button-danger-active-bg-color: #8f2f33;
+    --td-button-danger-active-border-color: #8f2f33;
+    /* Otherwise the disabled fill keeps near-white text and reads stronger than the enabled one. */
+    --td-button-danger-disabled-color: var(--td-text-color-disabled);
+    --rs-success-text-color: #5fc48a;
+    --rs-error-text-color: #f07075;
+    --td-button-light-color: var(--td-brand-color-9);
+    --td-button-primary-outline-color: var(--td-brand-color-9);
+    --td-button-primary-outline-border-color: var(--td-brand-color-9);
+    --td-button-danger-outline-color: var(--rs-error-text-color);
+    --td-button-danger-outline-border-color: var(--rs-error-text-color);
+    --td-tab-item-active-color: var(--td-brand-color-9);
+    --td-tag-success-color: var(--rs-success-text-color);
+    --td-tag-danger-color: var(--rs-error-text-color);
+    --rs-progress-color: var(--td-brand-color-8);
+    --rs-reading-bg-color: var(--td-bg-color-page);
+  }
+}

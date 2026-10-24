@@ -1,3 +1,4 @@
+<theme-root>
 <t-tabs value="{{scope}}" bind:change="onScope">
   <t-tab-panel label="即将开始" value="upcoming" />
   <t-tab-panel label="已结束" value="past" />
@@ -43,3 +44,4 @@
     <t-tag size="small" theme="{{item.tone}}" variant="light">{{item.status}}</t-tag>
   </view>
 </view>
+</theme-root>
