@@ -7,6 +7,7 @@ import { Field } from './Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, toFen, toYuan, yuan } from './format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from './hooks'
 import { offlineMethodLabel } from './labels'
+import { useCan } from './me'
 import type { Coach, LessonType, Person, Slot } from './types'
 
 interface Quote {
@@ -167,6 +168,8 @@ export function BookForStudent({
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [payWith, setPayWith] = useState<'package' | 'offline'>('offline')
   const [amount, setAmount] = useState<number | undefined>()
+  // Only 管理员 may charge other than the listed price.
+  const canPrice = useCan('manage')
   const [method, setMethod] = useState<Method>('alipay')
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
@@ -306,10 +309,14 @@ export function BookForStudent({
             </Field>
             {payWith === 'offline' && (
               <>
-                <Field label="实收金额" help="填 0 为免费">
+                <Field
+                  label="实收金额"
+                  help={canPrice ? '填 0 为免费' : '按标价收款，改价请联系管理员'}
+                >
                   <InputNumber
                     theme="normal"
                     value={amount}
+                    disabled={!canPrice}
                     min={0}
                     max={100_000}
                     decimalPlaces={2}
