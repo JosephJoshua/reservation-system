@@ -93,7 +93,7 @@ test('the table count keeps odd input in range and empty means no limit', async 
   await expect(input).toHaveValue('')
 
   await typeNumber(input, '3')
-  await page.getByRole('button', { name: '保存设置' }).click()
+  await page.locator('.save-bar').getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已保存')).toBeVisible()
   await page.reload()
   await expect(input).toHaveValue('3')

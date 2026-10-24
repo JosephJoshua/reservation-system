@@ -26,6 +26,7 @@ import {
   PREVIEW_DIALOG_WIDTH,
   PreviewDialog,
 } from '../preview/EditorWithPreview'
+import { useReorder } from '../Reorder'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 
 type ProductForm = Omit<PackageProduct, 'id'>
@@ -44,6 +45,7 @@ export function Products() {
   } | null>(null)
   const [preview, setPreview] = useState<PackageProduct | null>(null)
   const submitting = useSubmitting()
+  const move = useReorder('package-products', products.setData, products.reload)
 
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
   const typeName = (id: number) => types.data?.find((t) => t.id === id)?.name ?? ''
@@ -121,6 +123,7 @@ export function Products() {
         rowKey="id"
         loading={products.loading}
         data={products.data ?? []}
+        reorder={{ move }}
         empty="还没有课时包"
         columns={[
           {
@@ -359,13 +362,6 @@ function ProductEditor({
       </Field>
       <Field label="在售">
         <Switch value={f.onSale} onChange={(v) => set({ onSale: v })} />
-      </Field>
-      <Field label="排序">
-        <InputNumber
-          theme="normal"
-          value={f.sort}
-          onChange={(v) => set({ sort: Number(v) || 0 })}
-        />
       </Field>
     </div>
   )

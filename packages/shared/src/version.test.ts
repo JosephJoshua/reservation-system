@@ -8,8 +8,13 @@ describe('versionOf', () => {
   })
 
   it('changes when any field changes', () => {
-    const a = { id: 1, title: '双十一', sort: 0 }
-    expect(versionOf({ ...a, sort: 1 })).not.toBe(versionOf(a))
+    const a = { id: 1, title: '双十一', active: true }
+    expect(versionOf({ ...a, active: false })).not.toBe(versionOf(a))
     expect(versionOf({ ...a, title: '双十二' })).not.toBe(versionOf(a))
+  })
+
+  it('ignores the list position, which changes when a list is reordered', () => {
+    const a = { id: 1, title: '双十一', sort: 0 }
+    expect(versionOf({ ...a, sort: 3 })).toBe(versionOf(a))
   })
 })

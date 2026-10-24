@@ -41,6 +41,7 @@ import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
+import { confirmLeave, hasUnsaved, leaveTo, takeLeave } from './SaveBar'
 import { StudentSearch } from './StudentSearch'
 import { ThemeMenu } from './ThemeMenu'
 import { useThemeMode } from './theme'
@@ -95,9 +96,43 @@ export function App() {
       setAuthed(false)
       setExpired(true)
     })
-    const onHash = () => setPage(currentPage())
+    // Leaving a page with unsaved changes asks first. Links ask before the address changes; the
+    // back and forward buttons have already changed it, so it is put back while the admin decides
+    // and the browser goes there again if they leave.
+    let shown = window.location.hash
+    let asked = false
+    const onHash = async () => {
+      const next = window.location.hash
+      if (next === shown) return
+      if (hasUnsaved() && !takeLeave()) {
+        history.pushState(history.state, '', shown)
+        if (asked) return
+        asked = true
+        const leave = await confirmLeave()
+        asked = false
+        if (leave) history.back()
+        return
+      }
+      shown = next
+      setPage(currentPage())
+    }
+    const onClick = (e: MouseEvent) => {
+      if (!hasUnsaved() || e.defaultPrevented || e.button !== 0) return
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const link = (e.target as Element | null)?.closest?.('a[href^="#"]')
+      const href = link?.getAttribute('href')
+      if (!href || href === window.location.hash) return
+      // The link's own click handler (closing a dialog, say) waits for the answer too.
+      e.preventDefault()
+      e.stopPropagation()
+      void leaveTo(href)
+    }
+    document.addEventListener('click', onClick, true)
     window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
+    return () => {
+      window.removeEventListener('hashchange', onHash)
+      document.removeEventListener('click', onClick, true)
+    }
   }, [])
 
   // A new page starts at its top, as the content scrolls with the window.
@@ -107,6 +142,8 @@ export function App() {
   }, [page])
 
   const logout = async () => {
+    if (!(await confirmLeave())) return
+    takeLeave()
     await api('POST', '/admin/logout').catch(() => {})
     setToken(null)
     setAuthed(false)
@@ -139,6 +176,9 @@ function SignedInApp({
   onLogout: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // A menu tap that first asked about unsaved changes closes the menu once the page changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the page changes
+  useEffect(() => setMenuOpen(false), [requested])
   const me = useApi<StaffDto>('/admin/me')
   const { reload } = me
   useEffect(() => {

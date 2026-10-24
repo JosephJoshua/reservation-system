@@ -368,4 +368,43 @@
     justify-content: center;
     background: var(--td-bg-color-container);
   }
+
+  .save-bar {
+    left: 50%;
+    width: calc(100% - 24px);
+    bottom: 12px;
+    padding-left: 16px;
+  }
+
+  /* A reorderable card has its 上移 / 下移 buttons in the top right corner. */
+  .card-table tbody tr:has(td[data-reorder]) {
+    position: relative;
+  }
+
+  .card-table tbody td[data-reorder] {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    padding: 0 !important;
+  }
+
+  .card-table tbody td[data-reorder] .reorder-handle {
+    display: none;
+  }
+
+  .card-table tbody td[data-reorder] .t-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .card-table tbody td[data-reorder] + td {
+    padding-top: 10px !important;
+    padding-right: 80px !important;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .card-table tbody td[data-reorder] + td::before {
+    display: none;
+  }
 }

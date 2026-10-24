@@ -85,6 +85,7 @@ import {
 } from '../services/invoices'
 import { resolveMapLink } from '../services/map-links'
 import { moveBooking } from '../services/moves'
+import { nextSort, orderedLists, saveOrder } from '../services/order'
 import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
   approvePackageRefund,
@@ -174,14 +175,12 @@ const coachBody = z.object({
   profile: z.string().max(50_000).transform(cleanRichText).default(''),
   avatarUrl: z.string().max(300).default(''),
   active: z.boolean().default(true),
-  sort: z.number().int().default(0),
   /** Lesson types this coach teaches. */
   lessonTypeIds: z.array(z.number().int().positive()).max(100).default([]),
 })
 
 const categoryBody = z.object({
   name: z.string().trim().min(1).max(10),
-  sort: z.number().int().default(0),
   /** Prices for some lesson types; the rest use the lesson type's own price. */
   prices: z
     .array(z.object({ lessonTypeId: z.number().int().positive(), price: fen }))
@@ -206,7 +205,6 @@ const lessonTypeBody = z
     salePercent: z.number().int().min(1).max(99).nullable().default(null),
     saleStartsAt: nullableInstant.default(null),
     saleEndsAt: nullableInstant.default(null),
-    sort: z.number().int().default(0),
     capacity: z.number().int().min(1).max(MAX_CAPACITY).default(1),
     minStudents: z.number().int().min(2).max(MAX_CAPACITY).nullable().default(null),
     studentsPerTable: z.number().int().min(1).max(MAX_CAPACITY).nullable().default(null),
@@ -232,7 +230,6 @@ const productBody = z
     salePrice: fen.min(1).nullable().default(null),
     saleStartsAt: nullableInstant.default(null),
     saleEndsAt: nullableInstant.default(null),
-    sort: z.number().int().default(0),
   })
   .refine((v) => saleDatesValid(v.salePrice, v.saleStartsAt, v.saleEndsAt), {
     message: '限时价需要设置开始和结束时间',
@@ -247,12 +244,13 @@ const bannerBody = z
     startsAt: nullableInstant.default(null),
     endsAt: nullableInstant.default(null),
     active: z.boolean().default(true),
-    sort: z.number().int().default(0),
   })
   .refine((v) => (v.linkKind === 'none') === (v.linkId === null), { message: '请选择跳转目标' })
   .refine((v) => !v.startsAt || !v.endsAt || v.startsAt < v.endsAt, {
     message: '结束时间需晚于开始时间',
   })
+
+const orderBody = z.object({ ids: z.array(z.number().int().positive()).max(500) })
 
 function saleDatesValid(value: number | null, startsAt: Date | null, endsAt: Date | null) {
   if (value === null) return true
@@ -510,7 +508,7 @@ export function adminRoutes(deps: Deps) {
     if (coachId === null) {
       coachId = tx
         .insert(coaches)
-        .values({ ...fields, tags })
+        .values({ ...fields, tags, sort: nextSort(tx, coaches) })
         .returning({ id: coaches.id })
         .get().id
     } else {
@@ -621,7 +619,7 @@ export function adminRoutes(deps: Deps) {
     if (categoryId === null) {
       categoryId = tx
         .insert(coachCategories)
-        .values(fields)
+        .values({ ...fields, sort: nextSort(tx, coachCategories) })
         .returning({ id: coachCategories.id })
         .get().id
     } else {
@@ -773,7 +771,11 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/lesson-types', need('manage'), async (c) => {
     const body = await parseBody(c, lessonTypeBody)
-    const row = db.insert(lessonTypes).values(body).returning().get()
+    const row = db
+      .insert(lessonTypes)
+      .values({ ...body, sort: nextSort(db, lessonTypes) })
+      .returning()
+      .get()
     log(c.get('staffId'), {
       action: 'price.lesson_type',
       summary: `新建课程 ${row.name}，${lessonPriceLine(body)}`,
@@ -1403,7 +1405,11 @@ export function adminRoutes(deps: Deps) {
   app.post('/package-products', need('manage'), async (c) => {
     const body = await parseBody(c, productBody)
     checkProduct(body)
-    const row = db.insert(packageProducts).values(body).returning().get()
+    const row = db
+      .insert(packageProducts)
+      .values({ ...body, sort: nextSort(db, packageProducts) })
+      .returning()
+      .get()
     log(c.get('staffId'), {
       action: 'price.product',
       summary: `新建课时包 ${row.name}，${productPriceLine(body)}`,
@@ -2155,6 +2161,15 @@ export function adminRoutes(deps: Deps) {
     })
   })
 
+  // Hand-arranged order of the coach, category, lesson type, package and banner lists.
+  app.put('/order/:list', need('manage'), async (c) => {
+    const list = c.req.param('list')
+    if (!Object.hasOwn(orderedLists, list)) throw notFound('列表')
+    const { ids } = await parseBody(c, orderBody)
+    saveOrder(db, orderedLists[list as keyof typeof orderedLists], ids)
+    return c.body(null, 204)
+  })
+
   // Banners and uploads
 
   app.get('/banners', need('manage'), (c) =>
@@ -2163,7 +2178,14 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/banners', need('manage'), async (c) => {
     const body = await parseBody(c, bannerBody)
-    return c.json(db.insert(banners).values(body).returning().get(), 201)
+    return c.json(
+      db
+        .insert(banners)
+        .values({ ...body, sort: nextSort(db, banners) })
+        .returning()
+        .get(),
+      201,
+    )
   })
 
   app.put('/banners/:id', need('manage'), async (c) => {

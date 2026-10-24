@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { SearchIcon } from 'tdesign-icons-react'
 import { Button, Input, type InputRef } from 'tdesign-react'
 import { api } from './api'
+import { leaveTo } from './SaveBar'
 import type { StudentRow } from './types'
 
 const LIMIT = 8
@@ -60,8 +61,8 @@ export function StudentSearch({ compact = false }: { compact?: boolean }) {
   }
 
   const go = (hash: string) => {
-    window.location.hash = hash
     close()
+    void leaveTo(hash)
   }
 
   const showAll = () => go(`/students?q=${encodeURIComponent(term)}`)

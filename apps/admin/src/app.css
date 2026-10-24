@@ -161,6 +161,100 @@ body {
   margin: 0;
 }
 
+/*
+ * The bar that rises once a form has unsaved changes. It floats over the bottom of the content
+ * column wherever the form puts it, and the content gets room below so the bar never hides the
+ * last field.
+ */
+.save-bar {
+  position: fixed;
+  bottom: 16px;
+  left: calc(216px + (100% - 216px) / 2);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(560px, calc(100% - 216px - 32px));
+  padding: 10px 12px 10px 20px;
+  box-sizing: border-box;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-extraLarge);
+  box-shadow: var(--td-shadow-3);
+  transform: translateX(-50%);
+  animation: save-bar-in 0.18s ease-out;
+}
+
+.admin-content:has(.save-bar) {
+  padding-bottom: 96px;
+}
+
+.save-bar-note {
+  color: var(--td-text-color-secondary);
+}
+
+.save-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.save-bar-actions .t-button {
+  margin: 0;
+}
+
+@keyframes save-bar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-bar {
+    animation: none;
+  }
+}
+
+/* A reorderable row's drag handle and 上移 / 下移 buttons. */
+.reorder-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.reorder-handle {
+  display: inline-flex;
+  padding: 4px;
+  color: var(--td-text-color-placeholder);
+  font-size: 16px;
+  cursor: grab;
+}
+
+.t-table__handle-draggable:active .reorder-handle {
+  cursor: grabbing;
+}
+
+.reorder-cell .t-button {
+  margin: 0;
+}
+
+/* With a mouse the buttons show on the row under it; touch screens always show them. */
+@media (hover: hover) {
+  .reorder-cell .t-button {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+
+  .reorder-cell:focus-within .t-button {
+    opacity: 1;
+  }
+
+  tr:hover .reorder-cell .t-button {
+    opacity: 1;
+  }
+}
+
 .ellipsis {
   max-width: 100%;
   overflow: hidden;
