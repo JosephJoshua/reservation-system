@@ -216,8 +216,7 @@ Page({
         this.finish(res.bookingId)
         return
       }
-      if (res.existing) wx.showToast({ title: '你已预约这节课', icon: 'none' })
-      this.finish(res.bookingId)
+      this.finish(res.bookingId, res.existing ? '你已预约这节课' : '')
     } catch (e) {
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
@@ -232,12 +231,16 @@ Page({
 
   /**
    * Replaces this page with the booking, so going back lands on the time picker. If the student
-   * left while it was booking, the booking opens on top of where they are now.
+   * left while it was booking, the booking opens on top of where they are now. A toast is shown
+   * after the switch, which would otherwise swallow it.
    */
-  finish(bookingId: number) {
+  finish(bookingId: number, toast = '') {
     const url = `/pages/booking-detail/index?id=${bookingId}`
-    if (isTop(this)) wx.redirectTo({ url })
-    else if (this.left) wx.navigateTo({ url })
+    const success = () => {
+      if (toast) wx.showToast({ title: toast, icon: 'none' })
+    }
+    if (isTop(this)) wx.redirectTo({ url, success })
+    else if (this.left) wx.navigateTo({ url, success })
   },
 
   onUnload() {
