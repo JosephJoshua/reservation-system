@@ -246,6 +246,22 @@ Page({
         }
         return
       }
+      if (e instanceof ApiError && e.code === 'no_package') {
+        // Used up at the front desk or expired since the page loaded: quote again without it.
+        await this.load()
+        if (this.data.state === 'ready') {
+          await wx.showModal({
+            title: this.data.pkg ? '课时包已变动' : '课时包不可用',
+            content: this.data.pkg
+              ? `将使用${this.data.pkg.name}，请确认后再预约`
+              : this.data.perClassEnabled
+                ? `课时包已用完或已过期，可改用微信支付 ${this.data.priceText}`
+                : '课时包已用完或已过期，请先购买课时包',
+            showCancel: false,
+          })
+        }
+        return
+      }
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
         // A coach or lesson turned off: the time picker reloads with the venue's current list.
         if (e.code === 'not_found' || e.code === 'coach_not_teaching') {
