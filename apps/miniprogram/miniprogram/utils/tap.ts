@@ -28,7 +28,11 @@ let opening = false
 export function openOnce(open: (complete: () => void) => void): void {
   if (opening) return
   opening = true
+  // The map and photo viewer report complete as they start to open, so a late second tap is
+  // still ignored for a moment.
   open(() => {
-    opening = false
+    setTimeout(() => {
+      opening = false
+    }, 500)
   })
 }
