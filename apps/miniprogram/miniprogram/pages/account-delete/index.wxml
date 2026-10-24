@@ -29,7 +29,7 @@
     </view>
     <view class="item">
       <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>
-      <view class="item-text">删除教练对你的课堂备注</view>
+      <view class="item-text">删除教练的课堂备注、课后点评和课堂照片</view>
     </view>
     <view class="item">
       <view class="item-icon"><t-icon name="check-circle" size="36rpx" /></view>

@@ -82,3 +82,36 @@ export function attendanceError(
   }
   return null
 }
+
+/**
+ * How long after a lesson ends its coach can still write or change the feedback, counted from when
+ * attendance was marked if that came later, so a late mark still leaves a week.
+ */
+export const COACH_FEEDBACK_DAYS = 7
+
+/** Photos a coach can add to one lesson's feedback. */
+export const FEEDBACK_PHOTOS = 6
+
+/** The admin's 课后点评 list shows at most this many, newest first. */
+export const FEEDBACK_LIST_LIMIT = 500
+
+/** A student's 学习记录 shows at most this many, newest first, which keeps the page light. */
+export const FEEDBACK_RECORD_LIMIT = 100
+
+export type FeedbackError = 'not_attended' | 'too_late'
+
+/** Whether the coach can write or change a lesson's feedback now. */
+export function feedbackError(
+  booking: {
+    status: string
+    attendance: Attendance | null
+    attendanceAt: Date | null
+    endsAt: Date
+  },
+  now: Date,
+): FeedbackError | null {
+  if (booking.status !== 'confirmed' || booking.attendance !== 'attended') return 'not_attended'
+  const from = Math.max(booking.endsAt.getTime(), booking.attendanceAt?.getTime() ?? 0)
+  if (now.getTime() - from > COACH_FEEDBACK_DAYS * DAY) return 'too_late'
+  return null
+}

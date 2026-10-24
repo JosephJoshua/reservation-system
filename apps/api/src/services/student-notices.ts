@@ -4,6 +4,7 @@ import { immediate, type Q } from '../db/client'
 import {
   bookings,
   coaches,
+  lessonFeedback,
   lessonTypes,
   orders,
   packageLedger,
@@ -13,7 +14,8 @@ import {
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
-import { lessonTime, type NoticeValues } from '../wx-notify'
+import { lessonTime } from '../wx-notify'
+import { visible } from './feedback-visibility'
 import { getSettings } from './settings'
 
 const BATCH = 50
@@ -43,13 +45,12 @@ export function queueStudentNotice(
   now: Date,
   notice:
     | { bookingId: number; kind: 'moved'; was: KnownLesson }
-    | { bookingId: number; kind: 'feedback'; data?: Pick<NoticeValues, 'note'> },
+    | { bookingId: number; kind: 'feedback' },
 ) {
   const { bookingId, kind } = notice
+  // The feedback itself is read when the message goes out, so it says what the coach wrote last.
   if (notice.kind === 'feedback') {
-    tx.insert(studentNotices)
-      .values({ bookingId, kind, data: notice.data ?? {}, createdAt: now })
-      .run()
+    tx.insert(studentNotices).values({ bookingId, kind, createdAt: now }).run()
     return
   }
   // A reminder not sent yet was for the old time; the sweeper queues one for the new time, unless
@@ -303,6 +304,19 @@ function noticeRows(db: Q) {
     .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
 }
 
+/**
+ * A lesson's feedback for its message, unless the coach deleted it: what it says, and whether the
+ * student sees it now.
+ */
+function noticeFeedback(tx: Q, bookingId: number) {
+  return tx
+    .select({ text: lessonFeedback.text, visible: sql<number>`${visible}` })
+    .from(lessonFeedback)
+    .innerJoin(bookings, eq(bookings.id, lessonFeedback.bookingId))
+    .where(and(eq(lessonFeedback.bookingId, bookingId), isNull(lessonFeedback.deletedAt)))
+    .get()
+}
+
 async function sendPending(deps: Deps) {
   const { db } = deps
   const pending = db
@@ -339,15 +353,29 @@ async function sendPending(deps: Deps) {
       continue
     }
     const template = deps.notifier?.template(`student_${n.kind}`)
-    // Messages about a lesson that is no longer on, or has started, would mislead.
+    // Deleted accounts keep their bookings under a placeholder openid.
+    const reachable = n.openid && !n.openid.startsWith('deleted:')
+    const sendable = Boolean(deps.notifier && template && reachable)
+    const feedback = n.kind === 'feedback' ? noticeFeedback(db, n.bookingId) : undefined
+    const stale = now.getTime() - n.createdAt.getTime() > STALE_MS
+    // Feedback hidden for now, or on a lesson whose attendance is being corrected, may show
+    // again: its message waits rather than being dropped, when it could be sent at all. On a
+    // cancelled lesson it never shows again.
+    if (sendable && feedback && !feedback.visible && n.status === 'confirmed' && !stale) {
+      db.update(studentNotices)
+        .set({ doneAt: null, retryAt: new Date(now.getTime() + RETRY_MS) })
+        .where(eq(studentNotices.id, n.id))
+        .run()
+      continue
+    }
+    // Messages about a lesson that is no longer on, or has started, would mislead, and so would
+    // one about feedback the coach deleted or the venue took down.
     const outdated =
       n.kind === 'booked' || n.kind === 'reminder' || n.kind === 'moved'
         ? n.status !== 'confirmed' || n.startsAt <= now
-        : now.getTime() - n.createdAt.getTime() > STALE_MS
-    // Deleted accounts keep their bookings under a placeholder openid.
-    const reachable = n.openid && !n.openid.startsWith('deleted:')
+        : stale || (n.kind === 'feedback' && !feedback?.visible)
     let result: 'sent' | 'refused' | 'skipped' = 'skipped'
-    if (deps.notifier && template && reachable && !outdated) {
+    if (deps.notifier && template && sendable && !outdated) {
       try {
         result = await deps.notifier.send(
           n.openid,
@@ -367,6 +395,7 @@ async function sendPending(deps: Deps) {
             status: n.kind === 'cancelled' ? '已取消' : n.kind === 'moved' ? '已改约' : '',
             reason: n.kind === 'cancelled' ? n.reason || '场馆取消' : '',
             refund: n.kind === 'cancelled' ? refundText(db, n) : '',
+            note: feedback?.text ?? '',
           },
         )
         if (result === 'refused') {

@@ -4,7 +4,7 @@
 
 (site) {
 	encode zstd gzip
-	# The largest upload is an invoice PDF of up to 10MB.
+	# The largest upload is an invoice PDF of up to 10MB; lesson photos are up to 5MB.
 	request_body {
 		max_size 12MB
 	}

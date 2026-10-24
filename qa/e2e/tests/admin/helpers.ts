@@ -46,7 +46,7 @@ export async function student(request: APIRequestContext, name: string) {
 
 export async function call<T = unknown>(
   request: APIRequestContext,
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   token?: string,
   data?: unknown,

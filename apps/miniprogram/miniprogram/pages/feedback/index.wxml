@@ -1,0 +1,50 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:elif="{{!items.length}}" class="centered">
+  <t-empty icon="{{emptyIcon}}" description="还没有课后点评。教练写了点评后会出现在这里。" />
+</view>
+
+<view wx:else class="list">
+  <view
+    wx:for="{{items}}"
+    wx:key="bookingId"
+    class="item card"
+    hover-class="item-hover"
+    data-id="{{item.bookingId}}"
+    bind:tap="open"
+  >
+    <view class="item-head">
+      <text class="item-date">{{item.date}}</text>
+      <text class="item-lesson">{{item.lesson}}</text>
+    </view>
+    <view class="item-text">{{item.text}}</view>
+    <view wx:if="{{item.photos.length}}" class="photos item-photos">
+      <view
+        wx:for="{{item.shown}}"
+        wx:for-item="photo"
+        wx:for-index="photoIndex"
+        wx:key="*this"
+        class="photo"
+        data-item="{{index}}"
+        data-index="{{photoIndex}}"
+        catch:tap="previewPhoto"
+      >
+        <image class="photo-image" src="{{photo}}" mode="aspectFill" lazy-load />
+        <view wx:if="{{photoIndex === 2 && item.more}}" class="photo-more">+{{item.more}}</view>
+      </view>
+    </view>
+  </view>
+  <view class="footnote end">{{items.length < limit ? '共 ' + items.length + ' 条点评' : '显示最近 ' + limit + ' 条点评'}}</view>
+</view>
+<privacy-popup id="privacy-popup" />
+</theme-root>

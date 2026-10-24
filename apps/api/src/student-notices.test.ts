@@ -81,6 +81,7 @@ describe('student notices', () => {
           status: '',
           reason: '',
           refund: '',
+          note: '',
         },
       },
     ])

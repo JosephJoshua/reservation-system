@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   attendanceError,
+  feedbackError,
   lessonsFromHours,
   venueDates,
   type WeeklyHours,
@@ -102,5 +103,32 @@ describe('attendanceError', () => {
         'admin',
       ),
     ).toBe('not_confirmed')
+  })
+})
+
+describe('feedbackError', () => {
+  const booking = {
+    status: 'confirmed',
+    attendance: 'attended' as const,
+    attendanceAt: new Date('2026-10-25T03:05:00Z'),
+    endsAt: new Date('2026-10-25T03:00:00Z'),
+  }
+
+  it('needs a lesson the student came to', () => {
+    const now = new Date('2026-10-25T03:30:00Z')
+    expect(feedbackError(booking, now)).toBeNull()
+    expect(feedbackError({ ...booking, attendance: null }, now)).toBe('not_attended')
+    expect(feedbackError({ ...booking, attendance: 'no_show' }, now)).toBe('not_attended')
+    expect(feedbackError({ ...booking, status: 'cancelled' }, now)).toBe('not_attended')
+  })
+
+  it('gives the coach a week after the lesson, or after a later attendance mark', () => {
+    const marked = { ...booking, attendanceAt: null }
+    expect(feedbackError(marked, new Date('2026-11-01T03:00:00Z'))).toBeNull()
+    expect(feedbackError(marked, new Date('2026-11-01T03:00:01Z'))).toBe('too_late')
+    // Marked by the venue ten days on: the coach still has a week from then.
+    const late = { ...booking, attendanceAt: new Date('2026-11-04T03:00:00Z') }
+    expect(feedbackError(late, new Date('2026-11-11T03:00:00Z'))).toBeNull()
+    expect(feedbackError(late, new Date('2026-11-11T03:00:01Z'))).toBe('too_late')
   })
 })

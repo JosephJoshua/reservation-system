@@ -245,6 +245,31 @@ export const bookingMoves = sqliteTable(
 )
 
 /**
+ * The coach's 课后点评 on a lesson the student came to, one per booking. Unlike the coach's note it
+ * is written for the student. Photos are file names in the uploads folder, all starting with
+ * `fb<bookingId>-`, so the files of one lesson can be found and removed together.
+ */
+export const lessonFeedback = sqliteTable(
+  'lesson_feedback',
+  {
+    id: id(),
+    bookingId: integer('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    text: text('text').notNull(),
+    photos: text('photos', { mode: 'json' }).$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: instant('updated_at').notNull(),
+    // Taken down by the venue: the student no longer sees it.
+    hiddenAt: instant('hidden_at'),
+    hiddenByStaffId: integer('hidden_by_staff_id').references(() => staff.id),
+    // Deleted by the coach while hidden: kept empty, so it cannot be written again around the venue.
+    deletedAt: instant('deleted_at'),
+  },
+  (t) => [uniqueIndex('lesson_feedback_booking').on(t.bookingId)],
+)
+
+/**
  * Subscription messages to students, sent by the sweeper. booked, cancelled and reminder rows
  * come from booking state and appear at most once per booking; other kinds are queued by the
  * code that causes them. doneAt is set once the message went out, was refused or was dropped.

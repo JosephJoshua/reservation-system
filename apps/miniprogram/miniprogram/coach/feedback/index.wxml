@@ -1,0 +1,74 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view wx:if="{{canRetry}}" class="retry"><t-button theme="primary" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="has-action-bar">
+  <view class="lesson">
+    <view class="lesson-student">{{student}}</view>
+    <view class="lesson-time">{{when}}</view>
+  </view>
+
+  <view class="card">
+    <t-textarea
+      value="{{text}}"
+      placeholder="这节课练了什么、哪里有进步、下次练什么"
+      maxlength="{{500}}"
+      indicator
+      autosize="{{textSize}}"
+      disableDefaultPadding
+      bind:change="onText"
+    />
+  </view>
+
+  <view class="section-title">照片（{{photos.length}}/{{maxPhotos}}）</view>
+  <view class="photos editor-photos">
+    <view wx:for="{{photos}}" wx:key="key" class="photo" data-index="{{index}}" bind:tap="previewPhoto">
+      <image class="photo-image" src="{{item.src}}" mode="aspectFill" />
+      <view wx:if="{{item.uploading}}" class="photo-uploading">
+        <t-loading theme="circular" size="40rpx" />
+      </view>
+      <view wx:else class="photo-remove" data-index="{{index}}" catch:tap="removePhoto">
+        <view class="photo-remove-dot"><t-icon name="close" size="28rpx" /></view>
+      </view>
+    </view>
+    <view
+      wx:if="{{photos.length < maxPhotos}}"
+      class="photo photo-add"
+      hover-class="photo-add-hover"
+      bind:tap="addPhotos"
+    >
+      <view class="photo-add-inner">
+        <t-icon name="add" size="48rpx" />
+        <view class="photo-add-text">添加</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="footnote">{{existing ? '修改后学员看到的是新内容，不会再次通知。' : '发布后学员会收到通知，在课程详情和学习记录里看到点评和照片。'}}课堂备注仍只有你和场馆可见。</view>
+
+  <view class="action-bar">
+    <view wx:if="{{existing}}" class="grow">
+      <t-button block t-class="action-button" theme="danger" variant="outline" loading="{{deleting}}" disabled="{{saving}}" bind:tap="remove">删除</t-button>
+    </view>
+    <view class="grow">
+      <t-button
+        block
+        t-class="action-button"
+        theme="primary"
+        loading="{{saving}}"
+        disabled="{{!canSave || deleting}}"
+        bind:tap="save"
+      >{{existing ? '保存' : '发布'}}</t-button>
+    </view>
+  </view>
+</view>
+<privacy-popup id="privacy-popup" />
+</theme-root>

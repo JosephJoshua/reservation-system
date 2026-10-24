@@ -17,6 +17,7 @@
 <view class="group">
   <t-cell-group theme="card">
     <t-cell title="我的课时包" note="{{remaining}}" left-icon="wallet" arrow hover bind:click="openMyPackages" />
+    <t-cell title="学习记录" left-icon="chat" arrow hover bind:click="openFeedback" />
     <t-cell wx:if="{{packagesEnabled}}" title="购买课时包" left-icon="shop" arrow hover bind:click="openPackages" />
     <t-cell title="发票" left-icon="bill" arrow hover bind:click="openInvoices" />
   </t-cell-group>

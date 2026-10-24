@@ -484,3 +484,30 @@ a:hover {
 .warning-text {
   color: var(--td-warning-color);
 }
+
+/* 课后点评 list: the coach's text as written, with small photo thumbnails. */
+.feedback-cell {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.feedback-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.feedback-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.feedback-photos img {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--td-bg-color-secondarycontainer);
+}

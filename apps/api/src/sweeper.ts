@@ -2,25 +2,36 @@ import type { Deps } from './deps'
 import { expireIdempotencyKeys } from './idempotency'
 import { notifyCoaches } from './services/coach-notices'
 import { syncAllSlots } from './services/coaches'
+import { removeStrayPhotos } from './services/feedback'
 import { expireOrders } from './services/orders'
 import { sweepRefunds } from './services/refunds'
 import { notifyStudents } from './services/student-notices'
 
-const SLOT_SYNC_MS = 3_600_000
-let lastSlotSync = 0
+const HOURLY_MS = 3_600_000
+const lastRun = new Map<string, number>()
+
+/** Runs `chore` when an hour has passed since it last ran here. */
+function hourly(deps: Deps, name: string, chore: () => void) {
+  const now = deps.now().getTime()
+  if (Math.abs(now - (lastRun.get(name) ?? 0)) < HOURLY_MS) return
+  lastRun.set(name, now)
+  chore()
+}
 
 /**
  * Closes expired orders, pushes refunds along and tells coaches and students about lessons. Runs
- * every 30 seconds; slots from coaches' weekly hours roll forward once an hour.
+ * every 30 seconds; slots from coaches' weekly hours roll forward and unused lesson photos are
+ * removed once an hour.
  */
 export async function sweep(deps: Deps) {
+  try {
+    hourly(deps, 'photos', () => removeStrayPhotos(deps))
+  } catch (e) {
+    deps.log('photo sweep failed', (e as Error).message)
+  }
   // Coach chores run on their own, so a failure in payments does not stop them, or the reverse.
   try {
-    const now = deps.now().getTime()
-    if (Math.abs(now - lastSlotSync) >= SLOT_SYNC_MS) {
-      lastSlotSync = now
-      syncAllSlots(deps)
-    }
+    hourly(deps, 'slots', () => syncAllSlots(deps))
     await notifyCoaches(deps)
   } catch (e) {
     deps.log('coach sweep failed', (e as Error).message)

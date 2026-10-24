@@ -9,7 +9,8 @@
     "coach": "pnpm --filter @rs/miniprogram build && tsx src/coach.ts",
     "coach-profile": "pnpm --filter @rs/miniprogram build && tsx src/coach-profile.ts",
     "invoices": "pnpm --filter @rs/miniprogram build && tsx src/invoices.ts",
-    "moves": "pnpm --filter @rs/miniprogram build && tsx src/moves.ts"
+    "moves": "pnpm --filter @rs/miniprogram build && tsx src/moves.ts",
+    "feedback": "pnpm --filter @rs/miniprogram build && tsx src/feedback.ts"
   },
   "devDependencies": {
     "@rs/shared": "workspace:*",

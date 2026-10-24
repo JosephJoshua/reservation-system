@@ -11,12 +11,13 @@ usage: rs.sh <command>
   prod <tag>                back up, then run <tag> in production
   promote                   run the release that is on staging in production
   rollback                  swap production with the previous release
-  backup                    back up production now
+  backup [--allow-removals] back up production now, even when over 300 images were removed
   backups                   list stored backups
   verify [backup]           download a backup (default: latest), check it and count its rows
   restore <backup> [tag]    stop production, restore a backup (or "latest"), start production
                             again on [tag] (default: the current release)
-  restore-images            copy back uploaded images missing from production
+  restore-images [YYYYMMDD] copy back uploaded images missing from production, with those
+                            removed since that UTC day
   status                    show containers and releases
   logs [service]            follow logs (app, app-staging, backup, caddy)
   prune                     remove releases and images other than the newest five
@@ -115,7 +116,11 @@ case $cmd in
     exec "$(pwd)/rs.sh" prod "$tag"
     ;;
   backup)
-    dc exec -T backup /app/api/backup/backup.sh
+    case ${1:-} in
+      '') dc exec -T backup /app/api/backup/backup.sh ;;
+      --allow-removals) dc exec -T -e BACKUP_ALLOW_REMOVALS=1 backup /app/api/backup/backup.sh ;;
+      *) usage ;;
+    esac
     ;;
   backups)
     backup_tool /app/api/backup/restore.sh list
@@ -156,7 +161,7 @@ then run: $(pwd)/rs.sh restore $1 $tag"
     fi
     ;;
   restore-images)
-    backup_tool /app/api/backup/restore.sh images
+    backup_tool /app/api/backup/restore.sh images ${1:+"$1"}
     ;;
   status)
     dc ps

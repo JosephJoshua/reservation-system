@@ -16,3 +16,11 @@ alert() {
       body: JSON.stringify({ msgtype: "text", text: { content: process.env.ALERT_TEXT } }),
     }).catch((e) => console.error("alert failed:", e.message))' || true
 }
+
+# rclone lsf, where a folder not made yet lists as empty (rclone exits with 3) but any other
+# failure, such as COS being unreachable, fails.
+remote_ls() {
+  ls_status=0
+  rclone lsf "$@" || ls_status=$?
+  [ "$ls_status" -eq 0 ] || [ "$ls_status" -eq 3 ]
+}

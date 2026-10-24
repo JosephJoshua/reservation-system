@@ -4,13 +4,14 @@ import {
   cancellationOutcome,
   type HomeDto,
 } from '../../lib/shared'
-import { api, errorMessage, publicApi, showError } from '../../utils/api'
+import { api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
+import { previewPhotos } from '../../utils/photos'
 import { ask } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
 
@@ -71,6 +72,7 @@ Page({
     invoiceTappable: false,
     address: '',
     cancelRule: '',
+    feedback: null as { title: string; text: string; photos: string[] } | null,
     busy: false,
   },
 
@@ -156,6 +158,13 @@ Page({
             : cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel)) +
           (b.canMove ? `免费取消截止前可改约 ${b.movesLeft} 次。` : '')
         : '',
+      feedback: b.feedback
+        ? {
+            title: `${b.coach.name}的课后点评`,
+            text: b.feedback.text,
+            photos: b.feedback.photos.map(assetUrl),
+          }
+        : null,
     })
     if (b.status === 'pending_payment') this.startTimer()
     else this.stopTimer()
@@ -272,6 +281,10 @@ Page({
       // The move was refused because the lesson changed: show it as it is now.
       stale: () => this.load(),
     })
+  },
+
+  previewPhoto(e: WechatMiniprogram.TouchEvent) {
+    previewPhotos(this.data.feedback?.photos ?? [], e.currentTarget.dataset.index)
   },
 
   rebook() {

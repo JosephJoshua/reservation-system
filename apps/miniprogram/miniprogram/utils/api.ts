@@ -17,6 +17,14 @@ export class ApiError extends Error {
   }
 }
 
+const networkError = () => new ApiError(0, 'network', '网络不佳，请稍后再试')
+
+/** The API's error from a failed response, or `fallback` when the body does not say. */
+function responseError(statusCode: number, body: unknown, fallback: string): ApiError {
+  const error = (body as Partial<ApiErrorBody> | undefined)?.error
+  return new ApiError(statusCode, error?.code ?? 'http_error', error?.message ?? fallback)
+}
+
 export function request<T>(
   method: Method,
   path: string,
@@ -35,17 +43,45 @@ export function request<T>(
           resolve(res.data as T)
           return
         }
-        const body = res.data as Partial<ApiErrorBody> | undefined
+        reject(responseError(res.statusCode, res.data, '服务暂时不可用，请稍后再试'))
+      },
+      fail() {
+        reject(networkError())
+      },
+    })
+  })
+}
+
+/** Sends a local file as the `file` field of a multipart POST; answers like request. */
+export function upload<T>(path: string, filePath: string, token: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    wx.uploadFile({
+      url: `${apiBaseUrl}/api${path}`,
+      filePath,
+      name: 'file',
+      header: { Authorization: `Bearer ${token}` },
+      timeout: 60000,
+      success(res) {
+        let body: unknown
+        try {
+          body = JSON.parse(res.data)
+        } catch {
+          body = undefined
+        }
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(body as T)
+          return
+        }
         reject(
-          new ApiError(
+          responseError(
             res.statusCode,
-            body?.error?.code ?? 'http_error',
-            body?.error?.message ?? '服务暂时不可用，请稍后再试',
+            body,
+            res.statusCode === 413 ? '图片不能超过 5MB' : '上传失败，请稍后再试',
           ),
         )
       },
       fail() {
-        reject(new ApiError(0, 'network', '网络不佳，请稍后再试'))
+        reject(networkError())
       },
     })
   })

@@ -14,6 +14,7 @@ interface LessonView {
   name: string
   coach: string
   status: string
+  feedback: boolean
   tone: 'primary' | 'warning' | 'default'
 }
 
@@ -26,6 +27,7 @@ function view(b: BookingDto): LessonView {
     name: b.lessonType.name,
     coach: b.coach.name,
     status: BOOKING_STATUS[b.status],
+    feedback: b.hasFeedback,
     tone:
       b.status === 'pending_payment' ? 'warning' : b.status === 'confirmed' ? 'primary' : 'default',
   }

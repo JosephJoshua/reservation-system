@@ -28,9 +28,28 @@ name="app-$(date -u +%Y%m%dT%H%M%SZ).db.gz"
 node "$HERE/sqlite.mjs" snapshot "$DB" "$tmp/app.db" || fail "snapshot failed"
 gzip -9 "$tmp/app.db" || fail "compressing the snapshot failed"
 rclone copyto "$tmp/app.db.gz" "$REMOTE/db/$name" || fail "upload of $name failed"
-if [ -d "$UPLOADS" ]; then
-  # Uploaded images never change once written, so a copy only sends new files.
-  rclone copy "$UPLOADS" "$REMOTE/uploads" || fail "upload of images failed"
+# Mirrors the images. One removed here, such as a lesson photo of a deleted account, moves to
+# uploads-removed/<date> and is purged with the database backups of that age. An empty folder is
+# never mirrored, and more than 300 removals in a day stop the mirror: that is a lost volume, not
+# a cleanup.
+if [ -d "$UPLOADS" ] && [ -n "$(ls -A "$UPLOADS")" ]; then
+  # Every file, in subfolders such as invoices/ too, as the sync below goes through them all.
+  (cd "$UPLOADS" && find . -type f | sed 's|^\./||') | sort >"$tmp/local"
+  remote_ls -R --files-only "$REMOTE/uploads" >"$tmp/remote" || fail "listing images in COS failed"
+  gone=$(sort "$tmp/remote" | comm -23 - "$tmp/local" | wc -l)
+  [ "$gone" -le 300 ] || [ -n "${BACKUP_ALLOW_REMOVALS:-}" ] ||
+    fail "$gone images are gone from $UPLOADS since the last backup: restore them with rs.sh restore-images, or if they were removed on purpose, run rs.sh backup --allow-removals"
+  rclone sync "$UPLOADS" "$REMOTE/uploads" --backup-dir "$REMOTE/uploads-removed/$(date -u +%Y%m%d)" ||
+    fail "upload of images failed"
 fi
 rclone delete "$REMOTE/db" --min-age "${BACKUP_KEEP_DAYS:-30}d" || fail "pruning old backups failed"
+cutoff=$(date -u -d "${BACKUP_KEEP_DAYS:-30} days ago" +%Y%m%d)
+days=$(remote_ls --dirs-only "$REMOTE/uploads-removed") || fail "listing removed images failed"
+for day in $days; do
+  day=${day%/}
+  case $day in *[!0-9]*) continue ;; esac
+  if [ "$day" -lt "$cutoff" ]; then
+    rclone purge "$REMOTE/uploads-removed/$day" || fail "pruning removed images failed"
+  fi
+done
 echo "backup ok: db/$name ($(du -k "$tmp/app.db.gz" | cut -f1) KB)"

@@ -38,7 +38,7 @@
       <view class="date-num">{{item.date}}</view>
     </view>
     <view class="info">
-      <view class="info-time">{{item.time}}</view>
+      <view class="info-time">{{item.time}}<text wx:if="{{item.feedback}}" class="has-feedback"> · 有点评</text></view>
       <view class="info-name">{{item.name}} · {{item.coach}}</view>
     </view>
     <t-tag size="small" theme="{{item.tone}}" variant="light">{{item.status}}</t-tag>

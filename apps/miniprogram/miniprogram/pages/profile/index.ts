@@ -68,6 +68,10 @@ Page({
     navigateOnce('/pages/my-packages/index')
   },
 
+  openFeedback() {
+    navigateOnce('/pages/feedback/index')
+  },
+
   openPackages() {
     navigateOnce('/pages/packages/index')
   },
