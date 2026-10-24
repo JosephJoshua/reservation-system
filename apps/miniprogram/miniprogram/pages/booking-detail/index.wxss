@@ -3,12 +3,15 @@
 
 .status {
   display: flex;
-  align-items: center;
+  /* Next to the title, also when a long cancel reason runs over several lines. */
+  align-items: flex-start;
   padding: 48rpx 48rpx 40rpx;
 }
 
 .status-icon {
   display: flex;
+  align-items: center;
+  height: 56rpx;
   margin-right: 24rpx;
 }
 
@@ -26,6 +29,7 @@
 
 .status-title {
   font-size: 40rpx;
+  line-height: 56rpx;
   font-weight: 600;
   color: var(--td-text-color-primary);
 }
