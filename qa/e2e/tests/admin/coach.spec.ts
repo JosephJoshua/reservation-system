@@ -206,11 +206,13 @@ test('shows the monthly report and exports it', async ({ page }) => {
   await page.clock.setFixedTime(lessonTime)
   await login(page)
   await page.goto('./#/reports')
+  await page.getByText('月报与课时费', { exact: true }).click()
   const row = page.getByRole('row').filter({ hasText: coachName })
   await expect(row).toContainText('1')
-  await expect(page.locator('.stat-grid')).toContainText('净收入')
+  const monthly = page.locator('.stat-grid').filter({ hasText: '净收入' })
+  await expect(monthly).toBeVisible()
   // The coach has no category yet, so the lesson has no pay rate.
-  await expect(page.locator('.stat-grid')).toContainText('教练课时费')
+  await expect(monthly).toContainText('教练课时费')
   await expect(row).toContainText('1 节未设课时费')
   await both(page, 'reports')
   const download = page.waitForEvent('download')
@@ -222,4 +224,27 @@ test('shows the monthly report and exports it', async ({ page }) => {
   expect(csv.startsWith('﻿')).toBe(true)
   // The lesson is shorter than an hour when this runs just after midnight.
   expect(csv).toMatch(new RegExp(`${coachName},1,[\\d.]+,1,0,0,0,0`))
+})
+
+test("shows the lesson on today's overview and in the business stats", async ({ page }) => {
+  await page.clock.setFixedTime(lessonTime)
+  await login(page)
+  const today = page.locator('.t-card').filter({ hasText: '今日课程' }).last()
+  const lesson = today.getByRole('row').filter({ hasText: coachName })
+  await expect(lesson).toContainText(lessonName)
+  await expect(lesson.locator('.t-select input')).toHaveValue('到课')
+  await both(page, 'overview')
+
+  await page.goto('./#/reports')
+  await expect(page.locator('.kpi-grid')).toContainText('课消')
+  const coaches = page.locator('.t-card').filter({ hasText: '教练排课占用' })
+  await expect(coaches.locator('.viz-meter').filter({ hasText: coachName })).toBeVisible()
+  await expect(page.locator('.viz-heat-cell:not(.viz-heat-none)').first()).toBeVisible()
+  // The same numbers as a table.
+  const trend = page.locator('.t-card').filter({ hasText: '收入趋势' })
+  await trend.getByRole('button', { name: '数据' }).click()
+  await expect(trend.locator('th', { hasText: '课消' })).toBeVisible()
+  await page.getByText('近7天', { exact: true }).click()
+  await expect(trend.locator('tbody tr')).toHaveCount(7)
+  await both(page, 'stats')
 })

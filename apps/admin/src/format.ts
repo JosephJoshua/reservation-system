@@ -2,6 +2,11 @@ import { formatYuan, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/sha
 
 export const yuan = (fen: number) => `¥${formatYuan(fen)}`
 
+const grouped = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
+
+/** Yuan with thousands separators, for big figures such as report totals. */
+export const yuanGrouped = (fen: number) => `¥${grouped.format(fen / 100)}`
+
 /** Yuan typed by the admin to fen. Returns null when it is not a valid amount. */
 export function toFen(yuanValue: number | string | undefined | null): number | null {
   if (yuanValue === undefined || yuanValue === null || yuanValue === '') return null

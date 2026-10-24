@@ -2,6 +2,7 @@ import { venueDateKey, venueInstant } from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
+  Checkbox,
   DatePicker,
   DateRangePicker,
   Dialog,
@@ -22,9 +23,16 @@ import { StudentCell } from '../StudentCell'
 import type { AdminBooking, Coach, Slot } from '../types'
 
 export function Bookings() {
-  const [range, setRange] = useState<[string, string]>([today(), addDays(today(), 13)])
+  // The overview links here with `from` for lessons still to mark.
+  const [range, setRange] = useState<[string, string]>(() => {
+    const from = hashParam('from')
+    return from && /^\d{4}-\d{2}-\d{2}$/.test(from) && from <= today()
+      ? [from, today()]
+      : [today(), addDays(today(), 13)]
+  })
   // The overview links here with the status it counted.
   const [status, setStatus] = useState(() => hashParam('status') ?? '')
+  const [unmarked, setUnmarked] = useState(() => hashParam('unmarked') === '1')
   const [coachId, setCoachId] = useState<number | null>(null)
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const coaches = useApi<Coach[]>('/admin/coaches')
@@ -41,6 +49,7 @@ export function Bookings() {
   })
   if (status) params.set('status', status)
   if (coachId) params.set('coachId', String(coachId))
+  if (unmarked) params.set('unmarked', '1')
   const { data, loading, error, reload } = useApi<AdminBooking[]>(`/admin/bookings?${params}`)
 
   const closeCancel = () => {
@@ -118,6 +127,9 @@ export function Bookings() {
             { label: '时间降序', value: 'desc' },
           ]}
         />
+        <Checkbox checked={unmarked} onChange={(v) => setUnmarked(v)}>
+          只看未签到
+        </Checkbox>
         <span className="spacer" />
         <ExportButton
           kind="bookings"

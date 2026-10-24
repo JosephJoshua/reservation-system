@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Button, Card, DatePicker, Space } from 'tdesign-react'
+import { Button, Card, DatePicker, Space, Tabs } from 'tdesign-react'
 import { DataTable } from '../DataTable'
-import { today, yuan } from '../format'
+import { today, yuan, yuanGrouped } from '../format'
 import { useApi } from '../hooks'
+import { Stats } from './Stats'
 
 interface MonthlyReport {
   month: string
@@ -144,24 +145,24 @@ function downloadCsv(report: MonthlyReport) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export function Reports() {
+function Monthly() {
   const [month, setMonth] = useState(today().slice(0, 7))
   const { data, loading, error } = useApi<MonthlyReport>(`/admin/reports/monthly?month=${month}`)
   const r = data?.month === month ? data : null
 
   const stats: [string, string, string?][] = r
     ? [
-        ['净收入', yuan(r.revenue.net), `退款 ${yuan(r.revenue.refunded)}`],
-        ['微信支付', yuan(r.revenue.wechat)],
-        ['线下收款', yuan(r.revenue.offline)],
+        ['净收入', yuanGrouped(r.revenue.net), `退款 ${yuan(r.revenue.refunded)}`],
+        ['微信支付', yuanGrouped(r.revenue.wechat)],
+        ['线下收款', yuanGrouped(r.revenue.offline)],
         [
           '未上课时',
           `${r.packagesOutstanding.lessons} 节`,
-          `预收 ${yuan(r.packagesOutstanding.value)}，按当前计`,
+          `预收 ${yuanGrouped(r.packagesOutstanding.value)}，按当前计`,
         ],
         [
           '教练课时费',
-          yuan(r.coaches.reduce((sum, c) => sum + c.pay.amount, 0)),
+          yuanGrouped(r.coaches.reduce((sum, c) => sum + c.pay.amount, 0)),
           payLessonsText(r),
         ],
       ]
@@ -227,5 +228,30 @@ export function Reports() {
         </div>
       </Card>
     </Space>
+  )
+}
+
+export function Reports() {
+  const [tab, setTab] = useState('stats')
+  // The monthly report loads when first opened, then keeps its month while switching back and forth.
+  const [monthlyOpened, setMonthlyOpened] = useState(false)
+  return (
+    <Tabs
+      value={tab}
+      onChange={(v) => {
+        setTab(String(v))
+        if (v === 'monthly') setMonthlyOpened(true)
+      }}
+      className="report-tabs"
+    >
+      <Tabs.TabPanel value="stats" label="经营分析" destroyOnHide={false}>
+        <div className="report-tab">
+          <Stats />
+        </div>
+      </Tabs.TabPanel>
+      <Tabs.TabPanel value="monthly" label="月报与课时费" destroyOnHide={false}>
+        <div className="report-tab">{monthlyOpened && <Monthly />}</div>
+      </Tabs.TabPanel>
+    </Tabs>
   )
 }

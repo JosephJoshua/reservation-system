@@ -573,3 +573,373 @@ a:hover {
   overflow-wrap: anywhere;
   color: var(--td-text-color-primary);
 }
+
+/* Charts (charts.tsx). Series colors were checked for color-blind separation on both surfaces. */
+:root,
+:root[theme-mode="light"] {
+  --viz-1: var(--td-brand-color-7);
+  --viz-2: #e8620f;
+  --viz-track: var(--td-brand-color-1);
+  --viz-heat-0: var(--td-bg-color-secondarycontainer);
+  --viz-heat-1: var(--td-brand-color-2);
+  --viz-heat-2: var(--td-brand-color-3);
+  --viz-heat-3: var(--td-brand-color-5);
+  --viz-heat-4: var(--td-brand-color-7);
+  --viz-heat-5: var(--td-brand-color-9);
+}
+
+:root[theme-mode="dark"] {
+  --viz-1: var(--td-brand-color-8);
+  --viz-2: #e8620f;
+  --viz-track: var(--td-brand-color-2);
+  --viz-heat-1: var(--td-brand-color-3);
+  --viz-heat-2: var(--td-brand-color-5);
+  --viz-heat-3: var(--td-brand-color-7);
+  --viz-heat-4: var(--td-brand-color-8);
+  --viz-heat-5: var(--td-brand-color-10);
+}
+
+.viz {
+  position: relative;
+}
+
+.viz-plot {
+  position: relative;
+  width: 100%;
+}
+
+.viz-plot svg {
+  display: block;
+  outline: none;
+  touch-action: pan-y;
+}
+
+.viz-plot svg:focus-visible {
+  outline: 2px solid var(--td-brand-color-focus, var(--td-brand-color-7));
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.viz-axes text {
+  font-size: 11px;
+  fill: var(--td-text-color-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-grid {
+  stroke: var(--td-component-stroke);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.viz-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.viz-area {
+  opacity: 0.1;
+}
+
+.viz-crosshair {
+  stroke: var(--td-text-color-placeholder);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.viz-dot {
+  stroke: var(--td-bg-color-container);
+  stroke-width: 2;
+}
+
+.viz-hover path {
+  opacity: 0.8;
+}
+
+.viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.viz-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viz-key-line {
+  display: inline-block;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.viz-key-box {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.viz-tooltip {
+  position: absolute;
+  top: 0;
+  z-index: 2;
+  min-width: 120px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+  box-shadow: var(--td-shadow-2);
+  border: 1px solid var(--td-component-stroke);
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.viz-tooltip-title {
+  color: var(--td-text-color-secondary);
+  margin-bottom: 4px;
+}
+
+.viz-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 20px;
+}
+
+.viz-tooltip-row strong {
+  color: var(--td-text-color-primary);
+  font-weight: 600;
+}
+
+.viz-tooltip-row span {
+  color: var(--td-text-color-secondary);
+}
+
+.viz-empty {
+  padding: 32px 0;
+  text-align: center;
+  color: var(--td-text-color-placeholder);
+  font-size: 13px;
+}
+
+.viz-meters {
+  display: grid;
+  gap: 12px;
+}
+
+.viz-meter {
+  display: grid;
+  grid-template-columns: minmax(64px, 120px) 1fr auto;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.viz-meter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-meter-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--viz-track);
+  overflow: hidden;
+}
+
+.viz-meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--viz-1);
+}
+
+.viz-meter-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 72px;
+  text-align: right;
+}
+
+.viz-heat-scroll {
+  overflow-x: auto;
+}
+
+.viz-heat {
+  display: grid;
+  gap: 2px;
+  min-width: min-content;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+
+.viz-heat-col {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-heat-row {
+  display: flex;
+  align-items: center;
+}
+
+.viz-heat-cell {
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.viz-heat-cell:focus-visible,
+.viz-heat-cell.viz-hover {
+  outline: 2px solid var(--td-text-color-primary);
+  outline-offset: -2px;
+}
+
+.viz-heat-none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--td-component-stroke);
+}
+
+.viz-heat-0 {
+  background: var(--viz-heat-0);
+}
+
+.viz-heat-1 {
+  background: var(--viz-heat-1);
+}
+
+.viz-heat-2 {
+  background: var(--viz-heat-2);
+}
+
+.viz-heat-3 {
+  background: var(--viz-heat-3);
+}
+
+.viz-heat-4 {
+  background: var(--viz-heat-4);
+}
+
+.viz-heat-5 {
+  background: var(--viz-heat-5);
+}
+
+.viz-heat-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  min-height: 20px;
+}
+
+.viz-heat-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.viz-heat-scale i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.viz-heat-scale .muted:first-child {
+  margin-right: 4px;
+}
+
+.viz-heat-scale .muted:last-child {
+  margin-left: 4px;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
+  gap: 16px;
+}
+
+.stat-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.delta-up {
+  color: var(--td-success-color);
+}
+
+.delta-down {
+  color: var(--td-error-color);
+}
+
+.today-students {
+  display: grid;
+  gap: 8px;
+}
+
+.today-student {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.reloading {
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.report-tabs {
+  background: transparent;
+}
+
+.report-tab {
+  padding-top: 16px;
+}
+
+.kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.stats-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.range-presets {
+  max-width: 100%;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.today-list {
+  display: grid;
+}
+
+.today-item {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--td-component-stroke);
+}
+
+.today-item:last-child {
+  border-bottom: 0;
+}
+
+.today-item-head {
+  margin-bottom: 8px;
+}
