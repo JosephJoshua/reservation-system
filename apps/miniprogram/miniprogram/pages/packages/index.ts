@@ -5,6 +5,9 @@ import { yuan } from '../../utils/format'
 import { payOrder } from '../../utils/pay'
 import { ask } from '../../utils/tap'
 
+// Whether the package reminder was asked for since the app was opened.
+let askedThisVisit = false
+
 interface ProductView {
   id: number
   name: string
@@ -90,8 +93,12 @@ Page({
     this.prompting = true
     let answer: WechatMiniprogram.ShowModalSuccessCallbackResult | null
     try {
-      // Asked inside the tap, before any await, or WeChat does not show the prompt.
-      await askForNotices(this.templates, ['package'])
+      // Asked inside the tap, before any await, or WeChat does not show the prompt. Once per
+      // visit, so a student who cancels and tries again is not asked again.
+      if (!askedThisVisit) {
+        askedThisVisit = true
+        await askForNotices(this.templates, ['package'])
+      }
       answer = await ask({
         title: product.name,
         content: `${product.lessonCount} 节课，${product.validity}，共 ${product.price}。`,
