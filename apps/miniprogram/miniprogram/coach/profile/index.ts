@@ -28,13 +28,13 @@ function conflictText(
   theirNote: string,
   changed: boolean,
 ): string {
-  const lead = '其他教练或场馆刚刚修改了这份档案。'
-  if (!changed) return `${lead}他们保存的内容已包含你的修改，无需再保存。`
-  if (!both.length) return `${lead}你改过的内容已保留，其余已更新为最新，请确认后再保存。`
+  const lead = '档案刚被其他人修改。'
+  if (!changed) return `${lead}对方已保存了你的修改，无需再保存。`
+  if (!both.length) return `${lead}你的修改已保留，其余已更新，请确认后保存。`
   const note = both.includes('note')
-    ? `\n对方的备注：${theirNote.length > 120 ? `${theirNote.slice(0, 120)}…` : theirNote || '（空）'}`
+    ? `\n对方的备注：${theirNote.length > 80 ? `${theirNote.slice(0, 80)}…` : theirNote || '（空）'}`
     : ''
-  return `${lead}对方也改了${both.map((k) => FIELD_NAMES[k]).join('、')}，现在显示的是你的内容，保存会覆盖对方的修改。${note}`
+  return `${lead}对方也改了${both.map((k) => FIELD_NAMES[k]).join('、')}，现显示你的内容，保存会覆盖对方的。${note}`
 }
 
 Page({
@@ -251,6 +251,8 @@ Page({
       if (isTop(this)) navigateBackOnce()
       wx.showToast({ title: '已保存', icon: 'success' })
     } catch (err) {
+      // The spinner stops before any dialog; busy still holds until the dialog is closed.
+      this.setData({ saving: false })
       await this.failed(err)
     } finally {
       this.busy = false
