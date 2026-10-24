@@ -5,7 +5,8 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
-import { startTheme } from './theme'
+import { expectStudent, switchStudent } from './session'
+import { qaTheme, resetTheme, startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
@@ -126,13 +127,13 @@ try {
   // Clears a forced theme an earlier run may have left, or applies QA_THEME.
   await startTheme(miniProgram)
   const student = `qa_${Date.now()}`
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', student)
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
+  await switchStudent(miniProgram, student)
   await autoConfirmModals()
 
   await step('home shows banners, notice and lessons', async () => {
     await miniProgram.reLaunch('/pages/booking/index')
     const home = await waitForPage('pages/booking/index')
+    await expectStudent(miniProgram, student)
     const data = await home.data()
     check(data.state === 'ready', `home state ${data.state}: ${data.error}`)
     check((data.lessonTypes as unknown[]).length >= 2, 'expected the seeded lesson types')
@@ -349,23 +350,27 @@ try {
     await screenshot('account-delete-blocked')
 
     // A fresh student can delete, and the next login is a new, empty account.
-    await miniProgram.callWxMethod('setStorageSync', 'devLogin', `${student}_gone`)
-    await miniProgram.callWxMethod('removeStorageSync', 'token')
+    await switchStudent(miniProgram, `${student}_gone`)
     await miniProgram.redirectTo('/pages/account-delete/index')
     const page = await waitForPage('pages/account-delete/index')
+    await expectStudent(miniProgram, `${student}_gone`)
     check(((await page.data('blockers')) as string[]).length === 0, 'nothing should block')
     await screenshot('account-delete')
     const token = (await miniProgram.callWxMethod('getStorageSync', 'token')) as string
     await invoke('confirmDelete')
     await waitForPage('pages/booking/index')
     check((await call('GET', '/me', undefined, token)).status === 401, 'old session should be gone')
-    await miniProgram.callWxMethod('setStorageSync', 'devLogin', student)
-    await miniProgram.callWxMethod('removeStorageSync', 'token')
+    await switchStudent(miniProgram, student)
   })
 
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)
   console.log('all flows passed')
 } finally {
   await miniProgram.restoreWxMethod('showModal').catch(() => {})
-  await miniProgram.close()
+  try {
+    // A forced theme would otherwise stay set for the next run.
+    if (qaTheme()) await resetTheme(miniProgram)
+  } finally {
+    await miniProgram.close()
+  }
 }

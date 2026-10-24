@@ -6,6 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
@@ -99,14 +100,15 @@ async function step(name: string, fn: () => Promise<void>) {
 try {
   // Clears a forced theme an earlier run may have left, or applies QA_THEME.
   await startTheme(miniProgram)
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_coach_page_${Date.now()}`)
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
+  const studentLogin = `qa_coach_page_${Date.now()}`
+  await switchStudent(miniProgram, studentLogin)
 
   type CoachRow = { id: number; name: string; category: string; title: string }
   let coaches: CoachRow[] = []
   await step('home lists the coaches with category and title', async () => {
     await miniProgram.reLaunch('/pages/booking/index')
     const home = await waitForPage('pages/booking/index')
+    await expectStudent(miniProgram, studentLogin)
     coaches = (await home.data('coaches')) as CoachRow[]
     check(coaches.length >= 3, `expected the seeded coaches, got ${coaches.length}`)
     check(coaches[0]?.category === '主教练', 'first coach should be the 主教练')

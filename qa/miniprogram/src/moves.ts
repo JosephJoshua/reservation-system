@@ -7,6 +7,7 @@ import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { venueDateKey } from '@rs/shared'
 import automator from 'miniprogram-automator'
+import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
@@ -207,13 +208,13 @@ try {
   const clash = mine.slice(1).find((s) => theirs.some((t) => t.startsAt === s.startsAt))
   const clashing = theirs.find((t) => t.startsAt === clash?.startsAt)
 
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', studentLogin)
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
+  await switchStudent(miniProgram, studentLogin)
   await autoConfirmModals()
 
   await step('the lesson offers 改约', async () => {
     await miniProgram.reLaunch(`/pages/booking-detail/index?id=${bookingId}`)
     const detail = await waitForPage('pages/booking-detail/index', (d) => d.booking !== null)
+    await expectStudent(miniProgram, studentLogin)
     const booking = (await detail.data('booking')) as Booking
     check(booking.canMove && booking.movesLeft === 1, 'a new paid lesson should be movable once')
     await sleep(1500)
@@ -299,9 +300,7 @@ try {
   await step('the coach moves the lesson in coach mode', async () => {
     if (coach.bound) await call('DELETE', `/admin/coaches/${coach.id}/binding`, undefined, admin)
     const { code } = await call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)
-    await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_move_coach_${run}`)
-    await miniProgram.callWxMethod('removeStorageSync', 'token')
-    await miniProgram.callWxMethod('removeStorageSync', 'coachToken')
+    await switchStudent(miniProgram, `qa_move_coach_${run}`)
     await miniProgram.reLaunch('/coach/bind/index')
     await waitForPage('coach/bind/index', () => true)
     await invoke('onCode', { detail: { value: code } })

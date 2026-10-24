@@ -7,6 +7,7 @@ import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
@@ -208,20 +209,12 @@ try {
   const past = await book(`qa_b_${run}`, 3)
   moveIntoPast(past)
 
-  // Let the launch login finish first, or it can write its own token back after we clear it. The
-  // token is cleared before waiting, so a token left by an earlier run does not end the wait early.
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
-  for (let i = 0; i < 20 && !(await miniProgram.callWxMethod('getStorageSync', 'token')); i++) {
-    await sleep(250)
-  }
-  await sleep(500)
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_coach_${run}`)
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
-  await miniProgram.callWxMethod('removeStorageSync', 'coachToken')
+  await switchStudent(miniProgram, `qa_coach_${run}`)
 
   await step('a new user sees only the quiet coach entry on 我的', async () => {
     await miniProgram.reLaunch('/pages/profile/index')
     const profile = await waitForPage('pages/profile/index', (d) => d.meLoaded === true)
+    await expectStudent(miniProgram, `qa_coach_${run}`)
     check((await profile.data('isCoach')) === false, 'should not be a coach yet')
     await miniProgram.pageScrollTo(10000)
     await screenshot('profile-before')
