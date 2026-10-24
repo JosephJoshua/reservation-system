@@ -35,13 +35,18 @@ export async function addLessonToCalendar(
     const msg = (e as { errMsg?: string }).errMsg ?? ''
     // Closed the sheet, or turned down the privacy prompt, which explains itself.
     if (/cancel|privacy permission/i.test(msg)) return
-    if (/auth/i.test(msg)) {
+    // WeChat itself may not write to the calendar: that is the phone's settings, not ours.
+    const system = /system permission/i.test(msg)
+    if (system || /auth/i.test(msg)) {
       const answer = await ask({
         title: '无法添加到日历',
-        content: '请在设置中允许添加日历事件。',
+        content: system ? '请在手机设置中允许微信访问日历。' : '请在设置中允许添加日历事件。',
         confirmText: '去设置',
-      })
-      if (answer?.confirm) wx.openSetting({})
+      }).catch(() => null)
+      if (answer?.confirm) {
+        if (system) wx.openAppAuthorizeSetting({})
+        else wx.openSetting({})
+      }
       return
     }
     wx.showToast({ title: '添加失败，请稍后重试', icon: 'none' })

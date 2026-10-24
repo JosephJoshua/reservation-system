@@ -73,7 +73,6 @@ Page({
     invoiceTappable: false,
     address: '',
     canAddToCalendar: false,
-    contactCardTitle: '',
     cancelRule: '',
     feedback: null as { title: string; text: string; photos: string[] } | null,
     busy: false,
@@ -155,7 +154,6 @@ Page({
       invoiceTappable: !!invoiceAction(b.invoice),
       address: this.venue?.address ?? '',
       canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > Date.now(),
-      contactCardTitle: `${b.lessonType.name} · ${lessonTime(b.startsAt, b.endsAt)}`,
       cancelRule: booking
         ? // Moved by the venue or coach after the usual deadline: free until it starts.
           (b.movedLate
@@ -290,7 +288,14 @@ Page({
 
   addToCalendar() {
     const b = this.data.booking
-    if (b) addLessonToCalendar(b, this.venue)
+    if (!b) return
+    // The page may have stayed open until the lesson began.
+    if (Date.parse(b.startsAt) <= Date.now()) {
+      this.setData({ canAddToCalendar: false })
+      wx.showToast({ title: '课程已开始', icon: 'none' })
+      return
+    }
+    addLessonToCalendar(b, this.venue)
   },
 
   previewPhoto(e: WechatMiniprogram.TouchEvent) {

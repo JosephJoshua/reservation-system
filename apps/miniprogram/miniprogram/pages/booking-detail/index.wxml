@@ -57,7 +57,7 @@
         hover-class="none"
         open-type="contact"
         show-message-card
-        send-message-title="{{contactCardTitle}}"
+        send-message-title="{{booking.lessonType.name}} · {{when}}"
         send-message-path="/pages/booking-detail/index?id={{booking.id}}"
       >
         <t-cell title="联系客服" left-icon="service" arrow hover />
