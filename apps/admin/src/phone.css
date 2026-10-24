@@ -433,12 +433,12 @@
 
   .section-nav-item {
     flex: none;
-    min-height: 36px;
-    border-radius: 18px;
+    min-height: 44px;
+    border-radius: 22px;
     background: var(--td-bg-color-container);
   }
 
   .settings-layout .t-card {
-    scroll-margin-top: 112px;
+    scroll-margin-top: 120px;
   }
 }

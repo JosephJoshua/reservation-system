@@ -121,20 +121,26 @@ export function Banners({
             width: 104,
             cell: ({ row }) => <img className="banner-thumb" src={row.imageUrl} alt={row.title} />,
           },
-          { colKey: 'title', title: '标题' },
-          { colKey: 'link', title: '点击跳转', cell: ({ row }) => linkLabel(row) },
           {
-            colKey: 'time',
-            title: '展示',
-            // One column for both, so the list fits beside the preview.
-            cell: ({ row }) =>
-              !row.active ? (
-                <Tag variant="light">隐藏</Tag>
-              ) : row.startsAt || row.endsAt ? (
-                `${row.startsAt ? fmtDate(row.startsAt) : '不限'} 至 ${row.endsAt ? fmtDate(row.endsAt) : '不限'}`
-              ) : (
-                '长期'
-              ),
+            colKey: 'title',
+            title: '轮播图',
+            // Title over where it leads and when it shows, so the list fits beside the preview.
+            cell: ({ row }) => (
+              <div className="banner-row">
+                <div className="banner-row-title">
+                  <span>{row.title || '无标题'}</span>
+                  {!row.active && <Tag variant="light">隐藏</Tag>}
+                </div>
+                <div className="banner-row-meta">
+                  跳转：{linkLabel(row)}
+                  <br />
+                  展示：
+                  {row.startsAt || row.endsAt
+                    ? `${row.startsAt ? fmtDate(row.startsAt) : '不限'} 至 ${row.endsAt ? fmtDate(row.endsAt) : '不限'}`
+                    : '长期'}
+                </div>
+              </div>
+            ),
           },
           {
             colKey: 'op',

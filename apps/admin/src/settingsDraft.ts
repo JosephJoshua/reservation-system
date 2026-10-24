@@ -1,5 +1,5 @@
 import type { VenueSettings } from '@rs/shared'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import { attempt, newKey, useApi } from './hooks'
 
@@ -11,12 +11,22 @@ export function useSettingsDraft() {
   const { data, error, reload } = useApi<VenueSettings>('/admin/settings')
   const [s, setS] = useState<VenueSettings | null>(null)
   const [saving, setSaving] = useState(false)
+  // Set at once, unlike `saving`, so a second click or a held ⌘S before the next render is ignored.
+  const busy = useRef(false)
+  // The form as it was when saved: anything typed after it is kept when the saved settings load.
+  const sent = useRef<VenueSettings | null>(null)
   // One per loaded version, so a retry after a lost response is not saved twice.
   const [key, setKey] = useState(newKey)
 
   useEffect(() => {
     if (!data) return
-    setS(structuredClone(data))
+    const typed = sent.current
+    sent.current = null
+    setS((prev) =>
+      prev && typed && JSON.stringify(prev) !== JSON.stringify(typed)
+        ? prev
+        : structuredClone(data),
+    )
     setKey(newKey())
   }, [data])
 
@@ -34,13 +44,21 @@ export function useSettingsDraft() {
 
   /** Saves `body`, or the form as it is; true once saved and loaded again. */
   const save = async (body: VenueSettings | null = s) => {
-    if (saving || !body) return false
+    if (busy.current || !body) return false
+    busy.current = true
     setSaving(true)
+    const form = s
+    // Its own key, so a dialog on the same page (a banner's editor) is not held up by it.
     const ok = await attempt(
       () => api('PUT', '/admin/settings', body, { ifMatch: data, key }),
       '已保存',
+      { key: 'settings' },
     )
-    if (ok) await reload()
+    if (ok) {
+      sent.current = form
+      await reload()
+    }
+    busy.current = false
     setSaving(false)
     return ok
   }
@@ -53,6 +71,8 @@ export function useSettingsDraft() {
     reset,
     save,
     saving,
+    /** True from the moment a save starts, before `saving` renders. */
+    isSaving: () => busy.current,
     /** True once the parts named by `pick` differ from the saved settings. */
     changed: (pick: (v: VenueSettings) => unknown) =>
       !!s && !!data && JSON.stringify(pick(s)) !== JSON.stringify(pick(data)),

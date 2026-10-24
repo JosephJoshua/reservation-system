@@ -5,8 +5,8 @@ import { hashParam } from './hooks'
 export function useSections<K extends string>(keys: readonly K[], ready: boolean) {
   const els = useRef(new Map<K, HTMLElement>())
   const [active, setActive] = useState<K | undefined>(keys[0])
-  // The section last picked from the menu. It stays marked, even when a short section at the end
-  // can't reach the top, until the admin scrolls or clicks on their own.
+  // The section last picked from the menu. It stays marked while the page scrolls to it, and after,
+  // even when a short section at the end can't reach the top, until the page scrolls again.
   const picked = useRef<K | null>(null)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the keys are fixed for a page
@@ -65,6 +65,8 @@ export function useSections<K extends string>(keys: readonly K[], ready: boolean
     window.addEventListener('touchmove', letGo, { passive: true })
     window.addEventListener('keydown', letGo)
     window.addEventListener('pointerdown', letGo)
+    // Also once the menu's scroll has ended, so any later scroll, even by the scroll bar, counts.
+    window.addEventListener('scrollend', letGo)
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('scroll', onScroll)
@@ -73,6 +75,7 @@ export function useSections<K extends string>(keys: readonly K[], ready: boolean
       window.removeEventListener('touchmove', letGo)
       window.removeEventListener('keydown', letGo)
       window.removeEventListener('pointerdown', letGo)
+      window.removeEventListener('scrollend', letGo)
     }
   }, [ready, keys])
 
@@ -130,9 +133,7 @@ export function SectionNav<K extends string>({
           onClick={() => nav.scrollTo(key)}
         >
           <span>{label}</span>
-          {dirty.has(key) && (
-            <span className="section-nav-dot" role="img" aria-label="有修改" />
-          )}
+          {dirty.has(key) && <span className="section-nav-dot" role="img" aria-label="有修改" />}
         </button>
       ))}
     </nav>

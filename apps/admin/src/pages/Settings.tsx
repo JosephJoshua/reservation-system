@@ -1,5 +1,5 @@
 import { CHECK_IN_EARLY_MINUTES, type VenueSettings } from '@rs/shared'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Card,
   Input,
@@ -43,9 +43,12 @@ export function Settings() {
     reset: resetDraft,
     save: saveDraft,
     saving,
+    isSaving,
     changed,
   } = useSettingsDraft()
   const [coord, setCoord] = useState({ lat: '', lng: '' })
+  // The coordinates as saved, so ones typed while saving are kept, as the hook keeps the rest.
+  const sentCoord = useRef<typeof coord | null>(null)
   const nav = useSections(sectionKeys, !!s)
 
   const loadedCoord = {
@@ -59,7 +62,12 @@ export function Settings() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when new settings arrive
   useEffect(() => {
-    if (data) setCoord(loadedCoord)
+    if (!data) return
+    const typed = sentCoord.current
+    sentCoord.current = null
+    setCoord((prev) =>
+      typed && (prev.lat !== typed.lat || prev.lng !== typed.lng) ? prev : loadedCoord,
+    )
   }, [data])
 
   if (!s) return error ? <p className="muted">{error}</p> : <Loading size="small" />
@@ -74,7 +82,7 @@ export function Settings() {
   const dirty = dirtySections.size > 0
 
   const save = async () => {
-    if (saving) return
+    if (isSaving()) return
     const lat = coord.lat.trim()
     const lng = coord.lng.trim()
     if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {
@@ -85,7 +93,8 @@ export function Settings() {
     const body = structuredClone(s)
     body.venue.latitude = lat ? Number(lat) : null
     body.venue.longitude = lng ? Number(lng) : null
-    await saveDraft(body)
+    sentCoord.current = coord
+    if (!(await saveDraft(body))) sentCoord.current = null
   }
 
   const noneSelling = !s.payment.perClassEnabled && !s.payment.packagesEnabled

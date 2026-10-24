@@ -255,6 +255,21 @@ body {
   background: var(--td-warning-color);
 }
 
+.banner-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--td-text-color-primary);
+}
+
+.banner-row-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--td-text-color-secondary);
+}
+
 /* 首页内容: the phone preview clears the sticky header. */
 .home-content {
   --preview-sticky-top: 72px;

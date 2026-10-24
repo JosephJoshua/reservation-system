@@ -21,7 +21,24 @@ export function HomeContent() {
   // The banner 预览 put on the preview's carousel.
   const [shown, setShown] = useState<number>()
 
-  if (!s) return error ? <p className="muted">{error}</p> : <Loading size="small" />
+  const list = (
+    <Banners
+      banners={banners}
+      // On a phone the preview is behind a switch, so 预览 opens it in a dialog instead.
+      onPreview={phone || !s ? undefined : (b) => setShown(b.id)}
+    />
+  )
+  // Banners don't need the settings, so they can be managed even when those fail to load.
+  if (!s) {
+    return (
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        {list}
+        <Card title="首页公告与预约须知" bordered>
+          {error ? <p className="muted">{error}</p> : <Loading size="small" />}
+        </Card>
+      </Space>
+    )
+  }
 
   const dirty = changed((v) => [v.notice, v.policies.booking])
 
@@ -41,11 +58,7 @@ export function HomeContent() {
         }}
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <Banners
-            banners={banners}
-            // On a phone the preview is behind a switch, so 预览 opens it in a dialog instead.
-            onPreview={phone ? undefined : (b) => setShown(b.id)}
-          />
+          {list}
 
           <Card title="首页公告" bordered>
             <div className="fields form-narrow">
