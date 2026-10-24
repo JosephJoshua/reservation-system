@@ -25,6 +25,10 @@
   border-top: 1rpx solid var(--td-component-stroke);
 }
 
+.coach-hover {
+  opacity: 0.6;
+}
+
 .coach-text {
   flex: 1;
   min-width: 0;

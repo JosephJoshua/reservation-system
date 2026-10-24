@@ -38,6 +38,10 @@ Page({
     coachId: 0,
     /** The coach picked in the strip, for the line that links to their page. */
     picked: null as CoachOption | null,
+    /** The list of coaches to read about, for students who have not picked one. */
+    coachSheet: false,
+    /** Scrolls the coach strip when a coach is picked from outside it. */
+    coachAnchor: '',
     days: [] as { key: string; label: string; date: string }[],
     date: '',
     /** The day before the selected one, so the selection is not flush with the screen edge. */
@@ -51,6 +55,7 @@ Page({
   request: 0,
   /** Until the student picks a day, skip ahead past days with nothing to book. */
   autoAdvance: true,
+  dayPicked: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -159,15 +164,45 @@ Page({
     this.loadSlots()
   },
 
-  openCoach() {
-    const coach = this.data.picked
-    if (coach) navigateOnce(`/pages/coach-detail/index?id=${coach.id}`)
+  /**
+   * Called by the coach page when the student books that coach from it, just before it goes back
+   * here; onShow then loads the coach's slots. Unless the student picked a day, the page still
+   * skips ahead to the coach's first open one.
+   */
+  chooseCoach(coachId: number) {
+    const coaches = this.data.coaches
+    const index = coaches.findIndex((c) => c.id === coachId)
+    if (index < 0) return
+    this.autoAdvance = !this.dayPicked
+    // Coaches on the first screen keep the strip at its start; later ones bring the coach before
+    // into view, so the picked one is not flush with the screen edge.
+    const before = coaches[index - 1]
+    this.setData({
+      coachId,
+      picked: coaches[index] ?? null,
+      coachSheet: false,
+      coachAnchor: index < 3 || !before ? 'coach-start' : `coach-${before.id}`,
+    })
+  },
+
+  openCoach(e: WechatMiniprogram.TouchEvent) {
+    const id = Number(e.currentTarget.dataset.id)
+    if (id) navigateOnce(`/pages/coach-detail/index?id=${id}`)
+  },
+
+  showCoaches() {
+    this.setData({ coachSheet: true })
+  },
+
+  onCoachSheet(e: WechatMiniprogram.CustomEvent<{ visible: boolean }>) {
+    this.setData({ coachSheet: e.detail.visible })
   },
 
   pickDate(e: WechatMiniprogram.TouchEvent) {
     const date = e.currentTarget.dataset.key as string
     if (date === this.data.date) return
     this.autoAdvance = false
+    this.dayPicked = true
     this.setData({ date })
     this.loadSlots()
   },

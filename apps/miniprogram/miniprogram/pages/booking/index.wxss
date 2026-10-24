@@ -100,12 +100,6 @@
   font-size: 24rpx;
 }
 
-.lesson-arrow {
-  display: flex;
-  margin-left: 8rpx;
-  color: var(--td-text-color-placeholder);
-}
-
 .coach-main {
   margin-left: 24rpx;
 }

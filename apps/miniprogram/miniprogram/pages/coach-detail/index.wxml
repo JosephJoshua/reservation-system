@@ -52,7 +52,7 @@
           <text class="price">{{item.price}}</text>
           <view wx:if="{{item.original}}" class="price-original">{{item.original}}</view>
         </view>
-        <view class="lesson-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+        <view class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
       </view>
     </view>
   </block>

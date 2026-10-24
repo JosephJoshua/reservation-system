@@ -13,7 +13,8 @@
 <view wx:else>
   <view class="header">
     <view class="section-title first">教练</view>
-    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="coach-scroll">
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="{{coachAnchor}}" class="coach-scroll">
+      <view id="coach-start" class="day-start" />
       <view class="coach-row">
         <view
           wx:if="{{coaches.length > 1}}"
@@ -27,6 +28,7 @@
         <view
           wx:for="{{coaches}}"
           wx:key="id"
+          id="coach-{{item.id}}"
           class="coach {{coachId === item.id ? 'coach-active' : ''}}"
           data-id="{{item.id}}"
           bind:tap="pickCoach"
@@ -40,11 +42,16 @@
         </view>
       </view>
     </scroll-view>
-    <view wx:if="{{picked}}" class="coach-info" hover-class="coach-info-hover" bind:tap="openCoach">
+    <view wx:if="{{picked}}" class="coach-info" hover-class="coach-info-hover" data-id="{{picked.id}}" bind:tap="openCoach">
       <view wx:if="{{picked.category}}" class="coach-info-tag">
         <t-tag size="small" theme="primary" variant="light">{{picked.category}}</t-tag>
       </view>
       <text class="coach-info-title">{{picked.title || picked.name}}</text>
+      <text class="coach-info-link">教练介绍</text>
+      <t-icon name="chevron-right" size="32rpx" />
+    </view>
+    <view wx:elif="{{coaches.length > 1}}" class="coach-info" hover-class="coach-info-hover" bind:tap="showCoaches">
+      <text class="coach-info-title">{{coaches.length}} 位教练可选</text>
       <text class="coach-info-link">教练介绍</text>
       <t-icon name="chevron-right" size="32rpx" />
     </view>
@@ -95,4 +102,36 @@
     </view>
   </view>
 </view>
+
+<t-popup visible="{{coachSheet}}" placement="bottom" bind:visible-change="onCoachSheet">
+  <view class="sheet">
+    <view class="sheet-title">教练介绍</view>
+    <scroll-view scroll-y class="sheet-list" style="{{coaches.length > 5 ? 'height: 60vh' : ''}}">
+      <view
+        wx:for="{{coaches}}"
+        wx:key="id"
+        class="sheet-coach"
+        hover-class="sheet-coach-hover"
+        data-id="{{item.id}}"
+        bind:tap="openCoach"
+      >
+        <t-avatar image="{{item.avatar}}" icon="{{item.avatar ? '' : 'user'}}" size="80rpx" />
+        <view class="sheet-coach-text">
+          <view class="sheet-coach-name">
+            <text>{{item.name}}</text>
+            <view wx:if="{{item.category}}" class="coach-info-tag sheet-coach-tag">
+              <t-tag size="small" theme="primary" variant="light">{{item.category}}</t-tag>
+            </view>
+          </view>
+          <view wx:if="{{item.title}}" class="sheet-coach-title">{{item.title}}</view>
+        </view>
+        <view class="sheet-coach-price">
+          <text>{{item.price}}</text>
+          <view wx:if="{{item.original}}" class="price-original">{{item.original}}</view>
+        </view>
+        <view class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+      </view>
+    </scroll-view>
+  </view>
+</t-popup>
 </theme-root>
