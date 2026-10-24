@@ -243,10 +243,10 @@ function BannerEditor({
           <Button variant="outline" loading={uploading} onClick={() => fileInput.current?.click()}>
             {f.imageUrl ? '更换图片' : '选择图片'}
           </Button>
-          <span className="muted">JPG、PNG 或 WebP，不超过 2MB</span>
+          <span className="muted">支持 JPG、PNG 或 WebP 格式，不超过 2MB</span>
         </Space>
       </Field>
-      <Field label="标题" help="仅用于识别，不显示在图上">
+      <Field label="标题" help="仅用于后台识别，不会显示在图上">
         <Input value={f.title} maxlength={30} onChange={(v) => set({ title: String(v) })} />
       </Field>
       <Field label="点击跳转">

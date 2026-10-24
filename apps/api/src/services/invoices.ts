@@ -189,7 +189,7 @@ export function requestInvoice(
       throw new ApiError(409, 'invoice_exists', '该订单已申请发票')
     }
     if (state.state === 'refunding') {
-      throw new ApiError(409, 'refund_open', '该订单有退款在处理，完成后再申请')
+      throw new ApiError(409, 'refund_open', '该订单有退款正在处理，请处理完成后再申请')
     }
     if (state.state === 'refunded') {
       throw new ApiError(409, 'order_refunded', '已退款的订单不能开票')
@@ -382,7 +382,8 @@ export function issueInvoice(deps: Deps, staffId: number, id: number, pdf: Uint8
       const t = refundTotals(tx, [row.orderId]).get(row.orderId) ?? { refunded: 0, open: false }
       const amount = (order?.amount ?? 0) - t.refunded
       if (row.status === 'requested') {
-        if (t.open) throw new ApiError(409, 'refund_open', '该订单有退款在处理，完成后再开票')
+        if (t.open)
+          throw new ApiError(409, 'refund_open', '该订单有退款正在处理，请处理完成后再开票')
         if (amount <= 0) throw new ApiError(409, 'order_refunded', '订单已全额退款，请拒绝该申请')
       }
       old = row.pdfFile

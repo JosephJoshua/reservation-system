@@ -34,7 +34,7 @@
       <view class="day-add"><t-icon name="add" size="40rpx" /></view>
     </view>
   </view>
-  <view class="footnote">点某一天添加时间段。保存后自动生成未来 {{advanceDays}} 天的可约时段，已被预约的课程不受影响。</view>
+  <view class="footnote">点某一天即可添加时间段。保存后会自动生成未来 {{advanceDays}} 天的可约时段，已被预约的课不受影响。</view>
 
   <view class="section-title">休息日</view>
   <view class="card {{daysOff.length ? 'has-days' : ''}}">
@@ -49,7 +49,7 @@
       </view>
     </picker>
   </view>
-  <view class="footnote">休息日当天的空闲时段会关闭，立即生效。当天已有的预约需要你联系学员或在课程详情里取消。</view>
+  <view class="footnote">设为休息日后立即生效，当天的空闲时段会关闭。当天已有的预约，需要你联系学员或在课程详情里取消。</view>
 
   <view class="action-bar">
     <view class="grow">

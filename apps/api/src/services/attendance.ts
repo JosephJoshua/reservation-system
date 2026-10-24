@@ -126,7 +126,7 @@ export function studentCheckIn(deps: Deps, studentId: number): CheckInLessonDto[
         'nothing_to_check_in',
         next
           ? `下节课${when(next.booking.startsAt, now)} 开始，课前 ${CHECK_IN_EARLY_MINUTES} 分钟起可签到`
-          : '没有待上的课程，如在前台预约请联系前台',
+          : '没有待上的课程。如果是在前台预约的，请联系前台',
       )
     }
     const done = open.filter((r) => r.booking.attendance !== 'no_show')

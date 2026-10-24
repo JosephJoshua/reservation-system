@@ -52,7 +52,7 @@
       </view>
     </view>
     <view wx:else class="card attendance-note">{{attendanceNote}}</view>
-    <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用和课时。再点一次已选的按钮可撤销。</view>
+    <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用，也不退回课时。再点一次已选的按钮即可撤销。</view>
   </block>
 
   <block wx:if="{{lesson.feedback || !lesson.feedbackBlocked || feedbackClosed}}">
@@ -75,7 +75,7 @@
       <view class="feedback-write">
         <t-button block t-class="action-button" theme="primary" variant="outline" icon="edit" bind:tap="writeFeedback">写课后点评</t-button>
       </view>
-      <view class="footnote">学员会收到通知，在课程详情和学习记录里看到点评和照片。</view>
+      <view class="footnote">学员会收到通知，并可以在课程详情和学习记录里看到点评和照片。</view>
     </block>
   </block>
 

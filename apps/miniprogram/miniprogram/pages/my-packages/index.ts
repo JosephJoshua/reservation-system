@@ -102,7 +102,7 @@ Page({
     if (!pkg || this.data.busy) return
     const answer = await ask({
       title: '申请退款',
-      content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计），由场馆审核后${pkg.paidOffline ? '到店退还' : '原路退回'}，申请后课时包将暂停使用。`,
+      content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计算），由场馆审核后${pkg.paidOffline ? '到店退还' : '原路退回'}，申请后课时包将暂停使用。`,
       confirmText: '提交申请',
     })
     if (!answer?.confirm || this.data.busy) return

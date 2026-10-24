@@ -201,7 +201,7 @@ export function Invoices() {
                   )}
                   {row.refundFlag && (
                     <Popconfirm
-                      content="已按退款冲红或重开发票？"
+                      content="已按退款冲红或重新开具发票了吗？"
                       confirmBtn="已处理"
                       cancelBtn="返回"
                       onConfirm={() => refundSeen(row)}
@@ -309,7 +309,7 @@ function Upload({
           <dt>项目</dt>
           <dd>{invoice.order.description}</dd>
         </dl>
-        <Field label="发票 PDF" help="在税务系统开具后下载的 PDF，不超过 10MB">
+        <Field label="发票 PDF" help="在税务系统开具发票后下载的 PDF，不超过 10MB">
           <input
             ref={input}
             hidden
@@ -329,7 +329,7 @@ function Upload({
           </Space>
           {fileError && <div className="field-error">{fileError}</div>}
         </Field>
-        {!replacing && <p className="muted">上传后学员可在小程序中查看发票。</p>}
+        {!replacing && <p className="muted">上传后，学员可以在小程序中查看发票。</p>}
       </div>
     </Dialog>
   )
@@ -375,7 +375,7 @@ function Reject({
       onClose={onClose}
     >
       <Textarea
-        placeholder="拒绝原因，学员可见，如：税号有误，请核对后重新申请"
+        placeholder="拒绝原因（学员可见），如：税号有误，请核对后重新申请"
         value={reason}
         maxlength={100}
         onChange={(v) => setReason(String(v))}

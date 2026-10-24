@@ -59,7 +59,7 @@
     </view>
   </view>
 
-  <view class="footnote">只能改到你自己的空闲时段。订阅了通知的学员会收到改约消息，请同时电话告知。</view>
+  <view class="footnote">只能改到你自己的空闲时段。订阅了通知的学员会收到改约消息，也请同时电话告知学员。</view>
 
   <view class="action-bar">
     <view class="grow picked">

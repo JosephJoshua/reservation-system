@@ -57,7 +57,7 @@ function coachError(
   }
   return price.price === booking.price
     ? null
-    : new ApiError(409, 'price_differs', '该教练价格不同，请取消后重新预约')
+    : new ApiError(409, 'price_differs', '这位教练的价格不同，请取消后重新预约')
 }
 
 /** The booking with its slot's coach and lesson type. */

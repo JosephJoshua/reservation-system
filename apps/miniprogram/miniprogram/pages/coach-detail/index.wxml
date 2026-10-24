@@ -32,7 +32,7 @@
 
   <view class="section-title">课程与价格</view>
   <view wx:if="{{!lessons.length}}" class="card">
-    <view class="inline-empty"><t-empty icon="{{emptyIcon}}" description="该教练暂未开放预约" /></view>
+    <view class="inline-empty"><t-empty icon="{{emptyIcon}}" description="这位教练暂未开放预约" /></view>
   </view>
   <block wx:else>
     <view class="card">

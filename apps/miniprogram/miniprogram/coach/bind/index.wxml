@@ -3,7 +3,7 @@
   <view class="intro">
     <view class="intro-icon"><t-icon name="user-checked" size="96rpx" /></view>
     <view class="intro-title">绑定教练账号</view>
-    <view class="intro-text">向场馆获取 8 位绑定码，绑定后可在这里查看课表、签到和设置可约时间。</view>
+    <view class="intro-text">请向场馆获取 8 位绑定码。绑定后，可以在这里查看课表、签到和设置可约时间。</view>
   </view>
   <t-cell-group theme="card">
     <t-input label="绑定码" placeholder="8 位字母或数字" maxlength="{{9}}" value="{{code}}" confirm-type="done" bind:change="onCode" bind:enter="submit" />

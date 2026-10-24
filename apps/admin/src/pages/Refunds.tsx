@@ -286,7 +286,7 @@ function Decide({
         <div className="fields">
           <Field
             label="退款金额"
-            help={`建议金额 = 实付 − 已上课时按所上教练的单次价合计。最多 ${yuan(refund.order.amount)}`}
+            help={`建议金额 = 实付金额 − 已上课时按所上教练的单次价合计，最多 ${yuan(refund.order.amount)}`}
           >
             <InputNumber
               theme="normal"
@@ -300,13 +300,13 @@ function Decide({
           </Field>
           <p className="muted">
             {refund.order.provider === 'offline'
-              ? '该课时包为前台付款，当面退还后在列表中点“已退还”。'
-              : '将原路退回学员微信。退款后课时包作废。'}
+              ? '这个课时包是前台付款的，当面退还后请在列表中点“已退还”。'
+              : '款项将原路退回学员的微信，退款后课时包作废。'}
           </p>
         </div>
       ) : (
         <Textarea
-          placeholder="拒绝原因，学员可见"
+          placeholder="拒绝原因（学员可见）"
           value={note}
           maxlength={100}
           onChange={(v) => setNote(String(v))}

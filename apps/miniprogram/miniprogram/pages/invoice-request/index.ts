@@ -50,7 +50,7 @@ Page({
       ])
       const order = orders.find((o: InvoiceOrderDto) => o.orderId === this.orderId)
       if (!order || (order.state !== 'available' && order.state !== 'rejected')) {
-        this.setData({ state: 'error', error: '该订单暂不能申请发票' })
+        this.setData({ state: 'error', error: '这笔订单暂时不能申请发票' })
         return
       }
       const kind = lastTitle?.kind ?? 'personal'

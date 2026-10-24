@@ -130,7 +130,7 @@ describe('lesson feedback', () => {
       (await h.call('GET', `/coach/lessons/${id}`, undefined, ct)).json.feedbackBlocked
     expect((await write(h, ct, id, '好')).json.error.code).toBe('not_attended')
     expect((await upload(h, ct, id)).json.error.code).toBe('not_attended')
-    expect(await blocked()).toBe('签到为到课后可以写点评')
+    expect(await blocked()).toBe('签到为到课后才能写点评')
     await h.call('PUT', `/coach/lessons/${id}/attendance`, { attendance: 'no_show' }, ct)
     expect((await write(h, ct, id, '好')).json.error.code).toBe('not_attended')
     expect(await blocked()).toBe('学员缺席，不能写点评')

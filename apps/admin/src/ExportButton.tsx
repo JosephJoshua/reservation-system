@@ -96,7 +96,7 @@ function ExportDialog({
       onClose={onClose}
     >
       <div className="fields">
-        <Field label={dateLabels[kind]} help="一次最多导出一年">
+        <Field label={dateLabels[kind]} help="一次最多只能导出一年的数据">
           <DateRangePicker
             style={{ width: '100%' }}
             value={dates}

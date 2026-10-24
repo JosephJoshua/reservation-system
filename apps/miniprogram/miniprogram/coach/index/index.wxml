@@ -60,7 +60,7 @@
         <view wx:if="{{item.kind !== 'past'}}" class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
       </view>
     </view>
-    <view class="footnote">点空闲时段可关闭或重新开放，已预约的课程点开可签到、写备注或取消，小班课点开可按名单签到。</view>
+    <view class="footnote">点空闲时段可以关闭或重新开放；点开已预约的课可以签到、写备注或取消；点开小班课可以按名单签到。</view>
   </view>
 
   <view class="action-bar">

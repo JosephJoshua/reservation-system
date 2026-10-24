@@ -91,7 +91,7 @@ Page({
       this.catalogAt = catalogFetchedAt()
       const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
       if (!lessonType) {
-        this.setData({ state: 'error', error: '该课程已下架' })
+        this.setData({ state: 'error', error: '这门课程已下架' })
         return
       }
       wx.setNavigationBarTitle({ title: lessonType.name })
@@ -183,7 +183,7 @@ Page({
       this.setData({ slotsState: 'ready', slots, availableCount })
       const day = this.data.days.find((d) => d.key === date)
       if (moved && day && availableCount > 0) {
-        wx.showToast({ title: `当天无可约时段，已跳到 ${day.date}`, icon: 'none' })
+        wx.showToast({ title: `当天没有可约时段，已跳到 ${day.date}`, icon: 'none' })
       }
     } catch (e) {
       if (request !== this.request) return

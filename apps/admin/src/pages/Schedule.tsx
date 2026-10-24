@@ -313,7 +313,7 @@ function planError(plan: Plan, items: { startsAt: string; endsAt: string }[], wh
   if (late) {
     const { hours, minutes } = venueParts(new Date(late.startsAt))
     const t = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
-    return `${t} 开始会上到第二天，请改开始时间`
+    return `${t} 开始的课会上到第二天，请修改开始时间`
   }
   if (items.length === 0) return `没有要创建的${what}`
   if (items.length > MAX_SLOTS) return `一次最多创建 ${MAX_SLOTS} 个${what}，请缩短日期范围`
@@ -339,7 +339,7 @@ function PlanFields({ plan }: { plan: Plan }) {
           ))}
         </Checkbox.Group>
       </Field>
-      <Field label="开始时间" help="多个用逗号分隔，如 09:00, 10:30">
+      <Field label="开始时间" help="多个时间用逗号分隔，如：09:00, 10:30">
         <Input
           value={plan.times}
           status={plan.parsed ? 'default' : 'error'}
@@ -397,7 +397,7 @@ function CreateSlots({
     >
       <div className="fields">
         <PlanFields plan={plan} />
-        <Field label="时长" help="需与课程时长一致，学员才能预约">
+        <Field label="时长" help="需要与课程时长一致，学员才能预约">
           <Space>
             <InputNumber
               theme="normal"
@@ -492,7 +492,8 @@ function CreateSessions({
     >
       {taught.length === 0 ? (
         <p className="muted">
-          该教练还没有小班课课程。先在“课程与教练”里新建上课人数多于 1 人的课程，并让教练教这门课。
+          这位教练还没有小班课。请先在“课程与教练”里新建上课人数多于 1
+          人的课程，并把它加入教练的所教课程。
         </p>
       ) : (
         <div className="fields">
@@ -513,7 +514,7 @@ function CreateSessions({
           <PlanFields plan={plan} />
           <Field
             label="每节人数"
-            help={`${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时整节自动取消并退款。` : ''}与已有预约重叠的时间不能排，重叠的空闲时段会关闭`}
+            help={`${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时，整节课会自动取消并退款。` : ''}与已有预约重叠的时间不能排课，重叠的空闲时段会被关闭`}
           >
             <InputNumber
               theme="normal"
@@ -570,7 +571,7 @@ function SlotDialog({
     if (
       await attempt(
         () => api('POST', `/admin/bookings/${b.id}/cancel`, { reason }),
-        '已取消，学员将收到全额退款或退回课时',
+        '已取消，学员会收到全额退款或退回的课时',
         { onStale: onChanged },
       )
     )
@@ -604,8 +605,8 @@ function SlotDialog({
             {!slot.open
               ? '已关闭，学员看不到'
               : slot.tableFull
-                ? '尚无预约，该时段球台已满'
-                : '尚无预约'}
+                ? '还没有预约，但这个时段的球台已满'
+                : '还没有预约'}
           </span>
         )}
 
@@ -618,7 +619,7 @@ function SlotDialog({
         {b && cancelling && (
           <>
             <Textarea
-              placeholder="取消原因，学员可见"
+              placeholder="取消原因（学员可见）"
               value={reason}
               maxlength={100}
               onChange={(v) => setReason(String(v))}
@@ -664,7 +665,7 @@ function SlotDialog({
             </Popconfirm>
           )}
         </Space>
-        {slot.open && b && <span className="muted">关闭时段不影响已有预约</span>}
+        {slot.open && b && <span className="muted">关闭时段不会影响已有的预约</span>}
       </Space>
       {booking && (
         <BookForStudent slot={slot} onClose={() => setBooking(false)} onDone={onChanged} />
@@ -719,12 +720,12 @@ function SessionDialog({
       cancelling === 'session'
         ? await attempt(
             () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
-            '已取消整节，学员将收到全额退款或退回课时',
+            '已取消整节，学员会收到全额退款或退回的课时',
             { onStale: onChanged },
           )
         : await attempt(
             () => api('POST', `/admin/bookings/${cancelling}/cancel`, { reason }),
-            '已取消，学员将收到全额退款或退回课时',
+            '已取消，学员会收到全额退款或退回的课时',
             { onStale: onChanged },
           )
     if (ok) onChanged()
@@ -774,7 +775,7 @@ function SessionDialog({
 
         {slot.bookings.length === 0 ? (
           <span className="muted">
-            {slot.tableFull && !started ? '尚无学员报名，该时段球台已满' : '尚无学员报名'}
+            {slot.tableFull && !started ? '还没有学员报名，但这个时段的球台已满' : '还没有学员报名'}
           </span>
         ) : (
           <div className="roster">
@@ -824,11 +825,11 @@ function SessionDialog({
           <>
             <span>
               {cancelling === 'session'
-                ? `取消整节，${slot.bookings.length} 位学员全额退款或退回课时`
+                ? `取消整节课后，${slot.bookings.length} 位学员都会收到全额退款或退回课时`
                 : `取消 ${slot.bookings.find((b) => b.id === cancelling)?.student?.name || '该学员'} 的预约`}
             </span>
             <Textarea
-              placeholder="取消原因，学员可见"
+              placeholder="取消原因（学员可见）"
               value={reason}
               maxlength={100}
               onChange={(v) => setReason(String(v))}

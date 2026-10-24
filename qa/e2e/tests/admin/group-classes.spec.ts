@@ -74,7 +74,7 @@ test('creates a group class with a size and a minimum', async ({ page, request }
   await expect(form.locator('.t-checkbox', { hasText: '设置最低开班人数' })).toHaveCount(0)
   await typeNumber(field(form, '上课人数').locator('input').first(), '4')
   await form.locator('.t-checkbox', { hasText: '设置最低开班人数' }).click()
-  await expect(form.getByText('到免费取消截止时人数不足，整节自动取消并退款')).toBeVisible()
+  await expect(form.getByText('到免费取消截止时如果人数不足，整节课会自动取消并退款')).toBeVisible()
   // A group class cannot be a trial.
   await expect(form.locator('.t-checkbox', { hasText: '体验课' })).toHaveClass(/t-is-disabled/)
   await both(page, 'lesson-type-dialog')
@@ -230,7 +230,7 @@ test('calls off a whole session and refunds everyone', async ({ page, request })
   }
   await chip.click()
   await dialog(page).getByRole('button', { name: '取消整节' }).click()
-  await expect(dialog(page)).toContainText('取消整节，1 位学员全额退款或退回课时')
+  await expect(dialog(page)).toContainText('取消整节课后，1 位学员都会收到全额退款或退回课时')
   await expect(dialog(page).locator('.t-button', { hasText: '确认取消并退款' })).toHaveClass(
     /t-is-disabled/,
   )

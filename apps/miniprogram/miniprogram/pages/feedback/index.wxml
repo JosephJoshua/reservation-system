@@ -11,7 +11,7 @@
 </view>
 
 <view wx:elif="{{!items.length}}" class="centered">
-  <t-empty icon="{{emptyIcon}}" description="还没有课后点评。教练写了点评后会出现在这里。" />
+  <t-empty icon="{{emptyIcon}}" description="还没有课后点评。教练写好点评后，会显示在这里。" />
 </view>
 
 <view wx:else class="list">

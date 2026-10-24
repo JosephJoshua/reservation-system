@@ -49,7 +49,7 @@
     <view wx:if="{{!pkg && !perClassEnabled}}" class="option" bind:tap="openPackages">
       <view class="option-icon"><t-icon name="wallet" size="44rpx" /></view>
       <view class="option-text">
-        <view class="option-title">这门课需使用课时包</view>
+        <view class="option-title">这门课需要使用课时包</view>
         <view class="option-desc">购买后即可预约</view>
       </view>
       <view class="unchecked"><t-icon name="chevron-right" size="40rpx" /></view>

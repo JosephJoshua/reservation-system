@@ -205,7 +205,7 @@ Page({
             ? '课程时间已调整，开课前可免费取消。'
             : cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel)) +
           (b.canMove
-            ? `免费取消截止前可改约 ${b.movesLeft} 次。`
+            ? `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
             : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
               ? '改约次数已用完。'
               : '')
@@ -261,7 +261,7 @@ Page({
    */
   cancelQuote(b: BookingDto): { message: string; late: boolean } {
     if (b.status === 'pending_payment') {
-      return { message: '取消后该时段将释放给其他学员。', late: false }
+      return { message: '取消后，这个时段会释放给其他学员。', late: false }
     }
     const rules = this.catalog?.booking
     if (!rules) return { message: '确定取消这节课吗？', late: false }
@@ -282,7 +282,7 @@ Page({
         late,
         message: outcome.returnLesson
           ? '取消后课时将退回课时包。'
-          : '已过免费取消时间，取消后本节课时不退回。',
+          : '已过免费取消时间，取消后这节课的课时不会退回。',
       }
     }
     if (b.price === 0) return { message: '确定取消这节课吗？', late }

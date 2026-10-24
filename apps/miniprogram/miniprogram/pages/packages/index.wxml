@@ -38,7 +38,7 @@
       >购买</t-button>
     </view>
   </view>
-  <view class="footnote">课时包仅限本人使用，过期后剩余课时失效。未使用的课时可申请退款，由场馆审核。</view>
+  <view class="footnote">课时包仅限本人使用，过期后剩余课时将失效。未使用的课时可以申请退款，由场馆审核。</view>
   <agree-check id="agree-check" wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
 </view>
 </theme-root>
