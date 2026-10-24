@@ -100,6 +100,17 @@ export interface StudentRow extends Person {
   tester: boolean
   deletedAt: string | null
   createdAt: string
+  /** With the 即将到期 filter: the student's package that expires first with lessons left. */
+  expiring?: {
+    packageId: number
+    name: string
+    lessonsRemaining: number
+    expiresAt: string
+    /** The 7-day expiry message for it: sent, or refused as the student had not allowed it. */
+    notice: 'sent' | 'refused' | null
+    /** How many more of the student's packages expire soon. */
+    more: number
+  }
 }
 
 export interface Order {

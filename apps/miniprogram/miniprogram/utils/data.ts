@@ -1,4 +1,4 @@
-import type { CatalogDto, LateCancelRule, MeDto, StudentNoticeKind } from '../lib/shared'
+import type { CatalogDto, LateCancelRule, MeDto } from '../lib/shared'
 import { api, publicApi } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
@@ -24,7 +24,7 @@ const NOTICE_PROMPT_MAX_MS = 10_000
  */
 export function askForNotices(
   templates: MeDto['noticeTemplates'],
-  kinds: StudentNoticeKind[],
+  kinds: (keyof MeDto['noticeTemplates'])[],
 ): Promise<void> {
   // One template may serve two kinds, such as a 课程变动 template for cancels and moves.
   const tmplIds = [...new Set(kinds.flatMap((kind) => templates[kind] ?? []))]

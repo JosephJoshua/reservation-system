@@ -38,7 +38,10 @@ export function Students() {
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<number | null>(idFromHash)
-  const list = useApi<StudentRow[]>(`/admin/students?q=${encodeURIComponent(query)}`)
+  const [expiring, setExpiring] = useState(false)
+  const list = useApi<StudentRow[]>(
+    `/admin/students?q=${encodeURIComponent(query)}${expiring ? '&expiring=1' : ''}`,
+  )
 
   const { reload } = list
   useEffect(() => {
@@ -70,18 +73,37 @@ export function Students() {
           onClear={() => setQuery('')}
         />
         <Button type="submit">搜索</Button>
-        <span className="spacer" />
-        <ExportButton
-          kind="students"
-          filters={{ q: query }}
-          filterText={query ? `搜索“${query}”` : undefined}
+        <Select
+          style={{ width: 160 }}
+          clearable
+          placeholder="全部学员"
+          value={expiring ? 'expiring' : undefined}
+          onChange={(v) => setExpiring(v === 'expiring')}
+          options={[{ label: '课时包即将到期', value: 'expiring' }]}
         />
+        <span className="spacer" />
+        {/* The export lists every student; it has no 即将到期 filter. */}
+        {!expiring && (
+          <ExportButton
+            kind="students"
+            filters={{ q: query }}
+            filterText={query ? `搜索“${query}”` : undefined}
+          />
+        )}
       </form>
+      {expiring && (
+        <p className="muted">
+          30 天内到期且有剩余课时的学员，按到期日排序。到期前 7 天会给学员发送提醒。
+        </p>
+      )}
       <DataTable
         rowKey="id"
         loading={list.loading}
         data={list.data ?? []}
-        empty={list.error ?? (query ? '没有找到学员' : '还没有学员')}
+        empty={
+          list.error ??
+          (query ? '没有找到学员' : expiring ? '30 天内没有到期的课时包' : '还没有学员')
+        }
         columns={[
           {
             colKey: 'name',
@@ -94,10 +116,63 @@ export function Students() {
               ),
           },
           { colKey: 'phone', title: '手机号', cell: ({ row }) => row.phone || '-' },
-          { colKey: 'createdAt', title: '注册时间', cell: ({ row }) => fmtDate(row.createdAt) },
+          ...(expiring
+            ? [
+                {
+                  colKey: 'package',
+                  title: '课时包',
+                  cell: ({ row }: { row: StudentRow }) =>
+                    row.expiring && (
+                      <>
+                        {row.expiring.name}
+                        {row.expiring.more > 0 && (
+                          <span className="muted"> 等 {row.expiring.more + 1} 个</span>
+                        )}
+                      </>
+                    ),
+                },
+                {
+                  colKey: 'left',
+                  title: '剩余',
+                  width: 80,
+                  cell: ({ row }: { row: StudentRow }) =>
+                    row.expiring && `${row.expiring.lessonsRemaining} 节`,
+                },
+                {
+                  colKey: 'expiresAt',
+                  title: '有效期至',
+                  width: 160,
+                  cell: ({ row }: { row: StudentRow }) =>
+                    row.expiring && <ExpiryCell expiresAt={row.expiring.expiresAt} />,
+                },
+                {
+                  colKey: 'notice',
+                  title: '到期提醒',
+                  width: 110,
+                  // Refused: the student did not allow the message in WeChat.
+                  cell: ({ row }: { row: StudentRow }) =>
+                    row.expiring?.notice === 'sent' ? (
+                      <Tag variant="light" theme="success">
+                        已发送
+                      </Tag>
+                    ) : (
+                      <span className="muted">
+                        {row.expiring?.notice === 'refused' ? '学员未订阅' : '-'}
+                      </span>
+                    ),
+                },
+              ]
+            : [
+                {
+                  colKey: 'createdAt',
+                  title: '注册时间',
+                  cell: ({ row }: { row: StudentRow }) => fmtDate(row.createdAt),
+                },
+              ]),
           {
             colKey: 'tester',
             title: '',
+            width: 80,
             cell: ({ row }) => (row.tester ? <Tag variant="light">测试</Tag> : null),
           },
           {
@@ -130,6 +205,29 @@ export function Students() {
         />
       )}
     </div>
+  )
+}
+
+/** The last day a package can be used: it expires at the end of that venue day. */
+const lastDay = (expiresAt: string) => fmtDate(new Date(new Date(expiresAt).getTime() - 1))
+
+/** Venue days from today to the last day of a package, 0 when today is its last day. */
+const daysLeft = (expiresAt: string) =>
+  Math.round(
+    (Date.parse(`${lastDay(expiresAt)}T00:00:00Z`) -
+      Date.parse(`${fmtDate(new Date())}T00:00:00Z`)) /
+      86_400_000,
+  )
+
+function ExpiryCell({ expiresAt }: { expiresAt: string }) {
+  const days = daysLeft(expiresAt)
+  return (
+    <>
+      {lastDay(expiresAt)}{' '}
+      <span className={days < 7 ? 'warning-text' : 'muted'}>
+        {days === 0 ? '今天' : `${days} 天后`}
+      </span>
+    </>
   )
 }
 
@@ -205,7 +303,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                   colKey: 'expiresAt',
                   title: '有效期至',
                   width: 120,
-                  cell: ({ row }) => fmtDate(new Date(new Date(row.expiresAt).getTime() - 1)),
+                  cell: ({ row }) => lastDay(row.expiresAt),
                 },
                 { colKey: 'pricePaid', title: '实付', cell: ({ row }) => yuan(row.pricePaid) },
                 {

@@ -59,6 +59,7 @@ function notices() {
       student_reminder: parseTemplate(env.WECHAT_NOTICE_STUDENT_REMINDER),
       student_moved: parseTemplate(env.WECHAT_NOTICE_STUDENT_MOVED),
       student_feedback: parseTemplate(env.WECHAT_NOTICE_STUDENT_FEEDBACK),
+      student_package: parseTemplate(env.WECHAT_NOTICE_STUDENT_PACKAGE),
     },
   }
 }

@@ -170,13 +170,14 @@ Page({
     try {
       // Asked first, while the tap still counts as the user's action for WeChat. WeChat asks for
       // three at most: news the student cannot see coming goes first (cancels and moves usually
-      // share one 课程变动 template), and the confirmation of what they see on screen only when
-      // there is room.
+      // share one 课程变动 template), then the package running out when paying with one, and the
+      // confirmation of what they see on screen only when there is room.
       await askForNotices(this.data.noticeTemplates, [
         'reminder',
         'cancelled',
         'moved',
         'feedback',
+        ...(this.data.payWith === 'package' ? (['package'] as const) : []),
         'booked',
       ])
       // Consent comes before the contact details, which the API refuses without it.

@@ -239,8 +239,11 @@ export type StudentNoticeKind = (typeof studentNoticeKinds)[number]
 /** GET /me: the student, and whether the same WeChat user is a bound coach. */
 export interface MeDto extends StudentDto {
   isCoach: boolean
-  /** Subscription message template IDs that are set up, for the pages that ask for them. */
-  noticeTemplates: Partial<Record<StudentNoticeKind, string>>
+  /**
+   * Subscription message template IDs that are set up, for the pages that ask for them. `package`
+   * is the one for packages about to expire or used up.
+   */
+  noticeTemplates: Partial<Record<StudentNoticeKind | 'package', string>>
   /** Whether the student agreed to the current user agreement and privacy policy. */
   agreedPolicies: boolean
 }

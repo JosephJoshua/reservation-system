@@ -144,7 +144,7 @@ export function studentRoutes(deps: Deps) {
       phone: s.phone,
       isCoach: Boolean(coach),
       noticeTemplates: Object.fromEntries(
-        studentNoticeKinds.flatMap((kind) => {
+        [...studentNoticeKinds, 'package' as const].flatMap((kind) => {
           const id = deps.notifier?.template(`student_${kind}`)?.id
           return id ? [[kind, id]] : []
         }),

@@ -8,7 +8,7 @@ import {
   venueParts,
   venueSettings,
 } from '@rs/shared'
-import { and, asc, desc, eq, gt, gte, inArray, like, lt, lte, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, isNull, like, lt, lte, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { immediate, type Q } from '../db/client'
@@ -24,6 +24,7 @@ import {
   lessonTypes,
   orders,
   packageLedger,
+  packageNotices,
   packageProducts,
   packages,
   refunds,
@@ -59,6 +60,7 @@ import {
 } from '../services/invoices'
 import { setAttendance } from '../services/lessons'
 import { moveBooking } from '../services/moves'
+import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
   approvePackageRefund,
   extendPackage,
@@ -1233,23 +1235,77 @@ export function adminRoutes(deps: Deps) {
   // Students and their packages
 
   app.get('/students', (c) => {
-    const { q } = parseQuery(c, z.object({ q: z.string().trim().max(30).default('') }))
+    const { q, expiring } = parseQuery(
+      c,
+      z.object({
+        q: z.string().trim().max(30).default(''),
+        // 即将到期: students with lessons left on a package that expires soon, soonest first.
+        expiring: z.enum(['1']).optional(),
+      }),
+    )
     const pattern = `%${q.replace(/[%_]/g, '')}%`
+    const search = q ? or(like(students.name, pattern), like(students.phone, pattern)) : undefined
+    const columns = {
+      id: students.id,
+      name: students.name,
+      phone: students.phone,
+      tester: students.tester,
+      deletedAt: students.deletedAt,
+      createdAt: students.createdAt,
+    }
+    if (!expiring) {
+      return c.json(
+        db.select(columns).from(students).where(search).orderBy(desc(students.id)).limit(100).all(),
+      )
+    }
+    const now = deps.now()
+    const rows = db
+      .select({
+        ...columns,
+        packageId: packages.id,
+        packageName: packages.name,
+        lessonsRemaining: packages.lessonsRemaining,
+        expiresAt: packages.expiresAt,
+        // The expiry message for its current expiry date, once tried.
+        notice: sql<
+          'sent' | 'refused' | null
+        >`(select ${packageNotices.result} from ${packageNotices} where ${packageNotices.packageId} = ${packages.id} and ${packageNotices.kind} = 'expiring' and ${packageNotices.expiresAt} = ${packages.expiresAt} and ${packageNotices.result} in ('sent', 'refused'))`,
+      })
+      .from(packages)
+      .innerJoin(students, eq(students.id, packages.studentId))
+      .where(
+        and(
+          search,
+          isNull(students.deletedAt),
+          eq(packages.status, 'active'),
+          gt(packages.lessonsRemaining, 0),
+          gt(packages.expiresAt, now),
+          lte(packages.expiresAt, new Date(now.getTime() + EXPIRING_SOON_MS)),
+        ),
+      )
+      .orderBy(asc(packages.expiresAt), asc(packages.id))
+      .all()
+    // One row per student, for the package that expires first, with how many more do.
+    const byStudent = new Map<number, (typeof rows)[number] & { more: number }>()
+    for (const r of rows) {
+      const first = byStudent.get(r.id)
+      if (first) first.more++
+      else byStudent.set(r.id, { ...r, more: 0 })
+    }
     return c.json(
-      db
-        .select({
-          id: students.id,
-          name: students.name,
-          phone: students.phone,
-          tester: students.tester,
-          deletedAt: students.deletedAt,
-          createdAt: students.createdAt,
-        })
-        .from(students)
-        .where(q ? or(like(students.name, pattern), like(students.phone, pattern)) : undefined)
-        .orderBy(desc(students.id))
-        .limit(100)
-        .all(),
+      [...byStudent.values()]
+        .slice(0, 100)
+        .map(({ packageId, packageName, lessonsRemaining, expiresAt, notice, more, ...s }) => ({
+          ...s,
+          expiring: {
+            packageId,
+            name: packageName,
+            lessonsRemaining,
+            expiresAt,
+            notice,
+            more,
+          },
+        })),
     )
   })
 

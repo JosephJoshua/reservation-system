@@ -1,9 +1,12 @@
-import { type CatalogDto, formatYuan, type PaymentParamsDto } from '../../lib/shared'
+import { type CatalogDto, formatYuan, type MeDto, type PaymentParamsDto } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
-import { agreePolicies, getCatalog, getMe } from '../../utils/data'
+import { agreePolicies, askForNotices, getCatalog, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
 import { payOrder } from '../../utils/pay'
 import { ask } from '../../utils/tap'
+
+// Whether the package reminder was asked for since the app was opened.
+let askedThisVisit = false
 
 interface ProductView {
   id: number
@@ -33,6 +36,8 @@ Page({
 
   highlight: 0,
   lessonTypeId: 0,
+  templates: {} as MeDto['noticeTemplates'],
+  prompting: false,
   catalog: null as CatalogDto | null,
 
   onLoad(query: Record<string, string | undefined>) {
@@ -45,6 +50,7 @@ Page({
     try {
       const [catalog, me] = await Promise.all([getCatalog(true), getMe()])
       this.catalog = catalog
+      this.templates = me.noticeTemplates
       const typeNames = new Map(catalog.lessonTypes.map((t) => [t.id, t.name]))
       const coachNames = new Map(catalog.coaches.map((c) => [c.id, c.name]))
       const products = catalog.packageProducts
@@ -82,11 +88,25 @@ Page({
       wx.showToast({ title: '请先阅读并同意用户协议和隐私政策', icon: 'none' })
       return
     }
-    const answer = await ask({
-      title: product.name,
-      content: `${product.lessonCount} 节课，${product.validity}，共 ${product.price}。`,
-      confirmText: '去支付',
-    })
+    // A second tap while the prompt is up would ask again.
+    if (this.prompting) return
+    this.prompting = true
+    let answer: WechatMiniprogram.ShowModalSuccessCallbackResult | null
+    try {
+      // Asked inside the tap, before any await, or WeChat does not show the prompt. Once per
+      // visit, so a student who cancels and tries again is not asked again.
+      if (!askedThisVisit) {
+        askedThisVisit = true
+        await askForNotices(this.templates, ['package'])
+      }
+      answer = await ask({
+        title: product.name,
+        content: `${product.lessonCount} 节课，${product.validity}，共 ${product.price}。`,
+        confirmText: '去支付',
+      })
+    } finally {
+      this.prompting = false
+    }
     if (!answer?.confirm || this.data.buying) return
     this.setData({ buying: product.id })
     try {
