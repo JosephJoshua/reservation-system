@@ -767,7 +767,9 @@ function SessionDialog({
         )}
 
         {slot.bookings.length === 0 ? (
-          <span className="muted">尚无学员报名</span>
+          <span className="muted">
+            {slot.tableFull && !started ? '尚无学员报名，该时段球台已满' : '尚无学员报名'}
+          </span>
         ) : (
           <div className="roster">
             {slot.bookings.map((b) => {
