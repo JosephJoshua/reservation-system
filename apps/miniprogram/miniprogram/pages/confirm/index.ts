@@ -14,7 +14,7 @@ import { payOrder } from '../../utils/pay'
 type PayWith = 'package' | 'wechat'
 
 /** Booking errors that mean the slot is gone, so the student should pick another time. */
-const SLOT_GONE = ['slot_taken', 'slot_closed', 'started', 'too_soon', 'too_far']
+const SLOT_GONE = ['slot_taken', 'tables_full', 'slot_closed', 'started', 'too_soon', 'too_far']
 
 Page({
   data: {

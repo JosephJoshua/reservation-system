@@ -26,7 +26,10 @@ import type { Coach, LessonType, Slot } from '../types'
 function slotLabel(s: Slot, types: LessonType[]) {
   if (s.lessonTypeId !== null) {
     const name = types.find((t) => t.id === s.lessonTypeId)?.name ?? '小班课'
-    return s.cancelledAt ? `${name} · 已取消` : `${name} · ${s.bookings.length}/${s.capacity} 人`
+    if (s.cancelledAt) return `${name} · 已取消`
+    // An empty session holds no table yet, so it can be filled out of its first seat.
+    const full = !s.bookings.length && s.open && s.tableFull && new Date(s.startsAt) > new Date()
+    return `${name} · ${full ? '球台已满' : `${s.bookings.length}/${s.capacity} 人`}`
   }
   const b = s.booking
   if (!b) {
@@ -166,7 +169,7 @@ export function Schedule() {
                   <button
                     type="button"
                     key={s.id}
-                    className={`slot-chip${s.bookings.length ? ' booked' : ''}${s.lessonTypeId !== null ? ' group' : ''}${s.open ? '' : ' closed'}`}
+                    className={`slot-chip${s.bookings.length ? ' booked' : ''}${s.lessonTypeId !== null ? ' group' : ''}${s.open ? '' : ' closed'}${slotLabel(s, types.data ?? []).endsWith('球台已满') ? ' full' : ''}`}
                     onClick={() => setSelected(s)}
                   >
                     {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
@@ -686,7 +689,8 @@ function SessionDialog({
   const started = new Date(slot.startsAt) <= now
   const ended = new Date(slot.endsAt) <= now
   const cancelled = slot.cancelledAt !== null
-  const full = slot.bookings.length >= slot.capacity
+  // No seats left, or no table yet for a session nobody has joined.
+  const full = slot.bookings.length >= slot.capacity || (!slot.bookings.length && slot.tableFull)
   // Never below the students already in, so nobody loses a seat, nor below the class minimum.
   const minSeats = Math.max(2, slot.bookings.length, lessonType?.minStudents ?? 0)
   const capacityOk = Number.isInteger(capacity) && capacity >= minSeats && capacity <= 30

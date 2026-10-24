@@ -238,9 +238,12 @@ export function Settings() {
               suffix="张"
               onChange={(v) =>
                 set((d) => {
+                  // Empty is no limit; any number is kept to 1 to 99 tables.
                   const n = Math.floor(Number(v))
                   d.booking.tables =
-                    v === '' || v === undefined || !(n >= 1) ? null : Math.min(n, 99)
+                    v === '' || v === undefined || Number.isNaN(n)
+                      ? null
+                      : Math.min(Math.max(n, 1), 99)
                 })
               }
             />

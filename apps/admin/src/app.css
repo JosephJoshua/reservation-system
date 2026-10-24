@@ -147,6 +147,10 @@ body {
   background: var(--td-brand-color-light);
 }
 
+.slot-chip.full {
+  color: var(--td-text-color-secondary);
+}
+
 .slot-chip.closed {
   color: var(--td-text-color-disabled);
   border-style: dashed;
