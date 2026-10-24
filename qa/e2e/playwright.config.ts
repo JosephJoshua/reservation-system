@@ -13,6 +13,9 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
+    // Chromium names a download "download" when the system locale cannot hold the file name, as
+    // with the 发票-….csv exports on a machine whose LANG is unset.
+    launchOptions: { env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } },
   },
   projects: [
     {
