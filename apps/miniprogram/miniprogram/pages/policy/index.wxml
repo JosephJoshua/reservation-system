@@ -3,8 +3,14 @@
 <view wx:if="{{state === 'loading'}}" class="centered">
   <t-loading theme="circular" size="48rpx" />
 </view>
-<view wx:elif="{{state === 'error' || !lines.length}}" class="centered">
-  <t-empty icon="{{emptyIcon}}" description="{{error || '暂无内容'}}" />
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+<view wx:elif="{{!lines.length}}" class="centered">
+  <t-empty icon="{{emptyIcon}}" description="暂无内容" />
 </view>
 <view wx:else class="body">
   <view wx:for="{{lines}}" wx:key="index" class="{{item.heading ? 'heading' : item.text ? 'line' : 'gap'}}">

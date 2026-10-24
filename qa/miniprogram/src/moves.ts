@@ -294,7 +294,11 @@ try {
     await miniProgram.navigateTo(`/pages/move/index?id=${bookingId}`)
     const move = await waitForPage('pages/move/index', (d) => d.state === 'error')
     await screenshot('move-none-left')
-    check(String(await move.data('error')).includes('不能改约'), 'should say it cannot move')
+    check(
+      String(await move.data('error')).includes('改约次数已用完'),
+      'should say no moves are left',
+    )
+    check((await move.data('fixed')) === true, 'should offer 返回, not 重新加载')
   })
 
   await step('the coach moves the lesson in coach mode', async () => {

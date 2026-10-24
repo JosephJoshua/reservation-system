@@ -135,6 +135,8 @@ export interface BookingDto {
   /** Start of the lesson's first time, when it was moved. */
   movedFrom: string | null
   cancelledBy: 'student' | 'venue' | null
+  /** Why the venue or coach cancelled it, written for the student; empty when not given. */
+  cancelReason: string
   late: boolean
   refund: { amount: number; status: RefundStatus } | null
   /** Marked by the coach or the venue, or by the student scanning the venue's 签到码. */

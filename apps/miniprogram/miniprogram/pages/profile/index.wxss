@@ -59,3 +59,11 @@
   font-size: 26rpx;
   color: var(--td-text-color-secondary);
 }
+
+/* The map has the full address. */
+.address {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

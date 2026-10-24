@@ -1,5 +1,5 @@
 import type { BannerDto, CatalogDto, HomeDto } from '../../lib/shared'
-import { assetUrl, errorMessage, publicApi } from '../../utils/api'
+import { assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
@@ -23,6 +23,7 @@ Page({
       isGroup: boolean
       price: string
       original: string
+      from: boolean
     }[],
     coaches: [] as { id: number; name: string; category: string; title: string; avatar: string }[],
     packageCount: 0,
@@ -44,7 +45,9 @@ Page({
       ])
       this.show(home, catalog)
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed refresh keeps what is on screen.
+      if (this.data.state === 'ready') showError(e)
+      else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 
@@ -57,6 +60,12 @@ Page({
       banners: home.banners.map((b) => ({ ...b, src: assetUrl(b.imageUrl) })),
       lessonTypes: catalog.lessonTypes.map((t) => {
         const { price, original } = priceText(t.fromPrice)
+        // 起 only when coaches charge different prices for it.
+        const prices = new Set(
+          catalog.coaches.flatMap((c) =>
+            c.lessons.filter((l) => l.lessonTypeId === t.id).map((l) => l.price.price),
+          ),
+        )
         return {
           id: t.id,
           name: t.name,
@@ -69,6 +78,7 @@ Page({
           isGroup: t.capacity > 1,
           price,
           original,
+          from: prices.size > 1,
         }
       }),
       coaches: catalog.coaches.map((c) => ({

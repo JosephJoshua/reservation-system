@@ -34,7 +34,8 @@
       <view wx:if="{{profile.chips.length}}" class="profile-chips">
         <t-tag wx:for="{{profile.chips}}" wx:key="key" theme="{{item.trait ? 'primary' : 'default'}}" variant="{{item.trait ? 'light' : 'outline'}}">{{item.text}}</t-tag>
       </view>
-      <view wx:if="{{profile.note}}" class="profile-note">{{profile.note}}</view>
+      <view wx:if="{{profile.note}}" class="profile-note {{profile.long && !noteOpen ? 'profile-note-clamped' : ''}}">{{profile.note}}</view>
+      <view wx:if="{{profile.long}}" class="profile-more" bind:tap="toggleNote">{{noteOpen ? '收起' : '展开'}}</view>
       <view wx:if="{{profile.empty}}" class="profile-empty">场馆还没有填写学员档案</view>
       <view class="profile-counts">{{profile.counts}}</view>
     </view>

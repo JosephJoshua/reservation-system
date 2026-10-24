@@ -27,6 +27,8 @@ interface HistoryView {
 interface ProfileView {
   chips: { key: string; text: string; trait: boolean }[]
   note: string
+  /** Long enough to be clamped, with 展开 to read it all. */
+  long: boolean
   empty: boolean
   counts: string
 }
@@ -41,6 +43,7 @@ function profileView(p: StudentProfileDto | null): ProfileView | null {
   return {
     chips,
     note: p.note,
+    long: p.note.length > 80 || p.note.split('\n').length > 4,
     empty: !chips.length && !p.note,
     counts: profileCounts(p),
   }
@@ -105,6 +108,7 @@ Page({
     savingNote: false,
     cancelling: false,
     deletingFeedback: false,
+    noteOpen: false,
   },
 
   id: 0,
@@ -242,6 +246,10 @@ Page({
       this.feedbackAsking = false
       this.setData({ deletingFeedback: false })
     }
+  },
+
+  toggleNote() {
+    this.setData({ noteOpen: !this.data.noteOpen })
   },
 
   previewPhoto(e: WechatMiniprogram.TouchEvent) {

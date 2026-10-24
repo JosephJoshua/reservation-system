@@ -11,6 +11,7 @@ import { and, asc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
+  coaches,
   lessonTypes,
   orders,
   packageLedger,
@@ -113,6 +114,10 @@ export interface CreateBookingInput {
   slotId: number
   lessonTypeId: number
   payWith?: 'package' | 'wechat'
+  /** The price the student was shown, in fen; a different price now refuses the booking. */
+  expectedPrice?: number
+  /** The package the student was shown; another one now refuses the booking. */
+  expectedPackageId?: number
 }
 
 export interface CancelOptions {
@@ -155,6 +160,20 @@ export function usablePackage(
     .find((p) => p.coachIds.length === 0 || p.coachIds.includes(slot.coachId))
 }
 
+/** Why a coach has no price for a lesson: they stopped teaching it, or the venue turned them off. */
+function noPrice(tx: Q, coachId: number): ApiError {
+  const coach = tx
+    .select({ active: coaches.active })
+    .from(coaches)
+    .where(eq(coaches.id, coachId))
+    .get()
+  return new ApiError(
+    409,
+    'coach_not_teaching',
+    coach?.active ? '该教练不教这门课' : '该教练暂不可预约',
+  )
+}
+
 /** What booking a slot would cost the student, for the confirm page. */
 export function quoteBooking(deps: Deps, studentId: number, slotId: number, lessonTypeId: number) {
   const { db } = deps
@@ -164,7 +183,7 @@ export function quoteBooking(deps: Deps, studentId: number, slotId: number, less
   if (!student || !slot || !lessonType || !visibleTo(lessonType, student)) throw notFound('时段')
   assertTeaches(slot, lessonType)
   const price = priceFor(db, slot.coachId, lessonType, deps.now())
-  if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
+  if (!price) throw noPrice(db, slot.coachId)
   const pkg = lessonType.isTrial ? undefined : usablePackage(db, studentId, lessonType.id, slot)
   return {
     price,
@@ -197,7 +216,7 @@ export function checkBookable(
     throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
   }
   const price = priceFor(tx, slot.coachId, lessonType, now)
-  if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
+  if (!price) throw noPrice(tx, slot.coachId)
   const seat = takeSeat(tx, slot)
   assertNoClash(tx, studentId, slot, `${who}在这个时间已有预约`)
   assertTableFree(tx, slot)
@@ -229,7 +248,7 @@ export async function createBooking(
     // Deleted while this request was on its way.
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
-    if (!slot) throw notFound('时段')
+    if (!slot) throw new ApiError(404, 'not_found', '该时段已取消')
     // A repeated tap or a retry after a lost response gets the booking it already made, rather
     // than being told the slot is taken (by the student themself).
     const own = tx
@@ -257,13 +276,17 @@ export async function createBooking(
         repeat: true,
       }
     }
+    // A cancelled class is closed too; say it was cancelled.
+    if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
     if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段不可预约')
     const lessonType = tx
       .select()
       .from(lessonTypes)
       .where(eq(lessonTypes.id, input.lessonTypeId))
       .get()
-    if (!lessonType || !visibleTo(lessonType, student)) throw notFound('课程')
+    if (!lessonType || !visibleTo(lessonType, student)) {
+      throw new ApiError(404, 'not_found', '该课程暂不可预约')
+    }
     const windowError = bookingWindowError(slot.startsAt, now, settings.booking)
     if (windowError) throw new ApiError(409, windowError, windowMessages[windowError])
     const { price, seat } = checkBookable(tx, now, { studentId, slot, lessonType }, '你')
@@ -274,6 +297,14 @@ export async function createBooking(
         : usablePackage(tx, studentId, lessonType.id, slot)
     if (input.payWith === 'package' && !pkg) {
       throw new ApiError(409, 'no_package', '没有可用于该课程的课时包')
+    }
+    // The shown one was used up or expired, and the next one would be used without asking.
+    if (pkg && input.expectedPackageId !== undefined && pkg.id !== input.expectedPackageId) {
+      throw new ApiError(409, 'package_changed', '课时包已变动')
+    }
+    // Changed by the venue, or a sale ended, since the student saw the price.
+    if (!pkg && input.expectedPrice !== undefined && input.expectedPrice !== price.price) {
+      throw new ApiError(409, 'price_changed', '价格已变动')
     }
 
     const base = {

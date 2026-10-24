@@ -13,8 +13,20 @@ import { payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
 
-/** Booking errors that mean the slot is gone, so the student should pick another time. */
-const SLOT_GONE = ['slot_taken', 'tables_full', 'slot_closed', 'started', 'too_soon', 'too_far']
+/**
+ * Booking errors that mean this time cannot be booked any more, so the student should pick another:
+ * taken, closed, deleted, too close, or its coach or lesson no longer offered.
+ */
+const SLOT_GONE = [
+  'slot_taken',
+  'tables_full',
+  'slot_closed',
+  'started',
+  'too_soon',
+  'too_far',
+  'not_found',
+  'coach_not_teaching',
+]
 
 Page({
   data: {
@@ -209,16 +221,59 @@ Page({
         slotId: this.data.slotId,
         lessonTypeId: this.data.lessonTypeId,
         payWith: this.data.payWith,
+        // Refused if the price changed since the page loaded, rather than charging another one.
+        ...(this.data.payWith === 'wechat' ? { expectedPrice: this.data.price } : {}),
+        // Likewise if the package shown was used up and another would be used.
+        ...(this.data.payWith === 'package' && this.data.pkg
+          ? { expectedPackageId: this.data.pkg.id }
+          : {}),
       })
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
-        await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
+        // So does backing out while it was booking: no cashier over the page they went back to.
+        if (!this.left) await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
         this.finish(res.bookingId)
         return
       }
       this.finish(res.bookingId, res.existing ? '你已预约这节课' : '')
     } catch (e) {
+      // Gone back while it was booking: nothing here to reload or ask about.
+      if (this.left) return
+      if (e instanceof ApiError && e.code === 'price_changed') {
+        const { payWith } = this.data
+        await this.load()
+        // Reloading picks the package again when there is one; keep the student's choice.
+        if (payWith === 'wechat' && this.data.perClassEnabled) this.setData({ payWith })
+        if (this.data.state === 'ready') {
+          await wx.showModal({
+            title: '价格已变动',
+            content: `现价 ${this.data.priceText}，请确认后再支付`,
+            showCancel: false,
+          })
+        }
+        return
+      }
+      if (e instanceof ApiError && (e.code === 'no_package' || e.code === 'package_changed')) {
+        // Used up at the front desk or expired since the page loaded: quote again without it.
+        await this.load()
+        if (this.data.state === 'ready') {
+          await wx.showModal({
+            title: this.data.pkg ? '课时包已变动' : '课时包不可用',
+            content: this.data.pkg
+              ? `将使用${this.data.pkg.name}，请确认后再预约`
+              : this.data.perClassEnabled
+                ? `课时包已用完或已过期，可改用微信支付 ${this.data.priceText}`
+                : '课时包已用完或已过期，请先购买课时包',
+            showCancel: false,
+          })
+        }
+        return
+      }
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
+        // A coach or lesson turned off: the time picker reloads with the venue's current list.
+        if (e.code === 'not_found' || e.code === 'coach_not_teaching') {
+          await getCatalog(true).catch(() => undefined)
+        }
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
         if (isTop(this)) wx.navigateBack()
         return

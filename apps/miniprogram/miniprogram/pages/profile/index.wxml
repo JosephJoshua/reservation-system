@@ -2,9 +2,15 @@
 <view class="me" hover-class="me-hover" bind:tap="editProfile">
   <t-avatar icon="user" size="112rpx" />
   <view class="me-text">
-    <view class="me-name">{{name || '未填写姓名'}}</view>
-    <view class="me-phone">{{phone || '填写手机号，便于场馆联系'}}</view>
-    <view wx:if="{{studentNo}}" class="me-no">学员编号 {{studentNo}}</view>
+    <block wx:if="{{meLoaded}}">
+      <view class="me-name">{{name || '未填写姓名'}}</view>
+      <view class="me-phone">{{phone || '填写手机号，便于场馆联系'}}</view>
+      <view wx:if="{{studentNo}}" class="me-no">学员编号 {{studentNo}}</view>
+    </block>
+    <block wx:elif="{{meFailed}}">
+      <view class="me-name">我的资料</view>
+      <view class="me-phone">下拉刷新</view>
+    </block>
   </view>
   <view class="me-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
 </view>
@@ -27,7 +33,7 @@
 
 <view class="group">
   <t-cell-group theme="card">
-    <t-cell wx:if="{{venue.address}}" title="场馆地址" description="{{venue.address}}" left-icon="location" arrow hover bind:click="openMap" />
+    <t-cell wx:if="{{venue.address}}" title="场馆地址" description="{{venue.address}}" t-class-description="address" left-icon="location" arrow hover bind:click="openMap" />
     <t-cell wx:if="{{venue.phone}}" title="联系场馆" note="{{venue.phone}}" left-icon="call" arrow hover bind:click="call" />
     <button class="cell-button" hover-class="none" open-type="contact">
       <t-cell title="联系客服" left-icon="service" arrow hover />

@@ -1,6 +1,7 @@
 import {
   type BookingDto,
   type CatalogDto,
+  COACH_CANCEL_PREFIX,
   cancellationOutcome,
   type HomeDto,
 } from '../../lib/shared'
@@ -36,10 +37,15 @@ function subtitle(b: BookingDto, now: number): string {
     case 'confirmed':
       return '请按时到场上课'
     case 'completed':
-      return '课程已结束'
+      // Counted like an attended lesson: no refund and the package lesson is used.
+      return b.attendance === 'no_show' ? '缺席，照常计课' : '课程已结束'
     case 'cancelled':
       return b.cancelledBy === 'venue'
-        ? '场馆已取消本节课'
+        ? b.cancelReason
+          ? b.cancelReason.startsWith(COACH_CANCEL_PREFIX)
+            ? `教练已取消：${b.cancelReason.slice(COACH_CANCEL_PREFIX.length)}`
+            : `场馆已取消：${b.cancelReason}`
+          : '场馆已取消本节课'
         : b.late
           ? '已过免费取消时间'
           : '你已取消本节课'
@@ -81,6 +87,7 @@ Page({
   },
 
   id: 0,
+  cancelChecking: false,
   timer: 0 as number,
   catalog: null as CatalogDto | null,
   venue: null as HomeDto['venue'] | null,
@@ -128,17 +135,22 @@ Page({
    * Fetches the booking shown again. A failure keeps it on screen, said out loud when `loud`,
    * unless the booking is gone.
    */
-  async refresh(loud = false) {
-    if (!this.data.booking) return this.load()
+  async refresh(loud = false): Promise<boolean> {
+    if (!this.data.booking) {
+      await this.load()
+      return this.data.state === 'ready'
+    }
     try {
       this.show(await api<BookingDto>('GET', `/bookings/${this.id}`))
+      return true
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
         this.setData({ state: 'error', error: errorMessage(e) })
-        return
+        return false
       }
       if (loud) showError(e)
       if (this.data.booking?.status === 'pending_payment') this.startTimer()
+      return false
     }
   },
 
@@ -165,15 +177,18 @@ Page({
       refund: b.refund
         ? `${yuan(b.refund.amount)} · ${refundStatus(b.refund.status, b.paidOffline)}`
         : '',
-      invoice: b.invoice
-        ? invoiceAction(b.invoice) === 'request'
-          ? b.invoice.state === 'rejected'
-            ? '未通过，重新申请'
-            : '申请开票'
-          : invoiceAction(b.invoice) === 'view'
-            ? '查看发票'
-            : INVOICE_STATE[b.invoice.state]
-        : '',
+      // A refunded lesson has nothing to invoice, and the 退款 row already says so.
+      invoice:
+        b.invoice &&
+        !(b.refund && (b.invoice.state === 'refunded' || b.invoice.state === 'refunding'))
+          ? invoiceAction(b.invoice) === 'request'
+            ? b.invoice.state === 'rejected'
+              ? '未通过，重新申请'
+              : '申请开票'
+            : invoiceAction(b.invoice) === 'view'
+              ? '查看发票'
+              : INVOICE_STATE[b.invoice.state]
+          : '',
       invoiceTappable: !!invoiceAction(b.invoice),
       attendance: b.canCheckIn
         ? '扫码签到'
@@ -189,7 +204,11 @@ Page({
           (b.movedLate
             ? '课程时间已调整，开课前可免费取消。'
             : cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel)) +
-          (b.canMove ? `免费取消截止前可改约 ${b.movesLeft} 次。` : '')
+          (b.canMove
+            ? `免费取消截止前可改约 ${b.movesLeft} 次。`
+            : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
+              ? '改约次数已用完。'
+              : '')
         : '',
       feedback: b.feedback
         ? {
@@ -280,8 +299,19 @@ Page({
   },
 
   async cancel() {
+    if (!this.data.booking || this.data.busy || this.cancelChecking) return
+    // Cancelled or changed on another phone since this page loaded: show that, not a refund
+    // that will not happen. The modal is asked right after, which keeps it inside the tap.
+    this.cancelChecking = true
+    let fresh = false
+    try {
+      fresh = await this.refresh(true)
+    } finally {
+      this.cancelChecking = false
+    }
     const b = this.data.booking
-    if (!b || this.data.busy) return
+    if (!fresh) return
+    if (!b?.canCancel || this.data.busy) return
     const quote = this.cancelQuote(b)
     const answer = await ask({
       title: '取消预约',

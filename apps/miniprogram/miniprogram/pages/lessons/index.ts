@@ -1,5 +1,5 @@
 import type { BookingDto } from '../../lib/shared'
-import { api, errorMessage } from '../../utils/api'
+import { api, errorMessage, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { BOOKING_STATUS } from '../../utils/labels'
@@ -94,7 +94,9 @@ Page({
       })
     } catch (e) {
       if (request !== this.request) return
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed refresh keeps what is on screen.
+      if (this.data.state === 'ready') showError(e)
+      else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

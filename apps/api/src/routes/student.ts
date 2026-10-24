@@ -455,6 +455,10 @@ export function studentRoutes(deps: Deps) {
         slotId: z.number().int().positive(),
         lessonTypeId: z.number().int().positive(),
         payWith: z.enum(['package', 'wechat']).optional(),
+        /** The price the student was shown, in fen. */
+        expectedPrice: z.number().int().nonnegative().optional(),
+        /** The package the student was shown, when paying with one. */
+        expectedPackageId: z.number().int().positive().optional(),
       }),
     )
     requireConsent(db, c.get('studentId'))
@@ -577,9 +581,16 @@ export function studentRoutes(deps: Deps) {
   })
 
   app.post('/packages/purchase', async (c) => {
-    const { productId } = await parseBody(c, z.object({ productId: z.number().int().positive() }))
+    const { productId, expectedPrice } = await parseBody(
+      c,
+      z.object({
+        productId: z.number().int().positive(),
+        /** The price the student was shown, in fen. */
+        expectedPrice: z.number().int().nonnegative().optional(),
+      }),
+    )
     requireConsent(db, c.get('studentId'))
-    return c.json(await purchasePackage(deps, c.get('studentId'), productId), 201)
+    return c.json(await purchasePackage(deps, c.get('studentId'), productId, expectedPrice), 201)
   })
 
   app.post('/packages/:id/refund-request', (c) => {

@@ -136,7 +136,8 @@ try {
 
   await step('the link page from 我的', async () => {
     await invoke('openLink')
-    const page = await waitForPage('pages/link/index')
+    // showAgreement is only known once the page has loaded the student.
+    const page = await waitForPage('pages/link/index', (d) => Boolean(d.ready))
     check((await page.data()).showAgreement === true, 'a new user must agree first')
     await screenshot('link-empty')
     await invoke('onCode', { detail: { value: 'abcd-efgh' } })

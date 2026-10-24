@@ -11,6 +11,11 @@ export async function getCatalog(fresh = false): Promise<CatalogDto> {
   return value
 }
 
+/** When the shared catalog was fetched, so a page can tell it was refreshed meanwhile. */
+export function catalogFetchedAt(): number {
+  return catalog?.at ?? 0
+}
+
 export function getMe(): Promise<MeDto> {
   return api<MeDto>('GET', '/me')
 }

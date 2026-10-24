@@ -1,5 +1,5 @@
 import { type InvoiceOrderDto, orderTitle, type StudentInvoicesDto } from '../../lib/shared'
-import { api, errorMessage } from '../../utils/api'
+import { api, errorMessage, showError } from '../../utils/api'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
 
@@ -24,7 +24,11 @@ function view(o: InvoiceOrderDto): OrderView {
   return {
     orderId: o.orderId,
     title: orderTitle(o.kind, o.description),
-    meta: `${fullDate(o.paidAt)}支付 · 可开票 ${yuan(o.amount)}`,
+    // Nothing can be invoiced while or after it is refunded; the note says so.
+    meta:
+      o.state === 'refunded' || o.state === 'refunding'
+        ? `${fullDate(o.paidAt)}支付`
+        : `${fullDate(o.paidAt)}支付 · 可开票 ${yuan(o.amount)}`,
     state: INVOICE_STATE[o.state],
     tone:
       o.state === 'issued'
@@ -65,7 +69,9 @@ Page({
       this.raw = orders
       this.setData({ state: 'ready', orders: orders.map(view) })
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed refresh keeps what is on screen.
+      if (this.data.state === 'ready') showError(e)
+      else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

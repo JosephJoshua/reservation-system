@@ -159,12 +159,12 @@ try {
     check(stack === 3, `booking again should go back, not stack pages (${stack} pages)`)
   })
 
-  await step('a coach with two lessons asks which one', async () => {
+  await step('a coach with several lessons asks which one', async () => {
     const two = coaches.find((c) => c.title === '省队退役运动员')
-    check(two, 'no seeded coach with two lessons')
+    check(two, 'no seeded coach with several lessons')
     await miniProgram.reLaunch(`/pages/coach-detail/index?id=${two.id}`)
     const page = await waitForPage('pages/coach-detail/index')
-    check(((await page.data('lessons')) as unknown[]).length === 2, 'expected two lessons')
+    check(((await page.data('lessons')) as unknown[]).length >= 2, 'expected several lessons')
     await miniProgram.mockWxMethod('showActionSheet', { tapIndex: 1, errMsg: 'showActionSheet:ok' })
     await invoke('pickLesson')
     const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')

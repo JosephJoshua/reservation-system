@@ -242,6 +242,39 @@ describe('pay per class', () => {
     await book(h, a, slot.id, lesson.id)
     expect(h.db.select().from(orders).get()?.amount).toBe(24000)
   })
+  it('refuses to charge a price other than the one the student saw', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const { lessonTypes } = await import('./db/schema')
+    const slot = h.slot(coach.id)
+    const a = await h.student('a')
+    const quoted = (
+      await h.call(
+        'GET',
+        `/bookings/quote?slotId=${slot.id}&lessonTypeId=${lesson.id}`,
+        undefined,
+        a,
+      )
+    ).json.price.price
+    h.db
+      .update(lessonTypes)
+      .set({ price: quoted + 3300 })
+      .where(eq(lessonTypes.id, lesson.id))
+      .run()
+    const body = {
+      slotId: slot.id,
+      lessonTypeId: lesson.id,
+      payWith: 'wechat',
+      expectedPrice: quoted,
+    }
+    const stale = await h.call('POST', '/bookings', body, a)
+    expect(stale.status).toBe(409)
+    expect(stale.json.error.code).toBe('price_changed')
+    expect(h.db.select().from(bookings).all()).toHaveLength(0)
+    const fresh = await h.call('POST', '/bookings', { ...body, expectedPrice: quoted + 3300 }, a)
+    expect(fresh.status).toBe(201)
+    expect(h.db.select().from(orders).get()?.amount).toBe(quoted + 3300)
+  })
 })
 
 describe('booking window', () => {
@@ -268,6 +301,26 @@ describe('booking window', () => {
     h.db.update(lessonTypes).set({ durationMinutes: 90 }).where(eq(lessonTypes.id, lesson.id)).run()
     const open = h.slot(coach.id, '2026-10-26')
     expect((await book(h, a, open.id, lesson.id)).json.error.code).toBe('duration_mismatch')
+  })
+
+  it('says why a slot whose coach, lesson or slot went away cannot be booked', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const a = await h.student('a')
+    const gone = await book(h, a, 9999, lesson.id)
+    expect(gone.json.error).toMatchObject({ code: 'not_found', message: '该时段已取消' })
+    const slot = h.slot(coach.id)
+    h.db.update(coaches).set({ active: false }).where(eq(coaches.id, coach.id)).run()
+    const off = await book(h, a, slot.id, lesson.id)
+    expect(off.json.error).toMatchObject({
+      code: 'coach_not_teaching',
+      message: '该教练暂不可预约',
+    })
+    h.db.update(coaches).set({ active: true }).where(eq(coaches.id, coach.id)).run()
+    const { lessonTypes } = await import('./db/schema')
+    h.db.update(lessonTypes).set({ active: false }).where(eq(lessonTypes.id, lesson.id)).run()
+    const hidden = await book(h, a, slot.id, lesson.id)
+    expect(hidden.json.error).toMatchObject({ code: 'not_found', message: '该课程暂不可预约' })
   })
 })
 
@@ -316,6 +369,7 @@ describe('cancelling a paid lesson', () => {
     const view = await h.call('GET', `/bookings/${bookingId}`, undefined, t)
     expect(view.json).toMatchObject({
       cancelledBy: 'venue',
+      cancelReason: '教练请假',
       refund: { amount: 20000, status: 'succeeded' },
     })
   })
@@ -427,6 +481,51 @@ async function withPackage(h: Harness, lessonCount = 10) {
 }
 
 describe('packages', () => {
+  it('refuses to sell a package at a price other than the one the student saw', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 180000,
+        validityDays: 90,
+      })
+      .returning()
+      .get()
+    const t = await h.student('a')
+    h.db
+      .update(packageProducts)
+      .set({ price: 200000 })
+      .where(eq(packageProducts.id, product.id))
+      .run()
+    const stale = await h.call(
+      'POST',
+      '/packages/purchase',
+      { productId: product.id, expectedPrice: 180000 },
+      t,
+    )
+    expect(stale.json.error.code).toBe('price_changed')
+    expect(h.db.select().from(orders).all()).toHaveLength(0)
+    const fresh = await h.call(
+      'POST',
+      '/packages/purchase',
+      { productId: product.id, expectedPrice: 200000 },
+      t,
+    )
+    expect(fresh.status).toBe(201)
+    expect(h.db.select().from(orders).get()?.amount).toBe(200000)
+    h.db
+      .update(packageProducts)
+      .set({ onSale: false })
+      .where(eq(packageProducts.id, product.id))
+      .run()
+    const off = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    expect(off.json.error).toMatchObject({ code: 'not_found', message: '该课时包已下架' })
+  })
+
   it('creates the package once paid and uses it for bookings', async () => {
     const h = setup()
     const { coach, lesson, t } = await withPackage(h)
@@ -445,6 +544,31 @@ describe('packages', () => {
     const res = await book(h, t, h.slot(coach.id).id, lesson.id, 'wechat')
     expect(res.json.status).toBe('pending_payment')
     expect((await h.call('GET', '/packages', undefined, t)).json[0].lessonsRemaining).toBe(10)
+  })
+
+  it('refuses to use another package than the one the student saw', async () => {
+    const h = setup()
+    const { coach, lesson, product, t } = await withPackage(h, 1)
+    const [first] = (await h.call('GET', '/packages', undefined, t)).json
+    const res = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await pay(h, res.json.orderId)
+    expect((await book(h, t, h.slot(coach.id, '2026-10-26').id, lesson.id)).status).toBe(201)
+    const body = { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id, payWith: 'package' }
+    const stale = await h.call('POST', '/bookings', { ...body, expectedPackageId: first.id }, t)
+    expect(stale.json.error.code).toBe('package_changed')
+    const second = (await h.call('GET', '/packages', undefined, t)).json.find(
+      (p: { id: number }) => p.id !== first.id,
+    )
+    const ok = await h.call('POST', '/bookings', { ...body, expectedPackageId: second.id }, t)
+    expect(ok.json).toMatchObject({ status: 'confirmed', orderId: null })
+  })
+
+  it('books with a package whatever price the page showed', async () => {
+    const h = setup()
+    const { coach, lesson, t } = await withPackage(h)
+    const body = { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id, expectedPrice: 1 }
+    const res = await h.call('POST', '/bookings', body, t)
+    expect(res.json).toMatchObject({ status: 'confirmed', orderId: null })
   })
 
   it('returns the lesson on an early cancel and keeps it on a late one', async () => {

@@ -1,5 +1,5 @@
 import type { CatalogDto, HomeDto, MeDto, PackageDto } from '../../lib/shared'
-import { api, publicApi } from '../../utils/api'
+import { api, publicApi, showError } from '../../utils/api'
 import { getCatalog, getMe } from '../../utils/data'
 import { maskPhone } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
@@ -18,6 +18,7 @@ Page({
     hasBookingPolicy: false,
     isCoach: false,
     meLoaded: false,
+    meFailed: false,
     themeLabel: '',
   },
 
@@ -26,9 +27,20 @@ Page({
     this.load()
   },
 
+  onPullDownRefresh() {
+    this.load().finally(() => wx.stopPullDownRefresh())
+  },
+
   async load() {
-    // Each part fills in on its own, so one failing request does not blank the page.
-    getMe()
+    // Each part fills in on its own, so one failing request does not blank the page. What was
+    // loaded before stays, and one toast says something failed.
+    let told = false
+    const fail = (e: unknown) => {
+      if (told) return
+      told = true
+      showError(e)
+    }
+    const me = getMe()
       .then((me: MeDto) =>
         this.setData({
           name: me.name,
@@ -36,28 +48,33 @@ Page({
           studentNo: me.id,
           isCoach: me.isCoach,
           meLoaded: true,
+          meFailed: false,
         }),
       )
-      .catch(() => {})
-    api<PackageDto[]>('GET', '/packages')
+      .catch((e: unknown) => {
+        this.setData({ meFailed: true })
+        fail(e)
+      })
+    const packages = api<PackageDto[]>('GET', '/packages')
       .then((packages) => {
         const left = packages
           .filter((p) => p.status === 'active')
           .reduce((sum, p) => sum + p.lessonsRemaining, 0)
         this.setData({ remaining: left ? `剩余 ${left} 节` : '' })
       })
-      .catch(() => {})
-    getCatalog()
+      .catch(fail)
+    const catalog = getCatalog()
       .then((catalog: CatalogDto) =>
         this.setData({
           packagesEnabled: catalog.payment.packagesEnabled,
           hasBookingPolicy: Boolean(catalog.policies.booking),
         }),
       )
-      .catch(() => {})
-    publicApi<HomeDto>('GET', '/home')
+      .catch(fail)
+    const home = publicApi<HomeDto>('GET', '/home')
       .then((home) => this.setData({ venue: home.venue }))
-      .catch(() => {})
+      .catch(fail)
+    await Promise.all([me, packages, catalog, home])
   },
 
   editProfile() {
