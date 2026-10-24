@@ -153,6 +153,7 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
             catalog={catalog}
             venue={venue}
             notice={merged.home.notice ?? ''}
+            noticeLinked={(merged.home.noticeLink?.linkKind ?? 'none') !== 'none'}
             bannerId={
               draft.kind === 'banner' ? id : draft.kind === 'home' ? draft.bannerId : undefined
             }

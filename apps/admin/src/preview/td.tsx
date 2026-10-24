@@ -166,7 +166,16 @@ export function TCell({
   )
 }
 
-export function TNoticeBar({ content, marquee }: { content: string; marquee: boolean }) {
+export function TNoticeBar({
+  content,
+  marquee,
+  linked,
+}: {
+  content: string
+  marquee: boolean
+  /** Shows the chevron the page adds when the notice links somewhere. */
+  linked: boolean
+}) {
   return (
     <div className="mp-t-notice-bar t-notice-bar--info">
       <div className="mp-t-notice-bar__prefix-icon">
@@ -187,6 +196,11 @@ export function TNoticeBar({ content, marquee }: { content: string; marquee: boo
           {content}
         </div>
       </div>
+      {linked && (
+        <div className="mp-t-notice-bar__suffix-icon">
+          <TIcon name="chevron-right" />
+        </div>
+      )}
     </div>
   )
 }

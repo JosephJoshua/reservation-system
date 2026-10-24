@@ -9,6 +9,7 @@ import {
   isGroup,
   type LessonTypeDto,
   type MeDto,
+  NO_LINK,
   type OrderStatusDto,
   type PackageProductDto,
   POLICY_VERSION,
@@ -49,6 +50,7 @@ import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bo
 import { coachViews, visibleTo } from '../services/catalog'
 import { studentFeedback } from '../services/feedback'
 import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
+import { liveLink } from '../services/links'
 import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
@@ -102,12 +104,12 @@ export function studentRoutes(deps: Deps) {
     return c.json({
       venue: settings.venue,
       notice,
+      noticeLink: notice ? liveLink(db, settings, settings.notice) : NO_LINK,
       banners: rows.map((b) => ({
         id: b.id,
         imageUrl: b.imageUrl,
         title: b.title,
-        linkKind: b.linkKind,
-        linkId: b.linkId,
+        ...liveLink(db, settings, b),
       })),
     } satisfies HomeDto)
   })

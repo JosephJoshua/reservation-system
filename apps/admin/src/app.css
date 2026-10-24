@@ -541,6 +541,15 @@ body {
   color: var(--td-text-color-placeholder);
 }
 
+.link-picker {
+  width: 320px;
+  max-width: 100%;
+}
+
+.link-picker-warn {
+  color: var(--td-warning-color);
+}
+
 .field .t-input-number {
   width: 200px;
 }

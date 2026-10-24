@@ -3,6 +3,7 @@ import type {
   BookingDto,
   BookingStatus,
   FeedbackItemDto,
+  LinkKind,
   PackageDto,
   RefundStatus,
   StudentProfileDto,
@@ -191,7 +192,7 @@ export interface Banner {
   id: number
   imageUrl: string
   title: string
-  linkKind: 'none' | 'package' | 'lesson_type'
+  linkKind: LinkKind
   linkId: number | null
   startsAt: string | null
   endsAt: string | null

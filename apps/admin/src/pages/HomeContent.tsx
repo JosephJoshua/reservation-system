@@ -3,6 +3,7 @@ import { Card, DatePicker, Input, Loading, Space, Textarea } from 'tdesign-react
 import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
 import { useApi, useIsPhone } from '../hooks'
+import { LinkPicker, useLinkTargets } from '../LinkPicker'
 import { EditorWithPreview } from '../preview/EditorWithPreview'
 import { SaveBar } from '../SaveBar'
 import { useSettingsDraft } from '../settingsDraft'
@@ -20,6 +21,7 @@ export function HomeContent() {
   const phone = useIsPhone()
   // The banner 预览 put on the preview's carousel.
   const [shown, setShown] = useState<number>()
+  const linkTargets = useLinkTargets()
 
   const list = (
     <Banners
@@ -81,6 +83,17 @@ export function HomeContent() {
                   onChange={(v) =>
                     set((d) => {
                       d.notice.endsAt = pickerToIso(String(v || ''))
+                    })
+                  }
+                />
+              </Field>
+              <Field label="点击跳转">
+                <LinkPicker
+                  value={s.notice}
+                  targets={linkTargets}
+                  onChange={(link) =>
+                    set((d) => {
+                      Object.assign(d.notice, link)
                     })
                   }
                 />
