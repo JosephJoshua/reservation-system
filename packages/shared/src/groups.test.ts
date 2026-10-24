@@ -36,6 +36,10 @@ describe('groupSettingsError', () => {
     expect(groupSettingsError({ capacity: 1, minStudents: 2, isTrial: false })).toMatch('一对一')
     expect(groupSettingsError({ capacity: 6, minStudents: 1, isTrial: false })).toMatch('开班人数')
     expect(groupSettingsError({ capacity: 6, minStudents: 7, isTrial: false })).toMatch('开班人数')
+    const group = { capacity: 6, minStudents: null, isTrial: false }
+    expect(groupSettingsError({ ...group, studentsPerTable: 2 })).toBeNull()
+    expect(groupSettingsError({ ...group, studentsPerTable: 7 })).toMatch('每台人数')
+    expect(groupSettingsError({ ...group, capacity: 1, studentsPerTable: 1 })).toMatch('每台人数')
     expect(groupSettingsError({ capacity: 6, minStudents: null, isTrial: true })).toMatch('体验课')
   })
   it('tells group classes apart', () => {

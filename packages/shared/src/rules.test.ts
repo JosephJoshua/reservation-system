@@ -4,7 +4,10 @@ import {
   cancelDeadline,
   cancellationOutcome,
   freeCancelDeadline,
+  peakOverlap,
   studentMoveError,
+  tablesFor,
+  tablesFree,
   validityEnd,
 } from './rules'
 import { defaultSettings, type VenueSettings } from './settings'
@@ -177,5 +180,63 @@ describe('validityEnd', () => {
     expect(validityEnd(at('2026-10-23T15:30:00Z'), 30).toISOString()).toBe(
       '2026-11-22T16:00:00.000Z',
     )
+  })
+})
+
+describe('peakOverlap', () => {
+  const span = (from: string, to: string) => ({
+    startsAt: at(`2026-10-25T${from}:00Z`),
+    endsAt: at(`2026-10-25T${to}:00Z`),
+  })
+  const lesson = span('02:00', '03:00')
+
+  it('counts lessons running together, not every lesson that overlaps', () => {
+    // 02:00-02:30 and 02:30-03:00 never run together.
+    expect(peakOverlap(lesson, [span('01:30', '02:30'), span('02:30', '03:30')])).toBe(1)
+    expect(peakOverlap(lesson, [span('01:30', '02:31'), span('02:30', '03:30')])).toBe(2)
+    expect(peakOverlap(lesson, [span('02:00', '03:00'), span('02:15', '02:45')])).toBe(2)
+  })
+
+  it('ignores lessons that only touch its ends', () => {
+    expect(peakOverlap(lesson, [span('01:00', '02:00'), span('03:00', '04:00')])).toBe(0)
+    expect(peakOverlap(lesson, [])).toBe(0)
+  })
+
+  it('only counts the part inside the lesson', () => {
+    // Three lessons overlap each other before 02:00, but only one runs during the lesson.
+    const before = [span('01:00', '02:00'), span('01:00', '02:00'), span('01:30', '02:10')]
+    expect(peakOverlap(lesson, before)).toBe(1)
+  })
+})
+
+describe('peakOverlap with group sessions', () => {
+  it('adds up the tables each lesson uses', () => {
+    const lesson = { startsAt: at('2026-10-25T02:00:00Z'), endsAt: at('2026-10-25T03:00:00Z') }
+    expect(peakOverlap(lesson, [{ ...lesson, tables: 2 }, lesson])).toBe(3)
+    expect(peakOverlap(lesson, [{ ...lesson, tables: 0 }])).toBe(0)
+  })
+})
+
+describe('tablesFor', () => {
+  it('takes one table per group of students, or one for the whole class', () => {
+    expect(tablesFor(0, 2)).toBe(0)
+    expect(tablesFor(1, null)).toBe(1)
+    expect(tablesFor(6, null)).toBe(1)
+    expect(tablesFor(1, 2)).toBe(1)
+    expect(tablesFor(2, 2)).toBe(1)
+    expect(tablesFor(3, 2)).toBe(2)
+    expect(tablesFor(6, 4)).toBe(2)
+  })
+})
+
+describe('tablesFree', () => {
+  const lesson = { startsAt: at('2026-10-25T02:00:00Z'), endsAt: at('2026-10-25T03:00:00Z') }
+  it('allows anything without a limit and fills up to the limit', () => {
+    expect(tablesFree(lesson, [lesson, lesson], null)).toBe(true)
+    expect(tablesFree(lesson, [lesson], 2)).toBe(true)
+    expect(tablesFree(lesson, [lesson, lesson], 2)).toBe(false)
+    // A group that needs two tables when only one is left.
+    expect(tablesFree(lesson, [lesson], 2, 2)).toBe(false)
+    expect(tablesFree(lesson, [lesson], 3, 2)).toBe(true)
   })
 })

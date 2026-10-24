@@ -77,7 +77,7 @@
         bind:tap="pickSlot"
       >
         <view class="slot-time">{{item.time}}</view>
-        <view class="slot-sub">{{item.current ? '当前' : item.available ? (item.seatsLeft === null ? '可约' : '剩 ' + item.seatsLeft + ' 位') : item.refused ? '不可选' : item.closed ? '已截止' : item.seatsLeft === null ? '已约满' : '已满员'}}</view>
+        <view class="slot-sub">{{item.current ? '当前' : item.available ? (item.seatsLeft === null ? '可约' : '剩 ' + item.seatsLeft + ' 位') : item.refused ? '不可选' : item.closed ? '已截止' : item.seatsLeft === 0 ? '已满员' : '已约满'}}</view>
       </view>
     </view>
   </view>

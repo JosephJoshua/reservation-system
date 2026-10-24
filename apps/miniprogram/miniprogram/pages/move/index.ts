@@ -129,7 +129,10 @@ Page({
     this.setData({ slotsState: 'loading', picked: null })
     try {
       // Filtered by the lesson's own length rather than the lesson type's, which may have changed.
-      const rows = await api<SlotDto[]>('GET', `/slots?date=${date}&coachId=${coachId}`)
+      const rows = await api<SlotDto[]>(
+        'GET',
+        `/slots?date=${date}&coachId=${coachId}&moving=${booking.id}`,
+      )
       if (request !== this.request) return
       const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
       const now = Date.now()

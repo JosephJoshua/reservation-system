@@ -34,6 +34,7 @@ const emptyLesson: LessonForm = {
   isTrial: false,
   capacity: 1,
   minStudents: null,
+  studentsPerTable: null,
   adminOnly: false,
   active: true,
   salePercent: null,
@@ -589,6 +590,10 @@ function LessonEditor({
                   capacity === 1 || f.minStudents === null
                     ? null
                     : Math.min(f.minStudents, capacity),
+                studentsPerTable:
+                  capacity === 1 || f.studentsPerTable === null
+                    ? null
+                    : Math.min(f.studentsPerTable, capacity),
               })
             }}
           />
@@ -617,6 +622,27 @@ function LessonEditor({
           )}
         </div>
       </Field>
+      {f.capacity > 1 && (
+        <Field label="每张球台" help="按报名人数占用球台，留空为整班一张台">
+          <InputNumber
+            theme="normal"
+            value={f.studentsPerTable ?? undefined}
+            min={1}
+            max={f.capacity}
+            placeholder="整班一张"
+            suffix="人"
+            onChange={(v) => {
+              const n = Math.floor(Number(v))
+              set({
+                studentsPerTable:
+                  v === '' || v === undefined || Number.isNaN(n)
+                    ? null
+                    : Math.max(1, Math.min(f.capacity, n)),
+              })
+            }}
+          />
+        </Field>
+      )}
       <Field label="标准价" help="教练类别可单独定价，小班课为每人价格">
         <InputNumber
           theme="normal"

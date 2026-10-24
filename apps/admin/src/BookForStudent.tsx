@@ -89,6 +89,7 @@ function SlotPicker({
       s.open &&
       !s.cancelledAt &&
       s.bookings.length < s.capacity &&
+      !s.tableFull &&
       new Date(s.startsAt) > new Date(),
   )
   return (

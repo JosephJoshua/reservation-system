@@ -19,6 +19,7 @@ import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
 import { assertNoSessionOverlap } from './sessions'
 import { studentProfile } from './student-profiles'
+import { slotsWithoutTable } from './tables'
 import { bookingStatus } from './views'
 
 /** How long after a lesson its coach still sees the student's 学员档案 on it. */
@@ -31,7 +32,14 @@ const attendanceMessages = {
 } as const
 
 /** A coach's slots between two venue dates, inclusive, with the lesson booked in each. */
-export function coachSchedule(deps: Deps, coachId: number, from: string, to: string) {
+export function coachSchedule(
+  deps: Deps,
+  coachId: number,
+  from: string,
+  to: string,
+  /** The coach's lesson being moved, which gives up its table. */
+  moving?: number,
+) {
   const { db } = deps
   const rows = db
     .select()
@@ -78,6 +86,16 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
       .all()
       .map((t) => [t.id, t.name]),
   )
+  const own =
+    moving === undefined
+      ? undefined
+      : db
+          .select({ id: bookings.id })
+          .from(bookings)
+          .innerJoin(slots, eq(slots.id, bookings.slotId))
+          .where(and(eq(bookings.id, moving), eq(slots.coachId, coachId)))
+          .get()
+  const noTable = slotsWithoutTable(db, rows, own?.id)
   const now = deps.now()
   return rows.map((s): CoachSlotDto => {
     const l = s.lessonTypeId === null ? bySlot.get(s.id) : undefined
@@ -95,6 +113,7 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
               booked: booked.get(s.id) ?? 0,
               cancelled: s.cancelledAt !== null,
             },
+      tableFull: noTable.has(s.id),
       lesson: l
         ? {
             bookingId: l.booking.id,

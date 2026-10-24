@@ -24,6 +24,8 @@ export interface CoachSlotDto {
   startsAt: string
   endsAt: string
   open: boolean
+  /** Every table is in use at some moment of it, so it cannot take a new lesson. */
+  tableFull: boolean
   /** The live booking in a private slot; null in a group session. */
   lesson: {
     bookingId: number

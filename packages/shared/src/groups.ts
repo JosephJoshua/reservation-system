@@ -14,9 +14,16 @@ export function groupSettingsError(t: {
   capacity: number
   minStudents: number | null
   isTrial: boolean
+  studentsPerTable?: number | null
 }): string | null {
   if (t.capacity < 1 || t.capacity > MAX_CAPACITY) return `人数上限需在 1 到 ${MAX_CAPACITY} 之间`
   if (t.isTrial && t.capacity > 1) return '体验课不能设为小班课'
+  if (t.studentsPerTable != null) {
+    if (t.capacity === 1) return '一对一课程不设每台人数'
+    if (t.studentsPerTable < 1 || t.studentsPerTable > t.capacity) {
+      return '每台人数需在 1 到人数上限之间'
+    }
+  }
   if (t.minStudents === null) return null
   if (t.capacity === 1) return '一对一课程不设开班人数'
   if (t.minStudents < 2 || t.minStudents > t.capacity) return '最低开班人数需在 2 到人数上限之间'

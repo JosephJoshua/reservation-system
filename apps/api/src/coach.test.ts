@@ -410,6 +410,7 @@ describe('the coach schedule and lessons', () => {
         startsAt: at('2026-10-26', '10:00'),
         endsAt: at('2026-10-26', '11:00'),
         open: true,
+        tableFull: false,
         lesson: {
           bookingId,
           status: 'confirmed',
@@ -425,6 +426,7 @@ describe('the coach schedule and lessons', () => {
         startsAt: at('2026-10-26', '11:00'),
         endsAt: at('2026-10-26', '12:00'),
         open: true,
+        tableFull: false,
         lesson: null,
         group: null,
       },

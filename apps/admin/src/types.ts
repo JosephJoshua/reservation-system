@@ -46,6 +46,8 @@ export interface LessonType {
   capacity: number
   /** A session short of this many at the free-cancel deadline is called off. */
   minStudents: number | null
+  /** A group session uses one table per this many students; null is one for the class. */
+  studentsPerTable: number | null
   adminOnly: boolean
   active: boolean
   salePercent: number | null
@@ -89,6 +91,8 @@ export interface Slot {
   capacity: number
   cancelledAt: string | null
   cancelReason: string | null
+  /** Every table is in use at some moment of it, so it cannot take a new lesson. */
+  tableFull: boolean
   /** The one lesson in a private slot; null in a group session. */
   booking: SlotBooking | null
   /** Every live booking, the students of a group session. */

@@ -67,7 +67,7 @@ function slotView(s: CoachSlotDto, now: number): SlotView {
   }
   if (Date.parse(s.startsAt) <= now) return { ...base, kind: 'past', label: '未预约' }
   return s.open
-    ? { ...base, kind: 'free', label: '空闲' }
+    ? { ...base, kind: 'free', label: s.tableFull ? '球台已满' : '空闲' }
     : { ...base, kind: 'closed', label: '已关闭' }
 }
 

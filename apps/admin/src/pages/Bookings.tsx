@@ -343,6 +343,7 @@ function MoveDialog({
     from: venueInstant(date, 0).toISOString(),
     to: venueInstant(date, 24 * 60).toISOString(),
     coachId: String(coachId),
+    moving: String(booking.id),
   })
   const {
     data,
@@ -362,6 +363,7 @@ function MoveDialog({
       !s.cancelledAt &&
       s.lessonTypeId === sessionOf &&
       s.bookings.length < s.capacity &&
+      !s.tableFull &&
       !(s.coachId === booking.coach.id && s.startsAt === booking.startsAt) &&
       Date.parse(s.startsAt) > Date.now() &&
       Date.parse(s.endsAt) - Date.parse(s.startsAt) === length,
