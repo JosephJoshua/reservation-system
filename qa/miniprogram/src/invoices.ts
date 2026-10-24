@@ -12,6 +12,13 @@ const outDir = fileURLToPath(new URL('../screenshots/invoices', import.meta.url)
 mkdirSync(outDir, { recursive: true })
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const adminPassword = process.env.ADMIN_PASSWORD ?? 'admin'
+// QA_THEME=light or dark forces the 外观 setting for this run; unset follows the system.
+// Same key as THEME_STORAGE_KEY in apps/miniprogram/miniprogram/utils/theme.ts.
+const THEME_STORAGE_KEY = 'rs:theme'
+const forcedTheme = process.env.QA_THEME
+if (forcedTheme && forcedTheme !== 'light' && forcedTheme !== 'dark') {
+  throw new Error('QA_THEME must be light or dark')
+}
 
 type MiniProgram = Awaited<ReturnType<typeof automator.launch>>
 type Page = NonNullable<Awaited<ReturnType<MiniProgram['currentPage']>>>
@@ -121,6 +128,9 @@ try {
     .token as string
 
   await miniProgram.callWxMethod('setStorageSync', 'devLogin', devName)
+  // Set on the instance just launched, so the pages below read it.
+  if (forcedTheme) await miniProgram.callWxMethod('setStorageSync', THEME_STORAGE_KEY, forcedTheme)
+  else await miniProgram.callWxMethod('removeStorageSync', THEME_STORAGE_KEY)
   await miniProgram.callWxMethod('removeStorageSync', 'token')
 
   await step('the 发票 page lists the paid package', async () => {
@@ -214,5 +224,6 @@ try {
   check(errors.length === 0, `console errors:\n${errors.join('\n')}`)
   console.log('invoices: ok')
 } finally {
+  await miniProgram.callWxMethod('removeStorageSync', THEME_STORAGE_KEY).catch(() => {})
   await miniProgram.close()
 }
