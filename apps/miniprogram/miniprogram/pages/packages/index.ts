@@ -1,5 +1,5 @@
 import { type CatalogDto, formatYuan, type MeDto, type PaymentParamsDto } from '../../lib/shared'
-import { api, errorMessage, showError } from '../../utils/api'
+import { ApiError, api, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, getCatalog, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
 import { isTop } from '../../utils/nav'
@@ -118,7 +118,8 @@ Page({
       const res = await api<{ orderId: number; payment: PaymentParamsDto | null }>(
         'POST',
         '/packages/purchase',
-        { productId: product.id },
+        // Refused if the price changed since the page loaded, rather than charging another one.
+        { productId: product.id, expectedPrice: product.amount },
       )
       const result = await payOrder(res.orderId, product.amount, res.payment)
       if (result === 'paid' && !isTop(this)) {
@@ -136,6 +137,19 @@ Page({
         })
       }
     } catch (err) {
+      if (err instanceof ApiError && (err.code === 'price_changed' || err.code === 'not_found')) {
+        await this.load()
+        const now = this.data.products.find((p) => p.id === product.id)
+        await wx.showModal({
+          title: err.code === 'price_changed' && now ? '价格已变动' : err.message,
+          content:
+            err.code === 'price_changed' && now
+              ? `现价 ${now.price}，请确认后再购买`
+              : '请选择其他课时包',
+          showCancel: false,
+        })
+        return
+      }
       showError(err)
     } finally {
       this.setData({ buying: 0 })

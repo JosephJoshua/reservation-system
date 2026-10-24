@@ -35,13 +35,15 @@ export async function purchasePackage(
   deps: Deps,
   studentId: number,
   productId: number,
+  /** The price the student was shown, in fen; a different price now refuses the purchase. */
+  expectedPrice?: number,
 ): Promise<{ orderId: number; payment: PaymentParams | null }> {
   const now = deps.now()
   const { id: orderId, repeat } = immediate(deps.db, (tx) => {
     const settings = getSettings(tx)
     if (!settings.payment.packagesEnabled) throw new ApiError(409, 'packages_off', '暂不出售课时包')
     const product = tx.select().from(packageProducts).where(eq(packageProducts.id, productId)).get()
-    if (!product?.onSale) throw notFound('课时包')
+    if (!product?.onSale) throw new ApiError(404, 'not_found', '该课时包已下架')
     const lessonType = tx
       .select()
       .from(lessonTypes)
@@ -51,7 +53,7 @@ export async function purchasePackage(
     // Deleted while this request was on its way.
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     if (!lessonType?.active || (lessonType.adminOnly && !student.tester)) {
-      throw notFound('课时包')
+      throw new ApiError(404, 'not_found', '该课时包已下架')
     }
     const price = packagePrice(
       {
@@ -62,6 +64,10 @@ export async function purchasePackage(
       },
       now,
     )
+    // Changed by the venue, or a sale ended, since the student saw the price.
+    if (expectedPrice !== undefined && expectedPrice !== price.price) {
+      throw new ApiError(409, 'price_changed', '价格已变动')
+    }
     // A repeated tap or a retry continues the order already open for this product, so the
     // student never ends up with two cashier sessions for one purchase.
     const open = tx

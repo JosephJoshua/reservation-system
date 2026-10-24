@@ -480,6 +480,51 @@ async function withPackage(h: Harness, lessonCount = 10) {
 }
 
 describe('packages', () => {
+  it('refuses to sell a package at a price other than the one the student saw', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 180000,
+        validityDays: 90,
+      })
+      .returning()
+      .get()
+    const t = await h.student('a')
+    h.db
+      .update(packageProducts)
+      .set({ price: 200000 })
+      .where(eq(packageProducts.id, product.id))
+      .run()
+    const stale = await h.call(
+      'POST',
+      '/packages/purchase',
+      { productId: product.id, expectedPrice: 180000 },
+      t,
+    )
+    expect(stale.json.error.code).toBe('price_changed')
+    expect(h.db.select().from(orders).all()).toHaveLength(0)
+    const fresh = await h.call(
+      'POST',
+      '/packages/purchase',
+      { productId: product.id, expectedPrice: 200000 },
+      t,
+    )
+    expect(fresh.status).toBe(201)
+    expect(h.db.select().from(orders).get()?.amount).toBe(200000)
+    h.db
+      .update(packageProducts)
+      .set({ onSale: false })
+      .where(eq(packageProducts.id, product.id))
+      .run()
+    const off = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    expect(off.json.error).toMatchObject({ code: 'not_found', message: '该课时包已下架' })
+  })
+
   it('creates the package once paid and uses it for bookings', async () => {
     const h = setup()
     const { coach, lesson, t } = await withPackage(h)
