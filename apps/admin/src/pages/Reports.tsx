@@ -116,8 +116,10 @@ function PayCell({ row }: { row: CoachRow }) {
           {l.name} {l.lessons} 节 × {l.rate === null ? '未设置' : yuan(l.rate)}
         </div>
       ))}
-      {row.pay.adjustments.map((a) => (
-        <div key={`${a.startsAt}-${a.lessons}`} className="muted">
+      {row.pay.adjustments.map((a, i) => (
+        // Two adjustments can share a lesson and a sign, so the position keys them.
+        // biome-ignore lint/suspicious/noArrayIndexKey: the list is rebuilt whole on each load
+        <div key={i} className="muted">
           {adjustmentText(a)}
         </div>
       ))}
@@ -316,7 +318,7 @@ function PayMonth({
       },
       '已确认',
       {
-        stale: ['pay_not_confirmable'],
+        stale: ['pay_not_confirmable', 'edited_elsewhere'],
         onStale: () => {
           setConfirming(null)
           onStale()
