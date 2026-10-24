@@ -82,7 +82,7 @@ export function setAttendance(
 function when(d: Date, now: Date) {
   const p = venueParts(d)
   const day = venueDateKey(d) === venueDateKey(now) ? '今天' : `${p.month}月${p.day}日`
-  return `${day} ${p.hours}:${String(p.minutes).padStart(2, '0')}`
+  return `${day} ${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}`
 }
 
 /**

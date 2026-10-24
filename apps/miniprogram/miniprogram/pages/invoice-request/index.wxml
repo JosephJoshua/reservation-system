@@ -42,7 +42,7 @@
         bind:change="onEmail"
       />
     </t-cell-group>
-    <view class="footnote">电子发票由场馆开具，开具后会发送到你的邮箱，也可以在“我的 - 发票”中查看。下次申请时会自动填入本次的抬头。</view>
+    <view class="footnote">电子发票由场馆开具，开具后会发送到你的邮箱，也可以在“我的-发票”中查看。下次申请时会自动填入本次的抬头。</view>
     <agree-check id="agree-check" wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
   </view>
   <view class="action-bar">

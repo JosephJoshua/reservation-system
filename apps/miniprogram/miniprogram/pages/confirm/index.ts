@@ -107,7 +107,7 @@ Page({
           lessonType.capacity > 1
             ? `小班课，多人同上${
                 lessonType.minStudents
-                  ? `；如果课前 ${minCheckHours(catalog.booking)} 小时报名不足 ${lessonType.minStudents} 人，课程会自动取消，并退款或退回课时`
+                  ? `；如果开课前 ${minCheckHours(catalog.booking)} 小时报名仍不足 ${lessonType.minStudents} 人，课程会自动取消，并退款或退回课时`
                   : ''
               }`
             : '',
