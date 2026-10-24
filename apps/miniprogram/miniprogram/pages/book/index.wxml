@@ -103,7 +103,7 @@
         <view wx:if="{{item.seatsLeft === null}}" class="slot-sub">{{item.available ? (coachId ? '可约' : item.coachName) : item.closed ? '已截止' : '已约满'}}</view>
         <block wx:else>
           <view wx:if="{{!coachId}}" class="slot-sub">{{item.coachName}}</view>
-          <view class="slot-sub">{{item.available ? '剩 ' + item.seatsLeft + ' 位' : item.closed ? '已截止' : '已满员'}}</view>
+          <view class="slot-sub">{{item.available ? '剩 ' + item.seatsLeft + ' 位' : item.closed ? '已截止' : item.seatsLeft === 0 ? '已满员' : '已约满'}}</view>
         </block>
       </view>
     </view>
