@@ -3,7 +3,16 @@ import { join } from 'node:path'
 import { POLICY_VERSION } from '@rs/shared'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
-import { bookings, invoices, orders, packages, refunds, sessions, students } from '../db/schema'
+import {
+  bookings,
+  invoices,
+  orders,
+  packages,
+  refunds,
+  sessions,
+  studentProfiles,
+  students,
+} from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { deleteStudentFeedback, removePhotosOf } from './feedback'
@@ -117,8 +126,8 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
 }
 
 /**
- * Deletes the student's account: their name, phone, WeChat identity, the coach's notes on them
- * and their lesson feedback with its photos go, while bookings, orders, refunds and invoices stay
+ * Deletes the student's account: their name, phone, WeChat identity, the venue's 学员档案 and the
+ * coach's notes on them and their lesson feedback with its photos go, while bookings, orders, refunds and invoices stay
  * for the accounts, pointing at an empty row.
  */
 export function deleteAccount(deps: Deps, studentId: number) {
@@ -143,6 +152,7 @@ export function deleteAccount(deps: Deps, studentId: number) {
       .where(eq(students.id, studentId))
       .run()
     tx.update(bookings).set({ coachNote: '' }).where(eq(bookings.studentId, studentId)).run()
+    tx.delete(studentProfiles).where(eq(studentProfiles.studentId, studentId)).run()
     tx.delete(sessions).where(eq(sessions.studentId, studentId)).run()
     // Invoices stay for the accounts, without the email. One made out to the student by name
     // loses the name and its PDF; a company's title is not personal data.

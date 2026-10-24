@@ -1,4 +1,10 @@
-import type { Attendance, CoachLessonDto } from '../../lib/shared'
+import {
+  type Attendance,
+  type CoachLessonDto,
+  gripLabels,
+  type StudentProfileDto,
+  studentLevelLabels,
+} from '../../lib/shared'
 import { assetUrl, errorMessage, showError } from '../../utils/api'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
@@ -15,6 +21,29 @@ interface HistoryView {
   attendance: string
   attendanceClass: string
   note: string
+}
+
+interface ProfileView {
+  chips: { key: string; text: string; trait: boolean }[]
+  note: string
+  empty: boolean
+  counts: string
+}
+
+/** The venue's 学员档案: level and grip first, then the venue's tags. */
+function profileView(p: StudentProfileDto | null): ProfileView | null {
+  if (!p) return null
+  const traits = [p.level && studentLevelLabels[p.level], p.grip && gripLabels[p.grip]]
+  const chips = [
+    ...traits.flatMap((text) => (text ? [{ key: `trait:${text}`, text, trait: true }] : [])),
+    ...p.tags.map((text) => ({ key: `tag:${text}`, text, trait: false })),
+  ]
+  return {
+    chips,
+    note: p.note,
+    empty: !chips.length && !p.note,
+    counts: `在本馆上课 ${p.lessons} 次${p.noShows ? `，缺席 ${p.noShows} 次` : ''}`,
+  }
 }
 
 function paymentText(l: CoachLessonDto): string {
@@ -61,6 +90,7 @@ Page({
     cancelReason: '',
     attendanceNote: '',
     history: [] as HistoryView[],
+    profile: null as ProfileView | null,
     feedbackNote: '',
     feedbackClosed: '',
     feedbackPhotos: [] as string[],
@@ -106,6 +136,7 @@ Page({
       movedFrom: l.movedFrom ? dateTime(l.movedFrom) : '',
       lessonName: l.lessonType.isTrial ? `${l.lessonType.name}（体验课）` : l.lessonType.name,
       payment: paymentText(l),
+      profile: profileView(l.profile),
       together: l.lessonsTogether ? `与你的第 ${l.lessonsTogether + 1} 节课` : '第一次上你的课',
       cancelReason: l.cancelReason || (l.cancelledBy === 'student' ? '学员取消' : '场馆取消'),
       attendanceNote: attendanceNote(l),

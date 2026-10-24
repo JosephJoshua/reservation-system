@@ -137,3 +137,38 @@
 .feedback-delete {
   color: var(--td-error-color);
 }
+
+.profile {
+  padding: 28rpx 32rpx;
+}
+
+.profile-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.profile-note {
+  margin-top: 20rpx;
+  font-size: 30rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.profile-empty {
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.profile-chips + .profile-counts,
+.profile-note + .profile-counts,
+.profile-empty + .profile-counts {
+  margin-top: 20rpx;
+}
+
+.profile-counts {
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}

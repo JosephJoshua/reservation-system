@@ -2,9 +2,14 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  grips,
   offlineMethodLabels,
   offlineMethods,
+  PROFILE_MAX_TAGS,
+  PROFILE_NOTE_LENGTH,
+  PROFILE_TAG_LENGTH,
   staffActions,
+  studentLevels,
   venueParts,
   venueSettings,
 } from '@rs/shared'
@@ -80,6 +85,7 @@ import {
   updateStaff,
   verifyPassword,
 } from '../services/staff'
+import { saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { weeklyHoursBody } from './coach'
 
@@ -1334,9 +1340,38 @@ export function adminRoutes(deps: Deps) {
       tester: student.tester,
       deletedAt: student.deletedAt,
       createdAt: student.createdAt,
+      profile: studentProfile(db, id, now),
       packages: packageViews(db, pkgRows, now),
       bookings: bookingViews(db, bookingRows, getSettings(db).booking, now),
     })
+  })
+
+  app.put('/students/:id/profile', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        level: z.enum(studentLevels).nullable(),
+        grip: z.enum(grips).nullable(),
+        tags: z
+          .array(
+            z.string().trim().max(PROFILE_TAG_LENGTH, `标签不能超过 ${PROFILE_TAG_LENGTH} 个字`),
+          )
+          .max(PROFILE_MAX_TAGS, `最多 ${PROFILE_MAX_TAGS} 个标签`),
+        note: z.string().trim().max(PROFILE_NOTE_LENGTH),
+      }),
+    )
+    const id = idParam(c)
+    const changed = saveStudentProfile(deps, id, body, (current) => checkVersion(c, current))
+    // Field names only: the log keeps no copy of what the venue wrote about the student.
+    if (changed.length) {
+      log(c.get('staffId'), {
+        action: 'student.update',
+        summary: `修改档案：${changed.join('、')}`,
+        studentId: id,
+        target: { kind: 'student', id },
+      })
+    }
+    return c.json(studentProfile(db, id, deps.now()))
   })
 
   app.patch('/students/:id', async (c) => {

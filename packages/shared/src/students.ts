@@ -1,0 +1,46 @@
+// 学员档案: what the venue records about a student for teaching. Staff edit it in admin, coaches
+// read it on the lesson page, and the student never sees it.
+
+export const studentLevelLabels = {
+  beginner: '零基础',
+  elementary: '初级',
+  intermediate: '中级',
+  advanced: '高级',
+} as const
+
+export type StudentLevel = keyof typeof studentLevelLabels
+
+export const studentLevels = Object.keys(studentLevelLabels) as [StudentLevel, ...StudentLevel[]]
+
+export const gripLabels = {
+  shakehand: '横拍',
+  penhold: '直拍',
+} as const
+
+export type Grip = keyof typeof gripLabels
+
+export const grips = Object.keys(gripLabels) as [Grip, ...Grip[]]
+
+export const PROFILE_MAX_TAGS = 8
+export const PROFILE_TAG_LENGTH = 10
+export const PROFILE_NOTE_LENGTH = 500
+
+/** The part of the profile staff edit. */
+export interface StudentProfileEdit {
+  level: StudentLevel | null
+  grip: Grip | null
+  tags: string[]
+  note: string
+}
+
+export interface StudentProfileDto extends StudentProfileEdit {
+  /** Lessons at the venue that have ended, no-shows left out. */
+  lessons: number
+  /** Lessons marked 缺席. */
+  noShows: number
+}
+
+/** The editable fields in a fixed order, for `versionOf` on both sides. */
+export function profileEdit(p: StudentProfileEdit): StudentProfileEdit {
+  return { level: p.level, grip: p.grip, tags: p.tags, note: p.note }
+}

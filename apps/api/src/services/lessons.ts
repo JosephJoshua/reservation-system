@@ -16,6 +16,7 @@ import { LIVE } from './bookings'
 import { feedbackOf, feedbackView, writeBlock } from './feedback'
 import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
+import { studentProfile } from './student-profiles'
 import { bookingStatus } from './views'
 
 const attendanceMessages = {
@@ -147,6 +148,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
       phone: student?.phone ?? '',
     },
+    profile: student && !student.deletedAt ? studentProfile(db, student.id, now) : null,
     paidWith: b.paidWith,
     price: b.price,
     packageName: pkg?.name ?? null,

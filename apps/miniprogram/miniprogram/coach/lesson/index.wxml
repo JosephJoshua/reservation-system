@@ -28,6 +28,18 @@
     <t-cell wx:if="{{lesson.status === 'cancelled'}}" title="取消原因" description="{{cancelReason}}" />
   </t-cell-group>
 
+  <block wx:if="{{profile}}">
+    <view class="section-title">学员档案</view>
+    <view class="card profile">
+      <view wx:if="{{profile.chips.length}}" class="profile-chips">
+        <t-tag wx:for="{{profile.chips}}" wx:key="key" theme="{{item.trait ? 'primary' : 'default'}}" variant="{{item.trait ? 'light' : 'outline'}}">{{item.text}}</t-tag>
+      </view>
+      <view wx:if="{{profile.note}}" class="profile-note">{{profile.note}}</view>
+      <view wx:if="{{profile.empty}}" class="profile-empty">场馆还没有填写水平和备注</view>
+      <view class="profile-counts">{{profile.counts}}</view>
+    </view>
+  </block>
+
   <block wx:if="{{lesson.status === 'confirmed' || lesson.status === 'completed'}}">
     <view class="section-title">签到</view>
     <view wx:if="{{lesson.canMarkAttendance}}" class="attendance">

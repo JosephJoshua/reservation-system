@@ -1,5 +1,5 @@
 // Run `pnpm db:generate` after changing tables. Money is integer fen; instants are UTC ms.
-import { type InvoiceTitle, studentNoticeKinds } from '@rs/shared'
+import { type Grip, type InvoiceTitle, type StudentLevel, studentNoticeKinds } from '@rs/shared'
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -29,6 +29,21 @@ export const students = sqliteTable('students', {
   // name and phone cleared and the openid replaced, so the same WeChat user starts afresh.
   deletedAt: instant('deleted_at'),
   createdAt: createdAt(),
+})
+
+/**
+ * 学员档案, kept by staff for coaches. Never sent to the student. Deleted with the account.
+ * A student without a row has an empty profile.
+ */
+export const studentProfiles = sqliteTable('student_profiles', {
+  studentId: integer('student_id')
+    .primaryKey()
+    .references(() => students.id),
+  level: text('level').$type<StudentLevel>(),
+  grip: text('grip').$type<Grip>(),
+  tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  note: text('note').notNull().default(''),
+  updatedAt: instant('updated_at').notNull(),
 })
 
 /** Front-desk and management logins for the admin app. All have full access. */
