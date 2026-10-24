@@ -77,7 +77,7 @@ function payLessonsText(r: MonthlyReport) {
 const counts = (on: boolean) => (on ? '计入' : '不计入')
 
 function payNote(rules: MonthlyReport['payRules']) {
-  return `课时费按当前标准和教练类别计算：学员缺席${counts(rules.noShows)}，学员逾时取消${counts(rules.lateCancels)}，场馆取消不计入。`
+  return `课时费按当前标准和教练类别计算：学员缺席${counts(rules.noShows)}，学员逾时取消${counts(rules.lateCancels)}，场馆取消不计入；小班课每节计一节。`
 }
 
 function PayCell({ row }: { row: CoachRow }) {

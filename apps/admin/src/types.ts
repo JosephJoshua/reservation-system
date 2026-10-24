@@ -42,6 +42,10 @@ export interface LessonType {
   durationMinutes: number
   price: number
   isTrial: boolean
+  /** Students per session; more than 1 makes it a group class (小班课). */
+  capacity: number
+  /** A session short of this many at the free-cancel deadline is called off. */
+  minStudents: number | null
   adminOnly: boolean
   active: boolean
   salePercent: number | null
@@ -80,12 +84,22 @@ export interface Slot {
   open: boolean
   /** `hours` slots come from the coach's weekly hours and come back if deleted. */
   source: 'manual' | 'hours'
-  booking: {
-    id: number
-    status: BookingStatus
-    attendance: Attendance | null
-    student: Person | null
-  } | null
+  /** Set for a group session: the class it teaches, to `capacity` students. */
+  lessonTypeId: number | null
+  capacity: number
+  cancelledAt: string | null
+  cancelReason: string | null
+  /** The one lesson in a private slot; null in a group session. */
+  booking: SlotBooking | null
+  /** Every live booking, the students of a group session. */
+  bookings: SlotBooking[]
+}
+
+export interface SlotBooking {
+  id: number
+  status: BookingStatus
+  attendance: Attendance | null
+  student: Person | null
 }
 
 export type AdminBooking = BookingDto & {

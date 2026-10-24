@@ -3,12 +3,13 @@ import {
   type Attendance,
   attendanceError,
   type CoachLessonDto,
+  type CoachSessionDto,
   type CoachSlotDto,
   venueInstant,
 } from '@rs/shared'
-import { and, asc, desc, eq, gte, inArray, lt, lte, ne } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne } from 'drizzle-orm'
 import { immediate } from '../db/client'
-import { bookings, lessonTypes, packages, slots, students } from '../db/schema'
+import { bookings, lessonFeedback, lessonTypes, packages, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { DELETED_NAME } from './account'
@@ -16,6 +17,7 @@ import { LIVE } from './bookings'
 import { feedbackOf, feedbackView, writeBlock } from './feedback'
 import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
+import { assertNoSessionOverlap } from './sessions'
 import { studentProfile } from './student-profiles'
 import { bookingStatus } from './views'
 
@@ -67,14 +69,32 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
         .all()
     : []
   const bySlot = new Map(lessons.map((l) => [l.booking.slotId, l]))
+  const booked = new Map<number, number>()
+  for (const l of lessons) booked.set(l.booking.slotId, (booked.get(l.booking.slotId) ?? 0) + 1)
+  const typeNames = new Map(
+    db
+      .select({ id: lessonTypes.id, name: lessonTypes.name })
+      .from(lessonTypes)
+      .all()
+      .map((t) => [t.id, t.name]),
+  )
   const now = deps.now()
   return rows.map((s): CoachSlotDto => {
-    const l = bySlot.get(s.id)
+    const l = s.lessonTypeId === null ? bySlot.get(s.id) : undefined
     return {
       id: s.id,
       startsAt: s.startsAt.toISOString(),
       endsAt: s.endsAt.toISOString(),
       open: s.open,
+      group:
+        s.lessonTypeId === null
+          ? null
+          : {
+              lessonTypeName: typeNames.get(s.lessonTypeId) ?? '',
+              capacity: s.capacity,
+              booked: booked.get(s.id) ?? 0,
+              cancelled: s.cancelledAt !== null,
+            },
       lesson: l
         ? {
             bookingId: l.booking.id,
@@ -89,10 +109,13 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
   })
 }
 
-/** The booking with its slot's coach, or 404 when it is not this coach's lesson. */
+/**
+ * The booking with its slot's coach, and the group class its slot is a session of, or 404 when it
+ * is not this coach's lesson.
+ */
 export function ownBooking(deps: Deps, bookingId: number, coachId?: number) {
   const row = deps.db
-    .select({ booking: bookings, coachId: slots.coachId })
+    .select({ booking: bookings, coachId: slots.coachId, sessionOf: slots.lessonTypeId })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
     .where(eq(bookings.id, bookingId))
@@ -103,8 +126,10 @@ export function ownBooking(deps: Deps, bookingId: number, coachId?: number) {
 
 export function coachLesson(deps: Deps, bookingId: number, coachId: number): CoachLessonDto {
   const { db } = deps
-  const { booking: b } = ownBooking(deps, bookingId, coachId)
+  const { booking: b, sessionOf } = ownBooking(deps, bookingId, coachId)
   const now = deps.now()
+  // The venue cancels and moves seats in its group sessions; the coach marks and reviews them.
+  const own = sessionOf === null
   const student = db.select().from(students).where(eq(students.id, b.studentId)).get()
   const lessonType = db.select().from(lessonTypes).where(eq(lessonTypes.id, b.lessonTypeId)).get()
   const pkg = b.packageId
@@ -146,6 +171,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       name: lessonType?.name ?? '',
       isTrial: lessonType?.isTrial ?? false,
     },
+    sessionId: own ? null : b.slotId,
     student: {
       id: b.studentId,
       name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
@@ -175,8 +201,9 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
         : null,
     feedbackBlocked: writeBlock(b, student?.deletedAt ?? null, feedback, now),
     canMarkAttendance: attendanceError(b, now, 'coach') === null,
-    canCancel: (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.startsAt,
-    canMove: b.status === 'confirmed' && now < b.startsAt,
+    canCancel:
+      own && (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.startsAt,
+    canMove: own && b.status === 'confirmed' && now < b.startsAt,
     movedFrom: movedFromIso(moveSummaries(db, [b.id]).get(b.id), b.startsAt),
     cancelledBy: b.cancelledBy,
     cancelReason: b.cancelReason,
@@ -235,10 +262,66 @@ export function setCoachNote(deps: Deps, bookingId: number, coachId: number, not
   deps.db.update(bookings).set({ coachNote: note }).where(eq(bookings.id, bookingId)).run()
 }
 
+/** One of the coach's group sessions with its students, held or confirmed. */
+export function coachSession(deps: Deps, slotId: number, coachId: number): CoachSessionDto {
+  const { db } = deps
+  const slot = db.select().from(slots).where(eq(slots.id, slotId)).get()
+  if (!slot || slot.coachId !== coachId || slot.lessonTypeId === null) throw notFound('课程')
+  const lessonType = db
+    .select({ name: lessonTypes.name })
+    .from(lessonTypes)
+    .where(eq(lessonTypes.id, slot.lessonTypeId))
+    .get()
+  const rows = db
+    .select({ booking: bookings, name: students.name, deletedAt: students.deletedAt })
+    .from(bookings)
+    .innerJoin(students, eq(students.id, bookings.studentId))
+    .where(and(eq(bookings.slotId, slot.id), inArray(bookings.status, LIVE)))
+    .orderBy(asc(bookings.id))
+    .all()
+  const written = new Set(
+    rows.length
+      ? db
+          .select({ bookingId: lessonFeedback.bookingId })
+          .from(lessonFeedback)
+          .where(
+            and(
+              inArray(
+                lessonFeedback.bookingId,
+                rows.map((r) => r.booking.id),
+              ),
+              isNull(lessonFeedback.deletedAt),
+            ),
+          )
+          .all()
+          .map((f) => f.bookingId)
+      : [],
+  )
+  const now = deps.now()
+  return {
+    id: slot.id,
+    startsAt: slot.startsAt.toISOString(),
+    endsAt: slot.endsAt.toISOString(),
+    lessonTypeName: lessonType?.name ?? '',
+    capacity: slot.capacity,
+    cancelled: slot.cancelledAt !== null,
+    cancelReason: slot.cancelReason,
+    students: rows.map(({ booking: b, name, deletedAt }) => ({
+      bookingId: b.id,
+      name: deletedAt ? DELETED_NAME : name,
+      status: bookingStatus(b, now),
+      attendance: b.attendance,
+      canMarkAttendance: attendanceError(b, now, 'coach') === null,
+      hasFeedback: written.has(b.id),
+    })),
+  }
+}
+
 /** Opens or closes one of the coach's own future slots. */
 export function setSlotOpen(deps: Deps, slotId: number, coachId: number, open: boolean) {
   const slot = deps.db.select().from(slots).where(eq(slots.id, slotId)).get()
   if (!slot || slot.coachId !== coachId) throw notFound('时段')
+  if (slot.lessonTypeId !== null) throw new ApiError(409, 'group_lesson', '小班课由场馆安排')
   if (slot.startsAt <= deps.now()) throw new ApiError(409, 'slot_started', '时段已开始')
   // The coach saw it free, but a student may have booked it since the list loaded.
   const booked = deps.db
@@ -249,5 +332,6 @@ export function setSlotOpen(deps: Deps, slotId: number, coachId: number, open: b
     )
     .get()
   if (!open && booked) throw new ApiError(409, 'slot_booked', '这个时段刚被预约，请刷新')
+  if (open && !slot.open) assertNoSessionOverlap(deps.db, slot)
   deps.db.update(slots).set({ open, closedBySync: false }).where(eq(slots.id, slotId)).run()
 }

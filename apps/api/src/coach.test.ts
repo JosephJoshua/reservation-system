@@ -418,6 +418,7 @@ describe('the coach schedule and lessons', () => {
           lessonTypeName: '一对一私教',
           isTrial: false,
         },
+        group: null,
       },
       {
         id: free.id,
@@ -425,6 +426,7 @@ describe('the coach schedule and lessons', () => {
         endsAt: at('2026-10-26', '12:00'),
         open: true,
         lesson: null,
+        group: null,
       },
     ])
     expect(

@@ -3,7 +3,7 @@ import { and, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
 import { bookings, coaches, lessonTypes, orders, packages, refunds, slots } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
-import { countsForPay, payRateLookup } from './coach-pay'
+import { countsForPay, onePerSession, payRateLookup } from './coach-pay'
 import { getSettings } from './settings'
 import { grantedLessons } from './views'
 
@@ -71,6 +71,8 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
   const lessonRows = db
     .select({
       coachId: slots.coachId,
+      slotId: bookings.slotId,
+      sessionOf: slots.lessonTypeId,
       lessonTypeId: bookings.lessonTypeId,
       status: bookings.status,
       startsAt: bookings.startsAt,
@@ -106,10 +108,8 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
   )
   const payOf = (coachId: number, mine: typeof lessonRows): CoachPay => {
     const byType = new Map<number, number>()
-    for (const l of mine) {
-      if (countsForPay(l, payRules, now)) {
-        byType.set(l.lessonTypeId, (byType.get(l.lessonTypeId) ?? 0) + 1)
-      }
+    for (const l of onePerSession(mine.filter((l) => countsForPay(l, payRules, now)))) {
+      byType.set(l.lessonTypeId, (byType.get(l.lessonTypeId) ?? 0) + 1)
     }
     // In the lesson types' own order.
     const lines = [...typeNames]
@@ -129,21 +129,24 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
   const perCoach = coachRows
     .map((coach) => {
       const mine = lessonRows.filter((l) => l.coachId === coach.id)
+      // Attendance is per student; lessons and hours count a group session once.
       const taught = mine.filter((l) => l.status === 'confirmed' && l.endsAt <= now)
+      const lessons = onePerSession(taught)
       return {
         id: coach.id,
         name: coach.name,
         active: coach.active,
-        taught: taught.length,
-        minutes: taught.reduce(
+        taught: lessons.length,
+        minutes: lessons.reduce(
           (sum, l) => sum + (l.endsAt.getTime() - l.startsAt.getTime()) / 60_000,
           0,
         ),
         attended: taught.filter((l) => l.attendance === 'attended').length,
         noShow: taught.filter((l) => l.attendance === 'no_show').length,
         unmarked: taught.filter((l) => l.attendance === null).length,
-        venueCancelled: mine.filter((l) => l.status === 'cancelled' && l.cancelledBy === 'venue')
-          .length,
+        venueCancelled: onePerSession(
+          mine.filter((l) => l.status === 'cancelled' && l.cancelledBy === 'venue'),
+        ).length,
         lateCancelled: mine.filter(
           (l) => l.status === 'cancelled' && l.cancelledBy === 'student' && l.late,
         ).length,

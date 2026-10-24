@@ -23,7 +23,11 @@ import { bookingStatusLabel } from '../labels'
 import type { Coach, LessonType, Slot } from '../types'
 
 /** The second line of a slot in the week grid. */
-function slotLabel(s: Slot) {
+function slotLabel(s: Slot, types: LessonType[]) {
+  if (s.lessonTypeId !== null) {
+    const name = types.find((t) => t.id === s.lessonTypeId)?.name ?? '小班课'
+    return s.cancelledAt ? `${name} · 已取消` : `${name} · ${s.bookings.length}/${s.capacity} 人`
+  }
   const b = s.booking
   if (!b) {
     if (new Date(s.startsAt) <= new Date()) return '已过'
@@ -57,7 +61,7 @@ export function Schedule() {
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [coachId, setCoachId] = useState<number | null>(null)
   const [week, setWeek] = useState(() => mondayOf(today()))
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<'slots' | 'sessions' | null>(null)
   const [selected, setSelected] = useState<Slot | null>(null)
 
   const active = (coaches.data ?? []).filter((c) => c.active)
@@ -112,9 +116,14 @@ export function Schedule() {
           </Button>
         </div>
         <span className="spacer" />
-        <Button disabled={!coachId} onClick={() => setCreating(true)}>
-          批量排课
-        </Button>
+        <Space>
+          <Button variant="outline" disabled={!coachId} onClick={() => setCreating('sessions')}>
+            排小班课
+          </Button>
+          <Button disabled={!coachId} onClick={() => setCreating('slots')}>
+            批量排课
+          </Button>
+        </Space>
       </div>
 
       {active.length === 0 && !coaches.loading && (
@@ -156,12 +165,12 @@ export function Schedule() {
                   <button
                     type="button"
                     key={s.id}
-                    className={`slot-chip${s.booking ? ' booked' : ''}${s.open ? '' : ' closed'}`}
+                    className={`slot-chip${s.bookings.length ? ' booked' : ''}${s.lessonTypeId !== null ? ' group' : ''}${s.open ? '' : ' closed'}`}
                     onClick={() => setSelected(s)}
                   >
                     {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
                     <br />
-                    {slotLabel(s)}
+                    {slotLabel(s, types.data ?? [])}
                   </button>
                 ))}
               </div>
@@ -170,22 +179,51 @@ export function Schedule() {
         </div>
       </div>
 
-      {creating && coachId && (
+      {creating === 'slots' && coachId && (
         <CreateSlots
           coachId={coachId}
           durations={[
-            ...new Set((types.data ?? []).filter((t) => t.active).map((t) => t.durationMinutes)),
+            ...new Set(
+              (types.data ?? [])
+                .filter((t) => t.active && t.capacity === 1)
+                .map((t) => t.durationMinutes),
+            ),
           ]}
           initialFrom={week}
-          onClose={() => setCreating(false)}
+          onClose={() => setCreating(null)}
           onDone={() => {
-            setCreating(false)
+            setCreating(null)
             void slots.reload()
           }}
         />
       )}
 
-      {selected && (
+      {creating === 'sessions' && coachId && (
+        <CreateSessions
+          coach={active.find((c) => c.id === coachId)}
+          types={(types.data ?? []).filter((t) => t.active && t.capacity > 1)}
+          initialFrom={week}
+          onClose={() => setCreating(null)}
+          onDone={() => {
+            setCreating(null)
+            void slots.reload()
+          }}
+        />
+      )}
+
+      {selected && selected.lessonTypeId !== null && (
+        <SessionDialog
+          slot={selected}
+          lessonType={(types.data ?? []).find((t) => t.id === selected.lessonTypeId)}
+          onClose={() => setSelected(null)}
+          onChanged={() => {
+            setSelected(null)
+            void slots.reload()
+          }}
+        />
+      )}
+
+      {selected && selected.lessonTypeId === null && (
         <SlotDialog
           slot={selected}
           onClose={() => setSelected(null)}
@@ -217,6 +255,91 @@ function parseTimes(text: string): string[] | null {
   return [...new Set(out)].sort()
 }
 
+/** The dates, weekdays and start times a batch of slots or sessions repeats on. */
+function usePlan(initialFrom: string, initialTimes: string) {
+  const start = initialFrom < today() ? today() : initialFrom
+  const [range, setRange] = useState<[string, string]>([
+    start,
+    addDays(initialFrom, 6) < start ? addDays(start, 6) : addDays(initialFrom, 6),
+  ])
+  const [weekdays, setWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
+  const [times, setTimes] = useState(initialTimes)
+  const parsed = useMemo(() => parseTimes(times), [times])
+  const dates = useMemo(() => {
+    const out: string[] = []
+    for (let d = range[0]; d <= range[1]; d = addDays(d, 1)) {
+      const wd = (venueInstant(d, 12 * 60).getUTCDay() + 6) % 7
+      if (weekdays.includes(wd)) out.push(d)
+    }
+    return out
+  }, [range, weekdays])
+  // One object per change, so callers can memoize on it.
+  return useMemo(
+    () => ({ range, setRange, weekdays, setWeekdays, times, setTimes, parsed, dates }),
+    [range, weekdays, times, parsed, dates],
+  )
+}
+
+type Plan = ReturnType<typeof usePlan>
+
+/** Each planned start of `minutes` for the coach. Times already past are skipped, so a range starting today still works. */
+function planned(plan: Plan, coachId: number, minutes: number) {
+  if (!plan.parsed) return []
+  const now = Date.now()
+  const times = plan.parsed
+  return plan.dates.flatMap((d) =>
+    times.flatMap((t) => {
+      const startsAt = venueIso(d, t)
+      if (new Date(startsAt).getTime() <= now) return []
+      return [
+        {
+          coachId,
+          startsAt,
+          endsAt: new Date(new Date(startsAt).getTime() + minutes * 60_000).toISOString(),
+        },
+      ]
+    }),
+  )
+}
+
+/** Why a plan cannot be sent, or null. */
+function planError(plan: Plan, count: number, what: string) {
+  if (!plan.parsed) return '时间格式应为 09:00，多个用逗号分隔'
+  if (count === 0) return `没有要创建的${what}`
+  if (count > MAX_SLOTS) return `一次最多创建 ${MAX_SLOTS} 个${what}，请缩短日期范围`
+  return null
+}
+
+function PlanFields({ plan }: { plan: Plan }) {
+  return (
+    <>
+      <Field label="日期">
+        <DateRangePicker
+          value={plan.range}
+          disableDate={{ before: today() }}
+          onChange={(v) => plan.setRange([String(v[0] ?? ''), String(v[1] ?? '')])}
+        />
+      </Field>
+      <Field label="星期">
+        <Checkbox.Group value={plan.weekdays} onChange={(v) => plan.setWeekdays(v as number[])}>
+          {WEEKDAYS.map((w, i) => (
+            <Checkbox key={w} value={i}>
+              周{w}
+            </Checkbox>
+          ))}
+        </Checkbox.Group>
+      </Field>
+      <Field label="开始时间" help="多个用逗号分隔，如 09:00, 10:30">
+        <Input
+          value={plan.times}
+          status={plan.parsed ? 'default' : 'error'}
+          onChange={(v) => plan.setTimes(String(v))}
+        />
+      </Field>
+    </>
+  )
+}
+
 function CreateSlots({
   coachId,
   durations,
@@ -230,62 +353,22 @@ function CreateSlots({
   onClose: () => void
   onDone: () => void
 }) {
-  const start = initialFrom < today() ? today() : initialFrom
-  const [range, setRange] = useState<[string, string]>([
-    start,
-    addDays(initialFrom, 6) < start ? addDays(start, 6) : addDays(initialFrom, 6),
-  ])
-  const [weekdays, setWeekdays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6])
-  const [times, setTimes] = useState('09:00, 10:00, 14:00, 15:00, 16:00')
+  const plan = usePlan(initialFrom, '09:00, 10:00, 14:00, 15:00, 16:00')
   const [minutes, setMinutes] = useState(durations[0] ?? 60)
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
-
-  const parsed = useMemo(() => parseTimes(times), [times])
-  const dates = useMemo(() => {
-    const out: string[] = []
-    for (let d = range[0]; d <= range[1]; d = addDays(d, 1)) {
-      const wd = (venueInstant(d, 12 * 60).getUTCDay() + 6) % 7
-      if (weekdays.includes(wd)) out.push(d)
-    }
-    return out
-  }, [range, weekdays])
-  // Times already past are skipped, so a range starting today still works.
-  const planned = useMemo(() => {
-    if (!parsed) return []
-    const now = Date.now()
-    return dates.flatMap((d) =>
-      parsed.flatMap((t) => {
-        const startsAt = venueIso(d, t)
-        if (new Date(startsAt).getTime() <= now) return []
-        return [
-          {
-            coachId,
-            startsAt,
-            endsAt: new Date(new Date(startsAt).getTime() + minutes * 60_000).toISOString(),
-          },
-        ]
-      }),
-    )
-  }, [parsed, dates, coachId, minutes])
-  const count = planned.length
+  const slots = useMemo(() => planned(plan, coachId, minutes), [plan, coachId, minutes])
+  const count = slots.length
 
   const submit = async () => {
-    if (!parsed) {
-      void MessagePlugin.warning('时间格式应为 09:00，多个用逗号分隔')
-      return
-    }
-    if (count === 0) {
-      void MessagePlugin.warning('没有要创建的时段')
-      return
-    }
-    if (count > MAX_SLOTS) {
-      void MessagePlugin.warning(`一次最多创建 ${MAX_SLOTS} 个时段，请缩短日期范围`)
+    const error = planError(plan, count, '时段')
+    if (error) {
+      void MessagePlugin.warning(error)
       return
     }
     if (
       await attempt(
-        () => api('POST', '/admin/slots', { slots: planned }, { key }),
+        () => api('POST', '/admin/slots', { slots }, { key }),
         `已创建 ${count} 个时段`,
         { onStale: onDone },
       )
@@ -303,29 +386,7 @@ function CreateSlots({
       onClose={onClose}
     >
       <div className="fields">
-        <Field label="日期">
-          <DateRangePicker
-            value={range}
-            disableDate={{ before: today() }}
-            onChange={(v) => setRange([String(v[0] ?? ''), String(v[1] ?? '')])}
-          />
-        </Field>
-        <Field label="星期">
-          <Checkbox.Group value={weekdays} onChange={(v) => setWeekdays(v as number[])}>
-            {WEEKDAYS.map((w, i) => (
-              <Checkbox key={w} value={i}>
-                周{w}
-              </Checkbox>
-            ))}
-          </Checkbox.Group>
-        </Field>
-        <Field label="开始时间" help="多个用逗号分隔，如 09:00, 10:30">
-          <Input
-            value={times}
-            status={parsed ? 'default' : 'error'}
-            onChange={(v) => setTimes(String(v))}
-          />
-        </Field>
+        <PlanFields plan={plan} />
         <Field label="时长" help="需与课程时长一致，学员才能预约">
           <Space>
             <InputNumber
@@ -351,6 +412,110 @@ function CreateSlots({
           </Space>
         </Field>
       </div>
+    </Dialog>
+  )
+}
+
+/** 排小班课: sessions of a group class for one coach, repeated over a date range. */
+function CreateSessions({
+  coach,
+  types,
+  initialFrom,
+  onClose,
+  onDone,
+}: {
+  coach: Coach | undefined
+  types: LessonType[]
+  initialFrom: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const taught = types.filter((t) => coach?.lessonTypeIds.includes(t.id))
+  const [lessonTypeId, setLessonTypeId] = useState<number | undefined>(taught[0]?.id)
+  const lessonType = taught.find((t) => t.id === lessonTypeId)
+  const [capacity, setCapacity] = useState<number>(lessonType?.capacity ?? 6)
+  const least = Math.max(2, lessonType?.minStudents ?? 0)
+  const plan = usePlan(initialFrom, '10:00')
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+  const sessions = useMemo(
+    () => (coach && lessonType ? planned(plan, coach.id, lessonType.durationMinutes) : []),
+    [plan, coach, lessonType],
+  )
+  const count = sessions.length
+
+  const submit = async () => {
+    if (!lessonType) return
+    const error = planError(plan, count, '小班课')
+    if (error) {
+      void MessagePlugin.warning(error)
+      return
+    }
+    if (
+      await attempt(
+        () =>
+          api(
+            'POST',
+            '/admin/sessions',
+            { lessonTypeId: lessonType.id, capacity, sessions },
+            { key },
+          ),
+        `已排 ${count} 节小班课`,
+        { onStale: onDone },
+      )
+    )
+      onDone()
+  }
+
+  return (
+    <Dialog
+      visible
+      width={560}
+      header={`排小班课${coach ? ` · ${coach.name}` : ''}`}
+      confirmBtn={{
+        content: `创建 ${count} 节`,
+        loading: submitting,
+        disabled: !lessonType,
+      }}
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      {taught.length === 0 ? (
+        <p className="muted">
+          该教练还没有小班课课程。先在“课程与教练”里新建上课人数多于 1 人的课程，并让教练教这门课。
+        </p>
+      ) : (
+        <div className="fields">
+          <Field label="课程">
+            <Select
+              value={lessonTypeId}
+              options={taught.map((t) => ({
+                label: `${t.name}（${t.durationMinutes} 分钟）`,
+                value: t.id,
+              }))}
+              onChange={(v) => {
+                const next = taught.find((t) => t.id === Number(v))
+                setLessonTypeId(next?.id)
+                if (next) setCapacity(next.capacity)
+              }}
+            />
+          </Field>
+          <PlanFields plan={plan} />
+          <Field
+            label="每节人数"
+            help={`${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时整节自动取消并退款。` : ''}与已有预约重叠的时间不能排，重叠的空闲时段会关闭`}
+          >
+            <InputNumber
+              theme="normal"
+              value={capacity}
+              min={least}
+              max={30}
+              suffix="人"
+              onChange={(v) => setCapacity(Math.max(least, Math.min(30, Number(v) || least)))}
+            />
+          </Field>
+        </div>
+      )}
     </Dialog>
   )
 }
@@ -483,6 +648,238 @@ function SlotDialog({
         </Space>
         {slot.open && b && <span className="muted">关闭时段不影响已有预约</span>}
       </Space>
+      {booking && (
+        <BookForStudent slot={slot} onClose={() => setBooking(false)} onDone={onChanged} />
+      )}
+    </Dialog>
+  )
+}
+
+/** A group session: its students, seats, and calling it off. */
+function SessionDialog({
+  slot,
+  lessonType,
+  onClose,
+  onChanged,
+}: {
+  slot: Slot
+  lessonType: LessonType | undefined
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [capacity, setCapacity] = useState(slot.capacity)
+  const [cancelling, setCancelling] = useState<'session' | number | null>(null)
+  const [reason, setReason] = useState('')
+  const [booking, setBooking] = useState(false)
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+  const now = new Date()
+  const started = new Date(slot.startsAt) <= now
+  const ended = new Date(slot.endsAt) <= now
+  const cancelled = slot.cancelledAt !== null
+  const full = slot.bookings.length >= slot.capacity
+  // Never below the students already in, so nobody loses a seat, nor below the class minimum.
+  const minSeats = Math.max(2, slot.bookings.length, lessonType?.minStudents ?? 0)
+  const capacityOk = Number.isInteger(capacity) && capacity >= minSeats && capacity <= 30
+
+  const patch = async (body: { open?: boolean; capacity?: number }, done: string) => {
+    if (
+      await attempt(() => api('PATCH', `/admin/slots/${slot.id}`, body), done, {
+        onStale: onChanged,
+      })
+    )
+      onChanged()
+  }
+  const cancel = async () => {
+    if (!reason.trim() || cancelling === null) return
+    const ok =
+      cancelling === 'session'
+        ? await attempt(
+            () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
+            '已取消整节，学员将收到全额退款或退回课时',
+            { onStale: onChanged },
+          )
+        : await attempt(
+            () => api('POST', `/admin/bookings/${cancelling}/cancel`, { reason }),
+            '已取消，学员将收到全额退款或退回课时',
+            { onStale: onChanged },
+          )
+    if (ok) onChanged()
+  }
+  const mark = async (bookingId: number, attendance: string) => {
+    if (
+      await attempt(
+        () =>
+          api('PUT', `/admin/bookings/${bookingId}/attendance`, {
+            attendance: attendance || null,
+          }),
+        '已保存',
+        { onStale: onChanged },
+      )
+    )
+      onChanged()
+  }
+  const remove = async () => {
+    if (
+      await attempt(() => api('DELETE', `/admin/slots/${slot.id}`), '已删除', {
+        onStale: onChanged,
+      })
+    )
+      onChanged()
+  }
+
+  return (
+    <Dialog
+      visible
+      width={560}
+      header={`${lessonType?.name ?? '小班课'} · ${fmtDate(slot.startsAt).slice(5)} ${fmtWeekday(slot.startsAt)} ${fmtTime(slot.startsAt)}-${fmtTime(slot.endsAt)}`}
+      footer={false}
+      onClose={onClose}
+    >
+      <div className="session-panel">
+        {cancelled ? (
+          <Tag theme="danger" variant="light">
+            已取消：{slot.cancelReason}
+          </Tag>
+        ) : (
+          <span>
+            已报名 {slot.bookings.length}/{slot.capacity} 人
+            {!slot.open && <span className="muted">，已停止报名</span>}
+          </span>
+        )}
+
+        {slot.bookings.length === 0 ? (
+          <span className="muted">尚无学员报名</span>
+        ) : (
+          <div className="roster">
+            {slot.bookings.map((b) => {
+              const status = bookingStatusLabel[b.status as keyof typeof bookingStatusLabel]
+              return (
+                <div key={b.id} className="roster-row">
+                  <span className="roster-name">
+                    {b.student?.name || '未填写姓名'}{' '}
+                    <span className="muted">{b.student?.phone}</span>
+                  </span>
+                  {status && (
+                    <Tag theme={status[1]} variant="light">
+                      {status[0]}
+                    </Tag>
+                  )}
+                  {started && b.status !== 'pending_payment' && (
+                    <Select
+                      size="small"
+                      style={{ width: 100 }}
+                      value={b.attendance ?? ''}
+                      options={[
+                        { label: '未签到', value: '' },
+                        { label: '到课', value: 'attended' },
+                        { label: '缺席', value: 'no_show' },
+                      ]}
+                      onChange={(v) => mark(b.id, String(v))}
+                    />
+                  )}
+                  {!ended && cancelling === null && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      theme="danger"
+                      onClick={() => setCancelling(b.id)}
+                    >
+                      取消
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {cancelling !== null && (
+          <>
+            <span>
+              {cancelling === 'session'
+                ? `取消整节，${slot.bookings.length} 位学员全额退款或退回课时`
+                : `取消 ${slot.bookings.find((b) => b.id === cancelling)?.student?.name || '该学员'} 的预约`}
+            </span>
+            <Textarea
+              placeholder="取消原因，学员可见"
+              value={reason}
+              maxlength={100}
+              onChange={(v) => setReason(String(v))}
+            />
+            <Space>
+              <Button
+                theme="danger"
+                disabled={!reason.trim()}
+                loading={submitting}
+                onClick={cancel}
+              >
+                确认取消并退款
+              </Button>
+              <Button variant="outline" onClick={() => setCancelling(null)}>
+                返回
+              </Button>
+            </Space>
+          </>
+        )}
+
+        {!cancelled && !started && cancelling === null && (
+          <>
+            <Space>
+              {slot.open && !full && <Button onClick={() => setBooking(true)}>代约</Button>}
+              <Button
+                variant="outline"
+                loading={submitting}
+                onClick={() => patch({ open: !slot.open }, slot.open ? '已停止报名' : '已开放报名')}
+              >
+                {slot.open ? '停止报名' : '开放报名'}
+              </Button>
+            </Space>
+            <Space align="center">
+              <span>每节人数</span>
+              <InputNumber
+                theme="normal"
+                value={capacity}
+                min={minSeats}
+                max={30}
+                suffix="人"
+                status={capacityOk ? 'default' : 'error'}
+                onChange={(v) => setCapacity(Number(v) || 0)}
+              />
+              <Button
+                variant="outline"
+                disabled={capacity === slot.capacity || !capacityOk}
+                loading={submitting}
+                onClick={() => patch({ capacity }, '已修改人数')}
+              >
+                保存
+              </Button>
+            </Space>
+            {!capacityOk && <span className="danger-text">人数需在 {minSeats} 到 30 之间</span>}
+          </>
+        )}
+
+        {!cancelled && !ended && cancelling === null && (
+          <Space>
+            <Button theme="danger" variant="outline" onClick={() => setCancelling('session')}>
+              取消整节
+            </Button>
+            {slot.bookings.length === 0 && (
+              <Popconfirm
+                theme="danger"
+                content="删除这节小班课？"
+                confirmBtn={{ content: '删除', theme: 'danger' }}
+                cancelBtn="返回"
+                onConfirm={remove}
+              >
+                <Button variant="text" theme="danger" loading={submitting}>
+                  删除
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+        )}
+      </div>
       {booking && (
         <BookForStudent slot={slot} onClose={() => setBooking(false)} onDone={onChanged} />
       )}

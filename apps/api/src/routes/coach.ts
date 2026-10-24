@@ -27,6 +27,7 @@ import {
 import {
   coachLesson,
   coachSchedule,
+  coachSession,
   ownBooking,
   setAttendance,
   setCoachNote,
@@ -100,6 +101,8 @@ export function coachRoutes(deps: Deps) {
 
   app.get('/lessons/:id', (c) => c.json(coachLesson(deps, idParam(c), c.get('coachId'))))
 
+  app.get('/sessions/:id', (c) => c.json(coachSession(deps, idParam(c), c.get('coachId'))))
+
   app.put('/lessons/:id/attendance', async (c) => {
     const { attendance } = await parseBody(
       c,
@@ -160,7 +163,8 @@ export function coachRoutes(deps: Deps) {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     const coachId = c.get('coachId')
-    const { booking } = ownBooking(deps, id, coachId)
+    const { booking, sessionOf } = ownBooking(deps, id, coachId)
+    if (sessionOf !== null) throw new ApiError(409, 'group_lesson', '小班课请联系场馆调整')
     // Once the lesson starts, only the venue can cancel it.
     if (booking.startsAt <= deps.now()) {
       throw new ApiError(409, 'started', '课程已开始，如需取消请联系场馆')

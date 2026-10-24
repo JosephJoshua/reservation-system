@@ -85,7 +85,11 @@ function SlotPicker({
       : null,
   )
   const free = (slots.data ?? []).filter(
-    (s) => s.open && !s.booking && new Date(s.startsAt) > new Date(),
+    (s) =>
+      s.open &&
+      !s.cancelledAt &&
+      s.bookings.length < s.capacity &&
+      new Date(s.startsAt) > new Date(),
   )
   return (
     <div className="fields">
@@ -126,6 +130,7 @@ function SlotPicker({
               onClick={() => onChange(s)}
             >
               {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
+              {s.lessonTypeId !== null && ` 小班课 剩 ${s.capacity - s.bookings.length} 位`}
             </Button>
           ))}
         </div>
@@ -172,9 +177,12 @@ export function BookForStudent({
     if (!slot || !coach) return []
     const minutes = (Date.parse(slot.endsAt) - Date.parse(slot.startsAt)) / 60_000
     const taught = new Set(coach.lessonTypeIds)
+    // A group session teaches its own class; a private slot takes private lessons.
+    const fits = (t: LessonType) =>
+      slot.lessonTypeId !== null ? t.id === slot.lessonTypeId : t.capacity === 1
     // Regular lessons first: the desk books those far more often than trials.
     return (types.data ?? [])
-      .filter((t) => t.active && taught.has(t.id) && t.durationMinutes === minutes)
+      .filter((t) => t.active && taught.has(t.id) && t.durationMinutes === minutes && fits(t))
       .sort((a, b) => Number(a.isTrial) - Number(b.isTrial))
   }, [slot, coach, types.data])
 

@@ -1,0 +1,125 @@
+@import '../../styles/common.wxss';
+
+.status {
+  display: flex;
+  align-items: center;
+  padding: 40rpx 48rpx 32rpx;
+}
+
+.status-text-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.status-title {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-text {
+  margin-top: 8rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.cancelled {
+  padding: 28rpx 32rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.inline-empty {
+  padding: 48rpx 0;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  min-height: 112rpx;
+  padding: 16rpx 16rpx 16rpx 32rpx;
+  box-sizing: border-box;
+}
+
+.row + .row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 32rpx;
+  right: 0;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.row-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-sub {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.marks {
+  display: flex;
+  gap: 12rpx;
+}
+
+/* 44px tall tap targets. */
+.mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 112rpx;
+  height: 88rpx;
+  padding: 0 16rpx;
+  box-sizing: border-box;
+  border: 2rpx solid var(--td-component-border);
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-primary);
+}
+
+.mark-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.mark-attended {
+  border-color: var(--td-success-color);
+  background-color: var(--td-success-color-light);
+  color: var(--td-success-color);
+}
+
+.mark-no-show {
+  border-color: var(--td-error-color);
+  background-color: var(--td-error-color-light);
+  color: var(--td-error-color);
+}
+
+.page-bottom {
+  padding-bottom: calc(48rpx + env(safe-area-inset-bottom));
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

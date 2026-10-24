@@ -1,4 +1,10 @@
-import type { BookingQuoteDto, CreateBookingResponse, MeDto, StudentDto } from '../../lib/shared'
+import {
+  type BookingQuoteDto,
+  type CreateBookingResponse,
+  type MeDto,
+  minCheckHours,
+  type StudentDto,
+} from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
@@ -22,6 +28,8 @@ Page({
     isTrial: false,
     when: '',
     duration: 0,
+    /** For a group class: who it is for and when it is called off. */
+    groupNote: '',
     coachName: '',
     coachTitle: '',
     coachAvatar: '',
@@ -83,6 +91,14 @@ Page({
         lessonName: lessonType.name,
         isTrial: lessonType.isTrial,
         duration: lessonType.durationMinutes,
+        groupNote:
+          lessonType.capacity > 1
+            ? `小班课，多人同上${
+                lessonType.minStudents
+                  ? `；课前 ${minCheckHours(catalog.booking)} 小时报名不足 ${lessonType.minStudents} 人将自动取消，退款或退回课时`
+                  : ''
+              }`
+            : '',
         coachName: coach.name,
         coachTitle: coach.title,
         coachAvatar: coach.avatarUrl ? assetUrl(coach.avatarUrl) : '',
@@ -200,7 +216,7 @@ Page({
         this.finish(res.bookingId)
         return
       }
-      this.finish(res.bookingId)
+      this.finish(res.bookingId, res.existing ? '你已预约这节课' : '')
     } catch (e) {
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
@@ -215,12 +231,16 @@ Page({
 
   /**
    * Replaces this page with the booking, so going back lands on the time picker. If the student
-   * left while it was booking, the booking opens on top of where they are now.
+   * left while it was booking, the booking opens on top of where they are now. A toast is shown
+   * after the switch, which would otherwise swallow it.
    */
-  finish(bookingId: number) {
+  finish(bookingId: number, toast = '') {
     const url = `/pages/booking-detail/index?id=${bookingId}`
-    if (isTop(this)) wx.redirectTo({ url })
-    else if (this.left) wx.navigateTo({ url })
+    const success = () => {
+      if (toast) wx.showToast({ title: toast, icon: 'none' })
+    }
+    if (isTop(this)) wx.redirectTo({ url, success })
+    else if (this.left) wx.navigateTo({ url, success })
   },
 
   onUnload() {

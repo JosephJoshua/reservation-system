@@ -5,6 +5,7 @@ import {
   type CoachDetailDto,
   defaultAgreementText,
   type HomeDto,
+  isGroup,
   type LessonTypeDto,
   type MeDto,
   type OrderStatusDto,
@@ -49,6 +50,7 @@ import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoice
 import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
+import { liveCounts } from '../services/sessions'
 import { getSettings } from '../services/settings'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
 
@@ -249,6 +251,8 @@ export function studentRoutes(deps: Deps) {
         description: t.description,
         durationMinutes: t.durationMinutes,
         isTrial: t.isTrial,
+        capacity: t.capacity,
+        minStudents: t.minStudents,
         fromPrice: cheapest?.price ?? null,
       }
     })
@@ -345,43 +349,35 @@ export function studentRoutes(deps: Deps) {
         (s) =>
           activeCoaches.has(s.coachId) &&
           (!teaching || teaching.has(s.coachId)) &&
+          // A group class is booked in its own sessions, a private lesson in private slots.
+          (lessonType ? s.lessonTypeId === (isGroup(lessonType) ? lessonType.id : null) : true) &&
           (!lessonType ||
             s.endsAt.getTime() - s.startsAt.getTime() === lessonType.durationMinutes * 60_000),
       )
-    const takenIds = new Set(
-      rows.length
-        ? db
-            .select({ slotId: bookings.slotId })
-            .from(bookings)
-            .where(
-              and(
-                inArray(
-                  bookings.slotId,
-                  rows.map((r) => r.id),
-                ),
-                inArray(bookings.status, LIVE),
-              ),
-            )
-            .all()
-            .map((r) => r.slotId)
-        : [],
+    const taken = liveCounts(
+      db,
+      rows.map((r) => r.id),
     )
     return (
       rows
-        // Closed slots and slots outside the window are hidden; taken ones show as full.
+        // Closed slots and slots outside the window are hidden; full ones show as full.
         .filter(
           (s) => s.open && bookingWindowError(s.startsAt, now, settings.booking) !== 'too_far',
         )
-        .map(
-          (s): SlotDto => ({
+        .map((s): SlotDto => {
+          const seatsLeft = Math.max(0, s.capacity - (taken.get(s.id) ?? 0))
+          return {
             id: s.id,
             coachId: s.coachId,
             startsAt: s.startsAt.toISOString(),
             endsAt: s.endsAt.toISOString(),
             available:
-              !takenIds.has(s.id) && bookingWindowError(s.startsAt, now, settings.booking) === null,
-          }),
-        )
+              seatsLeft > 0 && bookingWindowError(s.startsAt, now, settings.booking) === null,
+            lessonTypeId: s.lessonTypeId,
+            capacity: s.capacity,
+            seatsLeft,
+          }
+        })
     )
   }
 

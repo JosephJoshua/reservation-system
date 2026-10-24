@@ -32,6 +32,8 @@ const emptyLesson: LessonForm = {
   durationMinutes: 60,
   price: 0,
   isTrial: false,
+  capacity: 1,
+  minStudents: null,
   adminOnly: false,
   active: true,
   salePercent: null,
@@ -194,6 +196,11 @@ export function Catalog() {
                   {row.isTrial && (
                     <Tag theme="warning" variant="light">
                       体验课
+                    </Tag>
+                  )}
+                  {row.capacity > 1 && (
+                    <Tag theme="primary" variant="light">
+                      小班课 · {row.capacity} 人
                     </Tag>
                   )}
                   {row.adminOnly && <Tag variant="light">仅测试</Tag>}
@@ -565,7 +572,52 @@ function LessonEditor({
           onChange={(v) => set({ durationMinutes: Number(v) || 60 })}
         />
       </Field>
-      <Field label="标准价" help="教练类别可单独定价">
+      <Field label="上课人数" help="多于 1 人为小班课，在排课页按节安排">
+        <div className="stack">
+          <InputNumber
+            theme="normal"
+            value={f.capacity}
+            min={1}
+            max={30}
+            suffix="人"
+            onChange={(v) => {
+              const capacity = Math.max(1, Math.min(30, Number(v) || 1))
+              set({
+                capacity,
+                // A minimum only makes sense for a group, and never above its size.
+                minStudents:
+                  capacity === 1 || f.minStudents === null
+                    ? null
+                    : Math.min(f.minStudents, capacity),
+              })
+            }}
+          />
+          {f.capacity > 1 && (
+            <Checkbox
+              checked={f.minStudents !== null}
+              onChange={(on) => set({ minStudents: on ? Math.min(2, f.capacity) : null })}
+            >
+              设置最低开班人数
+            </Checkbox>
+          )}
+          {f.capacity > 1 && f.minStudents !== null && (
+            <>
+              <InputNumber
+                theme="normal"
+                value={f.minStudents}
+                min={2}
+                max={f.capacity}
+                suffix="人"
+                onChange={(v) =>
+                  set({ minStudents: Math.max(2, Math.min(f.capacity, Number(v) || 2)) })
+                }
+              />
+              <span className="muted">到免费取消截止时人数不足，整节自动取消并退款</span>
+            </>
+          )}
+        </div>
+      </Field>
+      <Field label="标准价" help="教练类别可单独定价，小班课为每人价格">
         <InputNumber
           theme="normal"
           value={toYuan(f.price)}
@@ -617,7 +669,11 @@ function LessonEditor({
       </Field>
       <Field label="选项">
         <Space direction="vertical">
-          <Checkbox checked={f.isTrial} onChange={(v) => set({ isTrial: v })}>
+          <Checkbox
+            checked={f.isTrial}
+            disabled={f.capacity > 1 && !f.isTrial}
+            onChange={(v) => set({ isTrial: v })}
+          >
             体验课（每人限次，不能用课时包）
           </Checkbox>
           <Checkbox checked={f.adminOnly} onChange={(v) => set({ adminOnly: v })}>

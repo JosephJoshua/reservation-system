@@ -126,7 +126,14 @@ function lessonMinutes(tx: Q, coachId: number) {
     .select({ minutes: lessonTypes.durationMinutes })
     .from(coachLessonTypes)
     .innerJoin(lessonTypes, eq(lessonTypes.id, coachLessonTypes.lessonTypeId))
-    .where(and(eq(coachLessonTypes.coachId, coachId), eq(lessonTypes.active, true)))
+    // Group classes run in sessions the venue schedules, not in the coach's weekly hours.
+    .where(
+      and(
+        eq(coachLessonTypes.coachId, coachId),
+        eq(lessonTypes.active, true),
+        eq(lessonTypes.capacity, 1),
+      ),
+    )
     .all()
   return [...new Set(rows.map((r) => r.minutes))].sort((a, b) => a - b)
 }
@@ -209,13 +216,18 @@ export function syncSlots(tx: Q, coachId: number, now: Date): SlotSyncDto {
   let removed = 0
   const setOpen = (id: number, open: boolean) =>
     tx.update(slots).set({ open, closedBySync: !open }).where(eq(slots.id, id)).run()
+  // Group sessions are the venue's to manage. While one is on the schedule, even called off,
+  // the coach's private slots under it stay closed and none are added there.
+  const sessions = existing.filter((s) => s.lessonTypeId !== null)
+  const underSession = (s: { startsAt: Date; endsAt: Date }) =>
+    sessions.some((o) => o.startsAt < s.endsAt && o.endsAt > s.startsAt)
   const kept: { startsAt: Date; endsAt: Date }[] = []
   for (const s of existing) {
     kept.push(s)
-    if (s.startsAt <= now || live.has(s.id)) continue
+    if (s.startsAt <= now || live.has(s.id) || s.lessonTypeId !== null) continue
     if (s.source === 'hours') {
       if (wanted.has(key(s))) {
-        if (s.closedBySync) {
+        if (s.closedBySync && !underSession(s)) {
           setOpen(s.id, true)
           created++
         }
@@ -236,7 +248,7 @@ export function syncSlots(tx: Q, coachId: number, now: Date): SlotSyncDto {
     if (offDay && s.open) {
       setOpen(s.id, false)
       removed++
-    } else if (!offDay && s.closedBySync) {
+    } else if (!offDay && s.closedBySync && !underSession(s)) {
       setOpen(s.id, true)
       created++
     }

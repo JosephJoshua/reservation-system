@@ -63,15 +63,24 @@ export function bookingViews(
 ): BookingDto[] {
   const ids = rows.map((r) => r.id)
   const slotCoach = new Map<number, { id: number; name: string }>()
+  const capacity = new Map<number, number>()
   if (ids.length) {
     const coachRows = tx
-      .select({ bookingId: bookings.id, id: coaches.id, name: coaches.name })
+      .select({
+        bookingId: bookings.id,
+        id: coaches.id,
+        name: coaches.name,
+        capacity: slots.capacity,
+      })
       .from(bookings)
       .innerJoin(slots, eq(slots.id, bookings.slotId))
       .innerJoin(coaches, eq(coaches.id, slots.coachId))
       .where(inArray(bookings.id, ids))
       .all()
-    for (const row of coachRows) slotCoach.set(row.bookingId, { id: row.id, name: row.name })
+    for (const row of coachRows) {
+      slotCoach.set(row.bookingId, { id: row.id, name: row.name })
+      capacity.set(row.bookingId, row.capacity)
+    }
   }
   const types = new Map(
     tx
@@ -120,6 +129,7 @@ export function bookingViews(
       endsAt: b.endsAt.toISOString(),
       coach: slotCoach.get(b.id) ?? { id: 0, name: '' },
       lessonType: types.get(b.lessonTypeId) ?? { id: b.lessonTypeId, name: '', isTrial: false },
+      capacity: capacity.get(b.id) ?? 1,
       paidWith: b.paidWith,
       price: b.price,
       paidOffline: order?.provider === 'offline',

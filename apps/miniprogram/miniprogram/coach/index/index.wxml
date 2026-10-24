@@ -49,7 +49,7 @@
           <view class="row-start">{{item.start}}</view>
           <view class="row-end">{{item.end}}</view>
         </view>
-        <view wx:if="{{item.kind === 'lesson'}}" class="row-main">
+        <view wx:if="{{item.kind === 'lesson' || item.kind === 'session'}}" class="row-main">
           <view class="row-title">{{item.student}}</view>
           <view class="row-sub">{{item.lesson}}</view>
         </view>
@@ -60,7 +60,7 @@
         <view wx:if="{{item.kind !== 'past'}}" class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
       </view>
     </view>
-    <view class="footnote">点空闲时段可关闭或重新开放，已预约的课程点开可签到、写备注或取消。</view>
+    <view class="footnote">点空闲时段可关闭或重新开放，已预约的课程点开可签到、写备注或取消，小班课点开可按名单签到。</view>
   </view>
 
   <view class="action-bar">

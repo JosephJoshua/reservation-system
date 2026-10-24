@@ -157,6 +157,10 @@ export const lessonTypes = sqliteTable('lesson_types', {
   durationMinutes: integer('duration_minutes').notNull(),
   price: integer('price').notNull(),
   isTrial: integer('is_trial', { mode: 'boolean' }).notNull().default(false),
+  // More than 1 makes it a group class (小班课), taught in sessions the admin schedules.
+  capacity: integer('capacity').notNull().default(1),
+  // A group session with fewer confirmed students at the free-cancel deadline is cancelled.
+  minStudents: integer('min_students'),
   // Admin-only lesson types are hidden from students, for real-money test payments.
   adminOnly: integer('admin_only', { mode: 'boolean' }).notNull().default(false),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
@@ -198,6 +202,18 @@ export const slots = sqliteTable(
       .default('manual'),
     // Closed by the weekly hours or a day off rather than by a person, so it can reopen itself.
     closedBySync: integer('closed_by_sync', { mode: 'boolean' }).notNull().default(false),
+    // Set for a group session (小班课): the one lesson type it teaches, to `capacity` students.
+    // Private slots leave it null and take one booking.
+    lessonTypeId: integer('lesson_type_id').references(() => lessonTypes.id),
+    capacity: integer('capacity').notNull().default(1),
+    // A session the venue called off as a whole, and why.
+    cancelledAt: instant('cancelled_at'),
+    cancelReason: text('cancel_reason'),
+    // When the minimum headcount was checked, so it is checked once.
+    minCheckedAt: instant('min_checked_at'),
+    // When the coach was told the session has students, and that it was called off.
+    coachToldBookedAt: instant('coach_told_booked_at'),
+    coachToldCancelledAt: instant('coach_told_cancelled_at'),
     createdAt: createdAt(),
   },
   (t) => [index('slots_coach_time').on(t.coachId, t.startsAt)],
@@ -222,6 +238,8 @@ export const bookings = sqliteTable(
     startsAt: instant('starts_at').notNull(),
     endsAt: instant('ends_at').notNull(),
     status: text('status', { enum: bookingStatuses }).notNull(),
+    // Which of the slot's seats it holds: always 1 in a private slot.
+    seat: integer('seat').notNull().default(1),
     paidWith: text('paid_with', { enum: ['order', 'package'] }).notNull(),
     price: integer('price').notNull(),
     packageId: integer('package_id').references(() => packages.id),
@@ -245,9 +263,13 @@ export const bookings = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [
-    // The database itself refuses a second live booking for one slot, whatever the code does.
-    uniqueIndex('bookings_one_live_per_slot')
-      .on(t.slotId)
+    // The database itself refuses two live bookings for one seat, whatever the code does, and a
+    // second seat for the same student.
+    uniqueIndex('bookings_one_live_per_seat')
+      .on(t.slotId, t.seat)
+      .where(sql`status in ('pending_payment', 'confirmed')`),
+    uniqueIndex('bookings_one_live_per_student')
+      .on(t.slotId, t.studentId)
       .where(sql`status in ('pending_payment', 'confirmed')`),
     index('bookings_student_time').on(t.studentId, t.startsAt),
   ],

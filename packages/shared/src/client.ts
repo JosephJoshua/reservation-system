@@ -2,6 +2,7 @@
 export * from './availability'
 export * from './coach'
 export * from './dto'
+export * from './groups'
 export * from './invoices'
 export * from './pricing'
 export * from './rules'

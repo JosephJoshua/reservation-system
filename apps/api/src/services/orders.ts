@@ -14,6 +14,7 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { OrderState, PaymentParams } from '../pay/gateway'
+import { seatFor } from './bookings'
 import { trialsUsed } from './catalog'
 import { createRefund, submitRefund } from './refunds'
 import { getSettings } from './settings'
@@ -135,11 +136,19 @@ export function applyPayment(
       booking.status === 'pending_payment' ||
       (booking.status === 'expired' && revivable(tx, booking, deps.now()))
     ) {
+      // A held booking keeps its seat. One whose hold ran out takes any seat still free in the
+      // slot, so a late payment for a group session is kept while the session has room.
+      const seat =
+        booking.status === 'pending_payment' ? booking.seat : revivedSeat(tx, booking.slotId)
       try {
-        tx.update(bookings).set({ status: 'confirmed' }).where(eq(bookings.id, booking.id)).run()
+        if (seat === null) throw new SeatGone()
+        tx.update(bookings)
+          .set({ status: 'confirmed', seat })
+          .where(eq(bookings.id, booking.id))
+          .run()
         return []
       } catch (e) {
-        if (!isUniqueViolation(e)) throw e
+        if (!(e instanceof SeatGone) && !isUniqueViolation(e)) throw e
         tx.update(bookings).set({ status: 'expired' }).where(eq(bookings.id, booking.id)).run()
       }
     }
@@ -162,16 +171,32 @@ export function applyPayment(
   }
 }
 
+class SeatGone extends Error {}
+
+/** A free seat for a booking revived by a late payment, or null when the slot is full. */
+function revivedSeat(tx: Q, slotId: number) {
+  const slot = tx
+    .select({ id: slots.id, capacity: slots.capacity })
+    .from(slots)
+    .where(eq(slots.id, slotId))
+    .get()
+  return slot ? seatFor(tx, slot) : null
+}
+
 /**
  * Whether a booking whose hold ran out can still be confirmed by a late payment: the lesson is
  * ahead, the slot still takes bookings, a trial is still within the student's limit and the
- * student has not booked that time since. Whether someone else took the slot is left to the
- * unique index.
+ * student has not booked that time since. Whether a seat is left is checked when it is revived,
+ * and the unique index backs that up.
  */
 function revivable(tx: Q, booking: typeof bookings.$inferSelect, now: Date) {
   if (booking.startsAt <= now) return false
-  const slot = tx.select({ open: slots.open }).from(slots).where(eq(slots.id, booking.slotId)).get()
-  if (!slot?.open) return false
+  const slot = tx
+    .select({ open: slots.open, cancelledAt: slots.cancelledAt })
+    .from(slots)
+    .where(eq(slots.id, booking.slotId))
+    .get()
+  if (!slot?.open || slot.cancelledAt) return false
   const lessonType = tx
     .select({ isTrial: lessonTypes.isTrial })
     .from(lessonTypes)

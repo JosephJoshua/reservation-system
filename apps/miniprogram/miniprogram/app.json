@@ -25,6 +25,7 @@
       "pages": [
         "index/index",
         "lesson/index",
+        "session/index",
         "move/index",
         "feedback/index",
         "hours/index",

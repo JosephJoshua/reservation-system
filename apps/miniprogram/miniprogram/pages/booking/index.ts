@@ -19,6 +19,7 @@ Page({
       description: string
       duration: string
       isTrial: boolean
+      isGroup: boolean
       price: string
       original: string
     }[],
@@ -59,8 +60,12 @@ Page({
           id: t.id,
           name: t.name,
           description: t.description,
-          duration: `${t.durationMinutes}分钟`,
+          duration:
+            t.capacity > 1
+              ? `${t.durationMinutes}分钟 · 最多${t.capacity}人`
+              : `${t.durationMinutes}分钟`,
           isTrial: t.isTrial,
+          isGroup: t.capacity > 1,
           price,
           original,
         }
