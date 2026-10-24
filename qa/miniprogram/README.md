@@ -59,9 +59,10 @@ pnpm --filter @rs/qa-miniprogram coach-profile
 
 ## Student profiles
 
-Checks 学员档案 on the coach lesson page: empty, filled in by the venue (through the admin API),
-the longest profile the admin allows, lesson and no-show counts, and that the student's own lesson
-page carries none of it, saving screenshots to `qa/miniprogram/screenshots/student-profile/`. It
+Checks 学员档案 on the coach lesson page: empty, filled in by the coach on the 学员档案 page (double
+tap on 保存), filled in by the venue (through the admin API), a coach save refused because the venue
+changed it meanwhile, the student's 课后点评 from every coach, the longest profile the admin allows,
+lesson and no-show counts, and that the student's own lesson page carries none of it, saving screenshots to `qa/miniprogram/screenshots/student-profile/`. It
 uses the same seeded API, and `QA_DB` as for the coach flows:
 
 ```sh

@@ -1,0 +1,67 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view wx:if="{{canRetry}}" class="retry"><t-button theme="primary" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="has-action-bar">
+  <view class="lesson">
+    <view class="lesson-student">{{student}}</view>
+    <view class="lesson-time">{{edited || '还没有人填写过'}}</view>
+  </view>
+
+  <t-cell-group theme="card">
+    <t-cell title="水平" note="{{levelText}}" arrow hover bind:click="pickLevel" />
+    <t-cell title="握拍" note="{{gripText}}" arrow hover bind:click="pickGrip" />
+  </t-cell-group>
+
+  <view class="section-title">标签（{{tags.length}}/{{maxTags}}）</view>
+  <view class="card tags">
+    <view wx:if="{{tags.length}}" class="tag-list">
+      <view wx:for="{{tags}}" wx:key="*this" class="tag" data-index="{{index}}" bind:tap="removeTag">
+        <text class="tag-text">{{item}}</text>
+        <t-icon name="close" size="28rpx" />
+      </view>
+    </view>
+    <t-input
+      wx:if="{{tags.length < maxTags}}"
+      placeholder="如：反手弱、备赛，输入后按完成"
+      maxlength="{{tagLength}}"
+      value="{{typing}}"
+      confirm-type="done"
+      confirm-hold
+      borderless
+      bind:change="onTyping"
+      bind:enter="addTag"
+      bind:blur="addTag"
+    />
+  </view>
+
+  <view class="section-title">备注</view>
+  <view class="card">
+    <t-textarea
+      value="{{note}}"
+      placeholder="打法特点、训练目标、上课要注意的地方"
+      maxlength="{{noteLength}}"
+      indicator
+      autosize="{{noteSize}}"
+      disableDefaultPadding
+      bind:change="onNote"
+    />
+  </view>
+  <view class="footnote">仅场馆和教练可见，学员看不到。请勿记录病史等健康信息。</view>
+
+  <view class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="primary" loading="{{saving}}" disabled="{{!canSave}}" bind:tap="save">保存</t-button>
+    </view>
+  </view>
+</view>
+<privacy-popup id="privacy-popup" />
+</theme-root>

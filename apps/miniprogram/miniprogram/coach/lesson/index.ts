@@ -13,7 +13,7 @@ import { openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
 import { askForNotices, coachApi } from '../utils/coach-api'
 import { confirmDeleteFeedback } from '../utils/feedback'
-import { ATTENDANCE, lessonTag, type Tag } from '../utils/labels'
+import { ATTENDANCE, lessonTag, profileEdited, type Tag } from '../utils/labels'
 
 interface HistoryView {
   id: number
@@ -31,9 +31,12 @@ interface ProfileView {
   long: boolean
   empty: boolean
   counts: string
+  /** Who saved it last and when, such as 王教练 10月24日 14:00 修改. */
+  edited: string
+  feedbackCount: number
 }
 
-/** The venue's 学员档案: level and grip first, then the venue's tags. */
+/** The 学员档案: level and grip first, then the tags. */
 function profileView(p: StudentProfileDto | null): ProfileView | null {
   if (!p) return null
   const chips = [
@@ -46,6 +49,8 @@ function profileView(p: StudentProfileDto | null): ProfileView | null {
     long: p.note.length > 80 || p.note.split('\n').length > 4,
     empty: !chips.length && !p.note,
     counts: profileCounts(p),
+    edited: profileEdited(p),
+    feedbackCount: p.feedbackCount,
   }
 }
 
@@ -246,6 +251,21 @@ Page({
       this.feedbackAsking = false
       this.setData({ deletingFeedback: false })
     }
+  },
+
+  editProfile() {
+    const lesson = this.data.lesson
+    if (!lesson?.profile) return
+    navigateOnce(`/coach/profile/index?id=${lesson.id}`, {
+      saved: (saved: CoachLessonDto) => this.show(saved),
+      // Refused because the lesson or the student changed meanwhile: show it as it is now.
+      stale: () => this.load(),
+    })
+  },
+
+  openStudentFeedback() {
+    const lesson = this.data.lesson
+    if (lesson?.profile) navigateOnce(`/coach/student-feedback/index?id=${lesson.id}`)
   },
 
   toggleNote() {

@@ -35,8 +35,13 @@ async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
 }
 
 /** Calls the coach API. Fails with code `not_bound` when this WeChat user is not a coach yet. */
-export function coachApi<T>(method: Method, path: string, data?: unknown): Promise<T> {
-  return withToken((token) => request<T>(method, `/coach${path}`, data, token))
+export function coachApi<T>(
+  method: Method,
+  path: string,
+  data?: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
+  return withToken((token) => request<T>(method, `/coach${path}`, data, token, headers))
 }
 
 /** Uploads a local file to the coach API, like coachApi. */

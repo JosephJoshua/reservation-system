@@ -1,4 +1,5 @@
-import type { Attendance, BookingStatus } from '../../lib/shared'
+import type { Attendance, BookingStatus, StudentProfileDto } from '../../lib/shared'
+import { dateTime } from '../../utils/format'
 
 export interface Tag {
   text: string
@@ -30,4 +31,11 @@ export const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周�
 /** Minutes after midnight as 09:30. */
 export function hhmm(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+}
+
+/** Who saved the profile last, as coaches see it: another coach by name, staff as the venue. */
+export function profileEdited(p: StudentProfileDto): string {
+  if (!p.updatedBy || !p.updatedAt) return ''
+  const who = p.updatedBy.kind === 'coach' ? p.updatedBy.name : '场馆'
+  return `${who} ${dateTime(p.updatedAt)} 修改`
 }

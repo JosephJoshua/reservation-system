@@ -6,7 +6,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { bookings } from '../db/schema'
 import type { Deps } from '../deps'
-import { ApiError, idParam, parseBody, parseQuery } from '../errors'
+import { ApiError, checkVersion, idParam, parseBody, parseQuery } from '../errors'
 import { setAttendance } from '../services/attendance'
 import { type CoachVars, logout, requireCoach } from '../services/auth'
 import { cancelBooking } from '../services/bookings'
@@ -30,11 +30,14 @@ import {
   coachLesson,
   coachSchedule,
   coachSession,
+  coachStudentFeedback,
   ownBooking,
+  saveCoachProfile,
   setCoachNote,
   setSlotOpen,
 } from '../services/lessons'
 import { moveBooking } from '../services/moves'
+import { profileInput } from '../services/student-profiles'
 
 // A real calendar date: Date.parse would quietly turn 2026-02-30 into March 2.
 export const dateKey = z
@@ -127,6 +130,21 @@ export function coachRoutes(deps: Deps) {
     setCoachNote(deps, idParam(c), coachId, note)
     return c.json(coachLesson(deps, idParam(c), coachId))
   })
+
+  // 学员档案 from the lesson page. A save made on top of another coach's or the venue's change is
+  // refused through If-Match, like the admin's; the same save again goes through.
+  app.put('/lessons/:id/profile', async (c) => {
+    const body = await parseBody(c, profileInput)
+    return c.json(
+      saveCoachProfile(deps, idParam(c), c.get('coachId'), body, (current) =>
+        checkVersion(c, current),
+      ),
+    )
+  })
+
+  app.get('/lessons/:id/student-feedback', (c) =>
+    c.json(coachStudentFeedback(deps, idParam(c), c.get('coachId'))),
+  )
 
   app.put('/lessons/:id/feedback', async (c) => {
     const body = await parseBody(

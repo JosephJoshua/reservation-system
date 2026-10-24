@@ -1,7 +1,14 @@
 import { versionOf } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { actionLog, bookings, studentProfiles } from './db/schema'
+import {
+  actionLog,
+  bookings,
+  coaches,
+  coachLessonTypes,
+  lessonFeedback,
+  studentProfiles,
+} from './db/schema'
 import { type Harness, setup } from './test/harness'
 
 // The harness clock is 2026-10-23 10:00 at the venue.
@@ -16,10 +23,10 @@ const profile = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-async function bindCoach(h: Harness, coachId: number) {
+async function bindCoach(h: Harness, coachId: number, wx = 'coach') {
   const admin = await h.admin()
   const { code } = (await h.call('POST', `/admin/coaches/${coachId}/bind-code`, {}, admin)).json
-  const res = await h.call('POST', '/coach/bind', { code: 'dev:coach', bindCode: code })
+  const res = await h.call('POST', '/coach/bind', { code: `dev:${wx}`, bindCode: code })
   return res.json.token as string
 }
 
@@ -52,6 +59,9 @@ describe('学员档案', () => {
       note: '',
       lessons: 0,
       noShows: 0,
+      feedbackCount: 0,
+      updatedBy: null,
+      updatedAt: null,
     })
 
     const saved = await h.call(
@@ -199,17 +209,21 @@ describe('学员档案', () => {
     expect(unmarked).toBeGreaterThan(0)
   })
 
-  it('shows the coach the profile, read only, and never the student', async () => {
+  it('shows the coach the profile, and never the student', async () => {
     const h = setup()
     const { coach, t, studentId, bookingId } = await booked(h)
     const admin = await h.admin()
     await h.call('PUT', `/admin/students/${studentId}/profile`, profile(), admin)
     const ct = await bindCoach(h, coach.id)
     const lessonView = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, ct)
-    expect(lessonView.json.profile).toEqual({ ...profile(), lessons: 0, noShows: 0 })
-    // The coach API has no way to change it.
-    const put = await h.call('PUT', `/coach/students/${studentId}/profile`, profile(), ct)
-    expect(put.status).toBe(404)
+    expect(lessonView.json.profile).toEqual({
+      ...profile(),
+      lessons: 0,
+      noShows: 0,
+      feedbackCount: 0,
+      updatedBy: { kind: 'staff', name: '管理员' },
+      updatedAt: '2026-10-23T02:00:00.000Z',
+    })
 
     // Once the lesson is cancelled the coach no longer sees it.
     await h.call('POST', `/bookings/${bookingId}/cancel`, {}, t)
@@ -259,5 +273,215 @@ describe('学员档案', () => {
     const ct = await bindCoach(h, coach.id)
     const view = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, ct)
     expect(view.json.profile).toBeNull()
+  })
+})
+
+describe('学员档案 kept by coaches', () => {
+  const path = (bookingId: number) => `/coach/lessons/${bookingId}/profile`
+  const EMPTY = versionOf({ level: null, grip: null, tags: [], note: '' })
+
+  it('saves from the lesson page, says which coach saved it, and keeps the staff log for staff', async () => {
+    const h = setup()
+    const { coach, studentId, bookingId } = await booked(h)
+    const ct = await bindCoach(h, coach.id)
+    const res = await h.call(
+      'PUT',
+      path(bookingId),
+      profile({ tags: [' 反手弱 ', '反手弱'] }),
+      ct,
+      { 'If-Match': EMPTY },
+    )
+    expect(res.status).toBe(200)
+    expect(res.json.profile).toMatchObject({
+      ...profile({ tags: ['反手弱'] }),
+      updatedBy: { kind: 'coach', name: '王教练' },
+      updatedAt: '2026-10-23T02:00:00.000Z',
+    })
+    expect(h.db.select().from(actionLog).all()).toHaveLength(0)
+
+    // Staff still edit it, and then they are the last to have saved it.
+    h.clock.now = new Date('2026-10-23T03:00:00Z')
+    const admin = await h.admin()
+    const saved = await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      profile({ grip: 'shakehand', tags: ['反手弱'] }),
+      admin,
+      { 'If-Match': versionOf(profile({ tags: ['反手弱'] })) },
+    )
+    expect(saved.json).toMatchObject({
+      grip: 'shakehand',
+      updatedBy: { kind: 'staff', name: '管理员' },
+      updatedAt: '2026-10-23T03:00:00.000Z',
+    })
+    expect(h.db.select().from(actionLog).all()).toHaveLength(1)
+  })
+
+  it('refuses a save on top of a change by the venue or another coach, but not a repeat', async () => {
+    const h = setup()
+    const { coach, lesson, studentId, bookingId, t } = await booked(h)
+    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
+    const res = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(other.id, '2026-10-26', 10).id, lessonTypeId: lesson.id },
+      t,
+    )
+    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    const otherBooking = res.json.bookingId as number
+    const wang = await bindCoach(h, coach.id)
+    const li = await bindCoach(h, other.id, 'coach2')
+
+    const first = await h.call('PUT', path(bookingId), profile(), wang, { 'If-Match': EMPTY })
+    expect(first.status).toBe(200)
+    // A double tap sends the same save again.
+    const again = await h.call('PUT', path(bookingId), profile(), wang, { 'If-Match': EMPTY })
+    expect(again.status).toBe(200)
+    // 李教练 opened the editor before 王教练 saved.
+    const late = await h.call('PUT', path(otherBooking), profile({ note: '别的' }), li, {
+      'If-Match': EMPTY,
+    })
+    expect(late.status).toBe(409)
+    expect(late.json.error.code).toBe('edited_elsewhere')
+    // After loading the lesson again 李教练 sees it and can change it.
+    const seen = (await h.call('GET', `/coach/lessons/${otherBooking}`, undefined, li)).json
+    expect(seen.profile).toMatchObject({ note: NOTE, updatedBy: { name: '王教练' } })
+    const ok = await h.call('PUT', path(otherBooking), profile({ note: '别的' }), li, {
+      'If-Match': versionOf(profile()),
+    })
+    expect(ok.json.profile).toMatchObject({ note: '别的', updatedBy: { name: '李教练' } })
+
+    // The venue's save on top of a coach's is refused too.
+    const admin = await h.admin()
+    const staffLate = await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      profile({ level: 'advanced' }),
+      admin,
+      { 'If-Match': versionOf(profile()) },
+    )
+    expect(staffLate.json.error.code).toBe('edited_elsewhere')
+  })
+
+  it('refuses bad values like the admin does', async () => {
+    const h = setup()
+    const { coach, bookingId } = await booked(h)
+    const ct = await bindCoach(h, coach.id)
+    const nine = await h.call(
+      'PUT',
+      path(bookingId),
+      profile({ tags: Array.from({ length: 9 }, (_, i) => `标签${i}`) }),
+      ct,
+    )
+    expect(nine.json.error.message).toBe('最多 8 个标签')
+    const long = await h.call('PUT', path(bookingId), profile({ note: 'x'.repeat(501) }), ct)
+    expect(long.status).toBe(400)
+    expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
+  })
+
+  it('is only open on the coach own lesson, while it is on and for a week after', async () => {
+    const h = setup()
+    const { coach, lesson, t, bookingId } = await booked(h)
+    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
+    const li = await bindCoach(h, other.id, 'coach2')
+    const notOwn = await h.call('PUT', path(bookingId), profile(), li)
+    expect(notOwn.status).toBe(404)
+    expect(
+      (await h.call('GET', `/coach/lessons/${bookingId}/student-feedback`, undefined, li)).status,
+    ).toBe(404)
+
+    // Ends 10-25 11:00 at the venue; open until a week later.
+    h.clock.now = new Date('2026-11-01T02:59:00Z')
+    let ct = await bindCoach(h, coach.id)
+    expect((await h.call('PUT', path(bookingId), profile(), ct)).status).toBe(200)
+    h.clock.now = new Date('2026-11-01T03:01:00Z')
+    ct = await bindCoach(h, coach.id)
+    const closed = await h.call('PUT', path(bookingId), profile({ note: '晚了' }), ct)
+    expect(closed.status).toBe(409)
+    expect(closed.json.error.code).toBe('profile_closed')
+    const list = await h.call('GET', `/coach/lessons/${bookingId}/student-feedback`, undefined, ct)
+    expect(list.json.error.code).toBe('profile_closed')
+    expect(h.db.select().from(studentProfiles).get()?.note).toBe(NOTE)
+
+    // A cancelled lesson closes it at once.
+    h.clock.now = new Date('2026-10-23T02:00:00Z')
+    const res = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id, '2026-10-27', 10).id, lessonTypeId: lesson.id },
+      t,
+    )
+    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, {}, t)
+    ct = await bindCoach(h, coach.id)
+    const cancelled = await h.call('PUT', path(res.json.bookingId), profile(), ct)
+    expect(cancelled.json.error.code).toBe('profile_closed')
+  })
+
+  it('refuses once the student deleted their account', async () => {
+    const h = setup()
+    const { coach, t, bookingId } = await booked(h)
+    h.clock.now = new Date('2026-10-25T04:00:00Z')
+    expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(204)
+    const ct = await bindCoach(h, coach.id)
+    const res = await h.call('PUT', path(bookingId), profile(), ct)
+    expect(res.json.error.code).toBe('account_deleted')
+    expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
+  })
+
+  it('lists the 课后点评 the student sees, from every coach, newest first', async () => {
+    const h = setup()
+    const { coach, lesson, t, studentId, bookingId } = await booked(h)
+    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
+    const book = async (coachId: number, date: string, hour: number) => {
+      const res = await h.call(
+        'POST',
+        '/bookings',
+        { slotId: h.slot(coachId, date, hour).id, lessonTypeId: lesson.id },
+        t,
+      )
+      await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+      return res.json.bookingId as number
+    }
+    const earlier = await book(other.id, '2026-10-23', 14)
+    const missed = await book(other.id, '2026-10-24', 10)
+    const hidden = await book(coach.id, '2026-10-24', 14)
+    h.clock.now = new Date('2026-10-25T04:00:00Z')
+    const attended = [earlier, hidden, bookingId]
+    for (const id of attended) {
+      h.db.update(bookings).set({ attendance: 'attended' }).where(eq(bookings.id, id)).run()
+    }
+    h.db.update(bookings).set({ attendance: 'no_show' }).where(eq(bookings.id, missed)).run()
+    const write = (id: number, text: string, hiddenAt: Date | null = null) =>
+      h.db
+        .insert(lessonFeedback)
+        .values({ bookingId: id, text, updatedAt: h.clock.now, hiddenAt })
+        .run()
+    write(earlier, '李教练：步法有进步')
+    write(missed, '缺席的课')
+    write(hidden, '场馆隐藏的', h.clock.now)
+    write(bookingId, '王教练：反手更稳')
+
+    const ct = await bindCoach(h, coach.id)
+    const view = (await h.call('GET', `/coach/lessons/${bookingId}`, undefined, ct)).json
+    expect(view.profile.feedbackCount).toBe(2)
+    const list = await h.call('GET', `/coach/lessons/${bookingId}/student-feedback`, undefined, ct)
+    expect(
+      list.json.map((f: { text: string; coachName: string }) => [f.coachName, f.text]),
+    ).toEqual([
+      ['王教练', '王教练：反手更稳'],
+      ['李教练', '李教练：步法有进步'],
+    ])
+
+    const admin = await h.admin()
+    const detail = (await h.call('GET', `/admin/students/${studentId}`, undefined, admin)).json
+    expect(detail.profile.feedbackCount).toBe(2)
+    expect(detail.feedback.map((f: { bookingId: number }) => f.bookingId)).toEqual([
+      bookingId,
+      earlier,
+    ])
   })
 })

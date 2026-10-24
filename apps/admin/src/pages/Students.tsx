@@ -1,5 +1,6 @@
 import {
   cleanTags,
+  type FeedbackItemDto,
   gripLabels,
   grips,
   PROFILE_MAX_TAGS,
@@ -460,6 +461,12 @@ function StudentDrawer({
             <ProfileView profile={s.profile} deleted={Boolean(s.deletedAt)} />
           </Card>
 
+          {s.feedback.length > 0 && (
+            <Card title={`课后点评（${s.feedback.length}）`} bordered>
+              <FeedbackList items={s.feedback} />
+            </Card>
+          )}
+
           <Card
             title="课时包"
             bordered
@@ -674,14 +681,54 @@ function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; dele
       )}
       {p.note && <div className="profile-note">{p.note}</div>}
       {!deleted && !traits.length && !p.tags.length && !p.note && (
-        <div className="muted">还没有填写水平、握拍、标签和备注。填写后，教练上课前就能看到。</div>
+        <div className="muted">
+          还没有填写水平、握拍、标签和备注。教练可以在小程序的课程页填写，场馆也可以在这里填写。
+        </div>
       )}
       <div className="muted">{profileCounts(p)}</div>
+      {p.updatedBy && p.updatedAt && (
+        <div className="muted">
+          {p.updatedBy.kind === 'coach' ? `${p.updatedBy.name}（教练）` : p.updatedBy.name} 修改于{' '}
+          {fmtDateTime(p.updatedAt)}
+        </div>
+      )}
     </div>
   )
 }
 
-/** Staff fill in the profile; coaches read it on the lesson page, students never see it. */
+/** The 课后点评 the student sees, from every coach, newest first; the latest few until opened. */
+function FeedbackList({ items }: { items: FeedbackItemDto[] }) {
+  const [all, setAll] = useState(false)
+  const shown = all ? items : items.slice(0, 3)
+  return (
+    <div className="student-feedback">
+      {shown.map((f) => (
+        <div key={f.bookingId} className="feedback-cell">
+          <div className="muted">
+            {fmtDateTime(f.startsAt)} · {f.coachName} · {f.lessonTypeName}
+          </div>
+          <div className="feedback-text">{f.text}</div>
+          {f.photos.length > 0 && (
+            <div className="feedback-photos">
+              {f.photos.map((url, i) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer" title={`照片 ${i + 1}`}>
+                  <img src={url} alt={`照片 ${i + 1}`} loading="lazy" />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {items.length > shown.length && (
+        <Button variant="text" theme="primary" onClick={() => setAll(true)}>
+          显示全部 {items.length} 条
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** Coaches keep the profile from their lesson pages and staff here; students never see it. */
 function ProfileDialog({
   studentId,
   loaded,

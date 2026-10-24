@@ -271,7 +271,7 @@ function retrySkippedNotices(tx: Q, studentId: number) {
     .run()
 }
 
-/** Each account may have a 学员档案; the one staff updated last stays. */
+/** Each account may have a 学员档案; the one saved last stays. */
 function keepNewerProfile(tx: Q, from: number, to: number) {
   const theirs = tx.select().from(studentProfiles).where(eq(studentProfiles.studentId, from)).get()
   if (!theirs) return

@@ -79,8 +79,8 @@ export interface CoachLessonDto {
   sessionId: number | null
   student: { id: number; name: string; phone: string }
   /**
-   * The venue's 学员档案, read only. Null once the lesson is cancelled or ended over a week ago, or
-   * the student deleted their account.
+   * The 学员档案, which the coach can edit while it is here. Null once the lesson is cancelled or
+   * ended over a week ago, or the student deleted their account.
    */
   profile: StudentProfileDto | null
   paidWith: 'order' | 'package'

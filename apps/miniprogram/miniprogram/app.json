@@ -30,6 +30,8 @@
         "session/index",
         "move/index",
         "feedback/index",
+        "profile/index",
+        "student-feedback/index",
         "hours/index",
         "bind/index"
       ]

@@ -1,0 +1,56 @@
+@import '../../styles/common.wxss';
+@import '../../styles/photos.wxss';
+
+.list {
+  padding: 0 0 48rpx;
+}
+
+.item {
+  margin-bottom: 20rpx;
+  padding: 28rpx 32rpx;
+}
+
+.item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+}
+
+.item-date {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.item-lesson {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-text {
+  margin-top: 16rpx;
+  font-size: 30rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.item-photos {
+  margin-top: 20rpx;
+}
+
+.end {
+  text-align: center;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

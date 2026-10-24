@@ -2,6 +2,7 @@ import type {
   Attendance,
   BookingDto,
   BookingStatus,
+  FeedbackItemDto,
   PackageDto,
   RefundStatus,
   StudentProfileDto,
@@ -122,6 +123,8 @@ export interface StudentDetail extends Person {
   /** Other students with the same phone, told apart by 学员编号. */
   samePhone: { id: number; name: string }[]
   profile: StudentProfileDto
+  /** The 课后点评 the student sees, newest first. */
+  feedback: FeedbackItemDto[]
   packages: PackageDto[]
   bookings: BookingDto[]
 }
