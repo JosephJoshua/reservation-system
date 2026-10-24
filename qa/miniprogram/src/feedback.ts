@@ -199,25 +199,21 @@ async function mockEditor(result: 'ok' | 'cancel' | 'bad') {
     const fs = wx.getFileSystemManager()
     fs.writeFileSync(`${wx.env.USER_DATA_PATH}/qa-bad.png`, 'not an image', 'utf8')
   })
+  // The automator hands the mock the options without their callbacks and settles the call from
+  // what it returns. No named inner functions: the build wraps them in __name, which DevTools lacks.
   await miniProgram.mockWxMethod(
     'editImage',
-    function (this: unknown, options: Record<string, unknown>, how: string) {
-      // No named inner functions: the build wraps them in __name, which DevTools lacks.
-      if (how === 'cancel') {
-        if (typeof options.fail === 'function') options.fail({ errMsg: 'editImage:fail cancel' })
-        return
-      }
+    function (this: unknown, _options: Record<string, unknown>, how: string) {
+      if (how === 'cancel') return { errMsg: 'editImage:fail cancel' }
       const name = how === 'bad' ? 'qa-bad.png' : 'qa-photo.png'
-      const res = { tempFilePath: `${wx.env.USER_DATA_PATH}/${name}`, errMsg: 'editImage:ok' }
-      if (typeof options.success === 'function') options.success(res)
+      return { tempFilePath: `${wx.env.USER_DATA_PATH}/${name}`, errMsg: 'editImage:ok' }
     },
     result,
   )
   await miniProgram.mockWxMethod(
     'compressImage',
     function (this: unknown, options: Record<string, unknown>) {
-      const res = { tempFilePath: options.src, errMsg: 'compressImage:ok' }
-      if (typeof options.success === 'function') options.success(res)
+      return { tempFilePath: options.src, errMsg: 'compressImage:ok' }
     },
   )
 }
