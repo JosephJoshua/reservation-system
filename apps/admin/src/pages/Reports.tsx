@@ -16,7 +16,20 @@ interface MonthlyReport {
     unmarked: number
     venueCancelled: number
     lateCancelled: number
+    pay: {
+      amount: number
+      lessons: number
+      unrated: number
+      lines: {
+        lessonTypeId: number
+        name: string
+        lessons: number
+        rate: number | null
+        amount: number
+      }[]
+    }
   }[]
+  payRules: { noShows: boolean; lateCancels: boolean }
   revenue: {
     wechat: number
     offline: number
@@ -38,10 +51,47 @@ const coachColumns = [
   ['unmarked', '未签到'],
   ['venueCancelled', '场馆取消'],
   ['lateCancelled', '学员逾时取消'],
+  ['payLessons', '计费课时'],
+  ['payAmount', '课时费（元）'],
+  ['unrated', '未设课时费'],
 ] as const
 
+type CoachRow = ReturnType<typeof coachRows>[number]
+
 function coachRows(report: MonthlyReport) {
-  return report.coaches.map((c) => ({ ...c, hours: hours(c.minutes) }))
+  return report.coaches.map((c) => ({
+    ...c,
+    hours: hours(c.minutes),
+    payLessons: c.pay.lessons,
+    payAmount: (c.pay.amount / 100).toFixed(2),
+    unrated: c.pay.unrated,
+  }))
+}
+
+function payLessonsText(r: MonthlyReport) {
+  const lessons = r.coaches.reduce((sum, c) => sum + c.pay.lessons, 0)
+  const unrated = r.coaches.reduce((sum, c) => sum + c.pay.unrated, 0)
+  return unrated ? `${lessons} 节计费，${unrated} 节未设课时费` : `${lessons} 节计费`
+}
+
+const counts = (on: boolean) => (on ? '计入' : '不计入')
+
+function payNote(rules: MonthlyReport['payRules']) {
+  return `课时费按当前标准和教练类别计算：学员缺席${counts(rules.noShows)}，学员逾时取消${counts(rules.lateCancels)}，场馆取消不计入。`
+}
+
+function PayCell({ row }: { row: CoachRow }) {
+  return (
+    <div>
+      <div>{yuan(row.pay.amount)}</div>
+      {row.pay.lines.map((l) => (
+        <div key={l.lessonTypeId} className="muted">
+          {l.name} {l.lessons} 节 × {l.rate === null ? '未设置' : yuan(l.rate)}
+        </div>
+      ))}
+      {row.pay.unrated > 0 && <div className="warning-text">{row.pay.unrated} 节未设课时费</div>}
+    </div>
+  )
 }
 
 /** A UTF-8 CSV with a BOM, so Excel shows the Chinese headers correctly. */
@@ -52,6 +102,19 @@ function downloadCsv(report: MonthlyReport) {
     [],
     coachColumns.map(([, title]) => title),
     ...coachRows(report).map((r) => coachColumns.map(([key]) => r[key])),
+    [],
+    ['课时费明细'],
+    ['教练', '课程', '计费课时', '单价（元）', '金额（元）'],
+    ...report.coaches.flatMap((c) =>
+      c.pay.lines.map((l) => [
+        c.name,
+        l.name,
+        l.lessons,
+        l.rate === null ? '未设置' : y(l.rate),
+        l.rate === null ? '' : y(l.amount),
+      ]),
+    ),
+    [payNote(report.payRules)],
     [],
     ['收入（元）'],
     ['微信支付', y(report.revenue.wechat)],
@@ -95,6 +158,11 @@ export function Reports() {
           '未上课时',
           `${r.packagesOutstanding.lessons} 节`,
           `预收 ${yuan(r.packagesOutstanding.value)}，按当前计`,
+        ],
+        [
+          '教练课时费',
+          yuan(r.coaches.reduce((sum, c) => sum + c.pay.amount, 0)),
+          payLessonsText(r),
         ],
       ]
     : []
@@ -141,10 +209,21 @@ export function Reports() {
           loading={loading}
           data={r ? coachRows(r) : []}
           empty="这个月没有课程"
-          columns={coachColumns.map(([colKey, title]) => ({ colKey, title }))}
+          columns={[
+            ...coachColumns
+              .filter(([key]) => key !== 'payAmount' && key !== 'unrated')
+              .map(([colKey, title]) => ({ colKey, title })),
+            {
+              colKey: 'pay',
+              title: '课时费',
+              width: 200,
+              cell: ({ row }) => <PayCell row={row} />,
+            },
+          ]}
         />
         <div className="muted" style={{ marginTop: 8 }}>
-          按上课日期统计已结束的课程。缺席照常计课；学员逾时取消不计入已上课时。
+          按上课日期统计已结束的课程。缺席计入已上课时，学员逾时取消不计入。
+          {r && payNote(r.payRules)}
         </div>
       </Card>
     </Space>

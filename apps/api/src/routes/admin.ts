@@ -15,6 +15,7 @@ import { immediate, type Q } from '../db/client'
 import {
   banners,
   bookings,
+  categoryPayRates,
   categoryPrices,
   coachCategories,
   coaches,
@@ -103,6 +104,7 @@ const settingsSectionLabel = {
   payment: '支付',
   notice: '公告',
   policies: '须知与协议',
+  legal: '运营主体',
 } as const
 
 /** A price and its sale, if any, as one line for the action log. */
@@ -130,6 +132,11 @@ const categoryBody = z.object({
   /** Prices for some lesson types; the rest use the lesson type's own price. */
   prices: z
     .array(z.object({ lessonTypeId: z.number().int().positive(), price: fen }))
+    .max(100)
+    .default([]),
+  /** What a coach in the category is paid per lesson; lesson types without one show as unset. */
+  payRates: z
+    .array(z.object({ lessonTypeId: z.number().int().positive(), rate: fen }))
     .max(100)
     .default([]),
 })
@@ -349,6 +356,14 @@ export function adminRoutes(deps: Deps) {
     if (changed.length) {
       log(c.get('staffId'), { action: 'settings.update', summary: `修改${changed.join('、')}` })
     }
+    // Logged with the pay rates, since it changes what coaches are paid.
+    if (JSON.stringify(before.pay) !== JSON.stringify(after.pay)) {
+      const counts = (on: boolean) => (on ? '计入' : '不计入')
+      log(c.get('staffId'), {
+        action: 'price.coach_pay',
+        summary: `课时费计算：缺席${counts(after.pay.noShows)}，学员逾时取消${counts(after.pay.lateCancels)}`,
+      })
+    }
     return c.json(after)
   })
 
@@ -488,6 +503,7 @@ export function adminRoutes(deps: Deps) {
 
   const categoryViews = () => {
     const prices = db.select().from(categoryPrices).all()
+    const rates = db.select().from(categoryPayRates).all()
     return db
       .select()
       .from(coachCategories)
@@ -498,6 +514,9 @@ export function adminRoutes(deps: Deps) {
         prices: prices
           .filter((p) => p.categoryId === cat.id)
           .map(({ lessonTypeId, price }) => ({ lessonTypeId, price })),
+        payRates: rates
+          .filter((r) => r.categoryId === cat.id)
+          .map(({ lessonTypeId, rate }) => ({ lessonTypeId, rate })),
       }))
   }
 
@@ -508,10 +527,10 @@ export function adminRoutes(deps: Deps) {
   }
 
   const saveCategory = (tx: Q, id: number | null, body: z.infer<typeof categoryBody>) => {
-    const { prices, ...fields } = body
+    const { prices, payRates, ...fields } = body
     checkLessonTypes(
       tx,
-      prices.map((p) => p.lessonTypeId),
+      [...prices, ...payRates].map((p) => p.lessonTypeId),
     )
     let categoryId = id
     if (categoryId === null) {
@@ -533,16 +552,25 @@ export function adminRoutes(deps: Deps) {
     for (const [lessonTypeId, price] of unique) {
       tx.insert(categoryPrices).values({ categoryId, lessonTypeId, price }).run()
     }
+    tx.delete(categoryPayRates).where(eq(categoryPayRates.categoryId, categoryId)).run()
+    for (const [lessonTypeId, rate] of new Map(payRates.map((r) => [r.lessonTypeId, r.rate]))) {
+      tx.insert(categoryPayRates).values({ categoryId, lessonTypeId, rate }).run()
+    }
     return categoryId
   }
 
   app.get('/coach-categories', (c) => c.json(categoryViews()))
 
-  /** Logs the category prices that changed, as "一对一私教 ¥200 改为 ¥250". */
+  type CategoryMoney = Pick<ReturnType<typeof categoryView>, 'prices' | 'payRates'>
+
+  /**
+   * Logs the category prices and pay rates that changed, as "一对一私教 ¥200 改为 ¥250", one
+   * entry for prices and one for pay.
+   */
   const logCategoryPrices = (
     staffId: number,
     category: ReturnType<typeof categoryView>,
-    before: { lessonTypeId: number; price: number }[],
+    before: CategoryMoney,
   ) => {
     const names = new Map(
       db
@@ -551,20 +579,36 @@ export function adminRoutes(deps: Deps) {
         .all()
         .map((t) => [t.id, t.name]),
     )
-    const old = new Map(before.map((p) => [p.lessonTypeId, p.price]))
-    const now = new Map(category.prices.map((p) => [p.lessonTypeId, p.price]))
-    const changes = [...new Set([...old.keys(), ...now.keys()])].flatMap((id) => {
-      const name = names.get(id) ?? `课程 #${id}`
-      const was = old.get(id)
-      const price = now.get(id)
-      if (price === undefined) return [`${name} 改为按课程标价`]
-      if (was === undefined) return [`${name} ${yuan(price)}`]
-      return was === price ? [] : [`${name} ${yuan(was)} 改为 ${yuan(price)}`]
-    })
-    if (changes.length) {
+    const diff = (old: Map<number, number>, now: Map<number, number>, unset: string) =>
+      [...new Set([...old.keys(), ...now.keys()])].flatMap((id) => {
+        const name = names.get(id) ?? `课程 #${id}`
+        const was = old.get(id)
+        const value = now.get(id)
+        if (value === undefined) return [`${name} ${unset}`]
+        if (was === undefined) return [`${name} ${yuan(value)}`]
+        return was === value ? [] : [`${name} ${yuan(was)} 改为 ${yuan(value)}`]
+      })
+    const prices = diff(
+      new Map(before.prices.map((p) => [p.lessonTypeId, p.price])),
+      new Map(category.prices.map((p) => [p.lessonTypeId, p.price])),
+      '改为按课程标价',
+    )
+    if (prices.length) {
       log(staffId, {
         action: 'price.coach',
-        summary: `类别「${category.name}」：${changes.join('；')}`,
+        summary: `类别「${category.name}」：${prices.join('；')}`,
+        target: { kind: 'category', id: category.id },
+      })
+    }
+    const pay = diff(
+      new Map(before.payRates.map((r) => [r.lessonTypeId, r.rate])),
+      new Map(category.payRates.map((r) => [r.lessonTypeId, r.rate])),
+      '取消课时费',
+    )
+    if (pay.length) {
+      log(staffId, {
+        action: 'price.coach_pay',
+        summary: `类别「${category.name}」课时费：${pay.join('；')}`,
         target: { kind: 'category', id: category.id },
       })
     }
@@ -574,7 +618,7 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, categoryBody)
     const id = immediate(db, (tx) => saveCategory(tx, null, body))
     const view = categoryView(id)
-    logCategoryPrices(c.get('staffId'), view, [])
+    logCategoryPrices(c.get('staffId'), view, { prices: [], payRates: [] })
     return c.json(view, 201)
   })
 
@@ -582,12 +626,8 @@ export function adminRoutes(deps: Deps) {
     const id = idParam(c)
     const body = await parseBody(c, categoryBody)
     const before = immediate(db, (tx) => {
-      checkVersion(c, categoryView(id))
-      const old = tx
-        .select({ lessonTypeId: categoryPrices.lessonTypeId, price: categoryPrices.price })
-        .from(categoryPrices)
-        .where(eq(categoryPrices.categoryId, id))
-        .all()
+      const old = categoryView(id)
+      checkVersion(c, old)
       saveCategory(tx, id, body)
       return old
     })
@@ -606,6 +646,7 @@ export function adminRoutes(deps: Deps) {
         .get()
       if (used) throw new ApiError(409, 'category_in_use', '还有教练属于该类别')
       tx.delete(categoryPrices).where(eq(categoryPrices.categoryId, id)).run()
+      tx.delete(categoryPayRates).where(eq(categoryPayRates.categoryId, id)).run()
       const changed = tx.delete(coachCategories).where(eq(coachCategories.id, id)).run()
       if (changed.changes === 0) throw notFound('教练类别')
     })

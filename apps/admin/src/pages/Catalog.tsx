@@ -56,7 +56,7 @@ const emptyCoach: CoachForm = {
 
 type CategoryForm = Omit<CoachCategory, 'id'>
 
-const emptyCategory: CategoryForm = { name: '', sort: 0, prices: [] }
+const emptyCategory: CategoryForm = { name: '', sort: 0, prices: [], payRates: [] }
 
 /** The record behind an open dialog changed elsewhere: close it and show the current list. */
 function closeAndReload(close: (v: null) => void, reload: () => Promise<void>) {
@@ -251,7 +251,11 @@ export function Catalog() {
         actions={
           <Button
             onClick={() =>
-              setCategory({ key: newKey(), id: null, form: { ...emptyCategory, prices: [] } })
+              setCategory({
+                key: newKey(),
+                id: null,
+                form: { ...emptyCategory, prices: [], payRates: [] },
+              })
             }
           >
             新建类别
@@ -275,6 +279,17 @@ export function Catalog() {
                 return own.length === 0
                   ? '全部按标准价'
                   : own.map((t) => `${t.name} ${yuan(priceIn(row, t))}`).join('，')
+              },
+            },
+            {
+              colKey: 'payRates',
+              title: '课时费',
+              cell: ({ row }) => {
+                const rated = (types.data ?? []).flatMap((t) => {
+                  const r = row.payRates.find((p) => p.lessonTypeId === t.id)
+                  return r ? [`${t.name} ${yuan(r.rate)}`] : []
+                })
+                return rated.length === 0 ? '未设置' : rated.join('，')
               },
             },
             {
@@ -303,6 +318,7 @@ export function Catalog() {
                           name: row.name,
                           sort: row.sort,
                           prices: row.prices.map((p) => ({ ...p })),
+                          payRates: row.payRates.map((r) => ({ ...r })),
                         },
                       })
                     }
@@ -634,6 +650,14 @@ function CategoryEditor({
 }) {
   const set = (patch: Partial<CategoryForm>) => onChange({ ...f, ...patch })
   const own = (id: number) => f.prices.find((p) => p.lessonTypeId === id)
+  const rateOf = (id: number) => f.payRates.find((r) => r.lessonTypeId === id)?.rate
+  const setRate = (id: number, rate: number | null) =>
+    set({
+      payRates: [
+        ...f.payRates.filter((r) => r.lessonTypeId !== id),
+        ...(rate === null ? [] : [{ lessonTypeId: id, rate }]),
+      ],
+    })
   const setPrice = (id: number, price: number | null) =>
     set({
       prices:
@@ -682,6 +706,28 @@ function CategoryEditor({
               </Space>
             )
           })}
+        </Space>
+      </Field>
+      <Field label="课时费" help="每节课付给教练的金额，用于报表。留空表示未设置">
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {types.length === 0 && <span className="muted">先新建课程</span>}
+          {types.map((t) => (
+            <Space key={t.id} align="center" className="nowrap">
+              <span className="category-lesson" title={t.name}>
+                {t.name}
+              </span>
+              <InputNumber
+                theme="normal"
+                style={{ width: 160 }}
+                value={toYuan(rateOf(t.id))}
+                min={0}
+                decimalPlaces={2}
+                placeholder="未设置"
+                suffix="元/节"
+                onChange={(v) => setRate(t.id, toFen(v as number))}
+              />
+            </Space>
+          ))}
         </Space>
       </Field>
       <Field label="排序" help="数字小的在前">

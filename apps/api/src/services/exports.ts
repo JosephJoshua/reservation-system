@@ -21,7 +21,9 @@ import {
   students,
 } from '../db/schema'
 import { ApiError } from '../errors'
+import { countsForPay, payRateLookup } from './coach-pay'
 import { flaggedIds } from './invoices'
+import { getSettings } from './settings'
 import { grantedLessons, packageStatus } from './views'
 
 export const exportKinds = {
@@ -93,6 +95,11 @@ function yuanCell(fen: number | null) {
   const sign = fen < 0 ? '-' : ''
   const abs = Math.abs(fen)
   return `${sign}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`
+}
+
+/** A coach's pay for one lesson, or 未设置 when the coach's category has no rate for it. */
+function payCell(rate: number | null) {
+  return rate === null ? '未设置' : yuanCell(rate)
 }
 
 function cell(v: Cell) {
@@ -214,6 +221,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
   const rows = tx
     .select({
       b: bookings,
+      coachId: slots.coachId,
       coach: coaches.name,
       lesson: lessonTypes.name,
       packageName: packages.name,
@@ -244,6 +252,8 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
     tx,
     rows.map((r) => r.b.studentId),
   )
+  const payRules = getSettings(tx).pay
+  const rateOf = payRateLookup(tx)
   return {
     header: [
       '预约ID',
@@ -262,6 +272,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
       '取消时间',
       '取消方',
       '取消原因',
+      '课时费（元）',
     ],
     rows: rows.map(({ b, ...r }) => {
       const shown = b.status === 'confirmed' && b.endsAt <= now ? 'completed' : b.status
@@ -289,6 +300,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
         venueTime(b.cancelledAt),
         b.cancelledBy === 'venue' ? '场馆' : b.cancelledBy === 'student' ? '学员' : '',
         b.cancelReason ?? '',
+        countsForPay(b, payRules, now) ? payCell(rateOf(r.coachId, b.lessonTypeId)) : '',
       ]
     }),
   }

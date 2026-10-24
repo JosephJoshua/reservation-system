@@ -6,6 +6,8 @@ export interface CoachCategory {
   sort: number
   /** Prices for some lesson types; the rest use the lesson type's own price. */
   prices: { lessonTypeId: number; price: number }[]
+  /** What a coach in the category is paid per lesson, for the lesson types that have a rate. */
+  payRates: { lessonTypeId: number; rate: number }[]
 }
 
 export interface Coach {

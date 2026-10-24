@@ -47,6 +47,11 @@ export const venueSettings = z.object({
     booking: z.string().max(2000),
     agreement: z.string().max(5000),
   }),
+  // Which lessons count toward a coach's pay besides the ones taught. Venue cancels never count.
+  pay: z.object({
+    noShows: z.boolean(),
+    lateCancels: z.boolean(),
+  }),
   // Who runs the mini program, as named in the privacy policy and the mini program console.
   legal: z.object({
     operator: z.string().max(60),
@@ -85,5 +90,6 @@ export const defaultSettings: VenueSettings = {
     booking: '课前 24 小时以上取消，全额退款或退回课时；之后取消视为已上课。',
     agreement: '',
   },
+  pay: { noShows: true, lateCancels: false },
   legal: { operator: '', contact: '' },
 }

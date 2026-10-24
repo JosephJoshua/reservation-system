@@ -358,6 +358,36 @@ export function Settings() {
         </div>
       </Card>
 
+      <Card title="课时费" bordered>
+        <div className="fields form-narrow">
+          <Field label="学员缺席" help="课程结束、学员未到时，是否给教练计课时费">
+            <Switch
+              value={s.pay.noShows}
+              onChange={(v) =>
+                set((d) => {
+                  d.pay.noShows = v
+                })
+              }
+            />
+          </Field>
+          <Field label="学员逾时取消" help="学员在免费取消时限后取消，是否给教练计课时费">
+            <Switch
+              value={s.pay.lateCancels}
+              onChange={(v) =>
+                set((d) => {
+                  d.pay.lateCancels = v
+                })
+              }
+            />
+          </Field>
+          <Field>
+            <span className="muted">
+              已结束的课程照常计入，场馆取消的不计入。课时费标准在课程与教练的教练类别里设置。
+            </span>
+          </Field>
+        </div>
+      </Card>
+
       <Card title="运营主体" bordered>
         <div className="fields form-narrow">
           <Field label="主体名称" help="与小程序后台的主体一致，写入隐私政策。留空则用场馆名称">

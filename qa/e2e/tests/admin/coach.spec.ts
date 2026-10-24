@@ -209,6 +209,9 @@ test('shows the monthly report and exports it', async ({ page }) => {
   const row = page.getByRole('row').filter({ hasText: coachName })
   await expect(row).toContainText('1')
   await expect(page.locator('.stat-grid')).toContainText('净收入')
+  // The coach has no category yet, so the lesson has no pay rate.
+  await expect(page.locator('.stat-grid')).toContainText('教练课时费')
+  await expect(row).toContainText('1 节未设课时费')
   await both(page, 'reports')
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出 CSV' }).click()

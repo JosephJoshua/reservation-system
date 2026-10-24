@@ -819,8 +819,18 @@ describe('monthly report', () => {
           unmarked: 0,
           venueCancelled: 1,
           lateCancelled: 0,
+          // No category, so no rate; no-shows count by default.
+          pay: {
+            amount: 0,
+            lessons: 2,
+            unrated: 2,
+            lines: [
+              { lessonTypeId: lesson.id, name: '一对一私教', lessons: 2, rate: null, amount: 0 },
+            ],
+          },
         },
       ],
+      payRules: { noShows: true, lateCancels: false },
       revenue: {
         wechat: 60000,
         offline: 150000,

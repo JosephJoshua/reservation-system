@@ -10,6 +10,7 @@ import { openDb } from './client'
 import { runMigrations } from './migrate'
 import {
   banners,
+  categoryPayRates,
   categoryPrices,
   coachCategories,
   coaches,
@@ -153,6 +154,14 @@ if (!private1 || !trial) throw new Error('lesson type insert failed')
 
 db.insert(categoryPrices)
   .values({ categoryId: head.id, lessonTypeId: private1.id, price: 36000 })
+  .run()
+
+db.insert(categoryPayRates)
+  .values([
+    { categoryId: head.id, lessonTypeId: private1.id, rate: 15000 },
+    { categoryId: senior.id, lessonTypeId: private1.id, rate: 10000 },
+    { categoryId: senior.id, lessonTypeId: trial.id, rate: 3000 },
+  ])
   .run()
 
 db.insert(coachLessonTypes)

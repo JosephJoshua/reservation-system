@@ -23,7 +23,10 @@ const groups: { label: string; actions: StaffAction[] }[] = [
     actions: ['refund.approve', 'refund.reject', 'refund.retry', 'refund.paid_back'],
   },
   { label: '发票', actions: ['invoice.issue', 'invoice.reject', 'invoice.refund_seen'] },
-  { label: '价格', actions: ['price.lesson_type', 'price.product', 'price.coach'] },
+  {
+    label: '价格',
+    actions: ['price.lesson_type', 'price.product', 'price.coach', 'price.coach_pay'],
+  },
   { label: '其他', actions: ['settings.update', 'student.update', 'data.export'] },
   { label: '员工', actions: ['staff.create', 'staff.update', 'staff.password'] },
 ]
