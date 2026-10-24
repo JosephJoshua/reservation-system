@@ -17,6 +17,7 @@ import { api } from '../api'
 import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
 import { attempt, newKey, useApi } from '../hooks'
+import { PreviewDialog } from '../preview/EditorWithPreview'
 
 function coordValid(text: string, limit: number) {
   if (text.trim() === '') return true
@@ -31,6 +32,7 @@ export function Settings() {
   const [coord, setCoord] = useState({ lat: '', lng: '' })
   // One per loaded version, so a retry after a lost response is not saved twice.
   const [key, setKey] = useState(newKey)
+  const [previewing, setPreviewing] = useState(false)
 
   useEffect(() => {
     if (!data) return
@@ -321,7 +323,15 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card title="首页公告" bordered>
+      <Card
+        title="首页公告"
+        bordered
+        actions={
+          <Button variant="outline" onClick={() => setPreviewing(true)}>
+            预览首页
+          </Button>
+        }
+      >
         <div className="fields form-narrow">
           <Field label="公告" help="一句话，留空则不显示">
             <Input
@@ -348,6 +358,20 @@ export function Settings() {
           </Field>
         </div>
       </Card>
+
+      {previewing && (
+        <PreviewDialog
+          title="预览首页"
+          draft={{
+            kind: 'home',
+            id: null,
+            venue: s.venue,
+            notice: s.notice,
+            payment: s.payment,
+          }}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
 
       <Card title="说明文字" bordered>
         <div className="fields form-narrow">

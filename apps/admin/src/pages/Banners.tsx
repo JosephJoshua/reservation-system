@@ -17,6 +17,11 @@ import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import {
+  EditorWithPreview,
+  PREVIEW_DIALOG_WIDTH,
+  PreviewDialog,
+} from '../preview/EditorWithPreview'
 import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
@@ -33,6 +38,7 @@ export function Banners() {
     loaded?: Banner
     key: string
   } | null>(null)
+  const [preview, setPreview] = useState<Banner | null>(null)
   const submitting = useSubmitting()
 
   const save = async () => {
@@ -142,6 +148,9 @@ export function Banners() {
                 >
                   编辑
                 </Button>
+                <Button variant="text" theme="primary" onClick={() => setPreview(row)}>
+                  预览
+                </Button>
                 <Popconfirm
                   theme="danger"
                   content="删除这张轮播图？"
@@ -161,20 +170,30 @@ export function Banners() {
       {edit && (
         <Dialog
           visible
-          width={600}
+          width={PREVIEW_DIALOG_WIDTH}
+          top={24}
           header={edit.id ? '编辑轮播图' : '新建轮播图'}
           confirmBtn={{ content: '保存', disabled: !edit.form.imageUrl, loading: submitting }}
           onConfirm={save}
           onClose={() => setEdit(null)}
         >
-          <BannerEditor
-            value={edit.form}
-            products={products.data ?? []}
-            types={types.data ?? []}
-            // Merged into the latest form, so an upload finishing later keeps what was typed meanwhile.
-            onChange={(patch) => setEdit((e) => e && { ...e, form: { ...e.form, ...patch } })}
-          />
+          <EditorWithPreview draft={{ kind: 'banner', id: edit.id, form: edit.form }}>
+            <BannerEditor
+              value={edit.form}
+              products={products.data ?? []}
+              types={types.data ?? []}
+              // Merged into the latest form, so an upload finishing later keeps what was typed meanwhile.
+              onChange={(patch) => setEdit((e) => e && { ...e, form: { ...e.form, ...patch } })}
+            />
+          </EditorWithPreview>
         </Dialog>
+      )}
+      {preview && (
+        <PreviewDialog
+          title={`预览：${preview.title || '轮播图'}`}
+          draft={{ kind: 'banner', id: preview.id, form: preview }}
+          onClose={() => setPreview(null)}
+        />
       )}
     </Card>
   )
@@ -246,7 +265,7 @@ function BannerEditor({
           <span className="muted">支持 JPG、PNG 或 WebP 格式，不超过 2MB</span>
         </Space>
       </Field>
-      <Field label="标题" help="仅用于后台识别，不会显示在图上">
+      <Field label="标题" help="显示在图片底部，不填则不显示">
         <Input value={f.title} maxlength={30} onChange={(v) => set({ title: String(v) })} />
       </Field>
       <Field label="点击跳转">
