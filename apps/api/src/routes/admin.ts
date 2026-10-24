@@ -32,7 +32,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
-import { accountDeleted } from '../services/account'
+import { accountDeleted, personColumns } from '../services/account'
 import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
 import {
   type AdminVars,
@@ -740,7 +740,7 @@ export function adminRoutes(deps: Deps) {
     const byStudent = new Map(
       live.length
         ? db
-            .select({ id: students.id, name: students.name, phone: students.phone })
+            .select(personColumns)
             .from(students)
             .where(
               inArray(
@@ -920,7 +920,7 @@ export function adminRoutes(deps: Deps) {
     const people = new Map(
       rows.length
         ? db
-            .select({ id: students.id, name: students.name, phone: students.phone })
+            .select(personColumns)
             .from(students)
             .where(
               inArray(
@@ -945,32 +945,12 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
-    // Paid at the front desk, so a refund is handed back there.
-    const paidOffline = new Set(
-      rows.length
-        ? db
-            .select({ bookingId: orders.bookingId })
-            .from(orders)
-            .where(
-              and(
-                inArray(
-                  orders.bookingId,
-                  rows.map((r) => r.id),
-                ),
-                eq(orders.provider, 'offline'),
-              ),
-            )
-            .all()
-            .map((o) => o.bookingId)
-        : [],
-    )
     return c.json(
       views.map((v, i) => ({
         ...v,
         student: people.get(rows[i]?.studentId ?? 0) ?? null,
         coachNote: rows[i]?.coachNote ?? '',
         bookedBy: bookedBy.get(rows[i]?.bookedByStaffId ?? 0) ?? null,
-        paidOffline: paidOffline.has(v.id),
       })),
     )
   })
@@ -1355,7 +1335,7 @@ export function adminRoutes(deps: Deps) {
     const rows = db
       .select({
         order: orders,
-        student: { id: students.id, name: students.name, phone: students.phone },
+        student: personColumns,
       })
       .from(orders)
       .innerJoin(students, eq(students.id, orders.studentId))
@@ -1416,7 +1396,7 @@ export function adminRoutes(deps: Deps) {
           kind: orders.kind,
           description: orders.description,
         },
-        student: { id: students.id, name: students.name, phone: students.phone },
+        student: personColumns,
       })
       .from(refunds)
       .innerJoin(orders, eq(orders.id, refunds.orderId))
@@ -1735,6 +1715,14 @@ export function adminRoutes(deps: Deps) {
           .select({ n: sql<number>`count(*)` })
           .from(refunds)
           .where(eq(refunds.status, 'failed'))
+          .get()?.n ?? 0,
+      // Refunds of front-desk payments, waiting for staff to hand the money back.
+      offlineRefundsOwed:
+        db
+          .select({ n: sql<number>`count(*)` })
+          .from(refunds)
+          .innerJoin(orders, eq(orders.id, refunds.orderId))
+          .where(and(eq(refunds.status, 'pending'), eq(orders.provider, 'offline')))
           .get()?.n ?? 0,
     })
   })

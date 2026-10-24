@@ -84,8 +84,6 @@ export type AdminBooking = BookingDto & {
   coachNote: string
   /** Set when the front desk booked it for the student. */
   bookedBy: { id: number; name: string } | null
-  /** Paid at the front desk, so a refund is handed back there. */
-  paidOffline: boolean
 }
 
 export interface StudentDetail extends Person {

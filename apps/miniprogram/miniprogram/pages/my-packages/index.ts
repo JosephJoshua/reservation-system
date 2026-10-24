@@ -3,7 +3,7 @@ import { api, errorMessage, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
-import { PACKAGE_STATUS, REFUND_STATUS } from '../../utils/labels'
+import { PACKAGE_STATUS, refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { ask } from '../../utils/tap'
 
@@ -19,6 +19,8 @@ interface PackageView {
   tone: 'primary' | 'warning' | 'default'
   active: boolean
   refund: string
+  /** Bought at the front desk, so a refund is handed back there. */
+  paidOffline: boolean
   canRefund: boolean
   invoice: string
   invoiceLink: string
@@ -40,7 +42,10 @@ function view(p: PackageDto): PackageView {
     tone:
       p.status === 'active' ? 'primary' : p.status === 'refund_requested' ? 'warning' : 'default',
     active: p.status === 'active',
-    refund: p.refund ? `退款 ${yuan(p.refund.amount)} · ${REFUND_STATUS[p.refund.status]}` : '',
+    refund: p.refund
+      ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund.status, p.paidOffline)}`
+      : '',
+    paidOffline: p.paidOffline,
     // Free packages (gifts) have nothing to refund.
     canRefund: p.status === 'active' && p.lessonsRemaining > 0 && p.pricePaid > 0,
     invoice:
@@ -94,7 +99,7 @@ Page({
     if (!pkg || this.data.busy) return
     const answer = await ask({
       title: '申请退款',
-      content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计），由场馆审核后原路退回，申请后课时包将暂停使用。`,
+      content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计），由场馆审核后${pkg.paidOffline ? '到店退还' : '原路退回'}，申请后课时包将暂停使用。`,
       confirmText: '提交申请',
     })
     if (!answer?.confirm || this.data.busy) return

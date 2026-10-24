@@ -2,6 +2,7 @@ import { type ActionLogEntryDto, formatYuan, type StaffAction, venueParts } from
 import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import { actionLog, bookings, coaches, lessonTypes, slots, staff, students } from '../db/schema'
+import { DELETED_NAME } from './account'
 
 export interface ActionEntry {
   action: StaffAction
@@ -79,7 +80,7 @@ export function listActions(
           .all()
           .map(({ deletedAt, ...s }) => [
             s.id,
-            deletedAt ? { ...s, name: '已注销学员', phone: '' } : s,
+            deletedAt ? { ...s, name: DELETED_NAME, phone: '' } : s,
           ])
       : [],
   )
