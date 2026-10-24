@@ -117,7 +117,11 @@ export function Products() {
         data={products.data ?? []}
         empty="还没有课时包"
         columns={[
-          { colKey: 'name', title: '名称' },
+          {
+            colKey: 'name',
+            title: '名称',
+            cell: ({ row }) => <span className="nowrap">{row.name}</span>,
+          },
           { colKey: 'lessonTypeId', title: '课程', cell: ({ row }) => typeName(row.lessonTypeId) },
           { colKey: 'coachIds', title: '适用教练', cell: ({ row }) => coachNames(row.coachIds) },
           { colKey: 'lessonCount', title: '课时', cell: ({ row }) => `${row.lessonCount} 节` },

@@ -192,8 +192,8 @@ export function Catalog() {
               colKey: 'name',
               title: '名称',
               cell: ({ row }) => (
-                <Space size={4}>
-                  {row.name}
+                <div className="name-tags">
+                  <span className="nowrap">{row.name}</span>
                   {row.isTrial && (
                     <Tag theme="warning" variant="light">
                       体验课
@@ -205,7 +205,7 @@ export function Catalog() {
                     </Tag>
                   )}
                   {row.adminOnly && <Tag variant="light">仅测试</Tag>}
-                </Space>
+                </div>
               ),
             },
             {
@@ -303,11 +303,19 @@ export function Catalog() {
             {
               colKey: 'coaches',
               title: '教练',
-              cell: ({ row }) =>
-                (coaches.data ?? [])
+              cell: ({ row }) => {
+                const names = (coaches.data ?? [])
                   .filter((c) => c.categoryId === row.id)
                   .map((c) => c.name)
-                  .join('，') || '-',
+                  .join('，')
+                if (!names) return '-'
+                // A big category lists its first names; the full list is on hover.
+                return (
+                  <div className="clamp-2" title={names}>
+                    {names}
+                  </div>
+                )
+              },
             },
             {
               colKey: 'op',

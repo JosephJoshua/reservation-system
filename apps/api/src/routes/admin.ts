@@ -119,6 +119,8 @@ const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
 const nullableInstant = instant.nullable()
 const fen = z.number().int().min(0).max(10_000_000)
 const MAX_SLOTS_PER_REQUEST = 500
+// Rows per page of the admin's long lists; the admin loads more on request.
+const PAGE_SIZE = 50
 // Refinements, so the client shows these messages rather than a generic field error.
 const password = z
   .string()
@@ -1112,6 +1114,8 @@ export function adminRoutes(deps: Deps) {
         order: z.enum(['asc', 'desc']).default('asc'),
         // Only bookings with no attendance marked, for the overview's 待签到.
         unmarked: z.literal('1').optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(500),
+        offset: z.coerce.number().int().min(0).default(0),
       }),
     )
     const now = deps.now()
@@ -1142,7 +1146,8 @@ export function adminRoutes(deps: Deps) {
         q.order === 'asc' ? asc(bookings.startsAt) : desc(bookings.startsAt),
         asc(bookings.id),
       )
-      .limit(500)
+      .limit(q.limit)
+      .offset(q.offset)
       .all()
       .map((r) => r.booking)
     const views = bookingViews(db, rows, getSettings(db).booking, now)
@@ -1308,6 +1313,8 @@ export function adminRoutes(deps: Deps) {
         from: instant.optional(),
         to: instant.optional(),
         coachId: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
       }),
     )
     return c.json(adminFeedback(db, q))
@@ -1420,12 +1427,17 @@ export function adminRoutes(deps: Deps) {
   // Students and their packages
 
   app.get('/students', need('view'), (c) => {
-    const { q, expiring } = parseQuery(
+    const { q, expiring, limit, before, offset } = parseQuery(
       c,
       z.object({
         q: z.string().trim().max(30).default(''),
         // 即将到期: students with lessons left on a package that expires soon, soonest first.
         expiring: z.enum(['1']).optional(),
+        // Pages of the plain list, newest first: up to `limit` students older than `before`.
+        limit: z.coerce.number().int().min(1).max(500).default(PAGE_SIZE),
+        before: z.coerce.number().int().positive().optional(),
+        // The expiring list is sorted by date, so it pages by position.
+        offset: z.coerce.number().int().min(0).default(0),
       }),
     )
     const pattern = `%${q.replace(/[%_]/g, '')}%`
@@ -1440,7 +1452,13 @@ export function adminRoutes(deps: Deps) {
     }
     if (!expiring) {
       return c.json(
-        db.select(columns).from(students).where(search).orderBy(desc(students.id)).limit(100).all(),
+        db
+          .select(columns)
+          .from(students)
+          .where(and(search, before ? lt(students.id, before) : undefined))
+          .orderBy(desc(students.id))
+          .limit(limit)
+          .all(),
       )
     }
     const now = deps.now()
@@ -1479,7 +1497,7 @@ export function adminRoutes(deps: Deps) {
     }
     return c.json(
       [...byStudent.values()]
-        .slice(0, 100)
+        .slice(offset, offset + limit)
         .map(({ packageId, packageName, lessonsRemaining, expiresAt, notice, more, ...s }) => ({
           ...s,
           expiring: {
@@ -1689,6 +1707,8 @@ export function adminRoutes(deps: Deps) {
       z.object({
         status: z.enum(['pending', 'paid', 'closed']).optional(),
         studentId: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(500),
+        before: z.coerce.number().int().positive().optional(),
       }),
     )
     const rows = db
@@ -1702,10 +1722,11 @@ export function adminRoutes(deps: Deps) {
         and(
           q.status ? eq(orders.status, q.status) : undefined,
           q.studentId ? eq(orders.studentId, q.studentId) : undefined,
+          q.before ? lt(orders.id, q.before) : undefined,
         ),
       )
       .orderBy(desc(orders.id))
-      .limit(500)
+      .limit(q.limit)
       .all()
     const refunded = new Map(
       rows.length
@@ -1743,6 +1764,8 @@ export function adminRoutes(deps: Deps) {
         status: z
           .enum(['requested', 'pending', 'processing', 'succeeded', 'failed', 'rejected'])
           .optional(),
+        limit: z.coerce.number().int().min(1).max(500).default(500),
+        before: z.coerce.number().int().positive().optional(),
       }),
     )
     const rows = db
@@ -1760,9 +1783,14 @@ export function adminRoutes(deps: Deps) {
       .from(refunds)
       .innerJoin(orders, eq(orders.id, refunds.orderId))
       .innerJoin(students, eq(students.id, orders.studentId))
-      .where(q.status ? eq(refunds.status, q.status) : undefined)
+      .where(
+        and(
+          q.status ? eq(refunds.status, q.status) : undefined,
+          q.before ? lt(refunds.id, q.before) : undefined,
+        ),
+      )
       .orderBy(desc(refunds.id))
-      .limit(500)
+      .limit(q.limit)
       .all()
     const packageIds = rows.flatMap((r) => (r.refund.packageId ? [r.refund.packageId] : []))
     const pkgs = new Map(
@@ -1902,6 +1930,8 @@ export function adminRoutes(deps: Deps) {
           .optional()
           .transform((v) => v === '1'),
         studentId: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
       }),
     )
     return c.json(adminInvoices(db, q))
@@ -2081,7 +2111,16 @@ export function adminRoutes(deps: Deps) {
     return c.json(statsReport(deps, from, to))
   })
 
-  app.get('/reports/dormant', need('finance'), (c) => c.json(dormantStudents(deps)))
+  app.get('/reports/dormant', need('finance'), (c) => {
+    const { limit, offset } = parseQuery(
+      c,
+      z.object({
+        limit: z.coerce.number().int().min(1).max(500).default(500),
+        offset: z.coerce.number().int().min(0).default(0),
+      }),
+    )
+    return c.json(dormantStudents(deps).slice(offset, offset + limit))
+  })
 
   // Dashboard numbers for the admin home page.
   app.get('/summary', need('view'), (c) => {

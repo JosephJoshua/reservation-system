@@ -8,9 +8,9 @@ import {
 import { type ReactNode, useState } from 'react'
 import { Button, Card, DateRangePicker, MessagePlugin, Radio } from 'tdesign-react'
 import { ColumnChart, Heatmap, LineChart, MeterList, type Series } from '../charts'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { addDays, fmtDate, today, yuanGrouped as yuan } from '../format'
-import { useApi } from '../hooks'
+import { useApi, usePagedApi } from '../hooks'
 import { Delta } from '../StatDelta'
 import { StudentCell } from '../StudentCell'
 
@@ -100,8 +100,8 @@ function seriesTable(labels: string[], series: Series[], format: (v: number) => 
 
 const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-function BusyTimes({ cells }: { cells: StatsReport['heatmap'] }) {
-  if (cells.length === 0) return <div className="viz-empty">这段时间没有排课</div>
+function BusyTimes({ cells, empty }: { cells: StatsReport['heatmap']; empty: string }) {
+  if (cells.length === 0) return <div className="viz-empty">{empty}</div>
   const first = Math.min(...cells.map((c) => c.hour))
   const last = Math.max(...cells.map((c) => c.hour))
   const hoursShown = Array.from({ length: last - first + 1 }, (_, i) => first + i)
@@ -126,16 +126,14 @@ function BusyTimes({ cells }: { cells: StatsReport['heatmap'] }) {
 }
 
 function Dormant() {
-  const { data, error, loading } = useApi<DormantStudent[]>('/admin/reports/dormant')
+  const list = usePagedApi<DormantStudent>('/admin/reports/dormant', 'offset')
   return (
     <Card bordered title="沉睡学员">
-      {error && <div className="danger-text">{error}</div>}
       <DataTable
         rowKey="key"
-        loading={loading && !data}
-        data={(data ?? []).map((d) => ({ ...d, key: d.student.id }))}
-        empty={`没有超过 ${DORMANT_DAYS} 天未上课的学员`}
-        maxHeight={400}
+        loading={list.loading && !list.loaded}
+        data={list.rows.map((d) => ({ ...d, key: d.student.id }))}
+        empty={list.error ?? `没有超过 ${DORMANT_DAYS} 天未上课的学员`}
         columns={[
           {
             colKey: 'student',
@@ -150,6 +148,12 @@ function Dormant() {
           },
           { colKey: 'expiresAt', title: '课时包到期', cell: ({ row }) => fmtDate(row.expiresAt) },
         ]}
+      />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
       />
       <div className="muted" style={{ marginTop: 8 }}>
         截至今天，有剩余课时、{DORMANT_DAYS} 天内没上课也没有预约的学员，不受上方日期影响。
@@ -202,6 +206,8 @@ export function Stats() {
   const maxSale = Math.max(0, ...(r?.packages.sales.map((s) => s.amount) ?? []))
   const people = (n: number) => `${n} 人`
   const grainNote = r ? { day: '按天', week: '按周', month: '按月' }[r.grain] : ''
+  // Before the first figures arrive, a chart says so rather than that there is nothing.
+  const none = (text: string) => (r ? text : error ? '加载失败' : '加载中…')
 
   return (
     <div className="stats-body">
@@ -308,7 +314,7 @@ export function Stats() {
           table={seriesTable(labels, revenue, yuan)}
         >
           <LineChart
-            empty="这段时间没有收款和上课"
+            empty={none('这段时间没有收款和上课')}
             labels={labels}
             series={revenue}
             format={yuan}
@@ -323,7 +329,7 @@ export function Stats() {
             table={seriesTable(labels, lessons, (v) => `${v} 节`)}
           >
             <ColumnChart
-              empty="这段时间没有上课"
+              empty={none('这段时间没有上课')}
               labels={labels}
               series={lessons}
               format={(v) => `${v} 节`}
@@ -336,7 +342,7 @@ export function Stats() {
             table={seriesTable(labels, learners, people)}
           >
             <ColumnChart
-              empty="这段时间没有学员上课"
+              empty={none('这段时间没有学员上课')}
               labels={labels}
               series={learners}
               format={people}
@@ -348,7 +354,7 @@ export function Stats() {
         <div className="chart-grid">
           <ChartCard title="教练排课占用" note="已结束的排课中被约的小时数，教练关闭的空时段不计。">
             <MeterList
-              empty="这段时间没有排课"
+              empty={none('这段时间没有排课')}
               rows={(r?.coaches ?? []).map((c) => ({
                 key: c.id,
                 label: c.name,
@@ -359,14 +365,14 @@ export function Stats() {
             />
           </ChartCard>
           <ChartCard title="热门时段" note="按开课时间统计已结束的排课。">
-            <BusyTimes cells={r?.heatmap ?? []} />
+            <BusyTimes cells={r?.heatmap ?? []} empty={none('这段时间没有排课')} />
           </ChartCard>
         </div>
 
         <div className="chart-grid">
           <ChartCard title="课时包销售" note="按付款时间统计。">
             <MeterList
-              empty="这段时间没有卖出课时包"
+              empty={none('这段时间没有卖出课时包')}
               rows={(r?.packages.sales ?? []).map((s) => ({
                 key: s.productId,
                 label: s.name,
@@ -382,7 +388,7 @@ export function Stats() {
             table={seriesTable(labels, liability, yuan)}
           >
             <LineChart
-              empty="这段时间没有预收课时"
+              empty={none('这段时间没有预收课时')}
               labels={labels}
               series={liability}
               format={yuan}
@@ -393,7 +399,7 @@ export function Stats() {
 
         <ChartCard title="小班课满班率" note="已结束的小班课里，约满的座位占比。">
           <MeterList
-            empty="这段时间没有小班课"
+            empty={none('这段时间没有小班课')}
             rows={(r?.groups ?? []).map((g) => ({
               key: g.lessonTypeId,
               label: g.name,

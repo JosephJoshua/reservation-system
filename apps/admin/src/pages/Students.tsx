@@ -35,11 +35,19 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
+import {
+  attempt,
+  hashParam,
+  useApi,
+  useIdempotencyKey,
+  useIsPhone,
+  usePagedApi,
+  useSubmitting,
+} from '../hooks'
 import {
   bookingStatusLabel,
   ledgerKindLabel,
@@ -50,25 +58,39 @@ import { useCan } from '../me'
 import type { LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
 
 function idFromHash() {
-  const id = Number(new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('id'))
+  const id = Number(hashParam('id'))
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
 export function Students() {
   const money = useCan('finance')
-  const [q, setQ] = useState('')
-  const [query, setQuery] = useState('')
+  // The header search links here with `q` to show all its results.
+  const [q, setQ] = useState(() => hashParam('q') ?? '')
+  const [query, setQuery] = useState(q)
   const [openId, setOpenId] = useState<number | null>(idFromHash)
   const [expiring, setExpiring] = useState(false)
-  const list = useApi<StudentRow[]>(
+  const list = usePagedApi<StudentRow>(
     `/admin/students?q=${encodeURIComponent(query)}${expiring ? '&expiring=1' : ''}`,
+    // The 即将到期 list is sorted by date, so it pages by position.
+    expiring ? 'offset' : 'before',
   )
+
+  // Searches as the name or phone is typed.
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(q.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [q])
 
   const { reload } = list
   useEffect(() => {
     const onHash = () => {
       const id = idFromHash()
       setOpenId(id)
+      const search = hashParam('q')
+      if (search !== null) {
+        setQ(search)
+        setQuery(search.trim())
+      }
       // Closed with the back button: show what changed in the drawer.
       if (id === null) void reload()
     }
@@ -78,22 +100,15 @@ export function Students() {
 
   return (
     <div>
-      <form
-        className="toolbar"
-        onSubmit={(e) => {
-          e.preventDefault()
-          setQuery(q)
-        }}
-      >
+      <div className="toolbar">
         <Input
           style={{ width: 240 }}
           placeholder="姓名或手机号"
           value={q}
           onChange={(v) => setQ(String(v))}
+          onEnter={() => setQuery(q.trim())}
           clearable
-          onClear={() => setQuery('')}
         />
-        <Button type="submit">搜索</Button>
         <Select
           style={{ width: 160 }}
           clearable
@@ -102,16 +117,17 @@ export function Students() {
           onChange={(v) => setExpiring(v === 'expiring')}
           options={[{ label: '课时包即将到期', value: 'expiring' }]}
         />
-        <span className="spacer" />
         {/* The export lists every student; it has no 即将到期 filter. */}
         {!expiring && money && (
-          <ExportButton
-            kind="students"
-            filters={{ q: query }}
-            filterText={query ? `搜索“${query}”` : undefined}
-          />
+          <div className="toolbar-actions">
+            <ExportButton
+              kind="students"
+              filters={{ q: query }}
+              filterText={query ? `搜索“${query}”` : undefined}
+            />
+          </div>
         )}
-      </form>
+      </div>
       {expiring && (
         <p className="muted">
           30 天内到期且有剩余课时的学员，按到期日排序。到期前 7 天会给学员发送提醒。
@@ -119,8 +135,8 @@ export function Students() {
       )}
       <DataTable
         rowKey="id"
-        loading={list.loading}
-        data={list.data ?? []}
+        loading={list.loading && !list.loaded}
+        data={list.rows}
         empty={
           list.error ??
           (query ? '没有找到学员' : expiring ? '30 天内没有到期的课时包' : '还没有学员')
@@ -214,6 +230,12 @@ export function Students() {
           },
         ]}
       />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
+      />
       {openId && (
         <StudentDrawer
           id={openId}
@@ -268,10 +290,13 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const canEdit = useCan('students')
   const canBook = useCan('bookings')
   const canManage = useCan('manage')
+  // Opened after mounting rather than mounted open, so the drawer takes focus and Esc closes it.
+  const [shown, setShown] = useState(false)
+  useEffect(() => setShown(true), [])
 
   return (
     <Drawer
-      visible
+      visible={shown}
       size={phone ? '100%' : '800px'}
       header={s ? (s.deletedAt ? '已注销的学员' : s.name || '学员') : '学员'}
       footer={false}

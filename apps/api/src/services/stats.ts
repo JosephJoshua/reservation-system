@@ -1,6 +1,5 @@
 import {
   addVenueDays,
-  bucketOf,
   DORMANT_DAYS,
   type DormantStudent,
   daysBetween,
@@ -13,7 +12,22 @@ import {
   venueInstant,
   venueParts,
 } from '@rs/shared'
-import { and, asc, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm'
+import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core'
 import {
   bookings,
   coaches,
@@ -29,9 +43,21 @@ import {
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { onePerSession } from './coach-pay'
-import { grantedLessons } from './views'
 
-const DAY = 24 * 60 * 60 * 1000
+const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
+// The venue's clock ahead of UTC, so SQL can find venue days and hours.
+const VENUE_OFFSET_MS = -venueInstant('1970-01-01', 0).getTime()
+// Written into the SQL rather than bound: a bound number is a REAL, which would make the division
+// below fractional instead of whole days and hours.
+const OFFSET_SQL = sql.raw(String(VENUE_OFFSET_MS))
+const DAY_SQL = sql.raw(String(DAY))
+const HOUR_SQL = sql.raw(String(HOUR))
+
+/** The venue day an instant column falls on, as days since 1970-01-01. */
+const venueDay = (column: SQLiteColumn) => sql<number>`(${column} + ${OFFSET_SQL}) / ${DAY_SQL}`
+/** The first instant of a venue day from venueDay. */
+const dayStart = (day: number) => new Date(Number(day) * DAY - VENUE_OFFSET_MS)
 
 /** How long after a package runs out a new one still counts as a renewal. */
 export const RENEW_DAYS = 30
@@ -40,9 +66,6 @@ export const RENEW_DAYS = 30
 function add(series: number[], i: number, value: number) {
   if (i >= 0) series[i] = (series[i] ?? 0) + value
 }
-
-const minutesOf = (s: { startsAt: Date; endsAt: Date }) =>
-  (s.endsAt.getTime() - s.startsAt.getTime()) / 60_000
 
 /** Payments less the refunds that went through, in fen, from `from` up to `to`. */
 function netRevenue(deps: Deps, from: Date, to: Date) {
@@ -63,12 +86,36 @@ function netRevenue(deps: Deps, from: Date, to: Date) {
   return sum(paid) - sum(refunded)
 }
 
-/** When each student took their first lesson: the start of their earliest lesson that ended. */
-function firstLessons(deps: Deps, now: Date) {
+/**
+ * Students whose first lesson ever started from `from` up to `to`, with when it started. A
+ * student's first lesson is the earliest that ended; a student with an earlier one is left out.
+ */
+function firstLessons(deps: Deps, now: Date, from: Date, to: Date) {
+  const earlier = alias(bookings, 'earlier')
   const rows = deps.db
     .select({ studentId: bookings.studentId, first: sql<number>`min(${bookings.startsAt})` })
     .from(bookings)
-    .where(and(eq(bookings.status, 'confirmed'), lte(bookings.endsAt, now)))
+    .where(
+      and(
+        eq(bookings.status, 'confirmed'),
+        lte(bookings.endsAt, now),
+        gte(bookings.startsAt, from),
+        lt(bookings.startsAt, to),
+        notExists(
+          deps.db
+            .select({ one: sql`1` })
+            .from(earlier)
+            .where(
+              and(
+                eq(earlier.studentId, bookings.studentId),
+                eq(earlier.status, 'confirmed'),
+                lt(earlier.startsAt, from),
+                lte(earlier.endsAt, now),
+              ),
+            ),
+        ),
+      ),
+    )
     .groupBy(bookings.studentId)
     .all()
   return new Map(rows.map((r) => [r.studentId, new Date(Number(r.first))]))
@@ -162,7 +209,7 @@ export function dashboard(deps: Deps) {
   const lastEnd = new Date(
     Math.min(lastStart.getTime() + (now.getTime() - monthStart.getTime()), monthStart.getTime()),
   )
-  const first = firstLessons(deps, now)
+  const first = firstLessons(deps, now, lastStart, now)
 
   const unmarked = db
     .select({ id: bookings.id })
@@ -197,9 +244,14 @@ export function dashboard(deps: Deps) {
 /** The value of one lesson from each package: what was paid over the lessons it holds. */
 function lessonValues(deps: Deps) {
   const rows = deps.db.select().from(packages).all()
-  const granted = grantedLessons(
-    deps.db,
-    rows.map((p) => p.id),
+  const granted = new Map(
+    deps.db
+      .select({ packageId: packageLedger.packageId, n: sql<number>`sum(${packageLedger.delta})` })
+      .from(packageLedger)
+      .where(eq(packageLedger.kind, 'grant'))
+      .groupBy(packageLedger.packageId)
+      .all()
+      .map((r) => [r.packageId, Number(r.n)]),
   )
   const values = new Map<number, number>()
   for (const p of rows) {
@@ -229,21 +281,47 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
 
   const buckets = statsBuckets(from, to)
   const zeros = () => buckets.map(() => 0)
-  const at = (d: Date) => bucketOf(buckets, venueDateKey(d))
+  // Each step's first instant, to place a time by number rather than by formatting its date.
+  const edges = buckets.map((b) => venueInstant(b.from, 0).getTime())
+  const last = buckets.at(-1)
+  const stop = last ? venueInstant(last.to, 0).getTime() : 0
+  const at = (d: Date) => {
+    const t = d.getTime()
+    if (t >= stop) return -1
+    let lo = 0
+    let hi = edges.length - 1
+    let found = -1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if ((edges[mid] as number) <= t) {
+        found = mid
+        lo = mid + 1
+      } else hi = mid - 1
+    }
+    return found
+  }
   const start = venueInstant(from, 0)
   const end = new Date(Math.min(venueInstant(to, 24 * 60).getTime(), now.getTime()))
 
   // Money in and out.
   const paid = zeros()
   const refunded = zeros()
-  const paidOrders = db
-    .select()
-    .from(orders)
-    .where(and(eq(orders.status, 'paid'), gte(orders.paidAt, start), lt(orders.paidAt, end)))
-    .all()
-  for (const o of paidOrders) if (o.paidAt) add(paid, at(o.paidAt), o.amount)
+  // Summed per venue day in SQL: a year holds too many payments to bring over one by one.
+  const paidRange = and(
+    eq(orders.status, 'paid'),
+    gte(orders.paidAt, start),
+    lt(orders.paidAt, end),
+  )
   for (const r of db
-    .select({ amount: refunds.amount, at: refunds.updatedAt })
+    .select({ day: venueDay(orders.paidAt), amount: sql<number>`sum(${orders.amount})` })
+    .from(orders)
+    .where(paidRange)
+    .groupBy(sql`1`)
+    .all()) {
+    add(paid, at(dayStart(r.day)), Number(r.amount))
+  }
+  for (const r of db
+    .select({ day: venueDay(refunds.updatedAt), amount: sql<number>`sum(${refunds.amount})` })
     .from(refunds)
     .where(
       and(
@@ -252,8 +330,9 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
         lt(refunds.updatedAt, end),
       ),
     )
+    .groupBy(sql`1`)
     .all()) {
-    add(refunded, at(r.at), r.amount)
+    add(refunded, at(dayStart(r.day)), Number(r.amount))
   }
 
   // Lessons that took place in the range, and late cancels, which are taken too.
@@ -294,47 +373,36 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
   // 课消: a package lesson is worth its share of the package price, a paid lesson what was kept
   // of its payment. A late cancel that gave the lesson back is worth nothing.
   const { values, rows: allPackages } = lessonValues(deps)
-  const consumedIds = [...taken, ...forfeited].map((l) => l.id)
+  // Matched by joining the range's lessons in SQL, as a year holds more lessons than a query
+  // can list.
+  const lessonInRange = and(gte(bookings.startsAt, start), lt(bookings.startsAt, end))
   const returned = new Set(
-    consumedIds.length
-      ? db
-          .select({ bookingId: packageLedger.bookingId })
-          .from(packageLedger)
-          .where(
-            and(eq(packageLedger.kind, 'return'), inArray(packageLedger.bookingId, consumedIds)),
-          )
-          .all()
-          .map((r) => r.bookingId)
-      : [],
-  )
-  const kept = new Map<number, number>()
-  if (consumedIds.length) {
-    const lessonOrders = db
-      .select({ id: orders.id, bookingId: orders.bookingId, amount: orders.amount })
-      .from(orders)
-      .where(and(eq(orders.status, 'paid'), inArray(orders.bookingId, consumedIds)))
+    db
+      .select({ bookingId: packageLedger.bookingId })
+      .from(packageLedger)
+      .innerJoin(bookings, eq(bookings.id, packageLedger.bookingId))
+      .where(and(eq(packageLedger.kind, 'return'), lessonInRange))
       .all()
-    const back = new Map<number, number>()
-    if (lessonOrders.length) {
-      for (const r of db
-        .select({ orderId: refunds.orderId, amount: refunds.amount })
-        .from(refunds)
-        .where(
-          and(
-            inArray(
-              refunds.orderId,
-              lessonOrders.map((o) => o.id),
-            ),
-            inArray(refunds.status, ['pending', 'processing', 'succeeded']),
-          ),
-        )
-        .all()) {
-        back.set(r.orderId, (back.get(r.orderId) ?? 0) + r.amount)
-      }
-    }
-    for (const o of lessonOrders) {
-      if (o.bookingId !== null) kept.set(o.bookingId, o.amount - (back.get(o.id) ?? 0))
-    }
+      .map((r) => r.bookingId),
+  )
+  const back = new Map<number, number>()
+  for (const r of db
+    .select({ orderId: refunds.orderId, amount: refunds.amount })
+    .from(refunds)
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
+    .innerJoin(bookings, eq(bookings.id, orders.bookingId))
+    .where(and(inArray(refunds.status, ['pending', 'processing', 'succeeded']), lessonInRange))
+    .all()) {
+    back.set(r.orderId, (back.get(r.orderId) ?? 0) + r.amount)
+  }
+  const kept = new Map<number, number>()
+  for (const o of db
+    .select({ id: orders.id, bookingId: orders.bookingId, amount: orders.amount })
+    .from(orders)
+    .innerJoin(bookings, eq(bookings.id, orders.bookingId))
+    .where(and(eq(orders.status, 'paid'), lessonInRange))
+    .all()) {
+    if (o.bookingId !== null) kept.set(o.bookingId, o.amount - (back.get(o.id) ?? 0))
   }
   const consumed = zeros()
   for (const l of [...taken, ...forfeited]) {
@@ -353,7 +421,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
   }
 
   // New and returning students, by their first lesson ever.
-  const first = firstLessons(deps, now)
+  const first = firstLessons(deps, now, start, end)
   const isNew = (studentId: number, from: Date, to: Date) => {
     const d = first.get(studentId)
     return !!d && d >= from && d < to
@@ -374,31 +442,59 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
   const rangeIds = new Set(taken.map((l) => l.studentId))
   const totalNew = [...rangeIds].filter((id) => isNew(id, start, end)).length
 
-  // Coach hours and the busy times, from lessons on offer that have ended.
-  const slotRows = db
+  // Coach hours and the busy times, from lessons on offer that have ended. Counted in SQL by
+  // coach, venue weekday and hour, as a year holds too many lessons to bring over one by one.
+  const seatsTaken = db
+    .select({ slotId: bookings.slotId, n: sql<number>`count(*)`.as('n') })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.status, 'confirmed'),
+        gte(bookings.startsAt, start),
+        lt(bookings.startsAt, end),
+        lte(bookings.endsAt, now),
+      ),
+    )
+    .groupBy(bookings.slotId)
+    .as('seats_taken')
+  const local = sql`(${slots.startsAt} + ${OFFSET_SQL})`
+  const slotGroups = db
     .select({
-      id: slots.id,
       coachId: slots.coachId,
-      startsAt: slots.startsAt,
-      endsAt: slots.endsAt,
-      open: slots.open,
       lessonTypeId: slots.lessonTypeId,
-      capacity: slots.capacity,
+      // 0 is Monday: 1970-01-01, day 0, was a Thursday.
+      weekday: sql<number>`(${local} / ${DAY_SQL} + 3) % 7`,
+      hour: sql<number>`(${local} / ${HOUR_SQL}) % 24`,
+      booked: sql<number>`${seatsTaken.n} is not null`,
+      lessons: sql<number>`count(*)`,
+      minutes: sql<number>`sum((${slots.endsAt} - ${slots.startsAt}) / 60000.0)`,
+      seats: sql<number>`sum(${slots.capacity})`,
+      taken: sql<number>`coalesce(sum(${seatsTaken.n}), 0)`,
     })
     .from(slots)
+    .leftJoin(seatsTaken, eq(seatsTaken.slotId, slots.id))
     .where(
       and(
         gte(slots.startsAt, start),
         lt(slots.startsAt, end),
         lte(slots.endsAt, now),
         isNull(slots.cancelledAt),
+        // A closed lesson with no one in it was not on offer.
+        or(eq(slots.open, true), isNotNull(seatsTaken.n)),
       ),
     )
+    .groupBy(sql`1, 2, 3, 4, 5`)
     .all()
-  const seatsTaken = new Map<number, number>()
-  for (const l of taken) seatsTaken.set(l.slotId, (seatsTaken.get(l.slotId) ?? 0) + 1)
-  // A closed lesson with no one in it was not on offer.
-  const offered = slotRows.filter((s) => s.open || seatsTaken.has(s.id))
+    .map((g) => ({
+      ...g,
+      weekday: Number(g.weekday),
+      hour: Number(g.hour),
+      booked: !!g.booked,
+      lessons: Number(g.lessons),
+      minutes: Number(g.minutes),
+      seats: Number(g.seats),
+      taken: Number(g.taken),
+    }))
 
   const coachRows = db
     .select({ id: coaches.id, name: coaches.name, active: coaches.active })
@@ -407,32 +503,28 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
     .all()
   const coachStats = coachRows
     .map((c) => {
-      const mine = offered.filter((s) => s.coachId === c.id)
+      const mine = slotGroups.filter((g) => g.coachId === c.id)
       return {
         id: c.id,
         name: c.name,
         active: c.active,
-        offeredMinutes: mine.reduce((sum, s) => sum + minutesOf(s), 0),
-        bookedMinutes: mine
-          .filter((s) => seatsTaken.has(s.id))
-          .reduce((sum, s) => sum + minutesOf(s), 0),
+        offeredMinutes: mine.reduce((sum, g) => sum + g.minutes, 0),
+        bookedMinutes: mine.filter((g) => g.booked).reduce((sum, g) => sum + g.minutes, 0),
       }
     })
     .filter((c) => c.active || c.offeredMinutes > 0)
     .map(({ active: _, ...c }) => c)
 
   const cells = new Map<string, StatsReport['heatmap'][number]>()
-  for (const s of offered) {
-    const p = venueParts(s.startsAt)
-    const weekday = (p.weekday + 6) % 7
-    const key = `${weekday}:${p.hours}`
+  for (const g of slotGroups) {
+    const key = `${g.weekday}:${g.hour}`
     let cell = cells.get(key)
     if (!cell) {
-      cell = { weekday, hour: p.hours, offered: 0, booked: 0 }
+      cell = { weekday: g.weekday, hour: g.hour, offered: 0, booked: 0 }
       cells.set(key, cell)
     }
-    cell.offered++
-    if (seatsTaken.has(s.id)) cell.booked++
+    cell.offered += g.lessons
+    if (g.booked) cell.booked += g.lessons
   }
   const heatmap = [...cells.values()].sort((a, b) => a.weekday - b.weekday || a.hour - b.hour)
 
@@ -446,7 +538,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
       .map((t) => [t.id, t.name]),
   )
   const groupStats = new Map<number, StatsReport['groups'][number]>()
-  for (const s of offered) {
+  for (const s of slotGroups) {
     if (s.lessonTypeId === null) continue
     let g = groupStats.get(s.lessonTypeId)
     if (!g) {
@@ -459,9 +551,9 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
       }
       groupStats.set(s.lessonTypeId, g)
     }
-    g.sessions++
-    g.seats += s.capacity
-    g.booked += seatsTaken.get(s.id) ?? 0
+    g.sessions += s.lessons
+    g.seats += s.seats
+    g.booked += s.taken
   }
   const typeOrder = [...typeNames.keys()]
   const groups = [...groupStats.values()].sort(
@@ -476,20 +568,30 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
       .all()
       .map((p) => [p.id, p.name]),
   )
-  const sales = new Map<number, StatsReport['packages']['sales'][number]>()
-  for (const o of paidOrders) {
-    if (o.kind !== 'package' || o.productId === null) continue
-    let s = sales.get(o.productId)
-    if (!s) {
-      s = { productId: o.productId, name: productNames.get(o.productId) ?? '', count: 0, amount: 0 }
-      sales.set(o.productId, s)
-    }
-    s.count++
-    s.amount += o.amount
-  }
+  const sales = db
+    .select({
+      productId: orders.productId,
+      count: sql<number>`count(*)`,
+      amount: sql<number>`sum(${orders.amount})`,
+    })
+    .from(orders)
+    .where(and(paidRange, eq(orders.kind, 'package'), isNotNull(orders.productId)))
+    .groupBy(orders.productId)
+    .all()
+    .map((r) => ({
+      productId: r.productId as number,
+      name: productNames.get(r.productId as number) ?? '',
+      count: Number(r.count),
+      amount: Number(r.amount),
+    }))
 
   // Prepaid lessons not yet taken at the end of each step: what each package held then, less the
-  // lessons from it that had taken place. Booked lessons still count until their time.
+  // lessons from it that had taken place. Booked lessons still count until their time. Only
+  // packages alive at some point in the range matter, here and for the renewals below.
+  const alive = db
+    .select({ id: packages.id })
+    .from(packages)
+    .where(and(lt(packages.createdAt, end), gt(packages.expiresAt, start)))
   const ledger = new Map<
     number,
     { kind: string; delta: number; at: Date; bookingId: number | null }[]
@@ -503,6 +605,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
       bookingId: packageLedger.bookingId,
     })
     .from(packageLedger)
+    .where(inArray(packageLedger.packageId, alive))
     .orderBy(asc(packageLedger.createdAt), asc(packageLedger.id))
     .all()) {
     let list = ledger.get(l.packageId)
@@ -529,7 +632,11 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
     })
     .from(bookings)
     .where(
-      and(eq(bookings.paidWith, 'package'), inArray(bookings.status, ['confirmed', 'cancelled'])),
+      and(
+        eq(bookings.paidWith, 'package'),
+        inArray(bookings.status, ['confirmed', 'cancelled']),
+        inArray(bookings.packageId, alive),
+      ),
     )
     .all()) {
     if (b.packageId === null || givenBack.has(b.id)) continue
@@ -541,27 +648,47 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
     }
     list.push(b.endsAt)
   }
-  const liability = buckets.map((b) => {
-    const t = new Date(Math.min(venueInstant(b.to, 0).getTime(), now.getTime()))
-    let value = 0
-    for (const p of allPackages) {
-      if (p.createdAt >= t || p.expiresAt <= t) continue
-      const entries = (ledger.get(p.id) ?? []).filter((l) => l.at < t)
-      if (entries.some((l) => l.kind === 'refund')) continue
-      const held =
-        p.lessonsPurchased +
-        entries.filter((l) => l.kind === 'grant').reduce((sum, l) => sum + l.delta, 0) -
-        (takenFrom.get(p.id) ?? []).filter((at) => at <= t).length
-      if (held > 0) value += held * (values.get(p.id) ?? 0)
-    }
-    return Math.round(value)
-  })
+  // Walks each package's grants and lessons once, in time order, across the steps.
+  const ends = buckets.map((b) => Math.min(venueInstant(b.to, 0).getTime(), now.getTime()))
+  const held = ends.map(() => 0)
+  for (const p of allPackages) {
+    const value = values.get(p.id) ?? 0
+    if (value === 0) continue
+    const entries = ledger.get(p.id) ?? []
+    const refundedAt = entries.find((l) => l.kind === 'refund')?.at.getTime() ?? Infinity
+    const grants = entries.filter((l) => l.kind === 'grant')
+    const used = (takenFrom.get(p.id) ?? []).map((d) => d.getTime()).sort((a, b) => a - b)
+    let g = 0
+    let granted = 0
+    let u = 0
+    ends.forEach((t, i) => {
+      while (g < grants.length && (grants[g] as (typeof grants)[number]).at.getTime() < t) {
+        granted += (grants[g] as (typeof grants)[number]).delta
+        g++
+      }
+      while (u < used.length && (used[u] as number) <= t) u++
+      if (p.createdAt.getTime() >= t || p.expiresAt.getTime() <= t || refundedAt < t) return
+      const left = p.lessonsPurchased + granted - u
+      if (left > 0) held[i] = (held[i] ?? 0) + left * value
+    })
+  }
+  const liability = held.map(Math.round)
 
   // Packages that ran out in the range: used up when their last lesson was booked, or expired
   // with lessons left. Refunded packages are left out. A package bought from when the old one was
   // bought until RENEW_DAYS after it ran out counts as a renewal.
   let ended = 0
   let renewed = 0
+  const boughtBy = new Map<number, Date[]>()
+  for (const p of allPackages) {
+    if (p.status === 'refunded') continue
+    let list = boughtBy.get(p.studentId)
+    if (!list) {
+      list = []
+      boughtBy.set(p.studentId, list)
+    }
+    list.push(p.createdAt)
+  }
   for (const p of allPackages) {
     if (p.status === 'refunded') continue
     let endedAt: Date | null = null
@@ -574,15 +701,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
     if (!endedAt || endedAt < start || endedAt >= end) continue
     ended++
     const until = endedAt.getTime() + RENEW_DAYS * DAY
-    if (
-      allPackages.some(
-        (o) =>
-          o.studentId === p.studentId &&
-          o.status !== 'refunded' &&
-          o.createdAt > p.createdAt &&
-          o.createdAt.getTime() <= until,
-      )
-    ) {
+    if ((boughtBy.get(p.studentId) ?? []).some((at) => at > p.createdAt && at.getTime() <= until)) {
       renewed++
     }
   }
@@ -604,7 +723,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
     coaches: coachStats,
     heatmap,
     packages: {
-      sales: [...sales.values()].sort((a, b) => b.amount - a.amount),
+      sales: sales.sort((a, b) => b.amount - a.amount || a.productId - b.productId),
       liability,
     },
     groups,
@@ -641,21 +760,31 @@ export function dormantStudents(deps: Deps): DormantStudent[] {
   const ids = [...holding.keys()]
   const last = new Map<number, Date>()
   const booked = new Set<number>()
+  // Per student in SQL: the latest lesson that started and whether one is still to come. The
+  // students are picked by a subquery, as a busy venue has more than a query can list.
+  const holders = db
+    .select({ id: packages.studentId })
+    .from(packages)
+    .where(and(eq(packages.status, 'active'), gt(packages.lessonsRemaining, 0)))
   for (const b of db
-    .select({ studentId: bookings.studentId, startsAt: bookings.startsAt, status: bookings.status })
+    .select({
+      studentId: bookings.studentId,
+      last: sql<
+        number | null
+      >`max(case when ${bookings.status} = 'confirmed' and ${bookings.startsAt} <= ${now.getTime()} then ${bookings.startsAt} end)`,
+      upcoming: sql<number>`max(${bookings.startsAt} > ${now.getTime()})`,
+    })
     .from(bookings)
     .where(
       and(
-        inArray(bookings.studentId, ids),
+        inArray(bookings.studentId, holders),
         inArray(bookings.status, ['confirmed', 'pending_payment']),
       ),
     )
+    .groupBy(bookings.studentId)
     .all()) {
-    if (b.startsAt > now) booked.add(b.studentId)
-    else if (b.status === 'confirmed') {
-      const seen = last.get(b.studentId)
-      if (!seen || b.startsAt > seen) last.set(b.studentId, b.startsAt)
-    }
+    if (b.upcoming) booked.add(b.studentId)
+    if (b.last !== null) last.set(b.studentId, new Date(Number(b.last)))
   }
   const since = new Date(now.getTime() - DORMANT_DAYS * DAY)
   const quiet = ids.filter((id) => {
@@ -669,7 +798,7 @@ export function dormantStudents(deps: Deps): DormantStudent[] {
     db
       .select({ id: students.id, name: students.name, phone: students.phone })
       .from(students)
-      .where(inArray(students.id, quiet))
+      .where(inArray(students.id, holders))
       .all()
       .map((s) => [s.id, s]),
   )

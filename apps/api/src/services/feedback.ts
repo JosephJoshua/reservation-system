@@ -295,7 +295,7 @@ export function studentFeedback(tx: Q, studentId: number): FeedbackItemDto[] {
 /** The admin's list, newest lesson first. */
 export function adminFeedback(
   tx: Q,
-  q: { from?: Date; to?: Date; coachId?: number; ids?: number[] },
+  q: { from?: Date; to?: Date; coachId?: number; ids?: number[]; limit?: number; offset?: number },
 ): AdminFeedbackDto[] {
   return tx
     .select({
@@ -321,7 +321,8 @@ export function adminFeedback(
       ),
     )
     .orderBy(desc(bookings.startsAt), desc(lessonFeedback.id))
-    .limit(FEEDBACK_LIST_LIMIT)
+    .limit(Math.min(q.limit ?? FEEDBACK_LIST_LIMIT, FEEDBACK_LIST_LIMIT))
+    .offset(q.offset ?? 0)
     .all()
     .map((r) => ({
       ...feedbackView(r.feedback),

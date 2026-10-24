@@ -260,7 +260,13 @@ export function flaggedIds(tx: Q, rows: InvoiceRow[]) {
 
 export function adminInvoices(
   tx: Q,
-  q: { status?: InvoiceStatus; flagged?: boolean; studentId?: number },
+  q: {
+    status?: InvoiceStatus
+    flagged?: boolean
+    studentId?: number
+    limit?: number
+    offset?: number
+  },
 ): AdminInvoiceDto[] {
   const rows = tx
     .select()
@@ -275,8 +281,12 @@ export function adminInvoices(
     .orderBy(q.status === 'requested' ? invoices.id : desc(invoices.id))
     .all()
   const flagged = flaggedIds(tx, rows)
-  // Flagged ones are few and must all show, however old; the rest are cut to a page.
-  const shown = q.flagged ? rows.filter((r) => flagged.has(r.id)) : rows.slice(0, 500)
+  // Flagged ones show however old; either list is cut to a page.
+  const offset = q.offset ?? 0
+  const shown = (q.flagged ? rows.filter((r) => flagged.has(r.id)) : rows).slice(
+    offset,
+    offset + Math.min(q.limit ?? 500, 500),
+  )
   return invoiceViews(tx, shown, flagged)
 }
 

@@ -1,6 +1,24 @@
 import { canOpenPage, type StaffDto } from '@rs/shared'
+import type { ComponentType } from 'react'
 import { useEffect, useState } from 'react'
-import { Button, ConfigProvider, Drawer, Layout, Loading, Menu } from 'tdesign-react'
+import {
+  AssignmentIcon,
+  BillIcon,
+  CalendarIcon,
+  CardIcon,
+  ChartBarIcon,
+  ChatMessageIcon,
+  CourseIcon,
+  DashboardIcon,
+  FilePasteIcon,
+  HistoryIcon,
+  ImageIcon,
+  RollbackIcon,
+  SettingIcon,
+  UserCircleIcon,
+  UsergroupIcon,
+} from 'tdesign-icons-react'
+import { Button, ConfigProvider, Drawer, Loading } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
 import { useApi, useIsPhone } from './hooks'
@@ -21,26 +39,38 @@ import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
+import { StudentSearch } from './StudentSearch'
+
+type Page = { label: string; icon: ComponentType; component: ComponentType }
 
 const pages = {
-  overview: ['概览', Overview],
-  schedule: ['排课', Schedule],
-  bookings: ['预约', Bookings],
-  students: ['学员', Students],
-  feedback: ['课后点评', Feedback],
-  catalog: ['课程与教练', Catalog],
-  products: ['课时包', Products],
-  orders: ['订单', Orders],
-  refunds: ['退款', Refunds],
-  invoices: ['发票', Invoices],
-  reports: ['报表', Reports],
-  banners: ['首页内容', Banners],
-  settings: ['设置', Settings],
-  staff: ['员工', Staff],
-  actions: ['操作记录', ActionLog],
-} as const
+  overview: { label: '概览', icon: DashboardIcon, component: Overview },
+  schedule: { label: '排课', icon: CalendarIcon, component: Schedule },
+  bookings: { label: '预约', icon: AssignmentIcon, component: Bookings },
+  students: { label: '学员', icon: UsergroupIcon, component: Students },
+  feedback: { label: '课后点评', icon: ChatMessageIcon, component: Feedback },
+  orders: { label: '订单', icon: BillIcon, component: Orders },
+  refunds: { label: '退款', icon: RollbackIcon, component: Refunds },
+  invoices: { label: '发票', icon: FilePasteIcon, component: Invoices },
+  reports: { label: '报表', icon: ChartBarIcon, component: Reports },
+  catalog: { label: '课程与教练', icon: CourseIcon, component: Catalog },
+  products: { label: '课时包', icon: CardIcon, component: Products },
+  banners: { label: '首页内容', icon: ImageIcon, component: Banners },
+  settings: { label: '设置', icon: SettingIcon, component: Settings },
+  staff: { label: '员工', icon: UserCircleIcon, component: Staff },
+  actions: { label: '操作记录', icon: HistoryIcon, component: ActionLog },
+} satisfies Record<string, Page>
 
 type PageKey = keyof typeof pages
+
+/** The sidebar: daily front-desk work first, then money, then setup. */
+const navGroups: { title?: string; keys: PageKey[] }[] = [
+  { keys: ['overview'] },
+  { title: '日常', keys: ['schedule', 'bookings', 'students', 'feedback'] },
+  { title: '财务', keys: ['orders', 'refunds', 'invoices', 'reports'] },
+  { title: '课程与内容', keys: ['catalog', 'products', 'banners'] },
+  { title: '系统', keys: ['settings', 'staff', 'actions'] },
+]
 
 function currentPage(): PageKey {
   const key = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? ''
@@ -76,6 +106,12 @@ export function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  // A new page starts at its top, as the content scrolls with the window.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the page changes
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [page])
 
   const logout = async () => {
     await api('POST', '/admin/logout').catch(() => {})
@@ -127,48 +163,61 @@ function SignedInApp({
   const allowed = (Object.keys(pages) as PageKey[]).filter((key) => canOpenPage(roles, key))
   // A page the roles do not cover, such as from an old link, opens the first one they do.
   const page = allowed.includes(requested) ? requested : allowed[0]
-  const Page = page ? pages[page][1] : null
+  const Page = page ? pages[page].component : null
+  // Groups whose pages the roles all leave out are left out too.
+  const groups = navGroups
+    .map((g) => ({ ...g, keys: g.keys.filter((key) => allowed.includes(key)) }))
+    .filter((g) => g.keys.length > 0)
 
-  const menu = (
-    <Menu
-      value={page}
-      width="100%"
-      onChange={(v) => {
-        window.location.hash = `/${String(v)}`
-      }}
-    >
-      {allowed.map((key) => (
-        // Closes the phone menu on every tap, the current page included.
-        <Menu.MenuItem key={key} value={key} onClick={() => setMenuOpen(false)}>
-          {pages[key][0]}
-        </Menu.MenuItem>
+  const nav = (
+    <nav className="admin-nav" aria-label="主菜单">
+      {groups.map((group) => (
+        <div className="nav-group" key={group.title ?? 'home'}>
+          {group.title && <div className="nav-group-title">{group.title}</div>}
+          {group.keys.map((key) => {
+            const { label, icon: Icon } = pages[key]
+            return (
+              <a
+                key={key}
+                href={`#/${key}`}
+                className={key === page ? 'nav-item active' : 'nav-item'}
+                aria-current={key === page ? 'page' : undefined}
+                // Closes the phone menu on every tap, the current page included.
+                onClick={() => setMenuOpen(false)}
+              >
+                <Icon />
+                <span>{label}</span>
+              </a>
+            )
+          })}
+        </div>
       ))}
-    </Menu>
+    </nav>
   )
 
   return (
     <MeContext.Provider value={me.data}>
-      <Layout className="admin-layout">
+      <div className="admin-layout">
         {phone ? (
           <Drawer
             visible={menuOpen}
             placement="left"
-            size="240px"
+            size="248px"
             header="球馆管理"
             footer={false}
             className="admin-menu-drawer"
             onClose={() => setMenuOpen(false)}
           >
-            {menu}
+            {nav}
           </Drawer>
         ) : (
-          <Layout.Aside width="200px" className="admin-aside">
+          <aside className="admin-aside">
             <div className="admin-brand">球馆管理</div>
-            {menu}
-          </Layout.Aside>
+            {nav}
+          </aside>
         )}
-        <Layout className="admin-main">
-          <Layout.Header className="admin-header">
+        <div className="admin-main">
+          <header className="admin-header">
             <span className="admin-title">
               {phone && (
                 <Button
@@ -188,20 +237,21 @@ function SignedInApp({
                   </svg>
                 </Button>
               )}
-              {page && pages[page][0]}
+              {page && <span className="admin-title-text">{pages[page].label}</span>}
             </span>
             <span className="header-actions">
+              {allowed.includes('students') && <StudentSearch compact={phone} />}
               {me.data && <span className="muted signed-in">{me.data.name}</span>}
               <Button variant="text" onClick={onLogout}>
                 退出登录
               </Button>
             </span>
-          </Layout.Header>
-          <Layout.Content className="admin-content">
+          </header>
+          <main className="admin-content">
             {Page ? <Page /> : me.error ? <p className="muted">{me.error}</p> : <Loading />}
-          </Layout.Content>
-        </Layout>
-      </Layout>
+          </main>
+        </div>
+      </div>
     </MeContext.Provider>
   )
 }

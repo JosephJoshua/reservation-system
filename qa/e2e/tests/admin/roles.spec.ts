@@ -10,7 +10,7 @@ const desk = { name: `前台${run}`, username: `rdesk${run}` }
 const money = { name: `财务${run}`, username: `rmoney${run}` }
 const ADMIN_URL = 'http://localhost:5173/admin/'
 
-const menu = (page: Page) => page.locator('.admin-aside .t-menu__item')
+const menu = (page: Page) => page.locator('.admin-aside .nav-item')
 
 test('creates a 前台 and a 财务 login', async ({ request }) => {
   const admin = (
@@ -31,7 +31,7 @@ for (const scheme of ['light', 'dark'] as const) {
     // No money on the home page.
     await expect(page.getByText('今日收款')).toHaveCount(0)
     await expect(page.getByText('待审核退款')).toHaveCount(0)
-    await expect(page.getByText('待签到')).toBeVisible()
+    await expect(page.getByText('待签到', { exact: true })).toBeVisible()
     await page.screenshot({ path: `test-results/roles-desk-overview-${scheme}.png` })
 
     await page.goto('./#/bookings')
@@ -84,9 +84,9 @@ test('管理员 changes a role, and the open session follows', async ({ page, br
   await expect(row.getByRole('cell', { name: '前台', exact: true })).toHaveCount(0)
 
   // The open desk session picks up the new role when it moves to another page.
-  await deskPage.locator('.admin-aside .t-menu__item', { hasText: '预约' }).click()
-  await expect(deskPage.locator('.admin-aside .t-menu__item', { hasText: '订单' })).toBeVisible()
-  await expect(deskPage.locator('.admin-aside .t-menu__item', { hasText: '排课' })).toHaveCount(0)
+  await deskPage.locator('.admin-aside .nav-item', { hasText: '预约' }).click()
+  await expect(deskPage.locator('.admin-aside .nav-item', { hasText: '订单' })).toBeVisible()
+  await expect(deskPage.locator('.admin-aside .nav-item', { hasText: '排课' })).toHaveCount(0)
 
   await page.goto('./#/actions')
   await expect(

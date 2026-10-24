@@ -12,11 +12,11 @@ import {
   Textarea,
 } from 'tdesign-react'
 import { api, openFile, RequestError } from '../api'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDateTime, yuan } from '../format'
-import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, useIdempotencyKey, usePagedApi, useSubmitting } from '../hooks'
 import { StudentCell } from '../StudentCell'
 import type { AdminInvoice } from '../types'
 
@@ -39,7 +39,8 @@ export function Invoices() {
   const params = new URLSearchParams()
   if (status) params.set('status', status)
   if (flagged) params.set('flagged', '1')
-  const { data, loading, error, reload } = useApi<AdminInvoice[]>(`/admin/invoices?${params}`)
+  const list = usePagedApi<AdminInvoice>(`/admin/invoices?${params}`, 'offset')
+  const { reload } = list
   const [uploading, setUploading] = useState<AdminInvoice | null>(null)
   const [rejecting, setRejecting] = useState<AdminInvoice | null>(null)
 
@@ -76,26 +77,27 @@ export function Invoices() {
         <Checkbox checked={flagged} onChange={(v) => setFlagged(v)}>
           开票后有退款
         </Checkbox>
-        <span className="spacer" />
-        <ExportButton
-          kind="invoices"
-          filters={{ status, flagged: flagged ? 1 : null }}
-          filterText={
-            [
-              status && `状态：${invoiceStatusLabels[status as 'requested']}`,
-              flagged && '开票后有退款',
-            ]
-              .filter(Boolean)
-              .join('，') || undefined
-          }
-        />
+        <div className="toolbar-actions">
+          <ExportButton
+            kind="invoices"
+            filters={{ status, flagged: flagged ? 1 : null }}
+            filterText={
+              [
+                status && `状态：${invoiceStatusLabels[status as 'requested']}`,
+                flagged && '开票后有退款',
+              ]
+                .filter(Boolean)
+                .join('，') || undefined
+            }
+          />
+        </div>
       </div>
       <DataTable
         rowKey="id"
-        loading={loading}
-        data={data ?? []}
+        loading={list.loading && !list.loaded}
+        data={list.rows}
         empty={
-          error ??
+          list.error ??
           (flagged ? '没有待处理的退款' : status === 'requested' ? '没有待开票的申请' : '没有记录')
         }
         columns={[
@@ -213,6 +215,12 @@ export function Invoices() {
               ),
           },
         ]}
+      />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
       />
       {uploading && <Upload invoice={uploading} onClose={() => setUploading(null)} onDone={done} />}
       {rejecting && <Reject invoice={rejecting} onClose={() => setRejecting(null)} onDone={done} />}
