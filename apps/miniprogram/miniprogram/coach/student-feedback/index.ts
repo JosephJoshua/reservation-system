@@ -1,8 +1,8 @@
 import { FEEDBACK_RECORD_LIMIT, type FeedbackItemDto } from '../../lib/shared'
-import { ApiError, assetUrl, errorMessage } from '../../utils/api'
+import { assetUrl, errorMessage } from '../../utils/api'
 import { fullDate } from '../../utils/format'
 import { previewPhotos } from '../../utils/photos'
-import { coachApi } from '../utils/coach-api'
+import { coachApi, profileClosed } from '../utils/coach-api'
 
 interface ItemView {
   bookingId: number
@@ -59,8 +59,7 @@ Page({
       })
     } catch (e) {
       if (request !== this.request) return
-      // Cancelled, over a week old, moved to another coach or the student left: retrying won't help.
-      const closed = e instanceof ApiError && (e.status === 409 || e.status === 404)
+      const closed = profileClosed(e)
       // A list already on screen stays; only a first load, or a lesson now closed, shows the error.
       if (this.loaded && !closed) wx.showToast({ title: errorMessage(e), icon: 'none' })
       else this.setData({ state: 'error', canRetry: !closed, error: errorMessage(e) })

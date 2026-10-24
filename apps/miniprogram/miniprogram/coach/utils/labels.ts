@@ -33,9 +33,8 @@ export function hhmm(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
-/** Who saved the profile last, as coaches see it: another coach by name, staff as the venue. */
+/** Who saved the profile last: a coach by name, staff as 场馆 (the API names them so). */
 export function profileEdited(p: StudentProfileDto): string {
   if (!p.updatedBy || !p.updatedAt) return ''
-  const who = p.updatedBy.kind === 'coach' ? p.updatedBy.name : '场馆'
-  return `${who} ${dateTime(p.updatedAt)} 修改`
+  return `${p.updatedBy.name} ${dateTime(p.updatedAt)} 修改`
 }

@@ -3,6 +3,7 @@ import {
   type CoachLessonDto,
   type CoachSessionDto,
   type CoachSlotDto,
+  type StudentProfileDto,
   type StudentProfileEdit,
   venueInstant,
 } from '@rs/shared'
@@ -26,9 +27,9 @@ import { bookingStatus } from './views'
 const PROFILE_DAYS_AFTER = 7
 
 /**
- * Whether the coach reads and edits the student's 学员档案 on this lesson: only around a lesson
- * they teach, not once it was cancelled, and not for lessons that ended more than a week ago, so a
- * coach does not keep a student they no longer teach.
+ * Whether the coach reads and edits the student's 学员档案 on this lesson: only around a paid
+ * lesson they teach, not before it is paid or once it was cancelled, and not for lessons that ended
+ * more than a week ago, so a coach does not keep a student they no longer teach.
  */
 function profileOpen(
   b: Pick<typeof bookings.$inferSelect, 'status' | 'endsAt'>,
@@ -37,9 +38,15 @@ function profileOpen(
 ) {
   return (
     !studentDeletedAt &&
-    (LIVE as readonly string[]).includes(b.status) &&
+    b.status === 'confirmed' &&
     b.endsAt.getTime() > now.getTime() - PROFILE_DAYS_AFTER * 86_400_000
   )
+}
+
+/** The profile as coaches get it: staff who saved it show as the venue, not by name. */
+function coachView(db: Deps['db'], studentId: number, now: Date): StudentProfileDto {
+  const p = studentProfile(db, studentId, now)
+  return p.updatedBy?.kind === 'staff' ? { ...p, updatedBy: { kind: 'staff', name: '场馆' } } : p
 }
 
 /** The lesson's student, or a refusal when the coach no longer has their 学员档案 on it. */
@@ -246,9 +253,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       phone: student?.phone ?? '',
     },
     profile:
-      student && profileOpen(b, student.deletedAt, now)
-        ? studentProfile(db, student.id, now)
-        : null,
+      student && profileOpen(b, student.deletedAt, now) ? coachView(db, student.id, now) : null,
     paidWith: b.paidWith,
     price: b.price,
     packageName: pkg?.name ?? null,

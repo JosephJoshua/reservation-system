@@ -17,14 +17,8 @@ import {
 } from '../../lib/shared'
 import { ApiError, errorMessage, showError } from '../../utils/api'
 import { isTop, navigateBackOnce } from '../../utils/nav'
-import { coachApi } from '../utils/coach-api'
+import { coachApi, profileClosed } from '../utils/coach-api'
 import { profileEdited } from '../utils/labels'
-
-// The lesson or the student changed so the profile can no longer be kept here: say why and go back.
-const LESSON_CHANGED = ['profile_closed', 'account_deleted', 'not_found']
-
-const changed = (err: unknown): err is ApiError =>
-  err instanceof ApiError && LESSON_CHANGED.includes(err.code)
 
 Page({
   data: {
@@ -78,7 +72,9 @@ Page({
       })
       this.fill(this.loaded)
     } catch (e) {
-      this.setData({ state: 'error', canRetry: true, error: errorMessage(e) })
+      const closed = profileClosed(e)
+      if (closed) this.getOpenerEventChannel().emit?.('stale')
+      this.setData({ state: 'error', canRetry: !closed, error: errorMessage(e) })
     }
   },
 
@@ -119,7 +115,7 @@ Page({
       })
       return 'merged'
     } catch (e) {
-      if (changed(e)) return 'closed'
+      if (profileClosed(e)) return 'closed'
       // The form stays as typed; the next save is refused again and tries once more.
       showError(e)
       return 'failed'
@@ -242,6 +238,14 @@ Page({
     if (err instanceof ApiError && err.code === 'edited_elsewhere') {
       const merged = await this.merge()
       if (merged === 'failed') return
+      if (merged === 'merged' && !this.data.canSave) {
+        // What they saved is what this coach meant to save.
+        wx.disableAlertBeforeUnload()
+        this.getOpenerEventChannel().emit?.('stale')
+        if (isTop(this)) navigateBackOnce()
+        wx.showToast({ title: '已保存', icon: 'success' })
+        return
+      }
       if (merged === 'merged') {
         await wx.showModal({
           title: '档案已被修改',
@@ -254,7 +258,7 @@ Page({
       }
       err = new ApiError(409, 'profile_closed', '这节课已不能查看学员档案')
     }
-    if (!changed(err)) {
+    if (!profileClosed(err)) {
       showError(err)
       return
     }

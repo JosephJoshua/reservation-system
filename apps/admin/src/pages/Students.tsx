@@ -464,7 +464,7 @@ function StudentDrawer({
 
           {s.feedback.length > 0 && (
             <Card title={`课后点评（${s.profile.feedbackCount}）`} bordered>
-              <FeedbackList items={s.feedback} total={s.profile.feedbackCount} />
+              <FeedbackList key={s.id} items={s.feedback} total={s.profile.feedbackCount} />
             </Card>
           )}
 

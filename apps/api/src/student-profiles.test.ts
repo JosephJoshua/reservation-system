@@ -221,9 +221,11 @@ describe('学员档案', () => {
       lessons: 0,
       noShows: 0,
       feedbackCount: 0,
-      updatedBy: { kind: 'staff', name: '管理员' },
+      // Coaches see the venue, not which staff member saved it.
+      updatedBy: { kind: 'staff', name: '场馆' },
       updatedAt: '2026-10-23T02:00:00.000Z',
     })
+    expect(JSON.stringify(lessonView.json)).not.toContain('管理员')
 
     // Once the lesson is cancelled the coach no longer sees it.
     await h.call('POST', `/bookings/${bookingId}/cancel`, {}, t)
@@ -418,6 +420,27 @@ describe('学员档案 kept by coaches', () => {
     ct = await bindCoach(h, coach.id)
     const cancelled = await h.call('PUT', path(res.json.bookingId), profile(), ct)
     expect(cancelled.json.error.code).toBe('profile_closed')
+  })
+
+  it('stays closed until the lesson is paid', async () => {
+    const h = setup()
+    const { coach, lesson, t } = await booked(h)
+    const res = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id, '2026-10-26', 10).id, lessonTypeId: lesson.id },
+      t,
+    )
+    const unpaid = res.json.bookingId as number
+    const ct = await bindCoach(h, coach.id)
+    const view = await h.call('GET', `/coach/lessons/${unpaid}`, undefined, ct)
+    expect(view.json.status).toBe('pending_payment')
+    expect(view.json.profile).toBeNull()
+    expect((await h.call('PUT', path(unpaid), profile(), ct)).json.error.code).toBe(
+      'profile_closed',
+    )
+    const list = await h.call('GET', `/coach/lessons/${unpaid}/student-feedback`, undefined, ct)
+    expect(list.json.error.code).toBe('profile_closed')
   })
 
   it('refuses once the student deleted their account', async () => {

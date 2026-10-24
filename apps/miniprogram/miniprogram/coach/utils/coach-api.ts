@@ -57,6 +57,16 @@ export async function bind(bindCode: string): Promise<CoachMeDto> {
   return res.coach
 }
 
+/**
+ * The lesson changed so its 学员档案 is no longer the coach's to see here: cancelled, over a week
+ * old, moved to another coach, or the student deleted their account. Retrying cannot help.
+ */
+export function profileClosed(e: unknown): e is ApiError {
+  return (
+    e instanceof ApiError && ['profile_closed', 'account_deleted', 'not_found'].includes(e.code)
+  )
+}
+
 export function isNotBound(e: unknown): boolean {
   return e instanceof ApiError && e.code === 'not_bound'
 }
