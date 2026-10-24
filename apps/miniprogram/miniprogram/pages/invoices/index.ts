@@ -1,5 +1,5 @@
 import { type InvoiceOrderDto, orderTitle, type StudentInvoicesDto } from '../../lib/shared'
-import { api, errorMessage } from '../../utils/api'
+import { api, errorMessage, showError } from '../../utils/api'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
 
@@ -69,7 +69,9 @@ Page({
       this.raw = orders
       this.setData({ state: 'ready', orders: orders.map(view) })
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed refresh keeps what is on screen.
+      if (this.data.state === 'ready') showError(e)
+      else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

@@ -87,6 +87,7 @@ Page({
   },
 
   id: 0,
+  cancelChecking: false,
   timer: 0 as number,
   catalog: null as CatalogDto | null,
   venue: null as HomeDto['venue'] | null,
@@ -292,8 +293,17 @@ Page({
   },
 
   async cancel() {
+    if (!this.data.booking || this.data.busy || this.cancelChecking) return
+    // Cancelled or changed on another phone since this page loaded: show that, not a refund
+    // that will not happen. The modal is asked right after, which keeps it inside the tap.
+    this.cancelChecking = true
+    try {
+      await this.refresh(true)
+    } finally {
+      this.cancelChecking = false
+    }
     const b = this.data.booking
-    if (!b || this.data.busy) return
+    if (!b?.canCancel || this.data.busy) return
     const quote = this.cancelQuote(b)
     const answer = await ask({
       title: '取消预约',

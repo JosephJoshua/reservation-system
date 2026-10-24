@@ -91,7 +91,9 @@ Page({
         packagesEnabled: catalog.payment.packagesEnabled,
       })
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed refresh keeps what is on screen.
+      if (this.data.state === 'ready') showError(e)
+      else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

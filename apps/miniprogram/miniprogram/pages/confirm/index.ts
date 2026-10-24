@@ -230,7 +230,8 @@ Page({
       })
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
-        await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
+        // So does backing out while it was booking: no cashier over the page they went back to.
+        if (!this.left) await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
         this.finish(res.bookingId)
         return
       }
