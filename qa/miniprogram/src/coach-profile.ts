@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
-import { startTheme } from './theme'
+import { qaTheme, resetTheme, startTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
 const outDir = fileURLToPath(new URL('../screenshots/coach-profile', import.meta.url))
@@ -282,6 +282,32 @@ try {
     },
   )
 
+  await step('the coach row keeps the day when the coach is free then, else moves on', async () => {
+    const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    const list = (await book.data('coaches')) as { id: number; name: string }[]
+    const chip = async (name: string) => {
+      const index = list.findIndex((c) => c.name === name)
+      check(index >= 0, `${name} should teach this lesson`)
+      // The strip starts with 不限教练, so a coach's chip is one after their place in the list.
+      await tap(book, '.coach', index + 1)
+      await sleep(800)
+      return waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    }
+    const day = (await book.data('date')) as string
+    let page = await chip('王磊')
+    check((await page.data('date')) === day, '王磊 is free that day, so it should stay')
+    const today = ((await page.data('days')) as { key: string }[])[0]?.key
+    check(day !== today, 'the step before should have left the page after today')
+    await tap(page, '.day', 0)
+    await sleep(800)
+    page = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    check((await page.data('date')) === today, 'picking today by hand should stay on today')
+    page = await chip('赵鹏')
+    const data = await page.data()
+    check(data.date !== today && (data.availableCount as number) > 0, '赵鹏 should move on')
+    await screenshot('book-chip-moved-on')
+  })
+
   await step('an unknown coach shows the error state', async () => {
     await miniProgram.reLaunch('/pages/coach-detail/index?id=99999')
     await waitForPage('pages/coach-detail/index', (d) => d.state === 'error')
@@ -291,5 +317,10 @@ try {
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)
   console.log('coach page checks passed')
 } finally {
-  await miniProgram.close()
+  try {
+    // A forced theme would otherwise stay set for the next run.
+    if (qaTheme()) await resetTheme(miniProgram)
+  } finally {
+    await miniProgram.close()
+  }
 }
