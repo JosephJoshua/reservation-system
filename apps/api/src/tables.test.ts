@@ -1,7 +1,15 @@
 import { venueInstant } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings, coaches, coachLessonTypes, orders, refunds, slots } from './db/schema'
+import {
+  bookings,
+  coaches,
+  coachLessonTypes,
+  lessonTypes,
+  orders,
+  refunds,
+  slots,
+} from './db/schema'
 import { type Harness, setup } from './test/harness'
 
 // The harness clock is 2026-10-23 10:00 at the venue. Every lesson here is on 10-25.
@@ -239,5 +247,51 @@ describe('table limit', () => {
       )
     ).json
     expect(peek).toMatchObject([{ id: other.id, tableFull: true }])
+  })
+
+  it('counts a group session as one table however many join', async () => {
+    const h = setup()
+    const v = venue(h, 2, 1)
+    const kids = h.db
+      .insert(lessonTypes)
+      .values({ name: '少儿小班课', durationMinutes: 60, price: 8000, capacity: 4 })
+      .returning()
+      .get()
+    for (const i of [0, 1]) {
+      h.db
+        .insert(coachLessonTypes)
+        .values({ coachId: v.coach(i), lessonTypeId: kids.id })
+        .run()
+    }
+    const admin = await h.admin()
+    const created = await h.call(
+      'POST',
+      '/admin/sessions',
+      {
+        lessonTypeId: kids.id,
+        capacity: 4,
+        sessions: [0, 1].map((i) => ({
+          coachId: v.coach(i),
+          startsAt: venueInstant('2026-10-25', 10 * 60).toISOString(),
+          endsAt: venueInstant('2026-10-25', 11 * 60).toISOString(),
+        })),
+      },
+      admin,
+    )
+    expect(created.status).toBe(201)
+    const [first, second] = created.json.ids as number[]
+    const t1 = await h.student('k1')
+    const t2 = await h.student('k2')
+    const t3 = await h.student('k3')
+    await pay(h, await book(h, t1, first ?? 0, kids.id))
+    // A second student joins the same session: no new table.
+    const join = await book(h, t2, first ?? 0, kids.id)
+    expect(join.status).toBe(201)
+    // The other coach's empty session would need a second table.
+    const other = await book(h, t3, second ?? 0, kids.id)
+    expect(other.json.error?.code).toBe('tables_full')
+    const listed = (await h.call('GET', '/slots?date=2026-10-25', undefined, t3)).json
+    expect(listed.find((s: { id: number }) => s.id === first).available).toBe(true)
+    expect(listed.find((s: { id: number }) => s.id === second).available).toBe(false)
   })
 })
