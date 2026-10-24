@@ -1,6 +1,11 @@
-import { formatYuan, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/shared'
+import { addVenueDays, formatYuan, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/shared'
 
 export const yuan = (fen: number) => `¥${formatYuan(fen)}`
+
+const grouped = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
+
+/** Yuan with thousands separators, for big figures such as report totals. */
+export const yuanGrouped = (fen: number) => `¥${grouped.format(fen / 100)}`
 
 /** Yuan typed by the admin to fen. Returns null when it is not a valid amount. */
 export function toFen(yuanValue: number | string | undefined | null): number | null {
@@ -52,9 +57,7 @@ export function isoToPicker(iso: string | null | undefined) {
   return `${fmtDate(iso)} ${fmtTime(iso)}:00`
 }
 
-export function addDays(dateKey: string, days: number) {
-  return venueDateKey(new Date(venueInstant(dateKey, 12 * 60).getTime() + days * 86_400_000))
-}
+export const addDays = addVenueDays
 
 export const today = () => venueDateKey(new Date())
 

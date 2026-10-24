@@ -103,6 +103,7 @@ import {
   updateStaff,
   verifyPassword,
 } from '../services/staff'
+import { dashboard, dormantStudents, statsReport } from '../services/stats'
 import { saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
@@ -1077,6 +1078,8 @@ export function adminRoutes(deps: Deps) {
           .enum(['pending_payment', 'confirmed', 'completed', 'cancelled', 'expired'])
           .optional(),
         order: z.enum(['asc', 'desc']).default('asc'),
+        // Only bookings with no attendance marked, for the overview's 待签到.
+        unmarked: z.literal('1').optional(),
       }),
     )
     const now = deps.now()
@@ -1099,6 +1102,7 @@ export function adminRoutes(deps: Deps) {
           q.to ? lt(bookings.startsAt, q.to) : undefined,
           q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
           q.coachId ? eq(slots.coachId, q.coachId) : undefined,
+          q.unmarked ? isNull(bookings.attendance) : undefined,
           status,
         ),
       )
@@ -1950,6 +1954,13 @@ export function adminRoutes(deps: Deps) {
                 .optional()
                 .transform((v) => v === '1')
             : z.undefined().optional(),
+        unmarked:
+          k === 'bookings'
+            ? z
+                .enum(['1'])
+                .optional()
+                .transform((v) => v === '1')
+            : z.undefined().optional(),
       }),
     )
     const { csv, rows } = buildExport(db, k, q, deps.now())
@@ -2015,6 +2026,14 @@ export function adminRoutes(deps: Deps) {
     return c.json(monthlyReport(deps, month))
   })
 
+  app.get('/reports/stats', (c) => {
+    const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+    const { from, to } = parseQuery(c, z.object({ from: date, to: date }))
+    return c.json(statsReport(deps, from, to))
+  })
+
+  app.get('/reports/dormant', (c) => c.json(dormantStudents(deps)))
+
   // Dashboard numbers for the admin home page.
   app.get('/summary', (c) => {
     const now = deps.now()
@@ -2043,6 +2062,7 @@ export function adminRoutes(deps: Deps) {
           .innerJoin(orders, eq(orders.id, refunds.orderId))
           .where(and(eq(refunds.status, 'pending'), eq(orders.provider, 'offline')))
           .get()?.n ?? 0,
+      ...dashboard(deps),
     })
   })
 

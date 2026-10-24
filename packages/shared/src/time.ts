@@ -34,3 +34,10 @@ export function venueInstant(dateKey: string, minutes: number): Date {
   }
   return new Date(midnightUtc - VENUE_UTC_OFFSET_MS + minutes * 60_000)
 }
+
+/** The venue date a number of days after (or before, when negative) another. */
+export function addVenueDays(dateKey: string, days: number): string {
+  return venueDateKey(
+    new Date(venueInstant(dateKey, 12 * 60).getTime() + days * 24 * 60 * 60 * 1000),
+  )
+}
