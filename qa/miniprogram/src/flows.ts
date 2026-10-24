@@ -133,7 +133,6 @@ try {
   await step('home shows banners, notice and lessons', async () => {
     await miniProgram.reLaunch('/pages/booking/index')
     const home = await waitForPage('pages/booking/index')
-    await expectStudent(miniProgram, student)
     const data = await home.data()
     check(data.state === 'ready', `home state ${data.state}: ${data.error}`)
     check((data.lessonTypes as unknown[]).length >= 2, 'expected the seeded lesson types')
@@ -149,6 +148,8 @@ try {
     check(trialIndex >= 0, 'no trial lesson on the home page')
     await tap(home, '.lesson', trialIndex)
     const book = await waitForPage('pages/book/index', (d) => d.slotsState === 'ready')
+    // 首页 may use the catalog cached before the switch, so this page is the first to sign in.
+    await expectStudent(miniProgram, student)
     await screenshot('book-trial')
     // Two days out is always past the 24-hour free-cancel deadline, so the refund is in full.
     await tap(book, '.day', 2)

@@ -31,7 +31,10 @@ async function studentId(token: string): Promise<number | undefined> {
   return res.ok ? ((await res.json()) as { id: number }).id : undefined
 }
 
-/** Waits for the page's session and fails unless it belongs to the dev student `login`. */
+/**
+ * Waits for the page's session and fails unless it belongs to the dev student `login`. Call it on
+ * a page that makes a signed-in request; one served from cached data never logs in.
+ */
 export async function expectStudent(miniProgram: MiniProgram, login: string) {
   const res = await fetch(`${api}/api/auth/student`, {
     method: 'POST',

@@ -108,7 +108,6 @@ try {
   await step('home lists the coaches with category and title', async () => {
     await miniProgram.reLaunch('/pages/booking/index')
     const home = await waitForPage('pages/booking/index')
-    await expectStudent(miniProgram, studentLogin)
     coaches = (await home.data('coaches')) as CoachRow[]
     check(coaches.length >= 3, `expected the seeded coaches, got ${coaches.length}`)
     check(coaches[0]?.category === '主教练', 'first coach should be the 主教练')
@@ -120,6 +119,8 @@ try {
     const home = await waitForPage('pages/booking/index')
     await tap(home, '.lesson', ((await home.data('lessonTypes')) as unknown[]).length)
     const page = await waitForPage('pages/coach-detail/index')
+    // 首页 may use the catalog cached before the switch, so this page is the first to sign in.
+    await expectStudent(miniProgram, studentLogin)
     const data = await page.data()
     check(data.state === 'ready', `coach page state ${data.state}: ${data.error}`)
     check(data.category === '主教练' && (data.tags as string[]).length === 3, 'category and tags')
