@@ -3,6 +3,7 @@ import { assetUrl, errorMessage, publicApi } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
+import { openOnce } from '../../utils/tap'
 
 Page({
   data: {
@@ -111,22 +112,27 @@ Page({
   openMap() {
     const venue = this.data.venue
     if (!venue) return
-    if (venue.latitude == null || venue.longitude == null) {
-      if (venue.address) wx.setClipboardData({ data: venue.address })
+    const { latitude, longitude } = venue
+    if (latitude == null || longitude == null) {
+      const { address } = venue
+      if (address) openOnce((complete) => wx.setClipboardData({ data: address, complete }))
       return
     }
-    wx.openLocation({
-      latitude: venue.latitude,
-      longitude: venue.longitude,
-      name: venue.name,
-      address: venue.address,
-      scale: 16,
-    })
+    openOnce((complete) =>
+      wx.openLocation({
+        latitude,
+        longitude,
+        name: venue.name,
+        address: venue.address,
+        scale: 16,
+        complete,
+      }),
+    )
   },
 
   call() {
     const phone = this.data.venue?.phone
-    if (phone) wx.makePhoneCall({ phoneNumber: phone })
+    if (phone) openOnce((complete) => wx.makePhoneCall({ phoneNumber: phone, complete }))
   },
 
   onShareAppMessage() {

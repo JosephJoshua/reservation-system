@@ -13,7 +13,7 @@ import { refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 import { previewPhotos } from '../../utils/photos'
-import { ask } from '../../utils/tap'
+import { ask, openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
 
 const STATUS: Record<BookingDto['status'], { title: string; icon: string; tone: string }> = {
@@ -335,17 +335,21 @@ Page({
   openMap() {
     const venue = this.venue
     if (!venue) return
-    if (venue.latitude == null || venue.longitude == null) {
-      wx.setClipboardData({ data: venue.address })
+    const { latitude, longitude } = venue
+    if (latitude == null || longitude == null) {
+      openOnce((complete) => wx.setClipboardData({ data: venue.address, complete }))
       return
     }
-    wx.openLocation({
-      latitude: venue.latitude,
-      longitude: venue.longitude,
-      name: venue.name,
-      address: venue.address,
-      scale: 16,
-    })
+    openOnce((complete) =>
+      wx.openLocation({
+        latitude,
+        longitude,
+        name: venue.name,
+        address: venue.address,
+        scale: 16,
+        complete,
+      }),
+    )
   },
 
   retry() {
