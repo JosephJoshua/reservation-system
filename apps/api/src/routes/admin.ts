@@ -603,7 +603,7 @@ export function adminRoutes(deps: Deps) {
     const pay = diff(
       new Map(before.payRates.map((r) => [r.lessonTypeId, r.rate])),
       new Map(category.payRates.map((r) => [r.lessonTypeId, r.rate])),
-      '取消课时费',
+      '改为未设置',
     )
     if (pay.length) {
       log(staffId, {

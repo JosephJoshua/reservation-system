@@ -16,13 +16,12 @@ export interface PayableLesson {
 /**
  * Whether the coach is paid for a lesson. A lesson that ended is paid, unless the student did
  * not come and no-shows don't count; unmarked lessons are paid as taught. A student's late cancel
- * is paid only when the venue counts them. Venue cancels and other cancels are never paid.
+ * is paid only when the venue counts them, once the lesson time has passed. Venue cancels and other cancels are never paid.
  */
 export function countsForPay(l: PayableLesson, rules: PayRules, now: Date) {
-  if (l.status === 'confirmed') {
-    if (l.endsAt > now) return false
-    return l.attendance !== 'no_show' || rules.noShows
-  }
+  // Like taught lessons, a late cancel counts once its time has passed.
+  if (l.endsAt > now) return false
+  if (l.status === 'confirmed') return l.attendance !== 'no_show' || rules.noShows
   if (l.status === 'cancelled') return l.cancelledBy === 'student' && l.late && rules.lateCancels
   return false
 }

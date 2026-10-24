@@ -36,10 +36,10 @@ describe('countsForPay', () => {
     const late = { ...lesson, status: 'cancelled', cancelledBy: 'student', late: true } as const
     expect(countsForPay(late, { noShows: true, lateCancels: false }, now)).toBe(false)
     expect(countsForPay(late, { noShows: false, lateCancels: true }, now)).toBe(true)
-    // A late cancel of a lesson later in the month is already settled.
+    // Like a taught lesson, it counts once its time has passed.
     expect(
       countsForPay({ ...late, endsAt: later }, { noShows: true, lateCancels: true }, now),
-    ).toBe(true)
+    ).toBe(false)
     const all = { noShows: true, lateCancels: true }
     expect(countsForPay({ ...late, late: false }, all, now)).toBe(false)
     expect(countsForPay({ ...late, cancelledBy: 'venue' }, all, now)).toBe(false)
@@ -108,7 +108,7 @@ describe('pay rates on coach categories', () => {
     res = await put({ prices: [{ lessonTypeId: lesson.id, price: 30000 }], payRates: [] })
     expect(res.json.payRates).toEqual([])
     expect((await payLog(h, admin))[0]).toBe(
-      '类别「主教练」课时费：一对一私教 取消课时费；体验课 取消课时费',
+      '类别「主教练」课时费：一对一私教 改为未设置；体验课 改为未设置',
     )
   })
 
