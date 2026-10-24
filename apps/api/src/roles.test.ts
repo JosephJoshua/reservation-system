@@ -127,6 +127,20 @@ describe('staff roles', () => {
     expect((await h.call('PATCH', path, { tester: true }, admin)).status).toBe(204)
   })
 
+  it('shows coach bind codes to 管理员 only', async () => {
+    const h = setup()
+    const { coach } = h.seed()
+    const admin = await h.admin()
+    const desk = (await login(h, admin, 'desk', ['front_desk', 'finance'])).token
+    const code = (await h.call('POST', `/admin/coaches/${coach.id}/bind-code`, undefined, admin))
+      .json.code
+    expect(code).toBeTruthy()
+    const seen = async (token: string) =>
+      (await h.call('GET', '/admin/coaches', undefined, token)).json[0].bindCode
+    expect(await seen(admin)).toBe(code)
+    expect(await seen(desk)).toBeNull()
+  })
+
   it('applies a role change at once and logs it', async () => {
     const h = setup()
     const admin = await h.admin()

@@ -448,16 +448,19 @@ export function adminRoutes(deps: Deps) {
     }
   }
 
-  app.get('/coaches', need('view'), (c) =>
-    c.json(
+  app.get('/coaches', need('view'), (c) => {
+    // A live bind code would let whoever reads it sign in as the coach.
+    const binds = can(c.get('roles'), 'manage')
+    return c.json(
       db
         .select({ id: coaches.id })
         .from(coaches)
         .orderBy(asc(coaches.sort), asc(coaches.id))
         .all()
-        .map((r) => coachView(r.id)),
-    ),
-  )
+        .map((r) => coachView(r.id))
+        .map((v) => (binds ? v : { ...v, bindCode: null, bindCodeExpiresAt: null })),
+    )
+  })
 
   const checkLessonTypes = (tx: Q, ids: number[]) => {
     const known = new Set(
