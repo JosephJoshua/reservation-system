@@ -14,13 +14,14 @@
   <view class="summary card">
     <view class="summary-name">{{lessonName}}</view>
     <view class="summary-when">{{when}}</view>
-    <view class="coach">
+    <view class="coach" hover-class="coach-hover" bind:tap="openCoach">
       <t-avatar image="{{coachAvatar}}" icon="{{coachAvatar ? '' : 'user'}}" size="72rpx" />
       <view class="coach-text">
         <view class="coach-name">{{coachName}}</view>
         <view wx:if="{{coachTitle}}" class="coach-title">{{coachTitle}}</view>
       </view>
       <view class="muted duration">{{duration}} 分钟</view>
+      <view class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
     </view>
   </view>
 

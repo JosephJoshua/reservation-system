@@ -83,12 +83,6 @@
   white-space: nowrap;
 }
 
-.lesson-arrow {
-  display: flex;
-  margin-left: 8rpx;
-  color: var(--td-text-color-placeholder);
-}
-
 .profile-body {
   padding: 28rpx 32rpx;
   font-size: 30rpx;

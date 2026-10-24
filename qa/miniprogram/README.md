@@ -48,7 +48,8 @@ It unbinds the first seeded coach before it starts and after it ends.
 ## Coach pages
 
 Checks the coach list on the home page, a coach's page (category, tags, prices, rich text
-profile), booking from it and the link back from the booking page, saving screenshots to
+profile), booking from it, the links to it from the booking page (also the coach list shown
+before a coach is picked) and the confirm page, and double taps on those links, saving screenshots to
 `qa/miniprogram/screenshots/coach-profile/`. It uses the same seeded API as the student flows.
 Run it once with DevTools in light mode and once in dark mode:
 

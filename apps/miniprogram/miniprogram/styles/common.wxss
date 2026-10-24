@@ -24,6 +24,13 @@
   text-decoration: line-through;
 }
 
+/* Chevron at the end of a tappable row. */
+.row-arrow {
+  display: flex;
+  margin-left: 8rpx;
+  color: var(--td-text-color-placeholder);
+}
+
 .muted {
   color: var(--td-text-color-secondary);
 }

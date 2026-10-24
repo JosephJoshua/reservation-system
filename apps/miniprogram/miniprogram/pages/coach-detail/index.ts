@@ -5,6 +5,12 @@ import { priceText } from '../../utils/format'
 import { navigateBackOnce, navigateOnce, switchTabOnce } from '../../utils/nav'
 import { richTextNodes } from '../../utils/rich-text'
 
+/** The parts of the booking page this page uses when going back to it. */
+type BookPage = WechatMiniprogram.Page.Instance<
+  { coaches: { id: number }[] },
+  { chooseCoach(id: number): void }
+>
+
 interface LessonRow {
   id: number
   name: string
@@ -29,6 +35,8 @@ Page({
     lessons: [] as LessonRow[],
     profile: '',
   },
+
+  picking: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({ id: Number(query.id) })
@@ -100,28 +108,38 @@ Page({
       this.book(only.id)
       return
     }
+    // A double tap would open the sheet twice.
+    if (this.picking) return
+    this.picking = true
     wx.showActionSheet({
       itemList: lessons.map((l) => `${l.name} ${l.price}`),
       success: (res) => {
         const picked = lessons[res.tapIndex]
         if (picked) this.book(picked.id)
       },
+      complete: () => {
+        this.picking = false
+      },
     })
   },
 
   book(lessonTypeId: number) {
-    // Opened from that lesson's booking page with this coach picked: just go back to it.
+    // Opened while booking this lesson: go back and keep booking with this coach.
     const pages = getCurrentPages()
     const prev = pages[pages.length - 2]
-    if (
-      prev?.route === 'pages/book/index' &&
-      prev.data.lessonTypeId === lessonTypeId &&
-      prev.data.coachId === this.data.id
-    ) {
-      navigateBackOnce()
-      return
+    const id = this.data.id
+    if (prev?.data.lessonTypeId === lessonTypeId) {
+      if (prev.route === 'pages/confirm/index' && prev.data.coachId === id) {
+        navigateBackOnce()
+        return
+      }
+      const book = prev as BookPage
+      if (prev.route === 'pages/book/index' && book.data.coaches.some((c) => c.id === id)) {
+        if (navigateBackOnce()) book.chooseCoach(id)
+        return
+      }
     }
-    navigateOnce(`/pages/book/index?lessonTypeId=${lessonTypeId}&coachId=${this.data.id}`)
+    navigateOnce(`/pages/book/index?lessonTypeId=${lessonTypeId}&coachId=${id}`)
   },
 
   onShareAppMessage() {

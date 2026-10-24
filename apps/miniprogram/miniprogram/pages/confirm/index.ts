@@ -122,10 +122,17 @@ Page({
   },
 
   openPolicy(e: WechatMiniprogram.TouchEvent) {
+    if (this.data.submitting) return
     navigateOnce(`/pages/policy/index?kind=${e.currentTarget.dataset.kind}`)
   },
 
+  openCoach() {
+    if (this.data.submitting) return
+    navigateOnce(`/pages/coach-detail/index?id=${this.data.coachId}`)
+  },
+
   openPackages() {
+    if (this.data.submitting) return
     navigateOnce(`/pages/packages/index?lessonTypeId=${this.data.lessonTypeId}`)
   },
 
@@ -148,6 +155,9 @@ Page({
     })
     this.setData({ needName: false, needPhone: false })
   },
+
+  // The links above stay put while submitting: the result redirects the top page, which would be
+  // the linked page instead of this one.
 
   async submit() {
     if (this.data.submitting) return

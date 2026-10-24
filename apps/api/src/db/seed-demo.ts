@@ -197,12 +197,15 @@ const [tenPack] = db
   .all()
 if (!tenPack) throw new Error('package insert failed')
 
-// Hourly slots 09:00-21:00 for every coach, from today through two weeks out.
+// Hourly slots 09:00-21:00 for every coach, from today through two weeks out. Zhao starts
+// tomorrow, so QA can check that picking him skips ahead to his first open day.
 const today = venueDateKey(now)
+const zhaoId = zhao.id
 const rows: (typeof slots.$inferInsert)[] = []
 for (let day = 0; day <= 14; day++) {
   const date = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + day * 86400000))
   for (const coach of [wang, li, zhao]) {
+    if (coach.id === zhaoId && day === 0) continue
     for (let hour = 9; hour < 21; hour++) {
       // Leave each coach a couple of gaps so the grid looks like a real week.
       if ((hour + coach.id + day) % 5 === 0) continue

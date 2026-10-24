@@ -1,6 +1,7 @@
 // Drives the coach pages against a local API seeded with `pnpm --filter @rs/api db:seed`: the
 // coach list on the home page, a coach's page with category, tags, prices and rich text profile,
-// booking from it, and the link back from the booking page. Saves screenshots to
+// booking from it, the links to it from the booking and confirm pages, and the list of coaches
+// shown on the booking page before one is picked. Saves screenshots to
 // screenshots/coach-profile/; run it once in light and once in dark mode.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -164,6 +165,119 @@ try {
     check((await book.data('coachId')) === two.id, 'coach should be picked')
     await miniProgram.restoreWxMethod('showActionSheet')
   })
+
+  const stackSize = async () =>
+    (await miniProgram.evaluate(() => getCurrentPages().length)) as number
+
+  /** Opens the time picker for 一对一私教, which all three seeded coaches teach. */
+  async function openPrivateLesson(): Promise<Page> {
+    await miniProgram.reLaunch('/pages/booking/index')
+    const home = await waitForPage('pages/booking/index')
+    const types = (await home.data('lessonTypes')) as { name: string }[]
+    const index = types.findIndex((t) => t.name === '一对一私教')
+    check(index >= 0, 'no seeded 一对一私教')
+    await tap(home, '.lesson', index)
+    return waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+  }
+
+  await step('with no coach picked, the booking page lists every coach to read about', async () => {
+    const book = await openPrivateLesson()
+    check((await book.data('coachId')) === 0, 'no coach should be picked')
+    check(((await book.data('coaches')) as unknown[]).length === 3, 'expected 3 coaches')
+    await tap(book, '.coach-info')
+    await sleep(400)
+    check((await book.data('coachSheet')) === true, 'the coach list should open')
+    check((await book.$$('.sheet-coach')).length === 3, 'every coach of the lesson is listed')
+    await screenshot('book-coach-sheet')
+    // A double tap opens the coach page once.
+    const rows = await book.$$('.sheet-coach')
+    await Promise.all([rows[0]?.tap(), rows[0]?.tap()])
+    await waitForPage('pages/coach-detail/index')
+    await sleep(800)
+    check((await stackSize()) === 3, 'a double tap should open one coach page')
+  })
+
+  await step('going back keeps the list open and the choice unchanged', async () => {
+    await miniProgram.navigateBack()
+    const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    check((await book.data('coachSheet')) === true, 'the list should still be open')
+    check((await book.data('coachId')) === 0, 'no coach should be picked yet')
+    const rows = await book.$$('.sheet-coach')
+    await rows[0]?.tap()
+    await waitForPage('pages/coach-detail/index')
+  })
+
+  await step('booking from the coach page picks that coach on the booking page', async () => {
+    await invoke('pickLesson')
+    await invoke('pickLesson')
+    await waitForPage('pages/book/index')
+    await sleep(800)
+    check((await stackSize()) === 2, 'a double tap should go back once')
+    // Slots reload on show, so wait for the ones for the picked coach.
+    const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    const data = await book.data()
+    check(data.coachId === coaches[0]?.id, `coach should be picked (${data.coachId})`)
+    check(data.coachSheet === false, 'the list should be closed')
+    const slots = data.slots as { coachName: string }[]
+    check(
+      slots.every((s) => s.coachName === coaches[0]?.name),
+      'slots should be for that coach only',
+    )
+    await screenshot('book-after-coach-sheet')
+  })
+
+  await step('the coach on the confirm page opens the coach page and returns', async () => {
+    const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    const slots = (await book.data('slots')) as { available: boolean }[]
+    const index = slots.findIndex((s) => s.available)
+    check(index >= 0, 'no open slot for the first coach')
+    await tap(book, '.slot', index)
+    const confirm = await waitForPage('pages/confirm/index')
+    await screenshot('confirm-coach-link')
+    await tap(confirm, '.coach')
+    await waitForPage('pages/coach-detail/index')
+    await invoke('pickLesson')
+    await waitForPage('pages/confirm/index')
+    await sleep(800)
+    check((await stackSize()) === 3, 'booking again should go back to the confirm page')
+  })
+
+  await step(
+    "picking a coach with nothing today skips ahead to that coach's first open day",
+    async () => {
+      // The seed gives 赵鹏 no slots today.
+      const zhao = coaches.find((c) => c.title === '前市队主力')
+      check(zhao, 'no seeded 赵鹏')
+      const book = await openPrivateLesson()
+      const before = (await book.data('date')) as string
+      const today = ((await book.data('days')) as { key: string }[])[0]?.key
+      await tap(book, '.coach-info')
+      await sleep(400)
+      const list = (await book.data('coaches')) as { id: number }[]
+      await tap(
+        book,
+        '.sheet-coach',
+        list.findIndex((c) => c.id === zhao.id),
+      )
+      const page = await waitForPage('pages/coach-detail/index')
+      const lessons = (await page.data('lessons')) as { name: string }[]
+      const tapIndex = lessons.findIndex((l) => l.name === '一对一私教')
+      await miniProgram.mockWxMethod('showActionSheet', { tapIndex, errMsg: 'showActionSheet:ok' })
+      await invoke('pickLesson')
+      await waitForPage('pages/book/index')
+      await sleep(800)
+      const after = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+      await miniProgram.restoreWxMethod('showActionSheet')
+      const data = await after.data()
+      check(data.coachId === zhao.id, '赵鹏 should be picked')
+      check(
+        (data.availableCount as number) > 0,
+        `the day shown should have open slots (${data.date})`,
+      )
+      if (before === today) check(data.date !== today, 'should have moved past today')
+      await screenshot('book-skipped-to-first-day')
+    },
+  )
 
   await step('an unknown coach shows the error state', async () => {
     await miniProgram.reLaunch('/pages/coach-detail/index?id=99999')

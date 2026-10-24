@@ -59,6 +59,70 @@
   color: var(--td-text-color-brand);
 }
 
+.sheet {
+  padding: 32rpx 0 calc(24rpx + env(safe-area-inset-bottom));
+  background-color: var(--td-bg-color-container);
+  border-radius: 24rpx 24rpx 0 0;
+}
+
+.sheet-title {
+  padding: 0 32rpx 24rpx;
+  font-size: 34rpx;
+  font-weight: 600;
+  text-align: center;
+  color: var(--td-text-color-primary);
+}
+
+.sheet-coach {
+  display: flex;
+  align-items: center;
+  min-height: 128rpx;
+  padding: 0 24rpx 0 32rpx;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.sheet-coach-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.sheet-coach-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24rpx;
+}
+
+.sheet-coach-name {
+  display: flex;
+  align-items: center;
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+.sheet-coach-tag {
+  margin: 0 0 0 12rpx;
+}
+
+.sheet-coach-title {
+  margin-top: 4rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.sheet-coach-price {
+  margin-left: 16rpx;
+  font-size: 28rpx;
+  text-align: right;
+  color: var(--td-text-color-primary);
+}
+
+.sheet-coach-price .price-original {
+  margin-left: 0;
+}
+
+
 .slot-grid {
   padding-bottom: calc(48rpx + env(safe-area-inset-bottom));
 }
