@@ -42,6 +42,8 @@ import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
 import { StudentSearch } from './StudentSearch'
+import { ThemeMenu } from './ThemeMenu'
+import { useThemeMode } from './theme'
 
 type Page = { label: string; icon: ComponentType; component: ComponentType }
 
@@ -78,18 +80,6 @@ const navGroups: { title?: string; keys: PageKey[] }[] = [
 function currentPage(): PageKey {
   const key = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? ''
   return key in pages ? (key as PageKey) : 'overview'
-}
-
-/** Follows the system light or dark preference. */
-function useThemeMode() {
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () =>
-      document.documentElement.setAttribute('theme-mode', media.matches ? 'dark' : 'light')
-    apply()
-    media.addEventListener('change', apply)
-    return () => media.removeEventListener('change', apply)
-  }, [])
 }
 
 export function App() {
@@ -244,6 +234,7 @@ function SignedInApp({
             </span>
             <span className="header-actions">
               {allowed.includes('students') && <StudentSearch compact={phone} />}
+              <ThemeMenu />
               {me.data && <span className="muted signed-in">{me.data.name}</span>}
               <Button variant="text" onClick={onLogout}>
                 退出登录

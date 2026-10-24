@@ -594,6 +594,62 @@ a:hover {
   font-weight: 400;
 }
 
+/* The header's 外观 popup (ThemeMenu.tsx). */
+.theme-menu-wrap {
+  display: inline-flex;
+}
+
+.theme-menu {
+  min-width: 160px;
+  padding: 8px 4px;
+}
+
+.theme-menu-choices {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.theme-menu-title {
+  padding: 0 12px 4px;
+  color: var(--td-text-color-secondary);
+  font: var(--td-font-body-small);
+}
+
+.theme-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--td-radius-default);
+  background: none;
+  color: var(--td-text-color-primary);
+  font: var(--td-font-body-medium);
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-menu-item:hover {
+  background: var(--td-bg-color-container-hover);
+}
+
+.theme-menu-item:focus-visible {
+  outline: 2px solid var(--td-brand-color);
+  outline-offset: -2px;
+}
+
+.theme-menu-item[aria-pressed="true"] {
+  color: var(--td-brand-color);
+}
+
+.theme-menu-check {
+  margin-left: auto;
+}
+
 /* Plain text in a form row, lined up with the label. */
 .field-text {
   display: inline-block;
@@ -690,6 +746,15 @@ a:hover {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--td-text-color-primary);
+}
+
+/* Native scrollbars and form controls follow the 外观 setting too. */
+:root[theme-mode="light"] {
+  color-scheme: light;
+}
+
+:root[theme-mode="dark"] {
+  color-scheme: dark;
 }
 
 /* Charts (charts.tsx). Series colors were checked for color-blind separation on both surfaces. */

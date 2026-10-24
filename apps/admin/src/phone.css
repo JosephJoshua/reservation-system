@@ -24,9 +24,14 @@
     padding: 12px;
   }
 
-  .admin-menu-button {
+  .admin-menu-button,
+  .theme-menu-button {
     width: 44px;
     height: 44px;
+  }
+
+  .theme-menu-item {
+    min-height: 44px;
   }
 
   .admin-header .t-button {
