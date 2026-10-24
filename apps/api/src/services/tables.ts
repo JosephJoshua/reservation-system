@@ -28,8 +28,8 @@ export function assertTableFree(
 }
 
 /**
- * The slots among these that a new lesson could not get a table for. `except` is the student's
- * booking being moved, which gives up its place.
+ * The slots among these that a new lesson could not get a table for. `except` is a booking being
+ * moved, which gives up its place wherever it goes.
  */
 export function slotsWithoutTable(
   tx: Q,
@@ -42,8 +42,9 @@ export function slotsWithoutTable(
   const from = new Date(Math.min(...slots.map((s) => s.startsAt.getTime())))
   const to = new Date(Math.max(...slots.map((s) => s.endsAt.getTime())))
   const running = runningLessons(tx, { startsAt: from, endsAt: to }, except)
+  const held = new Set(running.map((r) => r.slotId))
   for (const s of slots) {
-    if (running.some((r) => r.slotId === s.id)) continue
+    if (held.has(s.id)) continue
     if (!tablesFree(s, running, tables)) full.add(s.id)
   }
   return full
