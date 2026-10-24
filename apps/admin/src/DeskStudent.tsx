@@ -84,7 +84,7 @@ export function NewStudentDialog({
             onChange={(v) => setName(String(v))}
           />
         </Field>
-        <Field label="手机号" help="用于上课联系。请先告知学员会登记这些信息。">
+        <Field label="手机号" help="用于上课时联系学员。登记前请先告知学员。">
           <Input
             value={phone}
             maxlength={11}
@@ -203,7 +203,7 @@ export function BindWechatDialog({
         {!bound && (
           <div className="muted">
             {code?.qr ? '请学员用微信扫码，或' : '请学员'}
-            在小程序「我的 &gt; 同步前台记录」输入绑定码。绑定码只给学员本人。
+            在小程序「我的 &gt; 同步前台记录」输入绑定码。绑定码请只给学员本人。
           </div>
         )}
         <Space>

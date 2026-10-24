@@ -274,7 +274,9 @@ export function BookForStudent({
       <div className="fields">
         <Field
           label="学员"
-          help={givenStudent || !canAdd ? undefined : '没有找到时可前台建档，学员不用先打开小程序'}
+          help={
+            givenStudent || !canAdd ? undefined : '找不到学员时可以前台建档，学员不必先打开小程序'
+          }
         >
           {givenStudent ? (
             <span className="field-text">
@@ -301,7 +303,7 @@ export function BookForStudent({
             ) : !coaches.data || !types.data ? (
               <span className="field-text muted">加载中</span>
             ) : fitting.length === 0 ? (
-              <span className="field-text muted">该教练没有与时段时长一致的课程</span>
+              <span className="field-text muted">这位教练没有和时段时长一致的课程</span>
             ) : (
               <Select
                 value={lessonTypeId}
@@ -335,7 +337,7 @@ export function BookForStudent({
               <>
                 <Field
                   label="实收金额"
-                  help={canPrice ? '填 0 为免费' : '按标价收款，改价请联系管理员'}
+                  help={canPrice ? '填 0 即为免费' : '按标价收款，改价请联系管理员'}
                 >
                   <InputNumber
                     theme="normal"

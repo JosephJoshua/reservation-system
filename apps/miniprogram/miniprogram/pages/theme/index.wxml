@@ -13,5 +13,5 @@
     </t-cell>
   </t-cell-group>
 </view>
-<view class="footnote">跟随系统时，随手机的深色模式自动切换。系统弹窗始终跟随手机设置。</view>
+<view class="footnote">选择跟随系统时，会随手机的深色模式自动切换。系统弹窗始终跟随手机的设置。</view>
 </theme-root>

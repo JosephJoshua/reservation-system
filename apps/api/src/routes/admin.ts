@@ -140,7 +140,7 @@ const username = z
   .trim()
   .toLowerCase()
   .refine((v) => /^[a-z0-9_.-]{3,20}$/.test(v), {
-    message: '登录名需为 3 到 20 位字母、数字或 _ . -',
+    message: '登录名需为 3 到 20 位，可以用字母、数字和 _ . -',
   })
 const staffName = z.string().trim().min(1).max(20)
 const roles = z

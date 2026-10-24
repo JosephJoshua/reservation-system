@@ -94,7 +94,7 @@ Page({
       const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
       const coach = catalog.coaches.find((c) => c.id === this.data.coachId)
       if (!lessonType || !coach) {
-        this.setData({ state: 'error', error: '该课程暂不可预约' })
+        this.setData({ state: 'error', error: '这门课程暂时不能预约' })
         return
       }
       const { price, package: pkg, perClassEnabled } = quote
@@ -107,7 +107,7 @@ Page({
           lessonType.capacity > 1
             ? `小班课，多人同上${
                 lessonType.minStudents
-                  ? `；课前 ${minCheckHours(catalog.booking)} 小时报名不足 ${lessonType.minStudents} 人将自动取消，退款或退回课时`
+                  ? `；如果课前 ${minCheckHours(catalog.booking)} 小时报名不足 ${lessonType.minStudents} 人，课程会自动取消，并退款或退回课时`
                   : ''
               }`
             : '',

@@ -51,11 +51,11 @@ export function askForNotices(
 export function cancelRuleText(hours: number, rule: LateCancelRule): string {
   const late =
     rule.kind === 'forfeit'
-      ? '逾期不退费用和课时'
+      ? '之后再取消，则不退费用和课时'
       : rule.percent === 100
-        ? '逾期也全额退款'
-        : `逾期退 ${rule.percent}% 费用，不退课时`
-  return `开课前 ${hours} 小时可免费取消，${late}。`
+        ? '之后取消也全额退款'
+        : `之后再取消，则退还 ${rule.percent}% 的费用，但不退课时`
+  return `开课前 ${hours} 小时以上可免费取消；${late}。`
 }
 
 /** Records that the student agreed to the policies now in force, as the policy page shows them. */

@@ -120,7 +120,7 @@ function BusyTimes({ cells, empty }: { cells: StatsReport['heatmap']; empty: str
           text: `已约 ${c.booked} 节 / 开放 ${c.offered} 节`,
         }
       }}
-      legend="点按格子看数字。"
+      legend="点击格子可以查看数字。"
     />
   )
 }
@@ -156,7 +156,8 @@ function Dormant() {
         onMore={list.loadMore}
       />
       <div className="muted" style={{ marginTop: 8 }}>
-        截至今天，有剩余课时、{DORMANT_DAYS} 天内没上课也没有预约的学员，不受上方日期影响。
+        截至今天，有剩余课时，但 {DORMANT_DAYS}{' '}
+        天内既没上课也没有预约的学员。不受上方日期筛选的影响。
       </div>
     </Card>
   )
@@ -310,7 +311,7 @@ export function Stats() {
 
         <ChartCard
           title="收入趋势"
-          note={`${grainNote}统计。收款按付款时间，未扣退款；课消是已上和逾时取消的课的价值，课时包按单节均价计。`}
+          note={`${grainNote}统计。收款按付款时间计，未扣除退款；课消是已上的课和逾时取消的课的价值，课时包按单节均价计算。`}
           table={seriesTable(labels, revenue, yuan)}
         >
           <LineChart
@@ -325,7 +326,7 @@ export function Stats() {
         <div className="chart-grid">
           <ChartCard
             title="上课节数"
-            note="已结束的课，小班课每节计一节。"
+            note="只统计已结束的课，小班课每节算一节。"
             table={seriesTable(labels, lessons, (v) => `${v} 节`)}
           >
             <ColumnChart
@@ -352,7 +353,10 @@ export function Stats() {
         </div>
 
         <div className="chart-grid">
-          <ChartCard title="教练排课占用" note="已结束的排课中被约的小时数，教练关闭的空时段不计。">
+          <ChartCard
+            title="教练排课占用"
+            note="已结束的排课中被预约的小时数，教练关闭的空闲时段不计入。"
+          >
             <MeterList
               empty={none('这段时间没有排课')}
               rows={(r?.coaches ?? []).map((c) => ({
@@ -384,7 +388,7 @@ export function Stats() {
           </ChartCard>
           <ChartCard
             title="预收未上课时"
-            note="每段结束时课时包里还没用的课时，按单节均价计。"
+            note="每个周期结束时课时包里还没用的课时，按单节均价计算。"
             table={seriesTable(labels, liability, yuan)}
           >
             <LineChart
@@ -397,7 +401,7 @@ export function Stats() {
           </ChartCard>
         </div>
 
-        <ChartCard title="小班课满班率" note="已结束的小班课里，约满的座位占比。">
+        <ChartCard title="小班课满班率" note="已结束的小班课中，被预约的座位所占的比例。">
           <MeterList
             empty={none('这段时间没有小班课')}
             rows={(r?.groups ?? []).map((g) => ({

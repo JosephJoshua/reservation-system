@@ -52,7 +52,7 @@
     </view>
   </view>
 
-  <view class="footnote">{{existing ? '修改后学员看到的是新内容，不会再次通知。' : '发布后学员会收到通知，在课程详情和学习记录里看到点评和照片。'}}课堂备注仍只有你和场馆可见。</view>
+  <view class="footnote">{{existing ? '修改后，学员会看到新的内容，但不会再次收到通知。' : '发布后学员会收到通知，并可以在课程详情和学习记录里看到点评和照片。'}}课堂备注仍只有你和场馆可见。</view>
 
   <view class="action-bar">
     <view wx:if="{{existing}}" class="grow">

@@ -32,7 +32,7 @@ export function Staff() {
     <div>
       <div className="toolbar">
         <span className="muted">
-          每位员工用自己的账号登录，角色决定能看到和操作的内容，所有操作都会记下是谁做的。
+          每位员工用自己的账号登录。角色决定了员工能看到和操作哪些内容，每项操作都会记下操作人。
         </span>
         <div className="toolbar-actions">
           <Button variant="outline" onClick={() => setEditing({ kind: 'own-password' })}>
@@ -201,7 +201,7 @@ function CreateStaff({ onClose, onDone }: DialogProps) {
         <Field label="姓名">
           <Input value={name} maxlength={20} onChange={(v) => setName(String(v))} />
         </Field>
-        <Field label="登录名" help="3 到 20 位字母、数字或 _ . -">
+        <Field label="登录名" help="3 到 20 位，可以用字母、数字和 _ . -">
           <Input
             value={username}
             maxlength={20}
@@ -267,7 +267,7 @@ function EditRoles({ member, onClose, onDone }: DialogProps & { member: StaffMem
     if (
       await attempt(
         () => api('PATCH', `/admin/staff/${member.id}`, { roles }, { key }),
-        '已保存，对方下次操作时生效',
+        '已保存，对方下次操作时就会生效',
         { onStale: onDone },
       )
     )
@@ -325,7 +325,7 @@ function ResetPassword({ member, onClose, onDone }: DialogProps & { member: Staf
     if (
       await attempt(
         () => api('PUT', `/admin/staff/${member.id}/password`, { password }),
-        '已重置，对方需用新密码重新登录',
+        '已重置，对方需要用新密码重新登录',
         { onStale: onDone },
       )
     )
@@ -340,7 +340,7 @@ function ResetPassword({ member, onClose, onDone }: DialogProps & { member: Staf
       onConfirm={submit}
       onClose={onClose}
     >
-      <Field label="新密码" help={`${passwordHelp}，对方已登录的设备会退出`}>
+      <Field label="新密码" help={`${passwordHelp}。重置后，对方已登录的设备都会退出登录`}>
         <Input
           type="password"
           autocomplete="new-password"
@@ -380,8 +380,8 @@ function Toggle({ member, onClose, onDone }: DialogProps & { member: StaffMember
     >
       <p>
         {member.active
-          ? '停用后对方立即退出，不能再登录。操作记录会保留。'
-          : '启用后对方可用原密码登录。'}
+          ? '停用后，对方会立即退出登录，也不能再登录。操作记录会保留。'
+          : '启用后，对方可以用原密码登录。'}
       </p>
     </Dialog>
   )
@@ -399,7 +399,7 @@ function OwnPassword({ onClose, onDone }: DialogProps) {
     if (
       await attempt(
         () => api('PUT', '/admin/me/password', { current, password }),
-        '已修改，其他设备需重新登录',
+        '已修改，其他设备需要重新登录',
       )
     )
       onDone()

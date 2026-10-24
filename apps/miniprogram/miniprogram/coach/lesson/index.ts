@@ -61,7 +61,7 @@ function feedbackNote(l: CoachLessonDto): string {
   if (l.feedback.hidden) return '场馆已隐藏这条点评，学员看不到。'
   if (l.status === 'cancelled') return '课程已取消，学员看不到这条点评。'
   if (l.attendance === null) return '签到已撤销，学员看不到这条点评。'
-  return '签到不是到课，学员看不到这条点评。'
+  return '签到状态不是到课，学员看不到这条点评。'
 }
 
 /** Why no feedback can be written, for a lesson that has started and has none. */
@@ -304,7 +304,7 @@ Page({
         : lesson.status === 'pending_payment'
           ? '学员还未付款，订单会关闭。'
           : lesson.price > 0
-            ? '已付款项将全额退回。'
+            ? '已付的款项会全额退回。'
             : ''
     const { confirm } = await wx.showModal({
       title: '取消这节课？',

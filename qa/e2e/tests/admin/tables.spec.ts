@@ -117,7 +117,7 @@ test('the schedule shows the fourth coach full and offers no 代约', async ({ p
   const chip = page.locator('.slot-chip', { hasText: '06:00-07:00' })
   await expect(chip).toContainText('球台已满')
   await chip.click()
-  await expect(dialog(page)).toContainText('尚无预约，该时段球台已满')
+  await expect(dialog(page)).toContainText('还没有预约，但这个时段的球台已满')
   await expect(dialog(page).getByRole('button', { name: '代约' })).toHaveCount(0)
   await page.waitForTimeout(300)
   await page.screenshot({ path: 'test-results/tables-schedule-light.png' })

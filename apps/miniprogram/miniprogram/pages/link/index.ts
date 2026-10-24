@@ -59,7 +59,7 @@ Page({
         if (!(e instanceof ApiError) || e.code !== 'confirm_merge') throw e
         const { confirm } = await wx.showModal({
           title: '合并为同一位学员？',
-          content: `${e.message}。如果前台记录是别人的，请换用本人微信同步。`,
+          content: `${e.message}。如果前台记录是别人的，请换用本人的微信同步。`,
           confirmText: '合并',
         })
         if (!confirm) return

@@ -274,7 +274,7 @@ export function Catalog() {
           rowKey="id"
           loading={categories.loading}
           data={categories.data ?? []}
-          empty="还没有类别，教练都按课程标准价"
+          empty="还没有类别，所有教练都按课程的标准价收费"
           columns={[
             { colKey: 'name', title: '名称' },
             {
@@ -559,7 +559,7 @@ function LessonEditor({
         <Input
           value={f.name}
           maxlength={30}
-          placeholder="如 一对一私教"
+          placeholder="如：一对一私教"
           onChange={(v) => set({ name: String(v) })}
         />
       </Field>
@@ -581,7 +581,7 @@ function LessonEditor({
           onChange={(v) => set({ durationMinutes: Number(v) || 60 })}
         />
       </Field>
-      <Field label="上课人数" help="多于 1 人为小班课，在排课页按节安排">
+      <Field label="上课人数" help="多于 1 人即为小班课，需要在排课页按节安排">
         <div className="stack">
           <InputNumber
             theme="normal"
@@ -625,13 +625,13 @@ function LessonEditor({
                   set({ minStudents: Math.max(2, Math.min(f.capacity, Number(v) || 2)) })
                 }
               />
-              <span className="muted">到免费取消截止时人数不足，整节自动取消并退款</span>
+              <span className="muted">到免费取消截止时如果人数不足，整节课会自动取消并退款</span>
             </>
           )}
         </div>
       </Field>
       {f.capacity > 1 && (
-        <Field label="每张球台" help="按报名人数占用球台，留空为整班一张台">
+        <Field label="每张球台" help="按报名人数占用球台，留空则整班共用一张台">
           <InputNumber
             theme="normal"
             value={f.studentsPerTable ?? undefined}
@@ -651,7 +651,7 @@ function LessonEditor({
           />
         </Field>
       )}
-      <Field label="标准价" help="教练类别可单独定价，小班课为每人价格">
+      <Field label="标准价" help="教练类别可以单独定价，小班课填每人的价格">
         <InputNumber
           theme="normal"
           value={toYuan(f.price)}
@@ -696,7 +696,7 @@ function LessonEditor({
                   })
                 }
               />
-              <span className="muted">标准价和类别价都按此折扣</span>
+              <span className="muted">标准价和类别价都按这个折扣计算</span>
             </>
           )}
         </Space>
@@ -763,11 +763,11 @@ function CategoryEditor({
         <Input
           value={f.name}
           maxlength={10}
-          placeholder="如 主教练、高级教练"
+          placeholder="如：主教练、高级教练"
           onChange={(v) => set({ name: String(v) })}
         />
       </Field>
-      <Field label="价格" help="不单独定价的课程按标准价">
+      <Field label="价格" help="没有单独定价的课程按标准价收费">
         <Space direction="vertical" style={{ width: '100%' }}>
           {types.length === 0 && <span className="muted">先新建课程</span>}
           {types.map((t) => {
@@ -798,7 +798,7 @@ function CategoryEditor({
           })}
         </Space>
       </Field>
-      <Field label="课时费" help="每节课付给教练的金额，用于报表。留空表示未设置">
+      <Field label="课时费" help="每节课付给教练的金额，用于报表。留空即为未设置">
         <Space direction="vertical" style={{ width: '100%' }}>
           {types.length === 0 && <span className="muted">先新建课程</span>}
           {types.map((t) => (
@@ -877,7 +877,7 @@ function CoachEditor({
       <Field label="姓名">
         <Input value={f.name} maxlength={20} onChange={(v) => set({ name: String(v) })} />
       </Field>
-      <Field label="照片" help="正方形，JPG、PNG 或 WebP，不超过 2MB">
+      <Field label="照片" help="建议用正方形照片，支持 JPG、PNG 或 WebP 格式，不超过 2MB">
         {/* Outside the Space, which would otherwise leave a gap for it. */}
         <input
           ref={fileInput}
@@ -902,7 +902,7 @@ function CoachEditor({
           )}
         </Space>
       </Field>
-      <Field label="类别" help="类别决定价格">
+      <Field label="类别" help="价格由类别决定">
         <Select
           clearable
           value={f.categoryId ?? undefined}
@@ -911,20 +911,20 @@ function CoachEditor({
           onChange={(v) => set({ categoryId: v ? Number(v) : null })}
         />
       </Field>
-      <Field label="头衔" help="一句话，显示在教练名下">
+      <Field label="头衔" help="一句话介绍，显示在教练姓名下方">
         <Input
           value={f.title}
           maxlength={30}
-          placeholder="如 前省队队员"
+          placeholder="如：前省队队员"
           onChange={(v) => set({ title: String(v) })}
         />
       </Field>
-      <Field label="擅长" help="最多 6 个，每个不超过 10 字，回车添加">
+      <Field label="擅长" help="最多 6 个，每个不超过 10 个字，按回车添加">
         <TagInput
           value={f.tags}
           max={6}
           clearable
-          placeholder="如 弧圈球、青少年"
+          placeholder="如：弧圈球、青少年"
           onChange={(v) =>
             set({
               tags: [
@@ -951,14 +951,14 @@ function CoachEditor({
           ))}
         </Space>
       </Field>
-      <Field label="介绍" help="比赛成绩、执教经历、教学风格等，显示在教练主页">
+      <Field label="介绍" help="可以写比赛成绩、执教经历和教学风格等，会显示在教练主页">
         <RichText value={f.profile} onChange={(profile) => set({ profile })} />
       </Field>
       <Field label="在职">
         <Switch value={f.active} onChange={(v) => set({ active: v })} />
         {!f.active && upcomingLessons > 0 && (
           <div className="field-help danger-text">
-            还有 {upcomingLessons} 节课未上。停用后课程保留，但教练无法再登录小程序查看。
+            还有 {upcomingLessons} 节课未上。停用后这些课程会保留，但教练无法再登录小程序查看。
           </div>
         )}
       </Field>

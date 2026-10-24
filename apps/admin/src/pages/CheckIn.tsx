@@ -112,7 +112,7 @@ function CodeDialog({ onClose }: { onClose: () => void }) {
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         {settings.data && !settings.data.attendance.selfCheckIn && (
-          <Alert theme="warning" message="学员扫码签到已关闭，可在设置中开启" />
+          <Alert theme="warning" message="学员扫码签到已关闭，可以在设置中开启" />
         )}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: uqr builds the SVG from our own URL */}
         <div className="checkin-qr" dangerouslySetInnerHTML={{ __html: svg }} />

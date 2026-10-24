@@ -5,7 +5,7 @@ import { modalDangerColor } from '../../utils/theme'
 export async function confirmDeleteFeedback(): Promise<boolean> {
   const answer = await ask({
     title: '删除这条点评？',
-    content: '照片会一起删除，学员将看不到这条点评。',
+    content: '照片会一起删除，学员也将看不到这条点评。',
     confirmText: '删除',
     confirmColor: modalDangerColor(),
     cancelText: '再想想',

@@ -35,7 +35,9 @@ function syncMessage(r: SlotSyncDto, done: string) {
   const parts = [
     r.created ? `新增 ${r.created} 个时段` : '',
     r.removed ? `移除 ${r.removed} 个时段` : '',
-    r.bookedOnDaysOff ? `休息日还有 ${r.bookedOnDaysOff} 节已预约的课，请联系学员或取消` : '',
+    r.bookedOnDaysOff
+      ? `休息日还有 ${r.bookedOnDaysOff} 节已被预约的课，请联系学员或取消这些课`
+      : '',
   ].filter(Boolean)
   return [done, ...parts].join('，')
 }
@@ -90,14 +92,14 @@ export function CoachBindingDialog({ coach, onClose }: { coach: Coach; onClose: 
         ) : null}
         <div className="muted">
           教练在小程序「我的」页底部点「教练入口」，输入绑定码即可。
-          {current.bound && '已绑定的教练用新微信绑定后，原微信会退出。'}
+          {current.bound && '已绑定的教练用新的微信绑定后，原来的微信会退出登录。'}
         </div>
         <Space>
           <Button onClick={generate}>{code ? '重新生成' : '生成绑定码'}</Button>
           {current.bound && (
             <Popconfirm
               theme="warning"
-              content="解除后教练需重新绑定才能使用教练入口。"
+              content="解除后，教练需要重新绑定才能使用教练入口。"
               confirmBtn={{ content: '解除绑定', theme: 'danger' }}
               cancelBtn="返回"
               onConfirm={unbind}
@@ -167,7 +169,10 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
     >
       {error && <Alert theme="error" message={error} />}
       {data && lengths.length === 0 && (
-        <Alert theme="warning" message="该教练还没有启用中的课程，先在教练设置里勾选所教课程。" />
+        <Alert
+          theme="warning"
+          message="这位教练还没有启用中的课程，请先在教练设置里勾选所教课程。"
+        />
       )}
       {data && lengths.length > 0 && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -270,7 +275,8 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
             {invalid && <span className="danger-text">{invalid}</span>}
           </Space>
           <div className="muted">
-            保存后自动生成未来 {data.advanceDays} 天的时段，每小时滚动补齐。已被预约的课程不受影响。
+            保存后会自动生成未来 {data.advanceDays}{' '}
+            天的时段，并每小时滚动补齐。已被预约的课不受影响。
           </div>
 
           <div>
@@ -294,7 +300,7 @@ export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: ()
               />
             </Space>
             <div className="muted" style={{ marginTop: 8 }}>
-              休息日立即生效：当天空闲时段关闭，已预约的课程需单独取消。
+              休息日立即生效：当天的空闲时段会关闭，已预约的课需要单独取消。
             </div>
           </div>
         </Space>

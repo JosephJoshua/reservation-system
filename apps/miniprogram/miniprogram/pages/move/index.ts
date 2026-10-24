@@ -123,8 +123,8 @@ Page({
         dayAnchor: dayAnchor(days, date),
         note:
           booking.movesLeft > 1
-            ? `改约后原时段将释放，之后还可再改约 ${booking.movesLeft - 1} 次。`
-            : '改约后原时段将释放，之后不能再改约。',
+            ? `改约后，原时段会被释放，之后还可以再改约 ${booking.movesLeft - 1} 次。`
+            : '改约后，原时段会被释放，之后不能再改约。',
       })
       this.loadSlots()
     } catch (e) {

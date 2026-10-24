@@ -226,7 +226,7 @@ function ProductEditor({
         <Input
           value={f.name}
           maxlength={30}
-          placeholder="如 私教 10 次卡"
+          placeholder="如：私教 10 次卡"
           onChange={(v) => set({ name: String(v) })}
         />
       </Field>
@@ -244,7 +244,7 @@ function ProductEditor({
           onChange={(v) => set({ lessonTypeId: Number(v), coachIds: [] })}
         />
       </Field>
-      <Field label="适用教练" help="不选则该课程的全部教练可用">
+      <Field label="适用教练" help="不选则教这门课的所有教练都可用">
         <Select
           multiple
           clearable
@@ -288,7 +288,7 @@ function ProductEditor({
           onChange={(v) => set({ price: toFen(v as number) ?? 0 })}
         />
       </Field>
-      <Field label="有效期" help="自购买日起">
+      <Field label="有效期" help="从购买当天起计算">
         <InputNumber
           theme="normal"
           value={f.validityDays}

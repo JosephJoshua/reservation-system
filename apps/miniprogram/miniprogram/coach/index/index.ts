@@ -183,7 +183,7 @@ Page({
     this.setData({
       slots,
       summary: parts.filter(Boolean).join(' · '),
-      dayEmpty: past ? '这天没有课程' : '这天没有排课，可在可约时间里设置',
+      dayEmpty: past ? '这天没有课程' : '这天没有排课，可以在可约时间里设置',
     })
   },
 

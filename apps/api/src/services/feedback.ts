@@ -116,7 +116,7 @@ export function writeBlock(
   if (error?.code !== 'not_attended') return error?.message ?? null
   if (booking.status !== 'confirmed') return '课程已取消，不能写点评'
   if (booking.attendance === 'no_show') return '学员缺席，不能写点评'
-  return '签到为到课后可以写点评'
+  return '签到为到课后才能写点评'
 }
 
 /** The coach's own lesson, or 404. */

@@ -107,7 +107,7 @@ export function Settings() {
             <Input
               value={s.venue.openingHours}
               maxlength={60}
-              placeholder="如 09:00-21:00"
+              placeholder="如：09:00-21:00"
               onChange={(v) =>
                 set((d) => {
                   d.venue.openingHours = String(v)
@@ -228,7 +228,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="球台数" help="同一时间最多上几节课，留空为不限">
+          <Field label="球台数" help="同一时间最多能上几节课，留空则不限">
             <InputNumber
               theme="normal"
               value={s.booking.tables ?? undefined}
@@ -276,7 +276,7 @@ export function Settings() {
           {noneSelling && (
             <Field>
               <span style={{ color: 'var(--td-warning-color)' }}>
-                单次付费和课时包都关闭后，学员只能用已有课时包预约
+                单次付费和课时包都关闭后，学员只能用已有的课时包预约
               </span>
             </Field>
           )}
@@ -304,7 +304,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="支付时限" help="下单后多久未支付自动取消，释放时段">
+          <Field label="支付时限" help="下单后超过这个时间仍未支付，订单会自动取消并释放时段">
             <InputNumber
               theme="normal"
               value={s.payment.timeoutMinutes}
@@ -363,7 +363,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="用户协议" help="留空则使用内置协议，首次预约或购买前需同意">
+          <Field label="用户协议" help="留空则使用内置的协议。学员首次预约或购买前需要同意">
             <Textarea
               value={s.policies.agreement}
               maxlength={5000}
@@ -382,7 +382,7 @@ export function Settings() {
         <div className="fields form-narrow">
           <Field
             label="学员扫码签到"
-            help={`学员课前 ${CHECK_IN_EARLY_MINUTES} 分钟起用小程序扫前台的签到码`}
+            help={`学员课前 ${CHECK_IN_EARLY_MINUTES} 分钟起，可以用小程序扫前台的签到码签到`}
           >
             <Switch
               value={s.attendance.selfCheckIn}
@@ -393,7 +393,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="教练点名" help="教练在小程序里记到课或缺席">
+          <Field label="教练点名" help="教练在小程序里记录学员到课或缺席">
             <Switch
               value={s.attendance.coachMarks}
               onChange={(v) =>
@@ -405,7 +405,7 @@ export function Settings() {
           </Field>
           <Field>
             <span className="muted">
-              前台随时可在前台签到页签到和更正。签到不影响扣课和收款，课时包在预约时已扣除。
+              前台随时可以在前台签到页签到和更正。签到不会影响扣课和收款，课时包的课时在预约时就已扣除。
             </span>
           </Field>
         </div>
@@ -413,7 +413,7 @@ export function Settings() {
 
       <Card title="课时费" bordered>
         <div className="fields form-narrow">
-          <Field label="学员缺席" help="课程结束、学员未到时，是否给教练计课时费">
+          <Field label="学员缺席" help="课程结束时学员仍未到场，是否给教练计课时费">
             <Switch
               value={s.pay.noShows}
               onChange={(v) =>
@@ -423,7 +423,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="学员逾时取消" help="学员在免费取消时限后取消，是否给教练计课时费">
+          <Field label="学员逾时取消" help="学员过了免费取消时限才取消，是否给教练计课时费">
             <Switch
               value={s.pay.lateCancels}
               onChange={(v) =>
@@ -435,7 +435,7 @@ export function Settings() {
           </Field>
           <Field>
             <span className="muted">
-              已结束的课程照常计入，场馆取消的不计入。课时费标准在课程与教练的教练类别里设置。
+              已结束的课程照常计入，场馆取消的课不计入。课时费标准在课程与教练的教练类别里设置。
             </span>
           </Field>
         </div>
@@ -443,7 +443,10 @@ export function Settings() {
 
       <Card title="运营主体" bordered>
         <div className="fields form-narrow">
-          <Field label="主体名称" help="与小程序后台的主体一致，写入隐私政策。留空则用场馆名称">
+          <Field
+            label="主体名称"
+            help="需要与小程序后台登记的主体一致，会写入隐私政策。留空则使用场馆名称"
+          >
             <Input
               value={s.legal.operator}
               maxlength={60}
@@ -454,7 +457,7 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="隐私联系方式" help="处理个人信息问题的电话或邮箱。留空则用场馆电话">
+          <Field label="隐私联系方式" help="用于处理个人信息问题的电话或邮箱。留空则使用场馆电话">
             <Input
               value={s.legal.contact}
               maxlength={60}

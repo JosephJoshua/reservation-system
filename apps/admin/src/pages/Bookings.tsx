@@ -344,10 +344,10 @@ export function Bookings() {
             {cancelling.lessonType.name}
           </p>
           <p className="muted">
-            场馆取消时，已付款项全额退款，课时包课时退回。前台收款的，请在退款页确认当面退还。
+            场馆取消时，已付的款项会全额退款，用课时包约的课会退回课时。前台收款的订单，请在退款页确认已当面退还。
           </p>
           <Textarea
-            placeholder="取消原因，学员可见"
+            placeholder="取消原因（学员可见）"
             value={reason}
             maxlength={100}
             onChange={(v) => setReason(String(v))}
@@ -499,7 +499,7 @@ function MoveDialog({
         </Field>
       </div>
       <p className="muted">
-        已付款项和课时不变，场馆改约不受教练价格和课时包范围限制。订阅了通知的学员和教练会收到改约消息。
+        已付的款项和课时都不变。场馆改约不受教练价格和课时包适用范围的限制。订阅了通知的学员和教练会收到改约消息。
       </p>
     </Dialog>
   )

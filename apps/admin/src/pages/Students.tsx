@@ -374,7 +374,7 @@ function StudentDrawer({
           {s.deletedAt ? (
             <span className="muted">
               {fmtDate(s.deletedAt)}{' '}
-              删除个人信息，姓名、手机号、学员档案和微信身份已清除。订单和上课记录保留。
+              个人信息已删除：姓名、手机号、学员档案和微信身份都已清除，订单和上课记录仍会保留。
             </span>
           ) : (
             <Space align="center" breakLine>
@@ -427,7 +427,7 @@ function StudentDrawer({
                 {canManage && (
                   <Popconfirm
                     theme="warning"
-                    content="删除后姓名、手机号和学员档案会清除，订单和上课记录匿名保留。学员要求删除个人信息时使用。"
+                    content="删除后，姓名、手机号和学员档案会被清除，订单和上课记录会匿名保留。仅在学员要求删除个人信息时使用。"
                     confirmBtn={{ content: '删除', theme: 'danger' }}
                     cancelBtn="返回"
                     onConfirm={async () => {
@@ -674,7 +674,7 @@ function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; dele
       )}
       {p.note && <div className="profile-note">{p.note}</div>}
       {!deleted && !traits.length && !p.tags.length && !p.note && (
-        <div className="muted">还没有填写水平、握拍、标签和备注，教练上课前会看到这些。</div>
+        <div className="muted">还没有填写水平、握拍、标签和备注。填写后，教练上课前就能看到。</div>
       )}
       <div className="muted">{profileCounts(p)}</div>
     </div>
@@ -758,14 +758,14 @@ function ProfileDialog({
         </Field>
         <Field
           label="标签"
-          help={`最多 ${PROFILE_MAX_TAGS} 个，每个不超过 ${PROFILE_TAG_LENGTH} 字，回车添加`}
+          help={`最多 ${PROFILE_MAX_TAGS} 个，每个不超过 ${PROFILE_TAG_LENGTH} 个字，按回车添加`}
         >
           <TagInput
             value={form.tags}
             inputValue={typing}
             max={PROFILE_MAX_TAGS}
             clearable
-            placeholder="如 反手弱、备赛、青少年"
+            placeholder="如：反手弱、备赛、青少年"
             onInputChange={(v, ctx) => {
               // The box drops unadded text on blur; keep it as a tag instead.
               if (ctx?.trigger === 'blur' && tags.length <= PROFILE_MAX_TAGS) {
@@ -782,12 +782,12 @@ function ProfileDialog({
             }}
           />
         </Field>
-        <Field label="备注" help="仅场馆和教练可见，学员看不到。不要记录病史等健康信息。">
+        <Field label="备注" help="仅场馆和教练可见，学员看不到。请勿记录病史等健康信息。">
           <Textarea
             value={form.note}
             maxlength={PROFILE_NOTE_LENGTH}
             autosize={{ minRows: 4, maxRows: 10 }}
-            placeholder="如 打法特点、训练目标"
+            placeholder="如：打法特点、训练目标"
             onChange={(v) => set({ note: String(v) })}
           />
         </Field>
@@ -968,7 +968,7 @@ function PackageAction({
           <Textarea
             value={note}
             maxlength={100}
-            placeholder={kind === 'grant' ? '必填，如 教练请假补课' : '选填'}
+            placeholder={kind === 'grant' ? '必填，如：教练请假补课' : '选填'}
             onChange={(v) => setNote(String(v))}
           />
         </Field>

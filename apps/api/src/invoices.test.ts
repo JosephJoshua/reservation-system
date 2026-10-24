@@ -153,7 +153,7 @@ describe('invoice requests', () => {
     const refunding = await h.call('POST', '/invoices', { orderId, ...person }, t)
     expect(refunding.json.error).toMatchObject({
       code: 'refund_open',
-      message: '该订单有退款在处理，完成后再申请',
+      message: '该订单有退款正在处理，请处理完成后再申请',
     })
   })
 

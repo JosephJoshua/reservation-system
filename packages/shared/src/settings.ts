@@ -96,7 +96,7 @@ export const defaultSettings: VenueSettings = {
   },
   notice: { text: '', endsAt: null },
   policies: {
-    booking: '课前 24 小时以上取消，全额退款或退回课时；之后取消视为已上课。',
+    booking: '课前 24 小时以上取消的，全额退款或退回课时；之后再取消，则视为已上课。',
     agreement: '',
   },
   pay: { noShows: true, lateCancels: false },

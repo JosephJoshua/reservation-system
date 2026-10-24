@@ -88,7 +88,7 @@ describe('student check-in', () => {
     h.clock.now = new Date('2026-10-26T03:00:00Z')
     expect((await scan()).json.error).toMatchObject({
       code: 'nothing_to_check_in',
-      message: '没有待上的课程，如在前台预约请联系前台',
+      message: '没有待上的课程。如果是在前台预约的，请联系前台',
     })
   })
 
