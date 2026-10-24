@@ -3,7 +3,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
-import { setTheme } from './theme'
+import { resetTheme, setTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
 const outDir = fileURLToPath(new URL('../screenshots', import.meta.url))
@@ -50,7 +50,7 @@ try {
 } finally {
   // Back to the default, following the system.
   try {
-    await setTheme(miniProgram, null)
+    await resetTheme(miniProgram)
   } finally {
     await miniProgram.close()
   }

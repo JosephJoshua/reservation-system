@@ -7,6 +7,7 @@ import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const adminPassword = process.env.ADMIN_PASSWORD ?? 'admin'
@@ -147,6 +148,8 @@ async function step(name: string, fn: () => Promise<void>) {
 }
 
 try {
+  // Clears a forced theme an earlier run may have left, or applies QA_THEME.
+  await startTheme(miniProgram)
   const run = Date.now().toString(36)
   const admin = (await call('POST', '/admin/login', { username: 'admin', password: adminPassword }))
     .token as string

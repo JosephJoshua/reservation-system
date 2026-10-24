@@ -5,6 +5,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { startTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
 const outDir = fileURLToPath(new URL('../screenshots/coach-profile', import.meta.url))
@@ -95,6 +96,8 @@ async function step(name: string, fn: () => Promise<void>) {
 }
 
 try {
+  // Clears a forced theme an earlier run may have left, or applies QA_THEME.
+  await startTheme(miniProgram)
   await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_coach_page_${Date.now()}`)
   await miniProgram.callWxMethod('removeStorageSync', 'token')
 
