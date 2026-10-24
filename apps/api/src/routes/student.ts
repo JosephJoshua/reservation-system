@@ -42,7 +42,7 @@ import {
   hasAgreedPolicies,
   requireConsent,
 } from '../services/account'
-import { type AuthVars, loginStudent, logout, requireStudent } from '../services/auth'
+import { type AuthVars, bearer, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
 import { coachViews, visibleTo } from '../services/catalog'
 import { studentFeedback } from '../services/feedback'
@@ -52,6 +52,7 @@ import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { liveCounts } from '../services/sessions'
 import { getSettings } from '../services/settings'
+import { linkDeskStudent } from '../services/student-link'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
 
@@ -183,6 +184,16 @@ export function studentRoutes(deps: Deps) {
   app.post('/me/consent', async (c) => {
     const { version } = await parseBody(c, z.object({ version: z.string().max(20) }))
     agreePolicies(deps, c.get('studentId'), version)
+    return c.body(null, 204)
+  })
+
+  // Links this WeChat to the student the front desk added, with the code the desk gave them.
+  app.post('/me/link', async (c) => {
+    const { code, merge } = await parseBody(
+      c,
+      z.object({ code: z.string().trim().min(1).max(20), merge: z.boolean().default(false) }),
+    )
+    linkDeskStudent(deps, bearer(c.req.header('Authorization')) ?? '', code, { merge })
     return c.body(null, 204)
   })
 

@@ -19,23 +19,34 @@ export const settings = sqliteTable('settings', {
   updatedAt: instant('updated_at').notNull(),
 })
 
-export const students = sqliteTable('students', {
-  id: id(),
-  openid: text('openid').notNull().unique(),
-  name: text('name').notNull().default(''),
-  phone: text('phone').notNull().default(''),
-  // Testers also see admin-only lesson types, for real-money test payments.
-  tester: integer('tester', { mode: 'boolean' }).notNull().default(false),
-  // The POLICY_VERSION the student last agreed to, and when.
-  policyVersion: text('policy_version'),
-  policyAgreedAt: instant('policy_agreed_at'),
-  // The invoice title used last, to fill the next request. Cleared when the account is deleted.
-  invoiceTitle: text('invoice_title', { mode: 'json' }).$type<InvoiceTitle>(),
-  // A deleted account keeps its row for the orders and bookings that point at it, with the
-  // name and phone cleared and the openid replaced, so the same WeChat user starts afresh.
-  deletedAt: instant('deleted_at'),
-  createdAt: createdAt(),
-})
+export const students = sqliteTable(
+  'students',
+  {
+    id: id(),
+    // A student the front desk added before they used the mini program holds a `desk:` placeholder
+    // until they enter the desk's bind code; see services/student-link.ts.
+    openid: text('openid').notNull().unique(),
+    name: text('name').notNull().default(''),
+    phone: text('phone').notNull().default(''),
+    // Testers also see admin-only lesson types, for real-money test payments.
+    tester: integer('tester', { mode: 'boolean' }).notNull().default(false),
+    // The POLICY_VERSION the student last agreed to, and when.
+    policyVersion: text('policy_version'),
+    policyAgreedAt: instant('policy_agreed_at'),
+    // The invoice title used last, to fill the next request. Cleared when the account is deleted.
+    invoiceTitle: text('invoice_title', { mode: 'json' }).$type<InvoiceTitle>(),
+    // A front-desk student's one-time code for linking their WeChat. Kept after use, so a repeated
+    // request from the same student succeeds again.
+    bindCode: text('bind_code').unique(),
+    bindCodeExpiresAt: instant('bind_code_expires_at'),
+    // A deleted account keeps its row for the orders and bookings that point at it, with the
+    // name and phone cleared and the openid replaced, so the same WeChat user starts afresh.
+    deletedAt: instant('deleted_at'),
+    createdAt: createdAt(),
+  },
+  // The desk looks students up by phone and flags two with the same one.
+  (t) => [index('students_phone').on(t.phone)],
+)
 
 /**
  * 学员档案, kept by staff for coaches. Never sent to the student. Deleted with the account.
@@ -596,7 +607,10 @@ export const idempotencyKeys = sqliteTable(
   (t) => [index('idempotency_keys_created').on(t.createdAt)],
 )
 
-/** What staff did with money, bookings, prices and logins. Rows are never changed. */
+/**
+ * What staff did with money, bookings, prices and logins. Rows are never changed, except that a
+ * WeChat account joining a front-desk student brings its rows over to that student.
+ */
 export const actionLog = sqliteTable(
   'action_log',
   {

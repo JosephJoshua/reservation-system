@@ -3,6 +3,7 @@ import { venueInstant } from '@rs/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, DatePicker, Dialog, Input, InputNumber, Radio, Select } from 'tdesign-react'
 import { api, RequestError } from './api'
+import { NewStudentDialog } from './DeskStudent'
 import { Field } from './Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, toFen, toYuan, yuan } from './format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from './hooks'
@@ -37,26 +38,45 @@ function StudentPicker({
   const found = useApi<(Person & { deletedAt: string | null })[]>(
     `/admin/students?q=${encodeURIComponent(q)}`,
   )
-  const label = (p: Person) => `${p.name || '未填写姓名'} ${p.phone}`.trim()
+  const [creating, setCreating] = useState(false)
+  const canAdd = useCan('students')
+  const label = (p: Person) => `${p.name || '未填写姓名'} ${p.phone} · 编号 ${p.id}`
   const options = [
     ...(value ? [value] : []),
     // A student who deleted their account cannot be booked for.
     ...(found.data ?? []).filter((p) => p.id !== value?.id && !p.deletedAt),
   ]
   return (
-    <Select
-      filterable
-      clearable
-      placeholder="输入姓名或手机号搜索"
-      loading={found.loading}
-      value={value?.id}
-      empty={found.error ?? (q ? '没有找到学员' : '还没有学员')}
-      // The server filters; showing every result it sends keeps typed digits matching phones.
-      filter={() => true}
-      onSearch={(v) => setTyped(v.trim())}
-      options={options.map((p) => ({ label: label(p), value: p.id }))}
-      onChange={(v) => onChange(options.find((p) => p.id === Number(v)) ?? null)}
-    />
+    <div className="picker-row">
+      <Select
+        filterable
+        clearable
+        placeholder="输入姓名或手机号搜索"
+        loading={found.loading}
+        value={value?.id}
+        empty={found.error ?? (q ? '没有找到学员' : '还没有学员')}
+        // The server filters; showing every result it sends keeps typed digits matching phones.
+        filter={() => true}
+        onSearch={(v) => setTyped(v.trim())}
+        options={options.map((p) => ({ label: label(p), value: p.id }))}
+        onChange={(v) => onChange(options.find((p) => p.id === Number(v)) ?? null)}
+      />
+      {canAdd && (
+        <Button variant="outline" onClick={() => setCreating(true)}>
+          前台建档
+        </Button>
+      )}
+      {creating && (
+        <NewStudentDialog
+          initial={typed}
+          onClose={() => setCreating(false)}
+          onDone={(p) => {
+            setCreating(false)
+            onChange(p)
+          }}
+        />
+      )}
+    </div>
   )
 }
 
@@ -162,6 +182,7 @@ export function BookForStudent({
   const coaches = useApi<Coach[]>('/admin/coaches')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [student, setStudent] = useState<Person | null>(givenStudent ?? null)
+  const canAdd = useCan('students')
   const [slot, setSlot] = useState<Slot | null>(givenSlot ?? null)
   const [lessonTypeId, setLessonTypeId] = useState<number | undefined>()
   const [quote, setQuote] = useState<Quote | null>(null)
@@ -251,7 +272,10 @@ export function BookForStudent({
       onClose={onClose}
     >
       <div className="fields">
-        <Field label="学员" help="学员需先打开过小程序">
+        <Field
+          label="学员"
+          help={givenStudent || !canAdd ? undefined : '没有找到时可前台建档，学员不用先打开小程序'}
+        >
           {givenStudent ? (
             <span className="field-text">
               {givenStudent.name || '未填写姓名'} {givenStudent.phone}

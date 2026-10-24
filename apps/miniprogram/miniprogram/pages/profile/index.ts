@@ -10,6 +10,8 @@ Page({
   data: {
     name: '',
     phone: '',
+    // Shown at the front desk, which tells students with the same phone apart by it.
+    studentNo: 0,
     remaining: '',
     packagesEnabled: false,
     venue: null as HomeDto['venue'] | null,
@@ -31,6 +33,7 @@ Page({
         this.setData({
           name: me.name,
           phone: me.phone ? maskPhone(me.phone) : '',
+          studentNo: me.id,
           isCoach: me.isCoach,
           meLoaded: true,
         }),
@@ -83,6 +86,10 @@ Page({
 
   openInvoices() {
     navigateOnce('/pages/invoices/index')
+  },
+
+  openLink() {
+    navigateOnce('/pages/link/index')
   },
 
   openPolicy(e: WechatMiniprogram.TouchEvent) {

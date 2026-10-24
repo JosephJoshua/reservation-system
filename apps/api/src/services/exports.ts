@@ -172,7 +172,14 @@ function studentsTable(tx: Q, q: ExportQuery, now: Date): Table {
       and(
         gte(students.createdAt, from),
         lt(students.createdAt, to),
-        pattern ? or(like(students.name, pattern), like(students.phone, pattern)) : undefined,
+        pattern
+          ? or(
+              like(students.name, pattern),
+              like(students.phone, pattern),
+              // A short number is a 学员编号, as in the list.
+              q.q && /^\d{1,6}$/.test(q.q) ? eq(students.id, Number(q.q)) : undefined,
+            )
+          : undefined,
       ),
     )
     .orderBy(asc(students.id))

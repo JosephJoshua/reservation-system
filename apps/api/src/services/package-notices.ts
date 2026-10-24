@@ -4,6 +4,7 @@ import { immediate, type Q } from '../db/client'
 import { packageNotices, packages, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { getSettings } from './settings'
+import { wechatOpenid } from './student-link'
 
 const BATCH = 50
 const DAY_MS = 86_400_000
@@ -173,12 +174,12 @@ async function sendPending(deps: Deps) {
       now.getTime() - notice.createdAt.getTime() > STALE_MS ||
       // Already renewed: nothing to tell.
       (notice.kind === 'used_up' && hasOtherPackage(db, pkg, now))
-    // Deleted accounts keep their packages under a placeholder openid.
-    const reachable = n.openid && !n.openid.startsWith('deleted:')
+    // Deleted and front-desk accounts hold a placeholder openid.
+    const reachable = wechatOpenid(n.openid)
     let result: 'sent' | 'refused' | 'skipped' = 'skipped'
     if (deps.notifier && template && reachable && !outdated) {
       try {
-        result = await deps.notifier.send(n.openid, template, 'pages/my-packages/index', {
+        result = await deps.notifier.send(reachable, template, 'pages/my-packages/index', {
           student: n.name || '学员',
           package: pkg.name,
           left: `${pkg.lessonsRemaining}节`,

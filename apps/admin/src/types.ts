@@ -117,6 +117,10 @@ export interface StudentDetail extends Person {
   tester: boolean
   deletedAt: string | null
   createdAt: string
+  /** False for a student the front desk added who has not linked their WeChat yet. */
+  wechatBound: boolean
+  /** Other students with the same phone, told apart by 学员编号. */
+  samePhone: { id: number; name: string }[]
   profile: StudentProfileDto
   packages: PackageDto[]
   bookings: BookingDto[]
@@ -126,6 +130,8 @@ export interface StudentRow extends Person {
   tester: boolean
   deletedAt: string | null
   createdAt: string
+  wechatBound: boolean
+  phoneShared: boolean
   /** With the 即将到期 filter: the student's package that expires first with lessons left. */
   expiring?: {
     packageId: number

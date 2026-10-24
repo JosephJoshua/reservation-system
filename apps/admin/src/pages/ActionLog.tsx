@@ -27,7 +27,11 @@ const groups: { label: string; actions: StaffAction[] }[] = [
     label: '价格',
     actions: ['price.lesson_type', 'price.product', 'price.coach', 'price.coach_pay'],
   },
-  { label: '其他', actions: ['settings.update', 'student.update', 'data.export'] },
+  {
+    label: '学员',
+    actions: ['student.create', 'student.update', 'student.delete'],
+  },
+  { label: '其他', actions: ['settings.update', 'data.export'] },
   { label: '员工', actions: ['staff.create', 'staff.update', 'staff.roles', 'staff.password'] },
 ]
 

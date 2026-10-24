@@ -120,6 +120,13 @@
       "when": 1792850611915,
       "tag": "0016_list_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792853176742,
+      "tag": "0017_front_desk_students",
+      "breakpoints": true
     }
   ]
 }

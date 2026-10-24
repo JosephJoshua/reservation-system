@@ -16,7 +16,8 @@
     "pages/theme/index",
     "pages/invoices/index",
     "pages/invoice-request/index",
-    "pages/feedback/index"
+    "pages/feedback/index",
+    "pages/link/index"
   ],
   "subpackages": [
     {
