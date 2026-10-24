@@ -98,7 +98,9 @@
     <view class="section-title">场馆信息</view>
     <t-cell-group theme="card">
       <t-cell wx:if="{{venue.openingHours}}" title="营业时间" note="{{venue.openingHours}}" left-icon="time" />
-      <t-cell wx:if="{{venue.address}}" title="{{venue.address}}" t-class-title="address" left-icon="location" arrow hover bind:click="openMap" />
+      <t-cell wx:if="{{venue.address}}" left-icon="location" arrow hover bind:click="openMap">
+        <view slot="title" class="address">{{venue.address}}</view>
+      </t-cell>
       <t-cell wx:if="{{venue.phone}}" title="联系场馆" note="{{venue.phone}}" left-icon="call" arrow hover bind:click="call" />
     </t-cell-group>
   </block>

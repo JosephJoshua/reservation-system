@@ -129,8 +129,9 @@
   height: 48rpx;
 }
 
-/* The map has the full address. */
+/* The map has the full address. A flex item of the cell title, so it may shrink. */
 .address {
+  min-width: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
