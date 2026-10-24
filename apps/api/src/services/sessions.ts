@@ -14,7 +14,7 @@ import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { cancelBooking, LIVE, takenSeats } from './bookings'
 import { priceFor } from './catalog'
-import { getSettings } from './settings'
+import { getSettings, ruleBook } from './settings'
 
 export interface NewSessions {
   lessonTypeId: number
@@ -257,7 +257,11 @@ export async function finishCancelledSessions(deps: Deps) {
 export async function cancelUnderfilledSessions(deps: Deps) {
   const now = deps.now()
   const settings = getSettings(deps.db)
-  const rules = settings.booking
+  const rulesBook = ruleBook(deps.db, settings)
+  // Any session that could be due: the longest check time of any class.
+  const longest = Math.max(...[rulesBook.venue, ...rulesBook.all()].map(minCheckHours))
+  // Checked at the class's free-cancel deadline as it is now, which is what students are shown.
+  const rulesOf = (slot: typeof slots.$inferSelect) => rulesBook.of(slot.lessonTypeId)
   const due = deps.db
     .select({ slot: slots, minStudents: lessonTypes.minStudents })
     .from(slots)
@@ -268,12 +272,13 @@ export async function cancelUnderfilledSessions(deps: Deps) {
         isNull(slots.cancelledAt),
         isNotNull(lessonTypes.minStudents),
         gt(slots.startsAt, now),
-        lt(slots.startsAt, new Date(now.getTime() + (minCheckHours(rules) + 1) * 3_600_000)),
+        lt(slots.startsAt, new Date(now.getTime() + (longest + 1) * 3_600_000)),
       ),
     )
     .all()
-    .filter((r) => minCheckDue(r.slot, now, rules))
+    .filter((r) => minCheckDue(r.slot, now, rulesOf(r.slot)))
   for (const { slot, minStudents } of due) {
+    const rules = rulesOf(slot)
     // A session never needs more students than it holds, should the class's minimum rise later.
     const least = Math.min(minStudents ?? 0, slot.capacity)
     try {

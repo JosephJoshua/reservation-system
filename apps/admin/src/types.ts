@@ -6,6 +6,7 @@ import type {
   LinkKind,
   PackageDto,
   RefundStatus,
+  RuleOverrides,
   StudentProfileDto,
 } from '@rs/shared'
 
@@ -56,6 +57,8 @@ export interface LessonType {
   saleStartsAt: string | null
   saleEndsAt: string | null
   sort: number
+  /** Its own booking rules; a rule left out follows the venue's. */
+  rules: RuleOverrides
 }
 
 export interface PackageProduct {

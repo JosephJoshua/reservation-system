@@ -8,6 +8,7 @@ import {
   coachCategories,
   coaches,
   coachLessonTypes,
+  lessonTypes,
   packageLedger,
   packageProducts,
   refunds,
@@ -122,29 +123,50 @@ describe('students moving a lesson', () => {
     expect(h.db.select().from(bookingMoves).all()).toHaveLength(1)
   })
 
-  it('counts moves against the allowance, which the venue sets', async () => {
+  it('counts moves against the allowance the lesson was booked under', async () => {
     const h = setup()
-    const { coach, t, id } = await booked(h)
+    const { coach, t, id, lesson } = await booked(h)
     expect((await move(h, t, id, h.slot(coach.id, '2026-10-26', 14).id)).status).toBe(200)
     const again = await move(h, t, id, h.slot(coach.id, '2026-10-27', 14).id)
     expect(again.json.error).toMatchObject({ code: 'no_moves_left', message: '改约次数已用完' })
 
+    // A later change, by the venue or on the lesson type, leaves a booked lesson alone.
     h.settings((s) => {
       s.booking.studentMoves = 2
     })
-    expect((await move(h, t, id, h.slot(coach.id, '2026-10-27', 15).id)).status).toBe(200)
+    h.db
+      .update(lessonTypes)
+      .set({ rules: { studentMoves: 3 } })
+      .where(eq(lessonTypes.id, lesson.id))
+      .run()
+    const still = await move(h, t, id, h.slot(coach.id, '2026-10-27', 15).id)
+    expect(still.json.error.code).toBe('no_moves_left')
 
-    h.settings((s) => {
-      s.booking.studentMoves = 0
-    })
-    const off = await move(h, t, id, h.slot(coach.id, '2026-10-28', 15).id)
-    expect(off.json.error).toMatchObject({
-      code: 'no_moves_left',
-      message: '暂不支持自助改约，请联系场馆',
-    })
-    expect((await h.call('GET', `/bookings/${id}`, undefined, t)).json).toMatchObject({
+    // A lesson booked now gets the lesson type's own allowance.
+    const next = await book(h, t, h.slot(coach.id, '2026-10-28', 10).id, lesson.id)
+    for (const hour of [11, 12, 13]) {
+      expect((await move(h, t, next, h.slot(coach.id, '2026-10-28', hour).id)).status).toBe(200)
+    }
+    expect((await move(h, t, next, h.slot(coach.id, '2026-10-28', 14).id)).json.error.code).toBe(
+      'no_moves_left',
+    )
+
+    h.db
+      .update(lessonTypes)
+      .set({ rules: { studentMoves: 0 } })
+      .where(eq(lessonTypes.id, lesson.id))
+      .run()
+    const off = await book(h, t, h.slot(coach.id, '2026-10-29', 10).id, lesson.id)
+    expect((await move(h, t, off, h.slot(coach.id, '2026-10-29', 15).id)).json.error).toMatchObject(
+      {
+        code: 'no_moves_left',
+        message: '暂不支持自助改约，请联系场馆',
+      },
+    )
+    expect((await h.call('GET', `/bookings/${off}`, undefined, t)).json).toMatchObject({
       canMove: false,
       movesLeft: 0,
+      terms: { studentMoves: 0, cancelDeadlineHours: 24 },
     })
   })
 
@@ -271,9 +293,12 @@ describe('students moving a lesson', () => {
       coachIds: [coach.id, same.id],
     })
     expect((await move(h, t, id, h.slot(coach.id, '2026-10-26', 9).id)).status).toBe(200)
-    h.settings((s) => {
-      s.booking.studentMoves = 2
-    })
+    // A second move, as if it had been booked with two.
+    h.db
+      .update(bookings)
+      .set({ terms: { cancelDeadlineHours: 24, lateCancel: { kind: 'forfeit' }, studentMoves: 2 } })
+      .where(eq(bookings.id, id))
+      .run()
     const res = await move(h, t, id, h.slot(same.id, '2026-10-26', 14).id)
     expect(res.json).toMatchObject({ coach: { id: same.id, name: '李教练' }, price: 20000 })
 
@@ -394,10 +419,10 @@ describe('students moving a lesson', () => {
 
   it('brings the usual deadline back once the student moves a late-moved lesson', async () => {
     const h = setup()
-    const { coach, t, id } = await booked(h)
     h.settings((s) => {
       s.booking.studentMoves = 2
     })
+    const { coach, t, id } = await booked(h)
     h.clock.now = new Date('2026-10-24T03:00:00Z')
     const admin = await h.admin()
     const venueMove = await h.call(

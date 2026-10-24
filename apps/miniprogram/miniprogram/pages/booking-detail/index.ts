@@ -1,6 +1,5 @@
 import {
   type BookingDto,
-  type CatalogDto,
   COACH_CANCEL_PREFIX,
   cancellationOutcome,
   type HomeDto,
@@ -8,7 +7,7 @@ import {
 import { ApiError, api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { addLessonToCalendar } from '../../utils/calendar'
 import { scanToCheckIn } from '../../utils/check-in'
-import { cancelRuleText, getCatalog } from '../../utils/data'
+import { cancelRuleText } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundStatus } from '../../utils/labels'
@@ -89,7 +88,6 @@ Page({
   id: 0,
   cancelChecking: false,
   timer: 0 as number,
-  catalog: null as CatalogDto | null,
   venue: null as HomeDto['venue'] | null,
 
   onLoad(query: Record<string, string | undefined>) {
@@ -118,12 +116,10 @@ Page({
 
   async load() {
     try {
-      const [booking, catalog, home] = await Promise.all([
+      const [booking, home] = await Promise.all([
         api<BookingDto>('GET', `/bookings/${this.id}`),
-        getCatalog(),
         publicApi<HomeDto>('GET', '/home'),
       ])
-      this.catalog = catalog
       this.venue = home.venue
       this.show(booking)
     } catch (e) {
@@ -157,7 +153,6 @@ Page({
   show(fetched: BookingDto) {
     const b = settled(fetched, Date.now())
     const status = STATUS[b.status]
-    const { booking } = this.catalog ?? { booking: null }
     this.setData({
       state: 'ready',
       booking: b,
@@ -199,17 +194,16 @@ Page({
             : '',
       address: this.venue?.address ?? '',
       canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > Date.now(),
-      cancelRule: booking
-        ? // Moved by the venue or coach after the usual deadline: free until it starts.
-          (b.movedLate
-            ? '课程时间已调整，开课前可免费取消。'
-            : cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel)) +
-          (b.canMove
-            ? `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
-            : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
-              ? '改约次数已用完。'
-              : '')
-        : '',
+      cancelRule:
+        // Moved by the venue or coach after the usual deadline: free until it starts.
+        (b.movedLate
+          ? '课程时间已调整，开课前可免费取消。'
+          : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
+        (b.canMove
+          ? `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
+          : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
+            ? '改约次数已用完。'
+            : ''),
       feedback: b.feedback
         ? {
             title: `${b.coach.name}的课后点评`,
@@ -263,8 +257,6 @@ Page({
     if (b.status === 'pending_payment') {
       return { message: '取消后，这个时段会释放给其他学员。', late: false }
     }
-    const rules = this.catalog?.booking
-    if (!rules) return { message: '确定取消这节课吗？', late: false }
     const outcome = cancellationOutcome({
       startsAt: new Date(b.startsAt),
       endsAt: new Date(b.endsAt),
@@ -272,7 +264,8 @@ Page({
       cancelledBy: 'student',
       paidWith: b.paidWith,
       amountPaid: b.price,
-      rules,
+      // The cancel rules it was booked under.
+      rules: b.terms,
       deadline: new Date(b.cancelDeadline),
     })
     if (typeof outcome === 'string') return { message: '课程已开始，无法取消。', late: false }

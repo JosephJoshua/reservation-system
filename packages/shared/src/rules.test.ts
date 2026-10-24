@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import {
+  bookingTerms,
   bookingWindowError,
   cancelDeadline,
   cancellationOutcome,
   endsSameVenueDay,
   freeCancelDeadline,
   peakOverlap,
+  rulesFor,
   studentMoveError,
   tablesFor,
   tablesFree,
   validityEnd,
 } from './rules'
-import { defaultSettings, type VenueSettings } from './settings'
+import { defaultSettings, ruleNames, ruleText, type VenueSettings } from './settings'
 
 const rules = defaultSettings.booking
 const at = (iso: string) => new Date(iso)
@@ -247,5 +249,49 @@ describe('tablesFree', () => {
     // A group that needs two tables when only one is left.
     expect(tablesFree(lesson, [lesson], 2, 2)).toBe(false)
     expect(tablesFree(lesson, [lesson], 3, 2)).toBe(true)
+  })
+})
+
+describe('rulesFor', () => {
+  const venue = defaultSettings.booking
+
+  it("takes the lesson type's own rules and the venue's for the rest", () => {
+    expect(
+      rulesFor(venue, { studentMoves: 0, lateCancel: { kind: 'partial', percent: 100 } }),
+    ).toEqual({
+      advanceDays: 14,
+      minNoticeMinutes: 120,
+      cancelDeadlineHours: 24,
+      lateCancel: { kind: 'partial', percent: 100 },
+      studentMoves: 0,
+    })
+  })
+
+  it('keeps only booking rules, not the rest of the venue settings', () => {
+    expect(Object.keys(rulesFor(venue, null)).sort()).toEqual([...ruleNames].sort())
+  })
+
+  it('keeps the cancel and move rules for a booking', () => {
+    expect(bookingTerms(rulesFor(venue, { cancelDeadlineHours: 0 }))).toEqual({
+      cancelDeadlineHours: 0,
+      lateCancel: { kind: 'forfeit' },
+      studentMoves: 1,
+    })
+  })
+})
+
+describe('ruleText', () => {
+  it('says 0 in words', () => {
+    expect(ruleText('cancelDeadlineHours', 0)).toBe('开课前都可以免费取消')
+    expect(ruleText('minNoticeMinutes', 0)).toBe('开课前都可以预约')
+    expect(ruleText('studentMoves', 0)).toBe('不允许')
+  })
+
+  it('gives each rule its value', () => {
+    expect(ruleText('advanceDays', 14)).toBe('14 天以内')
+    expect(ruleText('minNoticeMinutes', 90)).toBe('开课前 1.5 小时')
+    expect(ruleText('cancelDeadlineHours', 24)).toBe('开课前 24 小时以上')
+    expect(ruleText('lateCancel', { kind: 'partial', percent: 50 })).toBe('退还 50% 的费用')
+    expect(ruleText('studentMoves', 2)).toBe('每节课 2 次')
   })
 })

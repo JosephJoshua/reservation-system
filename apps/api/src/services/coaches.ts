@@ -27,7 +27,7 @@ import { templateIds } from '../wx-notify'
 import { startCoachSession } from './auth'
 import { LIVE } from './bookings'
 import { newBindCode, normalizeBindCode } from './ids'
-import { getSettings } from './settings'
+import { ruleBook, taughtBy } from './settings'
 
 const BIND_CODE_MS = 24 * 3_600_000
 
@@ -67,7 +67,8 @@ function coachMe(deps: Deps, coach: typeof coaches.$inferSelect): CoachMeDto {
       'coach_cancelled',
       'coach_moved',
     ]),
-    advanceDays: getSettings(deps.db).booking.advanceDays,
+    // The days any of the coach's own lessons can be booked on.
+    advanceDays: ruleBook(deps.db).longestAdvanceDays(taughtBy(deps.db, coach.id)),
   }
 }
 
@@ -163,7 +164,7 @@ export function hoursView(deps: Deps, coachId: number): CoachHoursDto {
     hours: weeklyHours(db, coachId),
     daysOff: daysOffFrom(db, coachId, deps.now()),
     lessonMinutes: lessonMinutes(db, coachId),
-    advanceDays: getSettings(db).booking.advanceDays,
+    advanceDays: ruleBook(db).longestAdvanceDays(taughtBy(db, coachId)),
   }
 }
 
@@ -175,13 +176,12 @@ export function hoursView(deps: Deps, coachId: number): CoachHoursDto {
  * slots a person closed stay closed.
  */
 export function syncSlots(tx: Q, coachId: number, now: Date): SlotSyncDto {
-  const settings = getSettings(tx)
   const daysOff = new Set(daysOffFrom(tx, coachId, now))
-  const desired = lessonsFromHours(
-    weeklyHours(tx, coachId),
-    venueDates(now, settings.booking.advanceDays),
-    daysOff,
-  ).filter((l) => l.startsAt > now)
+  // Far enough ahead for the coach's lesson with the longest booking window.
+  const days = ruleBook(tx).longestAdvanceDays(taughtBy(tx, coachId))
+  const desired = lessonsFromHours(weeklyHours(tx, coachId), venueDates(now, days), daysOff).filter(
+    (l) => l.startsAt > now,
+  )
 
   const existing = tx
     .select()

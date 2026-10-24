@@ -1695,3 +1695,51 @@ a:hover {
   gap: 12px;
   padding-right: 32px;
 }
+
+/* A lesson type's booking rule: following the venue's, or set on its own. */
+.rule-default {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  column-gap: 16px;
+}
+
+.rule-own {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 6px;
+}
+
+.muted-strong {
+  color: var(--td-text-color-secondary);
+}
+
+.card-intro {
+  line-height: 22px;
+}
+
+.card-intro-link {
+  margin-left: 8px;
+}
+
+/* A titled group inside a long form, such as a lesson type's 预约规则. */
+.form-section {
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--td-component-stroke);
+}
+
+.form-section-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--td-text-color-primary);
+}
+
+/* Text buttons in a rule row line up with the text that wraps above them. */
+.rule-default .t-button,
+.rule-own .t-button {
+  padding-left: 0;
+  padding-right: 0;
+}

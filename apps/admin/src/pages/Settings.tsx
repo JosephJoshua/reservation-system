@@ -1,26 +1,29 @@
-import { CHECK_IN_EARLY_MINUTES, type VenueSettings } from '@rs/shared'
+import { CHECK_IN_EARLY_MINUTES, ownRuleLabels, type VenueSettings } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
 import {
+  Button,
   Card,
   Input,
   InputNumber,
   Loading,
   MessagePlugin,
-  Radio,
   Space,
   Switch,
   Textarea,
 } from 'tdesign-react'
+import { DefaultRuleFields } from '../BookingRules'
 import { Field } from '../Field'
+import { useApi } from '../hooks'
 import { SaveBar } from '../SaveBar'
 import { SectionNav, useSections } from '../SectionNav'
 import { useSettingsDraft } from '../settingsDraft'
+import type { LessonType } from '../types'
 import { coordValid, VenueLocation } from '../VenueLocation'
 
 /** The parts of 设置, in the order of the page, with the settings each one holds. */
 const sections = [
   { key: 'venue', label: '场馆', pick: (v: VenueSettings) => v.venue },
-  { key: 'booking', label: '预约规则', pick: (v: VenueSettings) => v.booking },
+  { key: 'booking', label: '默认预约规则', pick: (v: VenueSettings) => v.booking },
   { key: 'payment', label: '支付', pick: (v: VenueSettings) => v.payment },
   { key: 'attendance', label: '签到', pick: (v: VenueSettings) => v.attendance },
   { key: 'pay', label: '课时费', pick: (v: VenueSettings) => v.pay },
@@ -46,6 +49,7 @@ export function Settings() {
     isSaving,
     changed,
   } = useSettingsDraft()
+  const types = useApi<LessonType[]>('/admin/lesson-types')
   const [coord, setCoord] = useState({ lat: '', lng: '' })
   // The coordinates as saved, so ones typed while saving are kept, as the hook keeps the rest.
   const sentCoord = useRef<typeof coord | null>(null)
@@ -97,6 +101,8 @@ export function Settings() {
     if (!(await saveDraft(body))) sentCoord.current = null
   }
 
+  // Lessons on offer only: one taken off sale changes nothing students get.
+  const customized = (types.data ?? []).filter((t) => t.active && ownRuleLabels(t.rules).length > 0)
   const noneSelling = !s.payment.perClassEnabled && !s.payment.packagesEnabled
 
   return (
@@ -158,98 +164,38 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card title="预约规则" bordered ref={nav.refs.booking}>
+      <Card title="默认预约规则" bordered ref={nav.refs.booking}>
         <div className="fields form-narrow">
-          <Field label="可提前预约" help="学员可以预约今天起多少天内的课程">
-            <InputNumber
-              theme="normal"
-              value={s.booking.advanceDays}
-              min={1}
-              max={90}
-              suffix="天"
-              onChange={(v) =>
-                set((d) => {
-                  d.booking.advanceDays = Number(v) || 1
-                })
-              }
-            />
-          </Field>
-          <Field label="最晚预约" help="课程开始前多久停止预约">
-            <InputNumber
-              theme="normal"
-              value={s.booking.minNoticeMinutes / 60}
-              min={0}
-              max={168}
-              decimalPlaces={1}
-              suffix="小时"
-              onChange={(v) =>
-                set((d) => {
-                  d.booking.minNoticeMinutes = Math.round((Number(v) || 0) * 60)
-                })
-              }
-            />
-          </Field>
-          <Field label="免费取消" help="课程开始前多少小时以上取消，全额退款或退回课时">
-            <InputNumber
-              theme="normal"
-              value={s.booking.cancelDeadlineHours}
-              min={0}
-              max={336}
-              suffix="小时"
-              onChange={(v) =>
-                set((d) => {
-                  d.booking.cancelDeadlineHours = Number(v) || 0
-                })
-              }
-            />
-          </Field>
-          <Field label="之后取消">
-            <Space direction="vertical">
-              <Radio.Group
-                value={s.booking.lateCancel.kind}
-                onChange={(v) =>
-                  set((d) => {
-                    d.booking.lateCancel =
-                      v === 'forfeit' ? { kind: 'forfeit' } : { kind: 'partial', percent: 50 }
-                  })
-                }
-              >
-                <Radio value="forfeit">视为已上课，不退款不退课时</Radio>
-                <Radio value="partial">按比例退款</Radio>
-              </Radio.Group>
-              {s.booking.lateCancel.kind === 'partial' && (
-                <InputNumber
-                  theme="normal"
-                  value={s.booking.lateCancel.percent}
-                  min={0}
-                  max={100}
-                  suffix="%"
-                  onChange={(v) =>
-                    set((d) => {
-                      d.booking.lateCancel = { kind: 'partial', percent: Number(v) || 0 }
-                    })
-                  }
-                />
-              )}
-              {s.booking.lateCancel.kind === 'partial' && (
-                <span className="muted">课时包预约只有在 100% 时才退回课时</span>
-              )}
-            </Space>
-          </Field>
-          <Field label="学员改约" help="免费取消截止前，每节课学员可自行改约的次数，0 为不允许">
-            <InputNumber
-              theme="normal"
-              value={s.booking.studentMoves}
-              min={0}
-              max={5}
-              suffix="次"
-              onChange={(v) =>
-                set((d) => {
-                  d.booking.studentMoves = Number(v) || 0
-                })
-              }
-            />
-          </Field>
+          <div className="card-intro muted">
+            <div>课程可以单独设置这些规则，没有单独设置的规则都按这里的默认值。</div>
+            {types.error && (
+              <div className="field-error">
+                课程没有加载出来，看不到哪些课程单独设置了规则。
+                <Button variant="text" theme="primary" size="small" onClick={types.reload}>
+                  重试
+                </Button>
+              </div>
+            )}
+            {customized.length > 0 && (
+              <div>
+                已单独设置的课程：
+                {customized
+                  .map((t) => `${t.name}（${ownRuleLabels(t.rules).join('、')}）`)
+                  .join('，')}
+                <a className="card-intro-link" href="#/catalog">
+                  去修改
+                </a>
+              </div>
+            )}
+          </div>
+          <DefaultRuleFields
+            value={s.booking}
+            onChange={(patch) =>
+              set((d) => {
+                Object.assign(d.booking, patch)
+              })
+            }
+          />
           <Field label="球台数" help="同一时间最多能上几节课，留空则不限">
             <InputNumber
               theme="normal"

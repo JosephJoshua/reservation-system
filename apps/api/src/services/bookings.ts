@@ -1,5 +1,6 @@
 import {
   type BookingQuoteDto,
+  bookingTerms,
   bookingWindowError,
   type CancelledBy,
   cancellationOutcome,
@@ -27,7 +28,7 @@ import { newOutTradeNo } from './ids'
 import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
 import { createRefund, submitRefund } from './refunds'
-import { getSettings } from './settings'
+import { getSettings, ruleBook } from './settings'
 import { assertTableFree } from './tables'
 
 export const LIVE = ['pending_payment', 'confirmed'] as const
@@ -287,7 +288,8 @@ export async function createBooking(
     if (!lessonType || !visibleTo(lessonType, student)) {
       throw new ApiError(404, 'not_found', '该课程暂不可预约')
     }
-    const windowError = bookingWindowError(slot.startsAt, now, settings.booking)
+    const rules = ruleBook(tx, settings).of(lessonType.id)
+    const windowError = bookingWindowError(slot.startsAt, now, rules)
     if (windowError) throw new ApiError(409, windowError, windowMessages[windowError])
     const { price, seat } = checkBookable(tx, now, { studentId, slot, lessonType }, '你')
 
@@ -314,6 +316,7 @@ export async function createBooking(
       startsAt: slot.startsAt,
       endsAt: slot.endsAt,
       seat,
+      terms: bookingTerms(rules),
     }
     try {
       if (pkg) {
@@ -463,7 +466,7 @@ export async function cancelBooking(
         ? tx.select().from(orders).where(eq(orders.bookingId, booking.id)).get()
         : undefined
     const amountPaid = order?.status === 'paid' ? order.amount : 0
-    const settings = getSettings(tx).booking
+    const terms = booking.terms ?? ruleBook(tx).termsOf(booking)
     const rules = cancellationOutcome({
       startsAt: booking.startsAt,
       endsAt: booking.endsAt,
@@ -471,10 +474,10 @@ export async function cancelBooking(
       cancelledBy: by,
       paidWith: booking.paidWith,
       amountPaid,
-      rules: settings,
+      rules: terms,
       deadline: freeCancelDeadline(
         booking.startsAt,
-        settings,
+        terms,
         moveSummaries(tx, [booking.id]).get(booking.id)?.lastMove,
       ),
     })

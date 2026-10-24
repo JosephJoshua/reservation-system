@@ -106,7 +106,7 @@ Page({
         const c = catalog.coaches.find((coach) => coach.id === id)
         return c ? [{ id, name: c.name, avatar: c.avatarUrl ? assetUrl(c.avatarUrl) : '' }] : []
       })
-      const days = bookableDays(catalog.booking.advanceDays)
+      const days = bookableDays(booking.window.advanceDays)
       // Open on the lesson's own day, where nearby times are the likely pick.
       const date = days.some((d) => d.key === venueDateKey(new Date(booking.startsAt)))
         ? venueDateKey(new Date(booking.startsAt))
@@ -147,7 +147,7 @@ Page({
       if (request !== this.request) return
       const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
       const now = Date.now()
-      const notice = (this.catalog?.booking.minNoticeMinutes ?? 0) * 60_000
+      const notice = booking.window.minNoticeMinutes * 60_000
       // A group class moves to another session of the same class, a private lesson to a private slot.
       const sessionOf = booking.capacity > 1 ? booking.lessonType.id : null
       const slots = rows
@@ -197,7 +197,8 @@ Page({
     const slot = this.data.slots[e.currentTarget.dataset.index as number]
     if (!slot?.available || this.data.submitting) return
     const coach = this.data.coaches.find((c) => c.id === slot.coachId)
-    const rules = this.catalog?.booking
+    // The lesson keeps the cancel rules it was booked under.
+    const rules = this.booking?.terms
     // A time the student picks is free to cancel only until its usual deadline, which may be past.
     const late = rules
       ? cancelDeadline(new Date(slot.startsAt), rules).getTime() < Date.now()

@@ -348,12 +348,10 @@ function bookableDays(advanceDays: number, now: number) {
 export function BookScreen({
   catalog,
   lessonTypeId,
-  advanceDays,
   now,
 }: {
   catalog: CatalogData
   lessonTypeId: number
-  advanceDays: number
   now: Date
 }) {
   const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
@@ -363,7 +361,7 @@ export function BookScreen({
     return lesson ? [{ ...c, ...priceText(lesson.price) }] : []
   })
   const picked = coaches.length === 1 ? coaches[0] : undefined
-  const days = bookableDays(advanceDays, now.getTime())
+  const days = bookableDays(lessonType.rules.advanceDays, now.getTime())
   return (
     <div>
       <div className="header">

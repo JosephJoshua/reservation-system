@@ -107,7 +107,7 @@ Page({
           lessonType.capacity > 1
             ? `小班课，多人同上${
                 lessonType.minStudents
-                  ? `；如果开课前 ${minCheckHours(catalog.booking)} 小时报名仍不足 ${lessonType.minStudents} 人，课程会自动取消，并退款或退回课时`
+                  ? `；如果开课前 ${minCheckHours(lessonType.rules)} 小时报名仍不足 ${lessonType.minStudents} 人，课程会自动取消，并退款或退回课时`
                   : ''
               }`
             : '',
@@ -120,7 +120,10 @@ Page({
         pkg: pkg ? { id: pkg.id, name: pkg.name, remaining: pkg.lessonsRemaining } : null,
         perClassEnabled,
         payWith: pkg ? 'package' : 'wechat',
-        cancelRule: cancelRuleText(catalog.booking.cancelDeadlineHours, catalog.booking.lateCancel),
+        cancelRule: cancelRuleText(
+          lessonType.rules.cancelDeadlineHours,
+          lessonType.rules.lateCancel,
+        ),
         needName: !me.name,
         needPhone: !me.phone,
         hasBookingPolicy: Boolean(catalog.policies.booking),

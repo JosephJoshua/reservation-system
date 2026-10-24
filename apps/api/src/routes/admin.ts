@@ -12,6 +12,11 @@ import {
   MAX_CAPACITY,
   offlineMethodLabels,
   offlineMethods,
+  type RuleOverrides,
+  ruleNames,
+  ruleOverrides,
+  ruleShortLabels,
+  ruleText,
   type StaffRole,
   staffActions,
   staffRoleLabels,
@@ -101,7 +106,7 @@ import {
   createSessions,
   setSessionCapacity,
 } from '../services/sessions'
-import { getSettings, saveSettings } from '../services/settings'
+import { getSettings, ownRules, saveSettings } from '../services/settings'
 import {
   createStaff,
   findStaff,
@@ -151,7 +156,7 @@ const rolesText = (r: readonly StaffRole[]) => r.map((role) => staffRoleLabels[r
 const offlineMethod = z.enum(offlineMethods)
 const settingsSectionLabel = {
   venue: '场馆信息',
-  booking: '预约规则',
+  booking: '默认预约规则',
   payment: '支付',
   notice: '公告',
   policies: '须知与协议',
@@ -205,6 +210,8 @@ const lessonTypeBody = z
     capacity: z.number().int().min(1).max(MAX_CAPACITY).default(1),
     minStudents: z.number().int().min(2).max(MAX_CAPACITY).nullable().default(null),
     studentsPerTable: z.number().int().min(1).max(MAX_CAPACITY).nullable().default(null),
+    // A rule left out follows the venue's 默认预约规则. Left out altogether, an edit keeps them.
+    rules: ruleOverrides.optional(),
   })
   .refine((v) => saleDatesValid(v.salePercent, v.saleStartsAt, v.saleEndsAt), {
     message: '折扣需要设置开始和结束时间',
@@ -759,8 +766,29 @@ export function adminRoutes(deps: Deps) {
 
   // Lesson types
 
+  // Rules are shown as they apply: one saved under an older shape is left out.
+  const lessonTypeView = (row: typeof lessonTypes.$inferSelect) => ({
+    ...row,
+    rules: ownRules(row.rules),
+  })
+
+  /** Which rules a lesson type sets on its own, for the action log. */
+  const rulesLine = (name: string, rules: RuleOverrides) => {
+    const own = ruleNames.flatMap((n) =>
+      rules[n] === undefined ? [] : [`${ruleShortLabels[n]} ${ruleText(n, rules[n])}`],
+    )
+    return `课程「${name}」的预约规则：${own.length ? `单独设置${own.join('，')}` : '全部按默认'}`
+  }
+
   app.get('/lesson-types', need('view'), (c) =>
-    c.json(db.select().from(lessonTypes).orderBy(asc(lessonTypes.sort), asc(lessonTypes.id)).all()),
+    c.json(
+      db
+        .select()
+        .from(lessonTypes)
+        .orderBy(asc(lessonTypes.sort), asc(lessonTypes.id))
+        .all()
+        .map(lessonTypeView),
+    ),
   )
 
   const lessonPriceLine = (t: z.infer<typeof lessonTypeBody>) =>
@@ -770,7 +798,7 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, lessonTypeBody)
     const row = db
       .insert(lessonTypes)
-      .values({ ...body, sort: nextSort(db, lessonTypes) })
+      .values({ ...body, rules: body.rules ?? {}, sort: nextSort(db, lessonTypes) })
       .returning()
       .get()
     log(c.get('staffId'), {
@@ -778,7 +806,14 @@ export function adminRoutes(deps: Deps) {
       summary: `新建课程 ${row.name}，${lessonPriceLine(body)}`,
       target: { kind: 'lesson_type', id: row.id },
     })
-    return c.json(row, 201)
+    if (Object.keys(row.rules).length) {
+      log(c.get('staffId'), {
+        action: 'rules.lesson_type',
+        summary: rulesLine(row.name, row.rules),
+        target: { kind: 'lesson_type', id: row.id },
+      })
+    }
+    return c.json(lessonTypeView(row), 201)
   })
 
   app.put('/lesson-types/:id', need('manage'), async (c) => {
@@ -786,7 +821,7 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, lessonTypeBody)
     const existing = db.select().from(lessonTypes).where(eq(lessonTypes.id, id)).get()
     if (!existing) throw notFound('课程')
-    checkVersion(c, existing)
+    checkVersion(c, lessonTypeView(existing))
     const used = db
       .select({ id: bookings.id })
       .from(bookings)
@@ -823,17 +858,32 @@ export function adminRoutes(deps: Deps) {
         .get()
       if (sold) throw new ApiError(409, 'trial_has_packages', '有课时包的课程不能设为体验课')
     }
-    const row = db.update(lessonTypes).set(body).where(eq(lessonTypes.id, id)).returning().get()
-    const was = lessonPriceLine(existing)
-    const now = lessonPriceLine(body)
-    if (was !== now) {
+    const was = ownRules(existing.rules)
+    const rules = body.rules ?? was
+    const row = db
+      .update(lessonTypes)
+      .set({ ...body, rules })
+      .where(eq(lessonTypes.id, id))
+      .returning()
+      .get()
+    // Compared rule by rule, so the order the keys were saved in does not matter.
+    if (ruleNames.some((n) => JSON.stringify(was[n]) !== JSON.stringify(rules[n]))) {
       log(c.get('staffId'), {
-        action: 'price.lesson_type',
-        summary: `${body.name}：${was} 改为 ${now}`,
+        action: 'rules.lesson_type',
+        summary: rulesLine(body.name, rules),
         target: { kind: 'lesson_type', id },
       })
     }
-    return c.json(row)
+    const priceWas = lessonPriceLine(existing)
+    const priceNow = lessonPriceLine(body)
+    if (priceWas !== priceNow) {
+      log(c.get('staffId'), {
+        action: 'price.lesson_type',
+        summary: `${body.name}：${priceWas} 改为 ${priceNow}`,
+        target: { kind: 'lesson_type', id },
+      })
+    }
+    return c.json(lessonTypeView(row))
   })
 
   // Slots
@@ -1170,7 +1220,7 @@ export function adminRoutes(deps: Deps) {
       .offset(q.offset)
       .all()
       .map((r) => r.booking)
-    const views = bookingViews(db, rows, getSettings(db).booking, now)
+    const views = bookingViews(db, rows, now)
     const people = new Map(
       rows.length
         ? db
@@ -1592,7 +1642,7 @@ export function adminRoutes(deps: Deps) {
       profile: studentProfile(db, id, now),
       feedback: student.deletedAt ? [] : studentFeedback(db, id),
       packages: packageViews(db, pkgRows, now),
-      bookings: bookingViews(db, bookingRows, getSettings(db).booking, now),
+      bookings: bookingViews(db, bookingRows, now),
     })
   })
 

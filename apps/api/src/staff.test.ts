@@ -406,7 +406,7 @@ describe('action log', () => {
     settings.booking.cancelDeadlineHours = 12
     settings.notice.text = '国庆休息'
     await h.call('PUT', '/admin/settings', settings, admin)
-    expect(log(h).map((e) => e.summary)).toEqual(['修改预约规则、公告'])
+    expect(log(h).map((e) => e.summary)).toEqual(['修改默认预约规则、公告'])
   })
 
   it('records venue cancels with what went back', async () => {

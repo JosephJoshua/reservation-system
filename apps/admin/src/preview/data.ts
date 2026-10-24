@@ -2,6 +2,7 @@
 // /home do, with the record being edited put in place of the saved one.
 import {
   type BannerDto,
+  type BookingRules,
   type CatalogDto,
   type CoachDto,
   formatYuan,
@@ -12,6 +13,7 @@ import {
   type PackageProductDto,
   type PriceTag,
   packagePrice,
+  rulesFor,
   venueParts,
 } from '@rs/shared'
 import type { Banner, Coach, CoachCategory, LessonType, PackageProduct } from '../types'
@@ -49,6 +51,8 @@ export interface PreviewSource {
   home: HomeDto
   /** From the settings; null when this login can't read them, and both are taken as on. */
   payment: { trialEnabled: boolean; packagesEnabled: boolean } | null
+  /** The venue's 默认预约规则, which a lesson type's own rules go over. */
+  rules: BookingRules
 }
 
 /** The id a new record gets in the preview. */
@@ -193,6 +197,7 @@ export function studentCatalog(
       capacity: t.capacity,
       minStudents: t.minStudents,
       fromPrice: cheapest?.price ?? null,
+      rules: rulesFor(source.rules, t.rules),
     }
   })
   const typeIds = new Set(types.map((t) => t.id))
@@ -227,12 +232,6 @@ export function studentCatalog(
     banners,
     categoryOf: categoryName,
     payment: { trialEnabled, perClassEnabled: true, packagesEnabled },
-    booking: {
-      advanceDays: 7,
-      minNoticeMinutes: 0,
-      cancelDeadlineHours: 0,
-      lateCancel: { kind: 'forfeit' },
-    },
     policies: { booking: '', agreement: '', privacy: '', version: '' },
   }
 }

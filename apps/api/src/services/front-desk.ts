@@ -1,4 +1,4 @@
-import type { OfflineMethod } from '@rs/shared'
+import { bookingTerms, type OfflineMethod } from '@rs/shared'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -18,6 +18,7 @@ import { describeBooking, logAction, yuan } from './action-log'
 import { checkBookable, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
 import { listedPriceOnly } from './packages'
+import { ruleBook } from './settings'
 
 export interface FrontDeskBookingInput {
   studentId: number
@@ -144,6 +145,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
       endsAt: slot.endsAt,
       status: 'confirmed' as const,
       bookedByStaffId: staffId,
+      terms: bookingTerms(ruleBook(tx).of(lessonType.id)),
     }
     try {
       if (input.payWith === 'package') {
