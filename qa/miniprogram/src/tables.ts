@@ -212,6 +212,11 @@ try {
   const at = (s: Slot) => theirs.find((t) => t.startsAt === s.startsAt) as Slot
   await book(rival, at(full).id)
 
+  // The first page signs in as whoever devLogin named at launch. Let that finish before switching,
+  // or its late token replaces the student's.
+  for (let i = 0; i < 40 && !(await miniProgram.callWxMethod('getStorageSync', 'token')); i++) {
+    await sleep(250)
+  }
   await miniProgram.callWxMethod('setStorageSync', 'devLogin', studentLogin)
   await miniProgram.callWxMethod('removeStorageSync', 'token')
   await autoConfirmModals()
@@ -219,6 +224,9 @@ try {
   await step('选择时间 shows the time without a free table as 已约满', async () => {
     await miniProgram.reLaunch(`/pages/book/index?lessonTypeId=${lesson.id}&coachId=${coach.id}`)
     await waitForPage('pages/book/index', (d) => d.state === 'ready')
+    const signedIn = (await miniProgram.callWxMethod('getStorageSync', 'token')) as string
+    const me = await call('GET', '/me', undefined, signedIn)
+    check(me.name === '吴桌', `signed in as ${me.name || 'a new student'}, not the test student`)
     await invoke('pickDate', { currentTarget: { dataset: { key: day } } })
     const page = await waitForPage(
       'pages/book/index',
