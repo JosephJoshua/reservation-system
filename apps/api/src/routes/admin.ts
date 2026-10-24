@@ -92,6 +92,7 @@ import {
   rejectPackageRefund,
   sellPackageOffline,
 } from '../services/packages'
+import { confirmMonth, monthRange, unconfirmMonth } from '../services/pay-months'
 import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
@@ -2190,6 +2191,39 @@ export function adminRoutes(deps: Deps) {
 
   app.get('/reports/monthly', need('finance'), (c) => {
     const { month } = parseQuery(c, z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    return c.json(monthlyReport(deps, month))
+  })
+
+  const monthParam = (c: { req: { param: (name: string) => string } }) => {
+    const month = c.req.param('month')
+    if (!/^\d{4}-\d{2}$/.test(month)) throw new ApiError(400, 'invalid_query', '月份无效')
+    monthRange(month)
+    return month
+  }
+
+  /** Fixes a month's coach pay. The body carries the version of the amounts staff looked at. */
+  app.post('/reports/pay-months/:month/confirm', need('finance'), async (c) => {
+    const month = monthParam(c)
+    const { version } = await parseBody(c, z.object({ version: z.string().min(1).max(20) }))
+    const done = immediate(db, (tx) =>
+      confirmMonth(tx, month, version, c.get('staffId'), deps.now()),
+    )
+    if (done) {
+      log(c.get('staffId'), {
+        action: 'pay.confirm',
+        summary: `确认 ${month} 课时费，${done.coaches} 位教练，合计 ${yuan(done.total)}`,
+        amount: done.total,
+      })
+    }
+    return c.json(monthlyReport(deps, month))
+  })
+
+  /** Reopens the last confirmed month. */
+  app.delete('/reports/pay-months/:month', need('manage'), (c) => {
+    const month = monthParam(c)
+    if (immediate(db, (tx) => unconfirmMonth(tx, month))) {
+      log(c.get('staffId'), { action: 'pay.unconfirm', summary: `撤销 ${month} 课时费确认` })
+    }
     return c.json(monthlyReport(deps, month))
   })
 

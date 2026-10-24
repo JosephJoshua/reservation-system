@@ -25,7 +25,14 @@ const groups: { label: string; actions: StaffAction[] }[] = [
   { label: '发票', actions: ['invoice.issue', 'invoice.reject', 'invoice.refund_seen'] },
   {
     label: '价格',
-    actions: ['price.lesson_type', 'price.product', 'price.coach', 'price.coach_pay'],
+    actions: [
+      'price.lesson_type',
+      'price.product',
+      'price.coach',
+      'price.coach_pay',
+      'pay.confirm',
+      'pay.unconfirm',
+    ],
   },
   {
     label: '学员',

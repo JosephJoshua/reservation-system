@@ -232,7 +232,7 @@ describe('coach pay in the monthly report', () => {
     const report = async () =>
       (await h.call('GET', '/admin/reports/monthly?month=2026-10', undefined, admin)).json
     let r = await report()
-    expect(r.payRules).toEqual({ noShows: true, lateCancels: false })
+    expect(r.payStatus.rules).toEqual({ noShows: true, lateCancels: false })
     expect(r.coaches.map((c: { name: string; pay: unknown }) => [c.name, c.pay])).toEqual([
       [
         '王教练',
@@ -244,6 +244,7 @@ describe('coach pay in the monthly report', () => {
             { lessonTypeId: lesson.id, name: '一对一私教', lessons: 3, rate: 8000, amount: 24000 },
             { lessonTypeId: trial.id, name: '体验课', lessons: 1, rate: 3000, amount: 3000 },
           ],
+          adjustments: [],
         },
       ],
       [
@@ -255,6 +256,7 @@ describe('coach pay in the monthly report', () => {
           lines: [
             { lessonTypeId: lesson.id, name: '一对一私教', lessons: 1, rate: null, amount: 0 },
           ],
+          adjustments: [],
         },
       ],
     ])
@@ -267,7 +269,7 @@ describe('coach pay in the monthly report', () => {
       admin,
     )
     r = await report()
-    expect(r.payRules).toEqual({ noShows: false, lateCancels: true })
+    expect(r.payStatus.rules).toEqual({ noShows: false, lateCancels: true })
     // The no-show drops out and the late cancel comes in.
     expect(r.coaches[0].pay).toMatchObject({ amount: 3 * 8000 + 3000, lessons: 4 })
     expect(r.coaches[0].pay.lines[0].lessons).toBe(3)

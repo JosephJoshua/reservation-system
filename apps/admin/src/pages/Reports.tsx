@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Button, Card, DatePicker, Space, Tabs } from 'tdesign-react'
+import { Button, Card, DatePicker, Dialog, Popconfirm, Space, Tabs, Tag } from 'tdesign-react'
+import { api } from '../api'
 import { DataTable } from '../DataTable'
-import { today, yuan, yuanGrouped } from '../format'
-import { useApi } from '../hooks'
+import { fmtDate, fmtDateTime, today, yuan, yuanGrouped } from '../format'
+import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { useCan } from '../me'
 import { Stats } from './Stats'
 
 interface MonthlyReport {
@@ -28,9 +30,22 @@ interface MonthlyReport {
         rate: number | null
         amount: number
       }[]
+      adjustments: {
+        lessonTypeId: number
+        name: string
+        startsAt: string
+        lessons: number
+        rate: number | null
+        amount: number
+      }[]
     }
   }[]
-  payRules: { noShows: boolean; lateCancels: boolean }
+  payStatus: {
+    confirmed: { at: string; staff: string } | null
+    blocked: string | null
+    version: string
+    rules: { noShows: boolean; lateCancels: boolean }
+  }
   revenue: {
     wechat: number
     offline: number
@@ -77,8 +92,19 @@ function payLessonsText(r: MonthlyReport) {
 
 const counts = (on: boolean) => (on ? '计入' : '不计入')
 
-function payNote(rules: MonthlyReport['payRules']) {
-  return `课时费按当前标准和教练类别计算：学员缺席${counts(rules.noShows)}，学员逾时取消${counts(rules.lateCancels)}，场馆取消不计入；小班课每节计一节。`
+function payNote({ confirmed, rules }: MonthlyReport['payStatus']) {
+  const counted = `学员缺席${counts(rules.noShows)}，学员逾时取消${counts(rules.lateCancels)}，场馆取消不计入；小班课每节计一节。`
+  return confirmed
+    ? `课时费已确认，按确认时的标准计算：${counted}之后的签到或取消变动计入下个月。`
+    : `课时费按当前标准和教练类别计算：${counted}确认本月后金额固定。`
+}
+
+type Adjustment = MonthlyReport['coaches'][number]['pay']['adjustments'][number]
+
+/** "调整 10/20 一对一私教 -¥80", for a lesson of an earlier month taken back or paid now. */
+function adjustmentText(a: Adjustment) {
+  const sign = a.amount < 0 ? '-' : '+'
+  return `调整 ${fmtDate(a.startsAt).slice(5).replace('-', '/')} ${a.name} ${a.rate === null ? '未设课时费' : `${sign}${yuan(Math.abs(a.amount))}`}`
 }
 
 function PayCell({ row }: { row: CoachRow }) {
@@ -88,6 +114,11 @@ function PayCell({ row }: { row: CoachRow }) {
       {row.pay.lines.map((l) => (
         <div key={l.lessonTypeId} className="muted">
           {l.name} {l.lessons} 节 × {l.rate === null ? '未设置' : yuan(l.rate)}
+        </div>
+      ))}
+      {row.pay.adjustments.map((a) => (
+        <div key={`${a.startsAt}-${a.lessons}`} className="muted">
+          {adjustmentText(a)}
         </div>
       ))}
       {row.pay.unrated > 0 && <div className="warning-text">{row.pay.unrated} 节未设课时费</div>}
@@ -115,7 +146,21 @@ function downloadCsv(report: MonthlyReport) {
         l.rate === null ? '' : y(l.amount),
       ]),
     ),
-    [payNote(report.payRules)],
+    ...report.coaches.flatMap((c) =>
+      c.pay.adjustments.map((a) => [
+        c.name,
+        `${a.name}（${fmtDate(a.startsAt)} 调整）`,
+        a.lessons,
+        a.rate === null ? '未设置' : y(a.rate),
+        a.rate === null ? '' : y(a.amount),
+      ]),
+    ),
+    [
+      report.payStatus.confirmed
+        ? `已确认：${report.payStatus.confirmed.staff}，${fmtDateTime(report.payStatus.confirmed.at)}`
+        : '未确认',
+    ],
+    [payNote(report.payStatus)],
     [],
     ['收入（元）'],
     ['微信支付', y(report.revenue.wechat)],
@@ -147,7 +192,9 @@ function downloadCsv(report: MonthlyReport) {
 
 function Monthly() {
   const [month, setMonth] = useState(today().slice(0, 7))
-  const { data, loading, error } = useApi<MonthlyReport>(`/admin/reports/monthly?month=${month}`)
+  const { data, loading, error, reload, setData } = useApi<MonthlyReport>(
+    `/admin/reports/monthly?month=${month}`,
+  )
   const r = data?.month === month ? data : null
 
   const stats: [string, string, string?][] = r
@@ -205,7 +252,11 @@ function Monthly() {
           </div>
         </Card>
       )}
-      <Card bordered title="教练课时">
+      <Card
+        bordered
+        title="教练课时"
+        actions={r && <PayMonth report={r} onChange={setData} onStale={reload} />}
+      >
         <DataTable
           rowKey="id"
           loading={loading}
@@ -218,16 +269,140 @@ function Monthly() {
             {
               colKey: 'pay',
               title: '课时费',
-              width: 200,
+              width: 240,
               cell: ({ row }) => <PayCell row={row} />,
             },
           ]}
         />
         <div className="muted" style={{ marginTop: 8 }}>
           按上课日期统计已结束的课程。缺席计入已上课时，学员逾时取消不计入。
-          {r && payNote(r.payRules)}
+          {r && payNote(r.payStatus)}
         </div>
       </Card>
+    </Space>
+  )
+}
+
+/** Whether the month's coach pay is confirmed, with 确认本月 and, for 管理员, 撤销确认. */
+function PayMonth({
+  report: r,
+  onChange,
+  onStale,
+}: {
+  report: MonthlyReport
+  onChange: (r: MonthlyReport) => void
+  onStale: () => void
+}) {
+  const canConfirm = useCan('finance')
+  const canReopen = useCan('manage')
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const submitting = useSubmitting()
+  const { confirmed, blocked } = r.payStatus
+  const total = r.coaches.reduce((sum, c) => sum + c.pay.amount, 0)
+  const paid = r.coaches.filter((c) => c.pay.amount !== 0 || c.pay.lessons > 0).length
+  const adjustments = r.coaches.reduce((sum, c) => sum + c.pay.adjustments.length, 0)
+
+  const confirm = async () => {
+    if (!confirming) return
+    let next: MonthlyReport | null = null
+    const ok = await attempt(
+      async () => {
+        next = await api<MonthlyReport>(
+          'POST',
+          `/admin/reports/pay-months/${r.month}/confirm`,
+          { version: r.payStatus.version },
+          { key: confirming },
+        )
+      },
+      '已确认',
+      {
+        stale: ['pay_not_confirmable'],
+        onStale: () => {
+          setConfirming(null)
+          onStale()
+        },
+      },
+    )
+    if (ok && next) {
+      setConfirming(null)
+      onChange(next)
+    }
+  }
+
+  const reopen = async () => {
+    let next: MonthlyReport | null = null
+    const ok = await attempt(
+      async () => {
+        next = await api<MonthlyReport>(
+          'DELETE',
+          `/admin/reports/pay-months/${r.month}`,
+          undefined,
+          {
+            key: newKey(),
+          },
+        )
+      },
+      '已撤销确认',
+      { key: `reopen-${r.month}`, stale: ['pay_not_last'], onStale },
+    )
+    if (ok && next) onChange(next)
+  }
+
+  if (confirmed) {
+    return (
+      <Space align="center" size={8} className="pay-month">
+        <Tag theme="success" variant="light">
+          已确认
+        </Tag>
+        <span className="muted">
+          {confirmed.staff} {fmtDateTime(confirmed.at)}
+        </span>
+        {canReopen && (
+          <Popconfirm
+            placement="bottom-right"
+            content="撤销后金额按当前数据重新计算，需要重新确认。"
+            confirmBtn={{ content: '撤销确认', theme: 'danger' }}
+            cancelBtn="返回"
+            onConfirm={reopen}
+          >
+            <Button variant="text" theme="danger">
+              撤销确认
+            </Button>
+          </Popconfirm>
+        )}
+      </Space>
+    )
+  }
+  return (
+    <Space align="center" size={8} className="pay-month">
+      {blocked && <span className="muted">{blocked}</span>}
+      {canConfirm && (
+        <Button disabled={!!blocked} onClick={() => setConfirming(newKey())}>
+          确认本月
+        </Button>
+      )}
+      {confirming && (
+        <Dialog
+          visible
+          header={`确认 ${r.month} 课时费`}
+          // The second click of a double click on 确认本月 would land on the overlay.
+          closeOnOverlayClick={false}
+          confirmBtn={{ content: '确认', loading: submitting }}
+          cancelBtn="返回"
+          onConfirm={confirm}
+          onClose={() => setConfirming(null)}
+        >
+          <div className="fields">
+            <p>
+              {paid} 位教练，合计 {yuanGrouped(total)}
+              {adjustments > 0 ? `，含 ${adjustments} 条往月调整` : ''}。
+            </p>
+            <p className="muted">
+              确认后金额固定，不再随课时费标准或设置变化；之后的签到或取消变动计入下个月。月份按顺序确认。
+            </p>
+          </div>
+        </Dialog>
+      )}
     </Space>
   )
 }

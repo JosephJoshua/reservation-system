@@ -611,6 +611,53 @@ export const idempotencyKeys = sqliteTable(
 )
 
 /**
+ * A venue month whose coach pay staff confirmed. Its amounts are then fixed: the pay rules it was
+ * confirmed with are kept here, and the lessons it paid are in coachPayEntries.
+ */
+export const coachPayMonths = sqliteTable('coach_pay_months', {
+  // Venue month, YYYY-MM.
+  month: text('month').primaryKey(),
+  rules: text('rules', { mode: 'json' })
+    .$type<{ noShows: boolean; lateCancels: boolean }>()
+    .notNull(),
+  total: integer('total').notNull(),
+  confirmedAt: instant('confirmed_at').notNull(),
+  staffId: integer('staff_id')
+    .notNull()
+    .references(() => staff.id),
+})
+
+/**
+ * What a confirmed month paid each coach, one row per lesson. A lesson is a booking, or a whole
+ * group session (`unit` is b<bookingId> or s<slotId>). A change to a lesson after its month was
+ * confirmed is paid in the next month as an adjustment: -1 to take back what was paid, +1 to pay
+ * a lesson that now counts.
+ */
+export const coachPayEntries = sqliteTable(
+  'coach_pay_entries',
+  {
+    id: id(),
+    // The confirmed month that paid it.
+    month: text('month')
+      .notNull()
+      .references(() => coachPayMonths.month),
+    kind: text('kind', { enum: ['lesson', 'adjustment'] }).notNull(),
+    unit: text('unit').notNull(),
+    coachId: integer('coach_id')
+      .notNull()
+      .references(() => coaches.id),
+    lessonTypeId: integer('lesson_type_id')
+      .notNull()
+      .references(() => lessonTypes.id),
+    startsAt: instant('starts_at').notNull(),
+    rate: integer('rate').notNull(),
+    lessons: integer('lessons').notNull(),
+    amount: integer('amount').notNull(),
+  },
+  (t) => [index('coach_pay_entries_month').on(t.month), index('coach_pay_entries_unit').on(t.unit)],
+)
+
+/**
  * What staff did with money, bookings, prices and logins. Rows are never changed, except that a
  * WeChat account joining a front-desk student brings its rows over to that student.
  */
