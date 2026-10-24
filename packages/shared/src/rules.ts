@@ -121,18 +121,21 @@ export function validityEnd(from: Date, days: number): Date {
 interface Span {
   startsAt: Date
   endsAt: Date
+  /** Tables it uses, 1 when left out. */
+  tables?: number
 }
 
 /**
- * The most lessons from `others` running at one moment during `lesson`. Lessons that only touch
- * at an end do not overlap.
+ * The most tables lessons from `others` use at one moment during `lesson`. Lessons that only
+ * touch at an end do not overlap.
  */
 export function peakOverlap(lesson: Span, others: readonly Span[]): number {
   const edges: [number, number][] = []
   for (const o of others) {
     const start = Math.max(o.startsAt.getTime(), lesson.startsAt.getTime())
     const end = Math.min(o.endsAt.getTime(), lesson.endsAt.getTime())
-    if (start < end) edges.push([start, 1], [end, -1])
+    const n = o.tables ?? 1
+    if (start < end && n > 0) edges.push([start, n], [end, -n])
   }
   // Ends sort before starts at the same moment, so back-to-back lessons share a table.
   edges.sort((a, b) => a[0] - b[0] || a[1] - b[1])
@@ -145,7 +148,24 @@ export function peakOverlap(lesson: Span, others: readonly Span[]): number {
   return peak
 }
 
-/** Whether one more lesson at `lesson` fits the venue's tables; null tables means no limit. */
-export function tablesFree(lesson: Span, others: readonly Span[], tables: number | null): boolean {
-  return tables === null || peakOverlap(lesson, others) < tables
+/**
+ * Whether a lesson needing `need` tables at `lesson` fits the venue's tables alongside `others`;
+ * null tables means no limit.
+ */
+export function tablesFree(
+  lesson: Span,
+  others: readonly Span[],
+  tables: number | null,
+  need = 1,
+): boolean {
+  return tables === null || peakOverlap(lesson, others) + need <= tables
+}
+
+/**
+ * Tables a lesson with this many students uses: a private lesson or a group class with no
+ * students-per-table set takes one, otherwise one per `perTable` students. None while empty.
+ */
+export function tablesFor(students: number, perTable: number | null): number {
+  if (students <= 0) return 0
+  return perTable === null ? 1 : Math.ceil(students / perTable)
 }

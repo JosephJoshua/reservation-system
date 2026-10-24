@@ -294,4 +294,64 @@ describe('table limit', () => {
     expect(listed.find((s: { id: number }) => s.id === first).available).toBe(true)
     expect(listed.find((s: { id: number }) => s.id === second).available).toBe(false)
   })
+
+  it('gives a group session a table per students-per-table', async () => {
+    const h = setup()
+    const v = venue(h, 2, 2)
+    const kids = h.db
+      .insert(lessonTypes)
+      .values({
+        name: '少儿小班课',
+        durationMinutes: 60,
+        price: 8000,
+        capacity: 6,
+        studentsPerTable: 2,
+      })
+      .returning()
+      .get()
+    h.db
+      .insert(coachLessonTypes)
+      .values({ coachId: v.coach(0), lessonTypeId: kids.id })
+      .run()
+    const admin = await h.admin()
+    const created = await h.call(
+      'POST',
+      '/admin/sessions',
+      {
+        lessonTypeId: kids.id,
+        capacity: 6,
+        sessions: [
+          {
+            coachId: v.coach(0),
+            startsAt: venueInstant('2026-10-25', 10 * 60).toISOString(),
+            endsAt: venueInstant('2026-10-25', 11 * 60).toISOString(),
+          },
+        ],
+      },
+      admin,
+    )
+    const sessionId = created.json.ids[0] as number
+    const kidTokens = await Promise.all(['k1', 'k2', 'k3', 'k4', 'k5'].map((n) => h.student(n)))
+    const join = (i: number) => book(h, kidTokens[i] ?? '', sessionId, kids.id)
+    // Two kids share the first table, so a private lesson still fits on the second.
+    expect((await join(0)).status).toBe(201)
+    expect((await join(1)).status).toBe(201)
+    const adult = await h.student('adult')
+    const privateSlot = slotAt(h, v.coach(1), 10 * 60)
+    const listed = (await h.call('GET', '/slots?date=2026-10-25', undefined, kidTokens[2])).json
+    expect(listed.find((s: { id: number }) => s.id === sessionId).available).toBe(true)
+    expect((await book(h, adult, privateSlot.id, v.lesson.id)).status).toBe(201)
+    // A third kid would need a second table, which the private lesson now uses.
+    const third = await join(2)
+    expect(third.json.error?.code).toBe('tables_full')
+    const after = (await h.call('GET', '/slots?date=2026-10-25', undefined, kidTokens[2])).json
+    expect(after.find((s: { id: number }) => s.id === sessionId).available).toBe(false)
+
+    // Once the private lesson is cancelled, the class grows to two tables, four kids.
+    const own = h.db.select().from(bookings).where(eq(bookings.slotId, privateSlot.id)).get()
+    await h.call('POST', `/bookings/${own?.id}/cancel`, {}, adult)
+    expect((await join(2)).status).toBe(201)
+    expect((await join(3)).status).toBe(201)
+    expect((await join(4)).json.error?.code).toBe('tables_full')
+  })
 })

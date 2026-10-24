@@ -1,0 +1,1 @@
+ALTER TABLE `lesson_types` ADD `students_per_table` integer;

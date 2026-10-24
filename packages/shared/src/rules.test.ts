@@ -6,6 +6,7 @@ import {
   freeCancelDeadline,
   peakOverlap,
   studentMoveError,
+  tablesFor,
   tablesFree,
   validityEnd,
 } from './rules'
@@ -208,11 +209,34 @@ describe('peakOverlap', () => {
   })
 })
 
+describe('peakOverlap with group sessions', () => {
+  it('adds up the tables each lesson uses', () => {
+    const lesson = { startsAt: at('2026-10-25T02:00:00Z'), endsAt: at('2026-10-25T03:00:00Z') }
+    expect(peakOverlap(lesson, [{ ...lesson, tables: 2 }, lesson])).toBe(3)
+    expect(peakOverlap(lesson, [{ ...lesson, tables: 0 }])).toBe(0)
+  })
+})
+
+describe('tablesFor', () => {
+  it('takes one table per group of students, or one for the whole class', () => {
+    expect(tablesFor(0, 2)).toBe(0)
+    expect(tablesFor(1, null)).toBe(1)
+    expect(tablesFor(6, null)).toBe(1)
+    expect(tablesFor(1, 2)).toBe(1)
+    expect(tablesFor(2, 2)).toBe(1)
+    expect(tablesFor(3, 2)).toBe(2)
+    expect(tablesFor(6, 4)).toBe(2)
+  })
+})
+
 describe('tablesFree', () => {
   const lesson = { startsAt: at('2026-10-25T02:00:00Z'), endsAt: at('2026-10-25T03:00:00Z') }
   it('allows anything without a limit and fills up to the limit', () => {
     expect(tablesFree(lesson, [lesson, lesson], null)).toBe(true)
     expect(tablesFree(lesson, [lesson], 2)).toBe(true)
     expect(tablesFree(lesson, [lesson, lesson], 2)).toBe(false)
+    // A group that needs two tables when only one is left.
+    expect(tablesFree(lesson, [lesson], 2, 2)).toBe(false)
+    expect(tablesFree(lesson, [lesson], 3, 2)).toBe(true)
   })
 })

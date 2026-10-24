@@ -183,6 +183,7 @@ const lessonTypeBody = z
     sort: z.number().int().default(0),
     capacity: z.number().int().min(1).max(MAX_CAPACITY).default(1),
     minStudents: z.number().int().min(2).max(MAX_CAPACITY).nullable().default(null),
+    studentsPerTable: z.number().int().min(1).max(MAX_CAPACITY).nullable().default(null),
   })
   .refine((v) => saleDatesValid(v.salePercent, v.saleStartsAt, v.saleEndsAt), {
     message: '折扣需要设置开始和结束时间',

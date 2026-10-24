@@ -161,6 +161,8 @@ export const lessonTypes = sqliteTable('lesson_types', {
   capacity: integer('capacity').notNull().default(1),
   // A group session with fewer confirmed students at the free-cancel deadline is cancelled.
   minStudents: integer('min_students'),
+  // A group session uses one table per this many students; null puts the whole class on one.
+  studentsPerTable: integer('students_per_table'),
   // Admin-only lesson types are hidden from students, for real-money test payments.
   adminOnly: integer('admin_only', { mode: 'boolean' }).notNull().default(false),
   active: integer('active', { mode: 'boolean' }).notNull().default(true),

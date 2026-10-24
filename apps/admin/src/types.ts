@@ -46,6 +46,8 @@ export interface LessonType {
   capacity: number
   /** A session short of this many at the free-cancel deadline is called off. */
   minStudents: number | null
+  /** A group session uses one table per this many students; null is one for the class. */
+  studentsPerTable: number | null
   adminOnly: boolean
   active: boolean
   salePercent: number | null

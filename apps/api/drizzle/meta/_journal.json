@@ -99,6 +99,13 @@
       "when": 1792840013403,
       "tag": "0013_group_classes",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792841997699,
+      "tag": "0014_students_per_table",
+      "breakpoints": true
     }
   ]
 }
