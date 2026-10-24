@@ -1,5 +1,6 @@
 import type { Db } from './db/client'
 import type { PaymentGateway } from './pay/gateway'
+import type { MiniCode } from './wx'
 import type { Notifier } from './wx-notify'
 
 export interface Deps {
@@ -12,4 +13,6 @@ export interface Deps {
   log: (message: string, detail?: unknown) => void
   /** Subscription messages to coaches and students; left out when WeChat is not configured. */
   notifier?: Notifier
+  /** Mini program codes for the front desk to show; left out when WeChat is not configured. */
+  miniCode?: MiniCode
 }

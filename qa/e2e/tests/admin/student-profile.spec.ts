@@ -99,7 +99,7 @@ test('clears with the account and cannot be edited afterwards', async ({ page, r
   await call(request, 'DELETE', '/me', token)
   await login(page)
   await page.goto(`./#/students?id=${studentId}`)
-  await expect(page.getByText('姓名、手机号、学员档案和微信身份已删除')).toBeVisible()
+  await expect(page.getByText('姓名、手机号、学员档案和微信身份已清除')).toBeVisible()
   const card = page.locator('.t-card').filter({ hasText: '学员档案' })
   await expect(card).toContainText('已在本馆上课 0 次')
   await expect(card.locator('.t-tag')).toHaveCount(0)

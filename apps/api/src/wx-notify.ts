@@ -2,6 +2,7 @@
 // prompt, so the coach pages ask on every few taps; a send without a grant fails with 43101.
 
 import { type StudentNoticeKind, venueParts } from '@rs/shared'
+import type { AccessToken } from './wx'
 
 // A hung call would hold up every later sweep, payments included.
 const SEND_TIMEOUT_MS = 15_000
@@ -98,40 +99,13 @@ export function fieldValue(field: string, value: string) {
 }
 
 export function wechatNotifier(options: {
-  appId: string
-  secret: string
+  accessToken: AccessToken
   state: 'developer' | 'trial' | 'formal'
   templates: Partial<Record<NoticeKind, NoticeTemplate>>
   fetchImpl?: typeof fetch
 }): Notifier {
   const fetchImpl = options.fetchImpl ?? fetch
-  let token: { value: string; expiresAt: number } | null = null
-
-  async function accessToken() {
-    if (token && token.expiresAt > Date.now()) return token.value
-    // The stable token endpoint does not invalidate tokens other servers already hold.
-    const res = await fetchImpl('https://api.weixin.qq.com/cgi-bin/stable_token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: 'client_credential',
-        appid: options.appId,
-        secret: options.secret,
-      }),
-      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-    })
-    const data = (await res.json()) as {
-      access_token?: string
-      expires_in?: number
-      errmsg?: string
-    }
-    if (!data.access_token) throw new Error(`access token: ${data.errmsg ?? res.status}`)
-    token = {
-      value: data.access_token,
-      expiresAt: Date.now() + ((data.expires_in ?? 7200) - 300) * 1000,
-    }
-    return token.value
-  }
+  const accessToken = options.accessToken
 
   return {
     template: (kind) => options.templates[kind],
@@ -162,7 +136,7 @@ export function wechatNotifier(options: {
       if (!result.errcode) return 'sent'
       if (result.errcode === 43101) return 'refused'
       // An expired or revoked token: fetch a new one on the next try.
-      if (result.errcode === 40001 || result.errcode === 42001) token = null
+      if (result.errcode === 40001 || result.errcode === 42001) accessToken.reset()
       throw new Error(`subscribe send: ${result.errcode} ${result.errmsg ?? ''}`)
     },
   }

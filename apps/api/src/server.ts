@@ -10,7 +10,7 @@ import { FakeGateway } from './pay/fake'
 import { WechatPayGateway } from './pay/wechat'
 import { ensureFirstStaff } from './services/staff'
 import { startSweeper } from './sweeper'
-import { devLogin, wechatLogin } from './wx'
+import { devLogin, wechatAccessToken, wechatLogin, wechatMiniCode } from './wx'
 import { logNotifier, wechatNotifier } from './wx-notify'
 
 const db = openDb(config.databasePath)
@@ -18,6 +18,11 @@ runMigrations(db)
 ensureFirstStaff(db, config.adminPassword)
 
 const log = (message: string, detail?: unknown) => console.error(`[api] ${message}`, detail ?? '')
+
+const wechat =
+  config.wechatAppId && config.wechatAppSecret
+    ? wechatAccessToken(config.wechatAppId, config.wechatAppSecret)
+    : null
 
 const deps: Deps = {
   db,
@@ -29,14 +34,10 @@ const deps: Deps = {
       : devLogin,
   uploadsDir: config.uploadsDir,
   log,
-  notifier:
-    config.wechatAppId && config.wechatAppSecret
-      ? wechatNotifier({
-          appId: config.wechatAppId,
-          secret: config.wechatAppSecret,
-          ...config.notices,
-        })
-      : logNotifier(config.notices.templates, log),
+  notifier: wechat
+    ? wechatNotifier({ accessToken: wechat, ...config.notices })
+    : logNotifier(config.notices.templates, log),
+  miniCode: wechat ? wechatMiniCode(wechat, config.notices.state) : undefined,
 }
 
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')

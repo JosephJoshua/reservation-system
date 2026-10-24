@@ -25,6 +25,7 @@ import {
   InputNumber,
   Loading,
   MessagePlugin,
+  Popconfirm,
   Radio,
   Select,
   Space,
@@ -36,6 +37,7 @@ import {
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { DataTable, LoadMore } from '../DataTable'
+import { BindWechatDialog, NewStudentDialog } from '../DeskStudent'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
@@ -64,13 +66,16 @@ function idFromHash() {
 
 export function Students() {
   const money = useCan('finance')
+  const canAdd = useCan('students')
   // The header search links here with `q` to show all its results.
   const [q, setQ] = useState(() => hashParam('q') ?? '')
   const [query, setQuery] = useState(q)
   const [openId, setOpenId] = useState<number | null>(idFromHash)
-  const [expiring, setExpiring] = useState(false)
+  const [filter, setFilter] = useState<'expiring' | 'desk' | null>(null)
+  const [creating, setCreating] = useState(false)
+  const expiring = filter === 'expiring'
   const list = usePagedApi<StudentRow>(
-    `/admin/students?q=${encodeURIComponent(query)}${expiring ? '&expiring=1' : ''}`,
+    `/admin/students?q=${encodeURIComponent(query)}${filter ? `&${filter}=1` : ''}`,
     // The 即将到期 list is sorted by date, so it pages by position.
     expiring ? 'offset' : 'before',
   )
@@ -113,20 +118,28 @@ export function Students() {
           style={{ width: 160 }}
           clearable
           placeholder="全部学员"
-          value={expiring ? 'expiring' : undefined}
-          onChange={(v) => setExpiring(v === 'expiring')}
-          options={[{ label: '课时包即将到期', value: 'expiring' }]}
+          value={filter ?? undefined}
+          onChange={(v) => setFilter((v as typeof filter) || null)}
+          options={[
+            { label: '课时包即将到期', value: 'expiring' },
+            { label: '未绑定微信', value: 'desk' },
+          ]}
         />
-        {/* The export lists every student; it has no 即将到期 filter. */}
-        {!expiring && money && (
-          <div className="toolbar-actions">
+        <div className="toolbar-actions">
+          {canAdd && (
+            <Button theme="primary" onClick={() => setCreating(true)}>
+              前台建档
+            </Button>
+          )}
+          {/* The export lists every student; it has no 即将到期 filter. */}
+          {!filter && money && (
             <ExportButton
               kind="students"
               filters={{ q: query }}
               filterText={query ? `搜索“${query}”` : undefined}
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
       {expiring && (
         <p className="muted">
@@ -139,7 +152,13 @@ export function Students() {
         data={list.rows}
         empty={
           list.error ??
-          (query ? '没有找到学员' : expiring ? '30 天内没有到期的课时包' : '还没有学员')
+          (query
+            ? '没有找到学员'
+            : expiring
+              ? '30 天内没有到期的课时包'
+              : filter === 'desk'
+                ? '前台建档的学员都已绑定微信'
+                : '还没有学员')
         }
         columns={[
           {
@@ -149,10 +168,34 @@ export function Students() {
               row.deletedAt ? (
                 <span className="muted">已注销</span>
               ) : (
-                row.name || <span className="muted">未填写</span>
+                <span className="name-cell">
+                  {row.name || <span className="muted">未填写</span>}
+                  {!row.wechatBound && (
+                    <Tag size="small" variant="light" theme="warning">
+                      未绑定微信
+                    </Tag>
+                  )}
+                </span>
               ),
           },
-          { colKey: 'phone', title: '手机号', cell: ({ row }) => row.phone || '-' },
+          { colKey: 'id', title: '编号', width: 80 },
+          {
+            colKey: 'phone',
+            title: '手机号',
+            cell: ({ row }) =>
+              row.phone ? (
+                <span className="name-cell">
+                  {row.phone}
+                  {row.phoneShared && (
+                    <Tag size="small" variant="light" theme="danger">
+                      手机号重复
+                    </Tag>
+                  )}
+                </span>
+              ) : (
+                '-'
+              ),
+          },
           ...(expiring
             ? [
                 {
@@ -202,7 +245,7 @@ export function Students() {
             : [
                 {
                   colKey: 'createdAt',
-                  title: '注册时间',
+                  title: '加入时间',
                   cell: ({ row }: { row: StudentRow }) => fmtDate(row.createdAt),
                 },
               ]),
@@ -236,9 +279,21 @@ export function Students() {
         loading={list.loading}
         onMore={list.loadMore}
       />
+      {creating && (
+        <NewStudentDialog
+          initial={q.trim()}
+          onClose={() => setCreating(false)}
+          onDone={(student) => {
+            setCreating(false)
+            void list.reload()
+            window.location.hash = `/students?id=${student.id}`
+          }}
+        />
+      )}
       {openId && (
         <StudentDrawer
           id={openId}
+          onChanged={() => void list.reload()}
           onClose={() => {
             setOpenId(null)
             // Replaced rather than pushed, so back does not open the drawer again.
@@ -274,11 +329,21 @@ function ExpiryCell({ expiresAt }: { expiresAt: string }) {
   )
 }
 
-function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
+function StudentDrawer({
+  id,
+  onChanged,
+  onClose,
+}: {
+  id: number
+  /** The student's row in the list changed, such as when they are deleted or linked. */
+  onChanged: () => void
+  onClose: () => void
+}) {
   const detail = useApi<StudentDetail>(`/admin/students/${id}`)
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const [selling, setSelling] = useState(false)
   const [booking, setBooking] = useState(false)
+  const [binding, setBinding] = useState(false)
   // The profile as it was when the editor opened, which the save is checked against.
   const [editingProfile, setEditingProfile] = useState<StudentProfileEdit | null>(null)
   const [action, setAction] = useState<{
@@ -298,7 +363,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
     <Drawer
       visible={shown}
       size={phone ? '100%' : '800px'}
-      header={s ? (s.deletedAt ? '已注销的学员' : s.name || '学员') : '学员'}
+      header={s ? `${s.deletedAt ? '已注销的学员' : s.name || '学员'} · 编号 ${s.id}` : '学员'}
       footer={false}
       onClose={onClose}
     >
@@ -309,12 +374,14 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
           {s.deletedAt ? (
             <span className="muted">
               {fmtDate(s.deletedAt)}{' '}
-              注销，姓名、手机号、学员档案和微信身份已删除。订单和上课记录保留。
+              删除个人信息，姓名、手机号、学员档案和微信身份已清除。订单和上课记录保留。
             </span>
           ) : (
-            <Space align="center">
+            <Space align="center" breakLine>
               <span>{s.phone || '未填写手机号'}</span>
-              <span className="muted">注册于 {fmtDate(s.createdAt)}</span>
+              <span className="muted">
+                {s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
+              </span>
               {canManage && (
                 <>
                   <span className="muted">测试学员</span>
@@ -331,6 +398,52 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                 </>
               )}
             </Space>
+          )}
+
+          {s.samePhone.length > 0 && (
+            <div className="desk-banner">
+              <span>
+                手机号与
+                {s.samePhone.map((o) => (
+                  <a key={o.id} href={`#/students?id=${o.id}`}>
+                    「{o.name || '未填写姓名'}」（编号 {o.id}）
+                  </a>
+                ))}
+                相同。到店时请学员打开小程序「我的」核对学员编号。
+              </span>
+            </div>
+          )}
+          {!s.deletedAt && !s.wechatBound && (canEdit || canManage) && (
+            <div className="desk-banner">
+              <span>
+                未绑定微信。学员可以直接来上课；绑定后，课时包、预约和订单会同步到学员的小程序。
+              </span>
+              <Space size={8} breakLine={false}>
+                {canEdit && (
+                  <Button size="small" theme="primary" onClick={() => setBinding(true)}>
+                    绑定微信
+                  </Button>
+                )}
+                {canManage && (
+                  <Popconfirm
+                    theme="warning"
+                    content="删除后姓名、手机号和学员档案会清除，订单和上课记录匿名保留。学员要求删除个人信息时使用。"
+                    confirmBtn={{ content: '删除', theme: 'danger' }}
+                    cancelBtn="返回"
+                    onConfirm={async () => {
+                      if (await attempt(() => api('DELETE', `/admin/students/${s.id}`), '已删除')) {
+                        onChanged()
+                        await detail.reload()
+                      }
+                    }}
+                  >
+                    <Button size="small" variant="outline" theme="danger">
+                      删除学员
+                    </Button>
+                  </Popconfirm>
+                )}
+              </Space>
+            </div>
           )}
 
           <Card
@@ -488,6 +601,16 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
           onClose={() => setEditingProfile(null)}
           onDone={() => {
             setEditingProfile(null)
+            void detail.reload()
+          }}
+        />
+      )}
+      {binding && s && (
+        <BindWechatDialog
+          studentId={s.id}
+          onClose={() => setBinding(false)}
+          onBound={() => {
+            onChanged()
             void detail.reload()
           }}
         />

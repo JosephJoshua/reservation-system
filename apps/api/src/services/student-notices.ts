@@ -17,6 +17,7 @@ import type { Deps } from '../deps'
 import { lessonTime } from '../wx-notify'
 import { visible } from './feedback-visibility'
 import { getSettings } from './settings'
+import { wechatOpenid } from './student-link'
 
 const BATCH = 50
 export const REMINDER_MS = 2 * 3_600_000
@@ -353,8 +354,8 @@ async function sendPending(deps: Deps) {
       continue
     }
     const template = deps.notifier?.template(`student_${n.kind}`)
-    // Deleted accounts keep their bookings under a placeholder openid.
-    const reachable = n.openid && !n.openid.startsWith('deleted:')
+    // Deleted and front-desk accounts hold a placeholder openid.
+    const reachable = wechatOpenid(n.openid)
     const sendable = Boolean(deps.notifier && template && reachable)
     const feedback = n.kind === 'feedback' ? noticeFeedback(db, n.bookingId) : undefined
     const stale = now.getTime() - n.createdAt.getTime() > STALE_MS
@@ -375,10 +376,10 @@ async function sendPending(deps: Deps) {
         ? n.status !== 'confirmed' || n.startsAt <= now
         : stale || (n.kind === 'feedback' && !feedback?.visible)
     let result: 'sent' | 'refused' | 'skipped' = 'skipped'
-    if (deps.notifier && template && sendable && !outdated) {
+    if (deps.notifier && template && reachable && !outdated) {
       try {
         result = await deps.notifier.send(
-          n.openid,
+          reachable,
           template,
           `pages/booking-detail/index?id=${n.bookingId}`,
           {

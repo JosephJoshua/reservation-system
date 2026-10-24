@@ -70,12 +70,28 @@ export function agreePolicies(deps: Deps, studentId: number, version: string) {
     .run()
 }
 
+// Each reason in the student's words, and in the words staff see when they delete a front-desk
+// student.
+const BLOCKERS = {
+  lesson: ['还有未上的课程，请先取消', '该学员还有未上的课程，请先取消'],
+  package: ['课时包还有剩余课时，请先用完或申请退款', '该学员的课时包还有剩余课时，请先用完或退款'],
+  payment: ['有未完成的支付，请稍后再试', '该学员有未完成的支付，请稍后再试'],
+  refund: ['有退款正在处理，请完成后再注销', '该学员有退款正在处理，请处理完再删除'],
+  invoice: ['发票申请正在处理，请完成后再注销', '该学员的发票申请正在处理，请处理完再删除'],
+} as const
+
 /**
  * Why the account cannot be deleted yet. Each one is money or a lesson the venue still owes
  * the student, or a payment in flight, which deletion would leave without anyone to settle it.
  */
-export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] {
+export function deletionBlockers(
+  tx: Q,
+  studentId: number,
+  now: Date,
+  who: 'student' | 'staff' = 'student',
+): string[] {
   const blockers: string[] = []
+  const words = (reason: keyof typeof BLOCKERS) => BLOCKERS[reason][who === 'student' ? 0 : 1]
   const liveBooking = tx
     .select({ id: bookings.id })
     .from(bookings)
@@ -87,17 +103,17 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
       ),
     )
     .get()
-  if (liveBooking) blockers.push('还有未上的课程，请先取消')
+  if (liveBooking) blockers.push(words('lesson'))
   const pkgs = tx.select().from(packages).where(eq(packages.studentId, studentId)).all()
   if (pkgs.some((p) => p.status === 'active' && p.lessonsRemaining > 0 && p.expiresAt > now)) {
-    blockers.push('课时包还有剩余课时，请先用完或申请退款')
+    blockers.push(words('package'))
   }
   const orderIds = tx
     .select({ id: orders.id, status: orders.status })
     .from(orders)
     .where(eq(orders.studentId, studentId))
     .all()
-  if (orderIds.some((o) => o.status === 'pending')) blockers.push('有未完成的支付，请稍后再试')
+  if (orderIds.some((o) => o.status === 'pending')) blockers.push(words('payment'))
   const openRefund =
     orderIds.length > 0 &&
     tx
@@ -115,13 +131,13 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
         ),
       )
       .get()
-  if (openRefund) blockers.push('有退款正在处理，请完成后再注销')
+  if (openRefund) blockers.push(words('refund'))
   const openInvoice = tx
     .select({ id: invoices.id })
     .from(invoices)
     .where(and(eq(invoices.studentId, studentId), eq(invoices.status, 'requested')))
     .get()
-  if (openInvoice) blockers.push('发票申请正在处理，请完成后再注销')
+  if (openInvoice) blockers.push(words('invoice'))
   return blockers
 }
 
@@ -132,48 +148,68 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
  */
 export function deleteAccount(deps: Deps, studentId: number) {
   const now = deps.now()
-  const { files, lessons } = immediate(deps.db, (tx) => {
+  const erased = immediate(deps.db, (tx) => {
     const student = tx.select().from(students).where(eq(students.id, studentId)).get()
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
-    const blockers = deletionBlockers(tx, studentId, now)
-    if (blockers.length) throw new ApiError(409, 'account_in_use', blockers[0] as string)
-    tx.update(students)
-      .set({
-        // Unique and never a real openid, so the next login by this WeChat user is a new account.
-        openid: `deleted:${student.id}:${newToken()}`,
-        name: '',
-        phone: '',
-        tester: false,
-        policyVersion: null,
-        policyAgreedAt: null,
-        invoiceTitle: null,
-        deletedAt: now,
-      })
-      .where(eq(students.id, studentId))
-      .run()
-    tx.update(bookings).set({ coachNote: '' }).where(eq(bookings.studentId, studentId)).run()
-    tx.delete(studentProfiles).where(eq(studentProfiles.studentId, studentId)).run()
-    tx.delete(sessions).where(eq(sessions.studentId, studentId)).run()
-    // Invoices stay for the accounts, without the email. One made out to the student by name
-    // loses the name and its PDF; a company's title is not personal data.
-    const personal = tx
-      .select({ pdfFile: invoices.pdfFile })
-      .from(invoices)
-      .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
-      .all()
-    tx.update(invoices).set({ email: '' }).where(eq(invoices.studentId, studentId)).run()
-    tx.update(invoices)
-      .set({ title: '', pdfFile: null })
-      .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
-      .run()
-    return {
-      files: personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : [])),
-      lessons: deleteStudentFeedback(tx, studentId),
-    }
+    return eraseStudent(tx, student.id, now)
   })
+  removeErasedFiles(deps, erased)
+}
+
+/**
+ * The deletion itself, for the student's own 注销 and for staff removing a front-desk student who
+ * never used the mini program. Refuses while the venue still owes the student anything.
+ */
+export function eraseStudent(
+  tx: Q,
+  studentId: number,
+  now: Date,
+  who: 'student' | 'staff' = 'student',
+) {
+  const blockers = deletionBlockers(tx, studentId, now, who)
+  if (blockers.length) throw new ApiError(409, 'account_in_use', blockers[0] as string)
+  tx.update(students)
+    .set({
+      // Unique and never a real openid, so the next login by this WeChat user is a new account.
+      openid: `deleted:${studentId}:${newToken()}`,
+      name: '',
+      phone: '',
+      tester: false,
+      policyVersion: null,
+      policyAgreedAt: null,
+      invoiceTitle: null,
+      bindCode: null,
+      bindCodeExpiresAt: null,
+      deletedAt: now,
+    })
+    .where(eq(students.id, studentId))
+    .run()
+  tx.update(bookings).set({ coachNote: '' }).where(eq(bookings.studentId, studentId)).run()
+  tx.delete(studentProfiles).where(eq(studentProfiles.studentId, studentId)).run()
+  tx.delete(sessions).where(eq(sessions.studentId, studentId)).run()
+  // Invoices stay for the accounts, without the email. One made out to the student by name
+  // loses the name and its PDF; a company's title is not personal data.
+  const personal = tx
+    .select({ pdfFile: invoices.pdfFile })
+    .from(invoices)
+    .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
+    .all()
+  tx.update(invoices).set({ email: '' }).where(eq(invoices.studentId, studentId)).run()
+  tx.update(invoices)
+    .set({ title: '', pdfFile: null })
+    .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
+    .run()
+  return {
+    files: personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : [])),
+    lessons: deleteStudentFeedback(tx, studentId),
+  }
+}
+
+/** Removes the files of an erased student once the deletion has committed. */
+export function removeErasedFiles(deps: Deps, erased: ReturnType<typeof eraseStudent>) {
   // The account is gone either way; a file left behind is logged rather than failing the request.
-  removePhotosOf(deps, lessons)
-  for (const file of files) {
+  removePhotosOf(deps, erased.lessons)
+  for (const file of erased.files) {
     try {
       rmSync(join(invoicesDir(deps), file), { force: true })
     } catch (e) {

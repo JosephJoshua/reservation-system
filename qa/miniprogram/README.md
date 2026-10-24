@@ -68,6 +68,17 @@ uses the same seeded API, and `QA_DB` as for the coach flows:
 QA_DB=../../apps/api/data/qa.db pnpm --filter @rs/qa-miniprogram student-profile
 ```
 
+## Front-desk students
+
+Checks 同步前台记录: the desk adds a student and sells them a package through the admin API, a new
+WeChat user opens 我的 and the link page, tries a wrong code, opens the page as the desk's 小程序码
+would (`?scene=`), double taps 同步, and lands on 我的 with the desk's name, 学员编号 and lessons.
+Screenshots go to `qa/miniprogram/screenshots/desk-link/`. It needs the seeded API:
+
+```sh
+pnpm --filter @rs/qa-miniprogram desk-link
+```
+
 ## Forcing a theme
 
 The 外观 setting under 我的 is stored in the `rs:theme` storage key: `light`, `dark`, or absent to

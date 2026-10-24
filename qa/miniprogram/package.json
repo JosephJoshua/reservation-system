@@ -12,7 +12,8 @@
     "moves": "pnpm --filter @rs/miniprogram build && tsx src/moves.ts",
     "feedback": "pnpm --filter @rs/miniprogram build && tsx src/feedback.ts",
     "student-profile": "pnpm --filter @rs/miniprogram build && tsx src/student-profile.ts",
-    "tables": "pnpm --filter @rs/miniprogram build && tsx src/tables.ts"
+    "tables": "pnpm --filter @rs/miniprogram build && tsx src/tables.ts",
+    "desk-link": "pnpm --filter @rs/miniprogram build && tsx src/desk-link.ts"
   },
   "devDependencies": {
     "@rs/shared": "workspace:*",

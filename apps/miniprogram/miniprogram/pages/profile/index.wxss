@@ -29,6 +29,12 @@
   color: var(--td-text-color-secondary);
 }
 
+.me-no {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: var(--td-text-color-placeholder);
+}
+
 .me-arrow {
   display: flex;
   color: var(--td-text-color-placeholder);

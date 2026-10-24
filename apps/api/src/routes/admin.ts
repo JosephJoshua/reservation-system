@@ -63,7 +63,7 @@ import {
 import { cancelBooking, LIVE } from '../services/bookings'
 import {
   hoursView,
-  newBindCode,
+  newCoachBindCode,
   saveHours,
   setDayOff,
   syncSlots,
@@ -110,6 +110,14 @@ import {
   verifyPassword,
 } from '../services/staff'
 import { dashboard, dormantStudents, statsReport } from '../services/stats'
+import {
+  createDeskStudent,
+  deleteDeskStudent,
+  isDeskOpenid,
+  newStudentBindCode,
+  samePhone,
+  unlinkedSql,
+} from '../services/student-link'
 import { saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
@@ -718,7 +726,7 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.post('/coaches/:id/bind-code', need('manage'), (c) =>
-    c.json(newBindCode(deps, idParam(c)), 201),
+    c.json(newCoachBindCode(deps, idParam(c)), 201),
   )
 
   app.delete('/coaches/:id/binding', need('manage'), (c) => {
@@ -1428,7 +1436,7 @@ export function adminRoutes(deps: Deps) {
   // Students and their packages
 
   app.get('/students', need('view'), (c) => {
-    const { q, expiring, limit, before, offset } = parseQuery(
+    const { q, expiring, desk, limit, before, offset } = parseQuery(
       c,
       z.object({
         q: z.string().trim().max(30).default(''),
@@ -1439,10 +1447,16 @@ export function adminRoutes(deps: Deps) {
         before: z.coerce.number().int().positive().optional(),
         // The expiring list is sorted by date, so it pages by position.
         offset: z.coerce.number().int().min(0).default(0),
+        // Front-desk students who have not linked their WeChat yet.
+        desk: z.enum(['1']).optional(),
       }),
     )
     const pattern = `%${q.replace(/[%_]/g, '')}%`
-    const search = q ? or(like(students.name, pattern), like(students.phone, pattern)) : undefined
+    // A short number is also a 学员编号, which the student can show on their 我的 page.
+    const byId = /^\d{1,6}$/.test(q) ? eq(students.id, Number(q)) : undefined
+    const search = q
+      ? or(like(students.name, pattern), like(students.phone, pattern), byId)
+      : undefined
     const columns = {
       id: students.id,
       name: students.name,
@@ -1450,13 +1464,25 @@ export function adminRoutes(deps: Deps) {
       tester: students.tester,
       deletedAt: students.deletedAt,
       createdAt: students.createdAt,
+      wechatBound: sql<boolean>`not ${unlinkedSql}`.mapWith(Boolean),
+      // Someone else has the same phone: the desk tells them apart by 学员编号.
+      phoneShared:
+        sql<boolean>`students.phone != '' and exists (select 1 from students as other where other.phone = students.phone and other.id != students.id and other.deleted_at is null)`.mapWith(
+          Boolean,
+        ),
     }
     if (!expiring) {
       return c.json(
         db
           .select(columns)
           .from(students)
-          .where(and(search, before ? lt(students.id, before) : undefined))
+          .where(
+            and(
+              search,
+              before ? lt(students.id, before) : undefined,
+              desk ? unlinkedSql : undefined,
+            ),
+          )
           .orderBy(desc(students.id))
           .limit(limit)
           .all(),
@@ -1538,10 +1564,63 @@ export function adminRoutes(deps: Deps) {
       tester: student.tester,
       deletedAt: student.deletedAt,
       createdAt: student.createdAt,
+      wechatBound: !isDeskOpenid(student.openid),
+      samePhone: student.phone && !student.deletedAt ? samePhone(db, student.phone, id) : [],
       profile: studentProfile(db, id, now),
       packages: packageViews(db, pkgRows, now),
       bookings: bookingViews(db, bookingRows, getSettings(db).booking, now),
     })
+  })
+
+  // 前台建档: a student who has not used the mini program yet. `force` adds them even though
+  // another student has the same phone.
+  app.post('/students', need('students'), async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        name: z.string().trim().min(1, '请填写姓名').max(20),
+        phone: z
+          .string()
+          .trim()
+          .regex(/^1\d{10}$/, '请填写正确的手机号'),
+        force: z.boolean().default(false),
+      }),
+    )
+    return c.json(createDeskStudent(deps, c.get('staffId'), body), 201)
+  })
+
+  // A one-time code, with its 小程序码 when WeChat is set up, for the student to link their WeChat.
+  app.post('/students/:id/bind-code', need('students'), async (c) => {
+    const id = idParam(c)
+    const { code, expiresAt } = newStudentBindCode(deps, id)
+    let qr: string | null = null
+    if (deps.miniCode) {
+      try {
+        const image = await deps.miniCode(code, 'pages/link/index')
+        qr = `data:image/jpeg;base64,${Buffer.from(image).toString('base64')}`
+      } catch (e) {
+        // The code can still be typed in.
+        deps.log('mini code failed', { studentId: id, error: (e as Error).message })
+      }
+    }
+    return c.json({ code, expiresAt, qr }, 201)
+  })
+
+  // For the bind dialog, which waits for the student to use the code.
+  app.get('/students/:id/bound', need('view'), (c) => {
+    const s = db
+      .select({ openid: students.openid, deletedAt: students.deletedAt })
+      .from(students)
+      .where(eq(students.id, idParam(c)))
+      .get()
+    if (!s) throw notFound('学员')
+    if (s.deletedAt) throw accountDeleted()
+    return c.json({ wechatBound: !isDeskOpenid(s.openid) })
+  })
+
+  app.delete('/students/:id', need('manage'), (c) => {
+    deleteDeskStudent(deps, c.get('staffId'), idParam(c))
+    return c.body(null, 204)
   })
 
   app.put('/students/:id/profile', need('students'), async (c) => {

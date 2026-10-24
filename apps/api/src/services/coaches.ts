@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import {
   type CoachHoursDto,
   type CoachMeDto,
@@ -27,21 +26,14 @@ import { ApiError, notFound } from '../errors'
 import { templateIds } from '../wx-notify'
 import { startCoachSession } from './auth'
 import { LIVE } from './bookings'
+import { newBindCode, normalizeBindCode } from './ids'
 import { getSettings } from './settings'
 
 const BIND_CODE_MS = 24 * 3_600_000
-// No 0/O, 1/I/L: the code is read off a screen and typed on a phone.
-const BIND_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 /** A one-time code, valid for a day, that links a coach to the WeChat user who enters it. */
-export function newBindCode(deps: Deps, coachId: number) {
-  // 31^8 codes: guessing one in a day is out of reach without rate limits.
-  const code = Array.from(randomBytes(16))
-    .filter((b) => b < 248)
-    .slice(0, 8)
-    .map((b) => BIND_ALPHABET[b % 31])
-    .join('')
-  if (code.length !== 8) return newBindCode(deps, coachId)
+export function newCoachBindCode(deps: Deps, coachId: number) {
+  const code = newBindCode()
   const expiresAt = new Date(deps.now().getTime() + BIND_CODE_MS)
   const changed = deps.db
     .update(coaches)
@@ -95,7 +87,7 @@ export async function loginCoach(deps: Deps, code: string) {
 
 export async function bindCoach(deps: Deps, code: string, bindCode: string) {
   const openid = await deps.wxLogin(code)
-  const normalized = bindCode.toUpperCase().replace(/[\s-]/g, '')
+  const normalized = normalizeBindCode(bindCode)
   const coach = immediate(deps.db, (tx) => {
     const coach = tx.select().from(coaches).where(eq(coaches.bindCode, normalized)).get()
     if (!coach?.bindCodeExpiresAt || coach.bindCodeExpiresAt <= deps.now()) {

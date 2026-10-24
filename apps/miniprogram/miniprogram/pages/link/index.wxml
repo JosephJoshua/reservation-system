@@ -1,0 +1,19 @@
+<theme-root>
+<view class="has-action-bar">
+  <view class="intro">
+    <view class="intro-icon"><t-icon name="link" size="96rpx" /></view>
+    <view class="intro-title">同步前台记录</view>
+    <view class="intro-text">在前台办过课时包或预约过课程的，扫前台的小程序码，或输入前台提供的 8 位绑定码，记录会同步到这个微信。</view>
+  </view>
+  <t-cell-group theme="card">
+    <t-input label="绑定码" placeholder="8 位字母或数字" maxlength="{{9}}" value="{{code}}" confirm-type="done" bind:change="onCode" bind:enter="submit" />
+  </t-cell-group>
+  <view class="footnote">绑定码 24 小时内有效。同步后，前台登记的姓名、手机号、课时包、预约和订单都会出现在这里。</view>
+  <agree-check id="agree-check" wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
+</view>
+<view class="action-bar">
+  <view class="grow">
+    <t-button theme="primary" block t-class="action-button" disabled="{{code.length !== 8 || !ready}}" loading="{{linking}}" bind:tap="submit">同步</t-button>
+  </view>
+</view>
+</theme-root>
