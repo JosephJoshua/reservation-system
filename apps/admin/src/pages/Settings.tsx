@@ -18,12 +18,7 @@ import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
 import { attempt, newKey, useApi } from '../hooks'
 import { PreviewDialog } from '../preview/EditorWithPreview'
-
-function coordValid(text: string, limit: number) {
-  if (text.trim() === '') return true
-  const n = Number(text)
-  return Number.isFinite(n) && Math.abs(n) <= limit
-}
+import { coordValid, VenueLocation } from '../VenueLocation'
 
 export function Settings() {
   const { data, error, reload } = useApi<VenueSettings>('/admin/settings')
@@ -117,23 +112,11 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="地图坐标" help="用于学员一键导航，可在腾讯地图坐标拾取器获取">
-            <Space>
-              <Input
-                style={{ width: 160 }}
-                placeholder="纬度，如 39.9087"
-                value={coord.lat}
-                status={coordValid(coord.lat, 90) ? 'default' : 'error'}
-                onChange={(v) => setCoord({ ...coord, lat: String(v) })}
-              />
-              <Input
-                style={{ width: 160 }}
-                placeholder="经度，如 116.3975"
-                value={coord.lng}
-                status={coordValid(coord.lng, 180) ? 'default' : 'error'}
-                onChange={(v) => setCoord({ ...coord, lng: String(v) })}
-              />
-            </Space>
+          <Field
+            label="地图坐标"
+            help="在高德、腾讯或百度地图里打开场馆，点“分享”并复制链接，粘贴到上面即可。学员点场馆地址时，会按这个位置导航。"
+          >
+            <VenueLocation value={coord} onChange={setCoord} venueName={s.venue.name} />
           </Field>
         </div>
       </Card>

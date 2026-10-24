@@ -39,6 +39,8 @@ const deps: Deps = {
     ? wechatNotifier({ accessToken: wechat, ...config.notices })
     : logNotifier(config.notices.templates, log),
   miniCode: wechat ? wechatMiniCode(wechat, config.notices.state) : undefined,
+  mapFetch: fetch,
+  tencentMapKey: config.tencentMapKey,
 }
 
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')

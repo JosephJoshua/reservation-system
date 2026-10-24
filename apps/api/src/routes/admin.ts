@@ -83,6 +83,7 @@ import {
   markRefundSeen,
   rejectInvoice,
 } from '../services/invoices'
+import { resolveMapLink } from '../services/map-links'
 import { moveBooking } from '../services/moves'
 import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
@@ -412,6 +413,16 @@ export function adminRoutes(deps: Deps) {
   // Settings
 
   app.get('/settings', need('manage'), (c) => c.json(getSettings(db)))
+
+  app.get('/map', need('manage'), (c) => c.json({ tencentKey: deps.tencentMapKey ?? null }))
+
+  // Coordinates from a map share link the admin pasted, in GCJ-02. Changes nothing, so a repeat
+  // is harmless.
+  app.post('/map/resolve', need('manage'), async (c) => {
+    const { url } = await parseBody(c, z.object({ url: z.string().trim().min(1).max(2000) }))
+    if (!deps.mapFetch) throw new ApiError(503, 'map_unavailable', '暂时无法读取地图链接')
+    return c.json(await resolveMapLink(url, deps.mapFetch))
+  })
 
   app.put('/settings', need('manage'), async (c) => {
     const body = await parseBody(c, venueSettings)
