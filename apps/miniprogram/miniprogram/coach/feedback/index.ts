@@ -42,6 +42,8 @@ Page({
     text: '',
     photos: [] as PhotoView[],
     maxPhotos: FEEDBACK_PHOTOS,
+    // WeChat's own editor, for cropping and rotating a photo. Base library 2.22 and later.
+    canEdit: wx.canIUse('editImage'),
     textSize: { minHeight: 240, maxHeight: 600 },
     canSave: false,
     saving: false,
@@ -145,26 +147,82 @@ Page({
     this.refresh()
     // One at a time, in the order picked.
     for (const photo of added) {
-      try {
-        const { url } = await coachUpload<{ url: string }>(`/lessons/${this.id}/photos`, photo.src)
-        if (this.gone) return
-        this.setData({
-          photos: this.data.photos.map((p) =>
-            p.key === photo.key ? { ...p, url, uploading: false } : p,
-          ),
-        })
-      } catch (err) {
-        if (this.gone) return
-        if (changed(err)) {
-          // The rest would fail the same way.
-          this.failed(err)
-          return
-        }
-        this.setData({ photos: this.data.photos.filter((p) => p.key !== photo.key) })
-        showError(err)
-      }
-      this.refresh()
+      if (!(await this.upload(photo))) return
     }
+  },
+
+  /**
+   * Uploads the photo with this key and shows the server copy. On failure it is put back to
+   * `previous`, or removed when it was new. Returns false when the rest should not be tried.
+   */
+  async upload(photo: PhotoView, previous?: PhotoView): Promise<boolean> {
+    try {
+      const { url } = await coachUpload<{ url: string }>(`/lessons/${this.id}/photos`, photo.src)
+      if (this.gone) return false
+      this.setData({
+        photos: this.data.photos.map((p) =>
+          p.key === photo.key ? { ...p, url, uploading: false } : p,
+        ),
+      })
+    } catch (err) {
+      if (this.gone) return false
+      if (changed(err)) {
+        // The rest would fail the same way.
+        this.failed(err)
+        return false
+      }
+      this.setData({
+        photos: previous
+          ? this.data.photos.map((p) => (p.key === photo.key ? previous : p))
+          : this.data.photos.filter((p) => p.key !== photo.key),
+      })
+      showError(err)
+    }
+    this.refresh()
+    return true
+  },
+
+  /** Opens WeChat's editor to crop or rotate a photo, then uploads the result in its place. */
+  async editPhoto(e: WechatMiniprogram.TouchEvent) {
+    if (this.choosing || this.busy) return
+    const previous = this.data.photos[Number(e.currentTarget.dataset.index)]
+    if (!previous || previous.uploading) return
+    this.choosing = true
+    let edited = ''
+    try {
+      // The editor takes a local file; a saved photo is downloaded first.
+      const local = previous.src.startsWith('http')
+        ? (await wx.getImageInfo({ src: previous.src })).path
+        : previous.src
+      const full = await new Promise<string>((resolve, reject) =>
+        wx.editImage({ src: local, success: (r) => resolve(r.tempFilePath), fail: reject }),
+      )
+      // The editor saves at full size, which can be over the upload limit; 添加 compresses too.
+      edited = await new Promise<string>((resolve) =>
+        wx.compressImage({
+          src: full,
+          quality: 80,
+          success: (r) => resolve(r.tempFilePath),
+          fail: () => resolve(full),
+        }),
+      )
+    } catch (err) {
+      // Closed without saving, or the photo could not be downloaded.
+      if (!/cancel/.test((err as { errMsg?: string }).errMsg ?? '')) {
+        wx.showToast({ title: '无法打开这张照片', icon: 'none' })
+      }
+    } finally {
+      this.choosing = false
+    }
+    if (!edited || this.gone) return
+    // Removed while the editor was open.
+    if (!this.data.photos.some((p) => p.key === previous.key)) return
+    const photo = { key: `p${keys++}`, src: edited, url: '', uploading: true }
+    this.setData({
+      photos: this.data.photos.map((p) => (p.key === previous.key ? photo : p)),
+    })
+    this.refresh()
+    await this.upload(photo, previous)
   },
 
   removePhoto(e: WechatMiniprogram.TouchEvent) {

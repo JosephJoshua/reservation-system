@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   Button,
   Card,
@@ -12,11 +12,12 @@ import {
   Switch,
   Tag,
 } from 'tdesign-react'
-import { api, uploadImage } from '../api'
+import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { BANNER_IMAGE, useImageUpload } from '../ImageCrop'
 import {
   EditorWithPreview,
   PREVIEW_DIALOG_WIDTH,
@@ -25,8 +26,6 @@ import {
 import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
-
-// Matches the API's upload limit.
 
 export function Banners() {
   const banners = useApi<Banner[]>('/admin/banners')
@@ -99,7 +98,7 @@ export function Banners() {
       }
     >
       <p className="muted" style={{ marginTop: 0 }}>
-        建议尺寸 750×300。首页公告在“设置”里修改。
+        图片会按轮播图的比例裁剪。首页公告在“设置”里修改。
       </p>
       <DataTable
         rowKey="id"
@@ -210,26 +209,7 @@ function BannerEditor({
   types: LessonType[]
   onChange: (patch: Partial<BannerForm>) => void
 }) {
-  const [uploading, setUploading] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
-  // An upload that finishes after the dialog closed must not land on the next banner opened.
-  const open = useRef(false)
-  useEffect(() => {
-    open.current = true
-    return () => {
-      open.current = false
-    }
-  }, [])
-
-  const upload = async (file: File | undefined) => {
-    if (!file) return
-    setUploading(true)
-    await attempt(async () => {
-      const url = await uploadImage(file)
-      if (open.current) set({ imageUrl: url })
-    })
-    setUploading(false)
-  }
+  const image = useImageUpload(BANNER_IMAGE, (url) => set({ imageUrl: url }))
 
   const targets =
     f.linkKind === 'package'
@@ -239,30 +219,20 @@ function BannerEditor({
   return (
     <div className="fields">
       <Field label="图片">
-        <input
-          ref={fileInput}
-          hidden
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={(e) => {
-            void upload(e.target.files?.[0])
-            // Lets the same file be picked again after a failed upload.
-            e.target.value = ''
-          }}
-        />
+        {image.element}
         <Space direction="vertical">
-          {f.imageUrl && (
-            <img
-              className="banner-thumb"
-              style={{ width: 375, height: 150 }}
-              src={f.imageUrl}
-              alt=""
-            />
-          )}
-          <Button variant="outline" loading={uploading} onClick={() => fileInput.current?.click()}>
-            {f.imageUrl ? '更换图片' : '选择图片'}
-          </Button>
-          <span className="muted">支持 JPG、PNG 或 WebP 格式，不超过 2MB</span>
+          {f.imageUrl && <img className="banner-thumb large" src={f.imageUrl} alt="" />}
+          <Space>
+            <Button variant="outline" onClick={image.pick}>
+              {f.imageUrl ? '更换图片' : '选择图片'}
+            </Button>
+            {f.imageUrl && (
+              <Button variant="text" onClick={() => image.edit(f.imageUrl)}>
+                裁剪
+              </Button>
+            )}
+          </Space>
+          <span className="muted">支持 JPG、PNG 或 WebP 格式，选好后可以裁剪和旋转</span>
         </Space>
       </Field>
       <Field label="标题" help="显示在图片底部，不填则不显示">

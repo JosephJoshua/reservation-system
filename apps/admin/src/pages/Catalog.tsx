@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import {
   Button,
   Card,
@@ -15,11 +15,12 @@ import {
   TagInput,
   Textarea,
 } from 'tdesign-react'
-import { api, uploadImage } from '../api'
+import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { COACH_PHOTO, useImageUpload } from '../ImageCrop'
 import type { Draft } from '../preview/data'
 import {
   EditorWithPreview,
@@ -892,59 +893,34 @@ function CoachEditor({
   /** Takes a patch, not the whole form, so an upload finishing late can't undo newer edits. */
   onChange: (patch: Partial<CoachForm>) => void
 }) {
-  const [uploading, setUploading] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
-  // Set in the effect, not the initial value, so StrictMode's remount turns it back on.
-  const open = useRef(false)
-  useEffect(() => {
-    open.current = true
-    return () => {
-      open.current = false
-    }
-  }, [])
+  const photo = useImageUpload(COACH_PHOTO, (url) => set({ avatarUrl: url }))
   const category = categories.find((c) => c.id === f.categoryId)
   const toggle = (id: number, on: boolean) =>
     set({
       lessonTypeIds: on ? [...f.lessonTypeIds, id] : f.lessonTypeIds.filter((l) => l !== id),
     })
 
-  const upload = async (file: File | undefined) => {
-    if (!file) return
-    setUploading(true)
-    await attempt(async () => {
-      const url = await uploadImage(file)
-      if (open.current) set({ avatarUrl: url })
-    })
-    setUploading(false)
-  }
-
   return (
     <div className="fields">
       <Field label="姓名">
         <Input value={f.name} maxlength={20} onChange={(v) => set({ name: String(v) })} />
       </Field>
-      <Field label="照片" help="建议用正方形照片，支持 JPG、PNG 或 WebP 格式，不超过 2MB">
-        {/* Outside the Space, which would otherwise leave a gap for it. */}
-        <input
-          ref={fileInput}
-          hidden
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={(e) => {
-            void upload(e.target.files?.[0])
-            // Lets the same file be picked again after a failed upload.
-            e.target.value = ''
-          }}
-        />
+      <Field label="照片" help="支持 JPG、PNG 或 WebP 格式，选好后会裁剪成正方形">
+        {photo.element}
         <Space align="center">
           {f.avatarUrl && <img className="avatar-thumb" src={f.avatarUrl} alt="" />}
-          <Button variant="outline" loading={uploading} onClick={() => fileInput.current?.click()}>
+          <Button variant="outline" onClick={photo.pick}>
             {f.avatarUrl ? '更换照片' : '选择照片'}
           </Button>
           {f.avatarUrl && (
-            <Button variant="text" theme="danger" onClick={() => set({ avatarUrl: '' })}>
-              移除
-            </Button>
+            <>
+              <Button variant="text" onClick={() => photo.edit(f.avatarUrl)}>
+                裁剪
+              </Button>
+              <Button variant="text" theme="danger" onClick={() => set({ avatarUrl: '' })}>
+                移除
+              </Button>
+            </>
           )}
         </Space>
       </Field>

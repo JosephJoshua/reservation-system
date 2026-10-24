@@ -35,9 +35,14 @@
       <view wx:if="{{item.uploading}}" class="photo-uploading">
         <t-loading theme="circular" size="40rpx" />
       </view>
-      <view wx:else class="photo-remove" data-index="{{index}}" catch:tap="removePhoto">
-        <view class="photo-remove-dot"><t-icon name="close" size="28rpx" /></view>
-      </view>
+      <block wx:else>
+        <view class="photo-remove" data-index="{{index}}" catch:tap="removePhoto">
+          <view class="photo-remove-dot"><t-icon name="close" size="28rpx" /></view>
+        </view>
+        <view wx:if="{{canEdit}}" class="photo-edit" data-index="{{index}}" catch:tap="editPhoto">
+          <view class="photo-remove-dot"><t-icon name="edit" size="26rpx" /></view>
+        </view>
+      </block>
     </view>
     <view
       wx:if="{{photos.length < maxPhotos}}"

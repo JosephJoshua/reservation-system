@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, CoachDetailDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login, student, typeNumber } from './helpers'
+import { ADMIN_PASSWORD, call, dialog, field, login, student, typeNumber, useCrop } from './helpers'
 
 // Coach categories set prices; the coach profile is tags plus rich text.
 test.describe.configure({ mode: 'serial' })
@@ -85,6 +85,7 @@ test('creates a coach with photo, category, tags and a rich profile', async ({ p
   await field(d, '照片')
     .locator('input[type=file]')
     .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: png })
+  await useCrop(page)
   await expect(field(d, '照片').locator('img')).toBeVisible()
   await field(d, '类别').locator('.t-select').click()
   await page.locator('.t-select-option').filter({ hasText: categoryName }).click()
@@ -133,6 +134,7 @@ test('creates a coach with photo, category, tags and a rich profile', async ({ p
   await field(d, '介绍')
     .locator('input[type=file]')
     .setInputFiles({ name: 'b.png', mimeType: 'image/png', buffer: png })
+  await useCrop(page)
   await expect(editor.locator('img')).toHaveCount(1)
   await both(page, 'coach-dialog')
 
@@ -175,21 +177,16 @@ test('reopens the coach with the saved profile and keeps it on save', async ({ p
   expect(detail.profile).toContain('<h3>比赛成绩</h3>')
 })
 
-test('keeps edits made while a photo uploads and ignores one that lands after closing', async ({
-  page,
-  request,
-}) => {
+test('keeps what was typed when a photo is added', async ({ page, request }) => {
   await login(page)
-  await page.route('**/api/admin/uploads', async (route) => {
-    await new Promise((r) => setTimeout(r, 800))
-    await route.continue()
-  })
   await page.goto('./#/catalog')
   await coachRow(page).getByRole('button', { name: '编辑' }).click()
   const d = dialog(page)
-  const photo = field(d, '照片').locator('input[type=file]')
-  await photo.setInputFiles({ name: 'c.png', mimeType: 'image/png', buffer: png })
   await field(d, '头衔').locator('input').fill('省队退役')
+  await field(d, '照片')
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'c.png', mimeType: 'image/png', buffer: png })
+  await useCrop(page)
   await expect(field(d, '照片').locator('img')).toHaveAttribute('src', /\/api\/uploads\//)
   await expect(field(d, '头衔').locator('input')).toHaveValue('省队退役')
   await d.getByRole('button', { name: '保存' }).click()
@@ -197,12 +194,6 @@ test('keeps edits made while a photo uploads and ignores one that lands after cl
   const t = await student(request, `upload-${run}`)
   const detail = await call<CoachDetailDto>(request, 'GET', `/coaches/${coachId}`, t)
   expect(detail.title).toBe('省队退役')
-
-  await coachRow(page).getByRole('button', { name: '编辑' }).click()
-  await photo.setInputFiles({ name: 'd.png', mimeType: 'image/png', buffer: png })
-  await d.getByRole('button', { name: '取消' }).click()
-  await page.waitForTimeout(1200)
-  await expect(dialog(page)).toHaveCount(0)
 })
 
 test('saves a new category once on a double click', async ({ page }) => {

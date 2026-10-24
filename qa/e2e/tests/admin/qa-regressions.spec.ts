@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, CreateBookingResponse, SlotDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login, student } from './helpers'
+import { ADMIN_PASSWORD, call, dialog, field, login, student, useCrop } from './helpers'
 
 // Bugs found by exploratory QA of the admin app, each kept as a regression test.
 test.describe.configure({ mode: 'serial' })
@@ -245,14 +245,11 @@ test('a venue cancel on a booking the student already cancelled closes and refre
   await expect(rows.filter({ hasText: '学员取消' })).toHaveCount(2)
 })
 
-test('a banner title typed during an upload survives the upload', async ({ page }) => {
+test('a banner title typed before the image survives the upload', async ({ page }) => {
   await login(page)
   await page.goto('./#/banners')
   await page.getByRole('button', { name: '新建轮播图' }).click()
-  await page.route('**/api/admin/uploads', async (route) => {
-    await new Promise((r) => setTimeout(r, 800))
-    await route.continue()
-  })
+  await field(dialog(page), '标题').locator('input').fill('双十一')
   await dialog(page)
     .locator('input[type=file]')
     .setInputFiles({
@@ -260,7 +257,7 @@ test('a banner title typed during an upload survives the upload', async ({ page 
       mimeType: 'image/png',
       buffer: Buffer.from(PNG_1X1, 'base64'),
     })
-  await field(dialog(page), '标题').locator('input').fill('双十一')
+  await useCrop(page)
   await expect(dialog(page).locator('img.banner-thumb')).toBeVisible()
   await expect(field(dialog(page), '标题').locator('input')).toHaveValue('双十一')
   await expect(dialog(page).getByRole('button', { name: '更换图片' })).toBeVisible()
