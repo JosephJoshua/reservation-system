@@ -61,7 +61,7 @@
       </view>
     </view>
     <view wx:else class="card attendance-note">{{attendanceNote}}</view>
-    <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用，也不退回课时。再点一次已选的按钮即可撤销。</view>
+    <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用，也不退回课时。再点一次即可撤销。</view>
   </block>
 
   <block wx:if="{{lesson.feedback || !lesson.feedbackBlocked || feedbackClosed}}">
