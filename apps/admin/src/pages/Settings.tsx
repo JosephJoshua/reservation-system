@@ -214,6 +214,20 @@ export function Settings() {
               )}
             </Space>
           </Field>
+          <Field label="学员改约" help="免费取消截止前，每节课学员可自行改约的次数，0 为不允许">
+            <InputNumber
+              theme="normal"
+              value={s.booking.studentMoves}
+              min={0}
+              max={5}
+              suffix="次"
+              onChange={(v) =>
+                set((d) => {
+                  d.booking.studentMoves = Number(v) || 0
+                })
+              }
+            />
+          </Field>
         </div>
       </Card>
 

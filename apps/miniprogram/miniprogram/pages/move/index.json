@@ -1,0 +1,9 @@
+{
+  "navigationBarTitleText": "改约",
+  "usingComponents": {
+    "t-avatar": "tdesign-miniprogram/avatar/avatar",
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-loading": "tdesign-miniprogram/loading/loading"
+  }
+}

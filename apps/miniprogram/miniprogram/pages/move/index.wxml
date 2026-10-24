@@ -1,0 +1,105 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="has-action-bar">
+  <view class="header">
+    <view class="current">
+      <view class="current-label">当前时间</view>
+      <view class="current-time">{{current}}</view>
+    </view>
+
+    <block wx:if="{{coaches.length > 1}}">
+      <view class="section-title">教练</view>
+      <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="coach-scroll">
+        <view class="coach-row">
+          <view
+            wx:for="{{coaches}}"
+            wx:key="id"
+            class="coach {{coachId === item.id ? 'coach-active' : ''}}"
+            data-id="{{item.id}}"
+            bind:tap="pickCoach"
+          >
+            <t-avatar image="{{item.avatar}}" icon="{{item.avatar ? '' : 'user'}}" size="88rpx" />
+            <view class="coach-name">{{item.name}}</view>
+          </view>
+        </view>
+      </scroll-view>
+    </block>
+
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="{{dayAnchor}}" class="day-scroll">
+      <view id="day-start" class="day-start" />
+      <view class="day-row">
+        <view
+          wx:for="{{days}}"
+          wx:key="key"
+          id="day-{{item.key}}"
+          class="day {{date === item.key ? 'day-active' : ''}}"
+          data-key="{{item.key}}"
+          bind:tap="pickDate"
+        >
+          <view class="day-label">{{item.label}}</view>
+          <view class="day-date">{{item.date}}</view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{slotsState === 'loading'}}" class="slots-status">
+    <t-loading theme="circular" size="40rpx" />
+  </view>
+  <view wx:elif="{{slotsState === 'error'}}" class="slots-status">
+    <view>
+      <view class="muted">{{slotsError}}</view>
+      <view class="retry"><t-button theme="light" size="small" bind:tap="loadSlots">重新加载</t-button></view>
+    </view>
+  </view>
+  <view wx:elif="{{!slots.length}}" class="slots-empty">
+    <t-empty icon="{{emptyIcon}}" description="这一天没有可改约的时段" />
+  </view>
+  <view wx:else>
+    <view class="section-title">选择新的时间</view>
+    <view class="slot-grid">
+      <view
+        wx:for="{{slots}}"
+        wx:key="id"
+        class="slot {{item.available ? '' : 'slot-full'}} {{picked.id === item.id ? 'slot-picked' : ''}}"
+        hover-class="{{item.available ? 'slot-hover' : 'none'}}"
+        data-index="{{index}}"
+        bind:tap="pickSlot"
+      >
+        <view class="slot-time">{{item.time}}</view>
+        <view class="slot-sub">{{item.current ? '当前' : item.available ? '可约' : item.refused ? '不可选' : item.closed ? '已截止' : '已约满'}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="footnote">{{note}}</view>
+
+  <view class="action-bar">
+    <view class="grow picked">
+      <block wx:if="{{picked}}">
+        <view class="picked-text">{{pickedDay}}</view>
+        <view wx:if="{{pickedSub}}" class="picked-sub">{{pickedSub}}</view>
+      </block>
+      <view wx:else class="muted">请选择新的时间</view>
+    </view>
+    <t-button
+      theme="primary"
+      size="large"
+      t-class="submit"
+      loading="{{submitting}}"
+      disabled="{{!picked}}"
+      bind:tap="submit"
+    >确认改约</t-button>
+  </view>
+</view>
+</theme-root>

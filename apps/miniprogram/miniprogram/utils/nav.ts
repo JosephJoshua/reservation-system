@@ -23,8 +23,9 @@ function once(key: string, go: (complete: () => void) => void): void {
   })
 }
 
-export function navigateOnce(url: string): void {
-  once(`to:${url}`, (complete) => wx.navigateTo({ url, complete }))
+/** `events` are listeners for what the opened page sends back through its event channel. */
+export function navigateOnce(url: string, events?: WechatMiniprogram.IAnyObject): void {
+  once(`to:${url}`, (complete) => wx.navigateTo({ url, events, complete }))
 }
 
 export function navigateBackOnce(delta = 1): void {

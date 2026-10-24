@@ -1,0 +1,50 @@
+/* The day strip of the booking and move pages, and the header it sits in. */
+.header {
+  background-color: var(--td-bg-color-container);
+  padding-bottom: 8rpx;
+}
+
+.day-scroll {
+  margin-top: 24rpx;
+  white-space: nowrap;
+}
+
+.day-row {
+  display: inline-flex;
+  gap: 16rpx;
+  padding: 0 32rpx;
+}
+
+/* Scroll anchor for the first screen of days. */
+.day-start {
+  display: inline-block;
+  width: 0;
+}
+
+.day {
+  width: 104rpx;
+  padding: 16rpx 0;
+  border-radius: 16rpx;
+  text-align: center;
+}
+
+.day-label {
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.day-date {
+  margin-top: 4rpx;
+  font-size: 30rpx;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+
+.day-active {
+  background-color: var(--td-brand-color);
+}
+
+.day-active .day-label,
+.day-active .day-date {
+  color: #ffffff;
+}

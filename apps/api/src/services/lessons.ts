@@ -12,6 +12,7 @@ import { bookings, lessonTypes, packages, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { LIVE } from './bookings'
+import { movedFromIso, moveSummaries } from './move-history'
 import { bookingStatus } from './views'
 
 // What a coach sees in place of the name of a student who deleted their account.
@@ -152,6 +153,8 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     coachNote: b.coachNote,
     canMarkAttendance: attendanceError(b, now, 'coach') === null,
     canCancel: (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.startsAt,
+    canMove: b.status === 'confirmed' && now < b.startsAt,
+    movedFrom: movedFromIso(moveSummaries(db, [b.id]).get(b.id), b.startsAt),
     cancelledBy: b.cancelledBy,
     cancelReason: b.cancelReason,
     lessonsTogether: together.filter((h) => h.attendance !== 'no_show').length,

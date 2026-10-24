@@ -1,0 +1,21 @@
+@import '../../styles/common.wxss';
+@import '../../styles/days.wxss';
+@import '../../styles/slots.wxss';
+@import '../../styles/move.wxss';
+
+/* Marks days with a free slot to move to. */
+.day-dot {
+  width: 8rpx;
+  height: 8rpx;
+  margin: 6rpx auto 0;
+  border-radius: 50%;
+  background-color: var(--td-brand-color);
+}
+
+.day-active .day-dot {
+  background-color: #ffffff;
+}
+
+.day-dot-none {
+  visibility: hidden;
+}

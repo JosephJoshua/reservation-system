@@ -6,7 +6,6 @@ import { bookings, packageProducts, studentNotices, students } from './db/schema
 import { notifyStudents, queueStudentNotice } from './services/student-notices'
 import { type Harness, setup } from './test/harness'
 import type { NoticeKind, NoticeTemplate, NoticeValues, Notifier } from './wx-notify'
-import { lessonTime } from './wx-notify'
 
 type Sent = { openid: string; kind: string; page: string; values: NoticeValues }
 
@@ -79,6 +78,7 @@ describe('student notices', () => {
           time: '2026年10月26日 10:00~11:00',
           coach: '王教练',
           place: '乒乓球馆',
+          status: '',
           reason: '',
           refund: '',
         },
@@ -111,7 +111,12 @@ describe('student notices', () => {
       {
         kind: 'cancelled',
         page: `pages/booking-detail/index?id=${venue}`,
-        values: { reason: '教练生病', refund: '¥200 原路退回', time: '2026年10月26日 10:00~11:00' },
+        values: {
+          status: '已取消',
+          reason: '教练生病',
+          refund: '¥200 原路退回',
+          time: '2026年10月26日 10:00~11:00',
+        },
       },
     ])
 
@@ -274,7 +279,7 @@ describe('student notices', () => {
       queueStudentNotice(tx, h.deps.now(), {
         bookingId: id,
         kind: 'moved',
-        data: { oldTime: lessonTime(old.startsAt, old.endsAt) },
+        was: { coachId: coach.id, startsAt: old.startsAt, endsAt: old.endsAt },
       })
     })
     await notifyStudents(h.deps)

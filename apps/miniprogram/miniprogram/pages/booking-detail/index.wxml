@@ -23,6 +23,7 @@
     <t-cell title="课程" note="{{booking.lessonType.name}}" />
     <t-cell title="教练" note="{{booking.coach.name}}" />
     <t-cell title="时间" note="{{when}}" />
+    <t-cell wx:if="{{movedFrom}}" title="原定时间" note="{{movedFrom}}" />
     <t-cell title="支付" note="{{payment}}" />
     <t-cell wx:if="{{refund}}" title="退款" note="{{refund}}" />
     <t-cell wx:if="{{invoice}}" title="发票" note="{{invoice}}" arrow="{{invoiceTappable}}" hover="{{invoiceTappable}}" bind:click="openInvoice" />
@@ -48,6 +49,9 @@
   <view wx:elif="{{booking.canCancel}}" class="action-bar">
     <view class="grow">
       <t-button block t-class="action-button" theme="default" loading="{{busy}}" bind:tap="cancel">取消预约</t-button>
+    </view>
+    <view wx:if="{{booking.canMove}}" class="grow">
+      <t-button block t-class="action-button" theme="primary" disabled="{{busy}}" bind:tap="move">改约</t-button>
     </view>
   </view>
   <view wx:elif="{{booking.status === 'cancelled' || booking.status === 'expired'}}" class="action-bar">

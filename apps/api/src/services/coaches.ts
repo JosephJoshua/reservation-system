@@ -70,7 +70,11 @@ function coachMe(deps: Deps, coach: typeof coaches.$inferSelect): CoachMeDto {
     name: coach.name,
     title: coach.title,
     avatarUrl: coach.avatarUrl,
-    notifyTemplateIds: templateIds(deps.notifier, ['coach_booked', 'coach_cancelled']),
+    notifyTemplateIds: templateIds(deps.notifier, [
+      'coach_booked',
+      'coach_cancelled',
+      'coach_moved',
+    ]),
     advanceDays: getSettings(deps.db).booking.advanceDays,
   }
 }

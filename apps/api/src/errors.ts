@@ -60,6 +60,7 @@ const FIELD_LABELS: Record<string, string> = {
   percent: '退款比例',
   timeoutMinutes: '支付时限',
   trialLimitPerStudent: '每人体验课次数',
+  studentMoves: '学员自助改约次数',
   durationMinutes: '时长',
   price: '价格',
   salePrice: '限时价',

@@ -17,6 +17,7 @@ export const offlineMethods = Object.keys(offlineMethodLabels) as [
 export const staffActionLabels = {
   'booking.create': '代约',
   'booking.cancel': '场馆取消',
+  'booking.move': '场馆改约',
   'booking.attendance': '修改签到',
   'package.sell': '线下售课时包',
   'package.grant': '赠送课时',

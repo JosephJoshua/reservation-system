@@ -44,6 +44,7 @@ import { type AuthVars, loginStudent, logout, requireStudent } from '../services
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
 import { coachViews, visibleTo } from '../services/catalog'
 import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
+import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { getSettings } from '../services/settings'
@@ -433,16 +434,15 @@ export function studentRoutes(deps: Deps) {
     return c.json(bookingViews(db, rows, getSettings(db).booking, now))
   })
 
-  app.get('/bookings/:id', (c) => {
-    const row = db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.id, idParam(c)))
-      .get()
-    if (!row || row.studentId !== c.get('studentId')) throw notFound('预约')
+  /** The student's own booking as they see it. */
+  const ownBookingView = (id: number, studentId: number) => {
+    const row = db.select().from(bookings).where(eq(bookings.id, id)).get()
+    if (!row || row.studentId !== studentId) throw notFound('预约')
     const [view] = bookingViews(db, [row], getSettings(db).booking, deps.now())
-    return c.json(view)
-  })
+    return view
+  }
+
+  app.get('/bookings/:id', (c) => c.json(ownBookingView(idParam(c), c.get('studentId'))))
 
   app.post('/bookings/:id/cancel', async (c) => {
     const id = idParam(c)
@@ -451,10 +451,18 @@ export function studentRoutes(deps: Deps) {
       z.object({ acceptLate: z.boolean().default(false) }).default({ acceptLate: false }),
     )
     await cancelBooking(deps, id, 'student', { studentId: c.get('studentId'), acceptLate })
-    const row = db.select().from(bookings).where(eq(bookings.id, id)).get()
-    if (!row) throw notFound('预约')
-    const [view] = bookingViews(db, [row], getSettings(db).booking, deps.now())
-    return c.json(view)
+    return c.json(ownBookingView(id, c.get('studentId')))
+  })
+
+  app.get('/bookings/:id/move-options', (c) =>
+    c.json(moveOptions(deps, idParam(c), c.get('studentId'))),
+  )
+
+  app.post('/bookings/:id/move', async (c) => {
+    const id = idParam(c)
+    const { slotId } = await parseBody(c, z.object({ slotId: z.number().int().positive() }))
+    moveBooking(deps, id, slotId, { studentId: c.get('studentId') })
+    return c.json(ownBookingView(id, c.get('studentId')))
   })
 
   const ownOrder = (orderId: number, studentId: number) => {

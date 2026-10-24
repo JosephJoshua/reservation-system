@@ -688,6 +688,7 @@ describe('coach notices', () => {
     expect((await h.call('GET', '/coach/me', undefined, token)).json.notifyTemplateIds).toEqual([
       'coach_booked',
       'coach_cancelled',
+      'coach_moved',
     ])
     const student = await h.student('a')
     await h.call('PUT', '/me', { name: '小明' }, student)

@@ -73,13 +73,18 @@ const STALE = new Set([
 
 /**
  * Runs a change, shows its error as a message, and reports success. `onStale` runs when the
- * record changed elsewhere, so the page can close the dialog and reload. Row actions pass
- * their own `key`, so a change on one row does not block another.
+ * record changed elsewhere, so the page can close the dialog and reload; `stale` adds codes that
+ * mean this for one action. Row actions pass their own `key`, so a change on one row does not
+ * block another.
  */
 export async function attempt(
   fn: () => Promise<unknown>,
   success?: string,
-  { onStale, key = DIALOG }: { onStale?: () => void; key?: string } = {},
+  {
+    onStale,
+    key = DIALOG,
+    stale = [],
+  }: { onStale?: () => void; key?: string; stale?: string[] } = {},
 ): Promise<boolean> {
   if (inFlight.has(key)) return false
   setInFlight(key, true)
@@ -89,7 +94,9 @@ export async function attempt(
     return true
   } catch (e) {
     void MessagePlugin.error(e instanceof RequestError ? e.message : '操作失败，请重试')
-    if (onStale && e instanceof RequestError && STALE.has(e.code)) onStale()
+    if (onStale && e instanceof RequestError && (STALE.has(e.code) || stale.includes(e.code))) {
+      onStale()
+    }
     return false
   } finally {
     setInFlight(key, false)

@@ -1,0 +1,5 @@
+@import '../../styles/common.wxss';
+@import '../../styles/coaches.wxss';
+@import '../../styles/days.wxss';
+@import '../../styles/slots.wxss';
+@import '../../styles/move.wxss';

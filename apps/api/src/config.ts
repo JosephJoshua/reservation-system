@@ -53,6 +53,7 @@ function notices() {
     templates: {
       coach_booked: parseTemplate(env.WECHAT_NOTICE_COACH_BOOKED),
       coach_cancelled: parseTemplate(env.WECHAT_NOTICE_COACH_CANCELLED),
+      coach_moved: parseTemplate(env.WECHAT_NOTICE_COACH_MOVED),
       student_booked: parseTemplate(env.WECHAT_NOTICE_STUDENT_BOOKED),
       student_cancelled: parseTemplate(env.WECHAT_NOTICE_STUDENT_CANCELLED),
       student_reminder: parseTemplate(env.WECHAT_NOTICE_STUDENT_REMINDER),

@@ -57,6 +57,13 @@
       "when": 1792796496127,
       "tag": "0007_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1792803868623,
+      "tag": "0008_booking_moves",
+      "breakpoints": true
     }
   ]
 }

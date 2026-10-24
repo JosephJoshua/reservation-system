@@ -81,3 +81,26 @@ export function monthDay(iso: string | Date): string {
 export function maskPhone(phone: string): string {
   return phone.length === 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : phone
 }
+
+export interface Day {
+  key: string
+  label: string
+  date: string
+}
+
+/** Today and the days after it that can be booked, for the day strip. */
+export function bookableDays(advanceDays: number, now = Date.now()): Day[] {
+  return Array.from({ length: advanceDays + 1 }, (_, i) => {
+    const at = new Date(now + i * 86400000)
+    return { key: venueDateKey(at), label: i < 3 ? dayName(at) : weekday(at), date: monthDay(at) }
+  })
+}
+
+/**
+ * Where the day strip scrolls to show `key`: days on the first screen keep it at its start,
+ * later ones bring the day before into view, so the picked day keeps some room on its left.
+ */
+export function dayAnchor(days: Day[], key: string): string {
+  const index = days.findIndex((d) => d.key === key)
+  return index < 4 ? 'day-start' : `day-${days[index - 1]?.key}`
+}

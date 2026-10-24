@@ -1,15 +1,25 @@
-import { venueInstant } from '@rs/shared'
+import { venueDateKey, venueInstant } from '@rs/shared'
 import { useState } from 'react'
-import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-react'
+import {
+  Button,
+  DatePicker,
+  DateRangePicker,
+  Dialog,
+  Select,
+  Space,
+  Tag,
+  Textarea,
+} from 'tdesign-react'
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
+import { Field } from '../Field'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
-import { attempt, useApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
-import type { AdminBooking, Coach } from '../types'
+import type { AdminBooking, Coach, Slot } from '../types'
 
 export function Bookings() {
   const [range, setRange] = useState<[string, string]>([today(), addDays(today(), 13)])
@@ -18,6 +28,7 @@ export function Bookings() {
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
+  const [moving, setMoving] = useState<AdminBooking | null>(null)
   const [reason, setReason] = useState('')
   const [booking, setBooking] = useState(false)
   const submitting = useSubmitting()
@@ -133,9 +144,14 @@ export function Bookings() {
             title: '时间',
             width: 150,
             cell: ({ row }) => (
-              <span className="nowrap">
-                {fmtDateTime(row.startsAt)}-{fmtTime(row.endsAt)}
-              </span>
+              <div>
+                <span className="nowrap">
+                  {fmtDateTime(row.startsAt)}-{fmtTime(row.endsAt)}
+                </span>
+                {row.movedFrom && (
+                  <div className="muted nowrap">原定 {fmtDateTime(row.movedFrom)}</div>
+                )}
+              </div>
             ),
           },
           { colKey: 'coach', title: '教练', cell: ({ row }) => row.coach.name },
@@ -226,15 +242,37 @@ export function Bookings() {
           {
             colKey: 'op',
             title: '操作',
-            cell: ({ row }) =>
-              row.status === 'confirmed' || row.status === 'pending_payment' ? (
-                <Button variant="text" theme="danger" onClick={() => setCancelling(row)}>
-                  取消
-                </Button>
-              ) : null,
+            cell: ({ row }) => {
+              const upcoming = Date.parse(row.startsAt) > Date.now()
+              return (
+                <Space size={0}>
+                  {row.status === 'confirmed' && upcoming && (
+                    <Button variant="text" theme="primary" onClick={() => setMoving(row)}>
+                      改约
+                    </Button>
+                  )}
+                  {(row.status === 'confirmed' || row.status === 'pending_payment') && (
+                    <Button variant="text" theme="danger" onClick={() => setCancelling(row)}>
+                      取消
+                    </Button>
+                  )}
+                </Space>
+              )
+            },
           },
         ]}
       />
+      {moving && (
+        <MoveDialog
+          booking={moving}
+          coaches={coaches.data ?? []}
+          onClose={() => setMoving(null)}
+          onDone={() => {
+            setMoving(null)
+            void reload()
+          }}
+        />
+      )}
       {cancelling && (
         <Dialog
           visible
@@ -274,5 +312,136 @@ export function Bookings() {
         />
       )}
     </div>
+  )
+}
+
+/** Moves a confirmed lesson to a free slot of the same length, with any coach who teaches it. */
+function MoveDialog({
+  booking,
+  coaches,
+  onClose,
+  onDone,
+}: {
+  booking: AdminBooking
+  coaches: Coach[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const teaching = coaches.filter(
+    (c) => c.active && c.lessonTypeIds.includes(booking.lessonType.id),
+  )
+  const [picked, setCoachId] = useState(booking.coach.id)
+  // The lesson's own coach, or the first who teaches it when they no longer do.
+  const coachId = teaching.some((c) => c.id === picked) ? picked : (teaching[0]?.id ?? null)
+  // Only upcoming lessons can move, so their own day is never in the past.
+  const [date, setDate] = useState(() => venueDateKey(new Date(booking.startsAt)))
+  const [slotId, setSlotId] = useState<number | null>(null)
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+  const params = new URLSearchParams({
+    from: venueInstant(date, 0).toISOString(),
+    to: venueInstant(date, 24 * 60).toISOString(),
+    coachId: String(coachId),
+  })
+  const {
+    data,
+    loading,
+    error,
+    reload: reloadSlots,
+  } = useApi<Slot[]>(coachId ? `/admin/slots?${params}` : null)
+  const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
+  // Checked against the coach and day shown, since a failed or slow load keeps the last list.
+  const free = (data ?? []).filter(
+    (s) =>
+      s.coachId === coachId &&
+      venueDateKey(new Date(s.startsAt)) === date &&
+      s.open &&
+      !s.booking &&
+      Date.parse(s.startsAt) > Date.now() &&
+      Date.parse(s.endsAt) - Date.parse(s.startsAt) === length,
+  )
+
+  const submit = async () => {
+    if (!slotId) return
+    let stale = false
+    const ok = await attempt(
+      () => api('POST', `/admin/bookings/${booking.id}/move`, { slotId }, { key }),
+      '已改约',
+      {
+        // The lesson was cancelled or started meanwhile.
+        stale: ['not_movable', 'started'],
+        onStale: () => {
+          stale = true
+          onDone()
+        },
+      },
+    )
+    if (ok) onDone()
+    else if (!stale) {
+      // The time may have gone meanwhile: show what is free now.
+      setSlotId(null)
+      void reloadSlots()
+    }
+  }
+
+  return (
+    <Dialog
+      visible
+      header="改约"
+      confirmBtn={{ content: '确认改约', disabled: !slotId, loading: submitting }}
+      cancelBtn="返回"
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <p>
+        {booking.student?.name} {booking.lessonType.name}，当前 {fmtDateTime(booking.startsAt)}{' '}
+        {booking.coach.name}
+      </p>
+      <div className="fields">
+        <Field label="教练" help={coachId ? undefined : '没有教这门课的教练'}>
+          <Select
+            value={coachId ?? undefined}
+            options={teaching.map((c) => ({ label: c.name, value: c.id }))}
+            onChange={(v) => {
+              setCoachId(Number(v))
+              setSlotId(null)
+            }}
+          />
+        </Field>
+        <Field label="日期">
+          <DatePicker
+            value={date}
+            allowInput
+            clearable={false}
+            disableDate={{ before: today() }}
+            onChange={(v) => {
+              // Typing clears the input first; keep the last whole date until a new one is typed.
+              const picked = String(v ?? '')
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(picked)) return
+              setDate(picked)
+              setSlotId(null)
+            }}
+          />
+        </Field>
+        <Field
+          label="时间"
+          help={error ?? (loading || !coachId || free.length ? undefined : '这天没有空闲时段')}
+        >
+          <Select
+            value={slotId ?? undefined}
+            loading={loading}
+            placeholder="选择空闲时段"
+            options={free.map((s) => ({
+              label: `${fmtTime(s.startsAt)}-${fmtTime(s.endsAt)}`,
+              value: s.id,
+            }))}
+            onChange={(v) => setSlotId(Number(v))}
+          />
+        </Field>
+      </div>
+      <p className="muted">
+        已付款项和课时不变，场馆改约不受教练价格和课时包范围限制。订阅了通知的学员和教练会收到改约消息。
+      </p>
+    </Dialog>
   )
 }

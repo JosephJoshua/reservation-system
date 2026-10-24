@@ -8,9 +8,11 @@
     "flows": "pnpm --filter @rs/miniprogram build && tsx src/flows.ts",
     "coach": "pnpm --filter @rs/miniprogram build && tsx src/coach.ts",
     "coach-profile": "pnpm --filter @rs/miniprogram build && tsx src/coach-profile.ts",
-    "invoices": "pnpm --filter @rs/miniprogram build && tsx src/invoices.ts"
+    "invoices": "pnpm --filter @rs/miniprogram build && tsx src/invoices.ts",
+    "moves": "pnpm --filter @rs/miniprogram build && tsx src/moves.ts"
   },
   "devDependencies": {
+    "@rs/shared": "workspace:*",
     "@types/node": "22.20.5",
     "miniprogram-automator": "0.13.0",
     "tsx": "4.23.15"

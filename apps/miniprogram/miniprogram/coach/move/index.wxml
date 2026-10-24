@@ -1,0 +1,76 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="primary" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="has-action-bar">
+  <view class="header">
+    <view class="current">
+      <view class="current-label">{{student}} · 当前时间</view>
+      <view class="current-time">{{current}}</view>
+    </view>
+
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" scroll-with-animation scroll-into-view="{{dayAnchor}}" class="day-scroll">
+      <view id="day-start" class="day-start" />
+      <view class="day-row">
+        <view
+          wx:for="{{days}}"
+          wx:key="key"
+          id="day-{{item.key}}"
+          class="day {{date === item.key ? 'day-active' : ''}}"
+          data-key="{{item.key}}"
+          bind:tap="pickDate"
+        >
+          <view class="day-label">{{item.label}}</view>
+          <view class="day-date">{{item.date}}</view>
+          <view class="day-dot {{item.free ? '' : 'day-dot-none'}}" />
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view wx:if="{{!slots.length}}" class="slots-empty">
+    <t-empty icon="{{emptyIcon}}" description="这一天没有空闲时段" />
+  </view>
+  <view wx:else>
+    <view class="section-title">选择新的时间</view>
+    <view class="slot-grid">
+      <view
+        wx:for="{{slots}}"
+        wx:key="id"
+        class="slot {{item.refused ? 'slot-full' : ''}} {{picked.id === item.id ? 'slot-picked' : ''}}"
+        hover-class="{{item.refused ? 'none' : 'slot-hover'}}"
+        data-index="{{index}}"
+        bind:tap="pickSlot"
+      >
+        <view class="slot-time">{{item.time}}</view>
+        <view class="slot-sub">{{item.refused ? '不可选' : '空闲'}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="footnote">只能改到你自己的空闲时段。订阅了通知的学员会收到改约消息，请同时电话告知。</view>
+
+  <view class="action-bar">
+    <view class="grow picked">
+      <view wx:if="{{picked}}" class="picked-text">{{pickedDay}}</view>
+      <view wx:else class="muted">请选择新的时间</view>
+    </view>
+    <t-button
+      theme="primary"
+      size="large"
+      t-class="submit"
+      loading="{{submitting}}"
+      disabled="{{!picked}}"
+      bind:tap="submit"
+    >确认改约</t-button>
+  </view>
+</view>
+</theme-root>
