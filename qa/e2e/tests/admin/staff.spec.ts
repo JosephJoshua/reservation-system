@@ -57,8 +57,11 @@ test('adds a staff login that can sign in', async ({ page, browser }) => {
   await field(dialog(page), '姓名').locator('input').fill(staffName)
   await field(dialog(page), '登录名').locator('input').fill(username)
   await field(dialog(page), '初始密码').locator('input').fill(password)
+  // Needs a role first.
+  await expect(dialog(page).locator('.t-button', { hasText: '添加' })).toHaveClass(/t-is-disabled/)
+  await dialog(page).getByText('前台', { exact: true }).click()
   await dialog(page).getByRole('button', { name: '添加' }).click()
-  await expect(page.getByRole('row', { name: new RegExp(staffName) })).toBeVisible()
+  await expect(page.getByRole('row', { name: new RegExp(staffName) })).toContainText('前台')
 
   const desk = await (await browser.newContext({ baseURL: ADMIN_URL })).newPage()
   await login(desk, username, password)

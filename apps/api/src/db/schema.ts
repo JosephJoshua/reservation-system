@@ -1,5 +1,11 @@
 // Run `pnpm db:generate` after changing tables. Money is integer fen; instants are UTC ms.
-import { type Grip, type InvoiceTitle, type StudentLevel, studentNoticeKinds } from '@rs/shared'
+import {
+  type Grip,
+  type InvoiceTitle,
+  type StaffRole,
+  type StudentLevel,
+  studentNoticeKinds,
+} from '@rs/shared'
 import { sql } from 'drizzle-orm'
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
@@ -46,12 +52,14 @@ export const studentProfiles = sqliteTable('student_profiles', {
   updatedAt: instant('updated_at').notNull(),
 })
 
-/** Front-desk and management logins for the admin app. All have full access. */
+/** Front-desk and management logins for the admin app. `roles` decides what each may do. */
 export const staff = sqliteTable('staff', {
   id: id(),
   name: text('name').notNull(),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  // Logins from before roles existed had full access, so they start as 管理员.
+  roles: text('roles', { mode: 'json' }).$type<StaffRole[]>().notNull().default(['admin']),
   // Deactivated staff cannot log in; they stay for the action log.
   active: integer('active', { mode: 'boolean' }).notNull().default(true),
   createdAt: createdAt(),

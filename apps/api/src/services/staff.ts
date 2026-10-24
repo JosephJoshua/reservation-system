@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import type { StaffRole } from '@rs/shared'
 import { and, eq, ne } from 'drizzle-orm'
 import type { Db } from '../db/client'
 import { immediate } from '../db/client'
@@ -47,6 +48,7 @@ export function staffView(row: StaffRow) {
     id: row.id,
     name: row.name,
     username: row.username,
+    roles: row.roles,
     active: row.active,
     createdAt: row.createdAt,
   }
@@ -60,7 +62,7 @@ export function findStaff(db: Db, id: number) {
 
 export function createStaff(
   deps: Deps,
-  input: { name: string; username: string; password: string },
+  input: { name: string; username: string; password: string; roles: StaffRole[] },
 ) {
   try {
     return deps.db
@@ -69,6 +71,7 @@ export function createStaff(
         name: input.name,
         username: input.username,
         passwordHash: hashPassword(input.password),
+        roles: input.roles,
       })
       .returning()
       .get()
@@ -78,24 +81,37 @@ export function createStaff(
   }
 }
 
-/** Renames or (de)activates a login. Deactivating logs it out everywhere at once. */
+/**
+ * Renames, (de)activates or changes the roles of a login. Deactivating logs it out everywhere at
+ * once; new roles apply on its next request.
+ */
 export function updateStaff(
   deps: Deps,
   actorId: number,
   id: number,
-  patch: { name?: string; active?: boolean },
+  patch: { name?: string; active?: boolean; roles?: StaffRole[] },
 ) {
   if (patch.active === false && id === actorId) {
     throw new ApiError(409, 'cannot_deactivate_self', '不能停用自己的账号')
+  }
+  if (patch.roles && id === actorId) {
+    throw new ApiError(409, 'own_roles', '不能修改自己的角色，请让其他管理员修改')
   }
   return immediate(deps.db, (tx) => {
     const before = tx.select().from(staff).where(eq(staff.id, id)).get()
     if (!before) throw notFound('员工')
     const after = tx.update(staff).set(patch).where(eq(staff.id, id)).returning().get()
     if (!after) throw notFound('员工')
-    // Two people deactivating each other at once would otherwise lock everyone out.
-    if (!tx.select({ id: staff.id }).from(staff).where(eq(staff.active, true)).get()) {
-      throw new ApiError(409, 'last_active_staff', '至少要保留一个启用的账号')
+    // Checked after the write, so two admins demoting or deactivating each other at once cannot
+    // leave nobody able to manage staff.
+    const admins = tx
+      .select({ roles: staff.roles })
+      .from(staff)
+      .where(eq(staff.active, true))
+      .all()
+      .filter((r) => r.roles.includes('admin'))
+    if (admins.length === 0) {
+      throw new ApiError(409, 'last_admin', '至少要保留一个启用的管理员')
     }
     if (!after.active) tx.delete(sessions).where(eq(sessions.staffId, id)).run()
     return { before, after }

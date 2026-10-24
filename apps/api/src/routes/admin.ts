@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  can,
   charLength,
   cleanTags,
   endsSameVenueDay,
@@ -13,7 +14,10 @@ import {
   offlineMethods,
   PROFILE_MAX_TAGS,
   PROFILE_NOTE_LENGTH,
+  type StaffRole,
   staffActions,
+  staffRoleLabels,
+  staffRoles,
   studentLevels,
   tagsError,
   venueParts,
@@ -53,6 +57,7 @@ import {
   limitedCheck,
   loginAdmin,
   logout,
+  need,
   requireAdmin,
 } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
@@ -126,6 +131,12 @@ const username = z
     message: '登录名需为 3 到 20 位字母、数字或 _ . -',
   })
 const staffName = z.string().trim().min(1).max(20)
+const roles = z
+  .array(z.enum(staffRoles))
+  .min(1, '请选择角色')
+  .max(staffRoles.length)
+  .transform((r) => staffRoles.filter((role) => r.includes(role)))
+const rolesText = (r: readonly StaffRole[]) => r.map((role) => staffRoleLabels[role]).join('、')
 const offlineMethod = z.enum(offlineMethods)
 const settingsSectionLabel = {
   venue: '场馆信息',
@@ -257,7 +268,7 @@ export function adminRoutes(deps: Deps) {
     return requireAdmin(deps)(c, next)
   })
 
-  app.post('/logout', (c) => {
+  app.post('/logout', need('view'), (c) => {
     logout(deps, c.req.header('Authorization'))
     return c.body(null, 204)
   })
@@ -279,9 +290,9 @@ export function adminRoutes(deps: Deps) {
 
   // Staff logins and the action log
 
-  app.get('/me', (c) => c.json(staffView(findStaff(db, c.get('staffId')))))
+  app.get('/me', need('view'), (c) => c.json(staffView(findStaff(db, c.get('staffId')))))
 
-  app.put('/me/password', async (c) => {
+  app.put('/me/password', need('view'), async (c) => {
     const body = await parseBody(c, z.object({ current: z.string().max(200), password }))
     const me = findStaff(db, c.get('staffId'))
     // Limited like logins, so a session left open cannot guess its way to the password.
@@ -301,29 +312,41 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.get('/staff', (c) =>
+  app.get('/staff', need('manage'), (c) =>
     c.json(db.select().from(staff).orderBy(desc(staff.active), asc(staff.id)).all().map(staffView)),
   )
 
-  app.post('/staff', async (c) => {
-    const body = await parseBody(c, z.object({ name: staffName, username, password }))
+  app.post('/staff', need('manage'), async (c) => {
+    const body = await parseBody(c, z.object({ name: staffName, username, password, roles }))
     const row = createStaff(deps, body)
     log(c.get('staffId'), {
       action: 'staff.create',
-      summary: `新增员工 ${row.name}（${row.username}）`,
+      summary: `新增员工 ${row.name}（${row.username}），${rolesText(row.roles)}`,
       target: { kind: 'staff', id: row.id },
     })
     return c.json(staffView(row), 201)
   })
 
-  app.patch('/staff/:id', async (c) => {
+  app.patch('/staff/:id', need('manage'), async (c) => {
     const body = await parseBody(
       c,
       z
-        .object({ name: staffName.optional(), active: z.boolean().optional() })
+        .object({
+          name: staffName.optional(),
+          active: z.boolean().optional(),
+          roles: roles.optional(),
+        })
         .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
     const { before, after } = updateStaff(deps, c.get('staffId'), idParam(c), body)
+    // Logged on its own, so the log can be filtered for who changed what someone may do.
+    if (rolesText(before.roles) !== rolesText(after.roles)) {
+      log(c.get('staffId'), {
+        action: 'staff.roles',
+        summary: `${after.name}（${after.username}）角色由 ${rolesText(before.roles)} 改为 ${rolesText(after.roles)}`,
+        target: { kind: 'staff', id: after.id },
+      })
+    }
     const changes = [
       before.name !== after.name && `姓名改为 ${after.name}`,
       before.active !== after.active && (after.active ? '启用账号' : '停用账号'),
@@ -338,7 +361,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(staffView(after))
   })
 
-  app.put('/staff/:id/password', async (c) => {
+  app.put('/staff/:id/password', need('manage'), async (c) => {
     const body = await parseBody(c, z.object({ password }))
     const target = findStaff(db, idParam(c))
     // Your own password needs the current one, so a session left open cannot take the account.
@@ -354,7 +377,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.get('/actions', (c) => {
+  app.get('/actions', need('manage'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -376,9 +399,9 @@ export function adminRoutes(deps: Deps) {
 
   // Settings
 
-  app.get('/settings', (c) => c.json(getSettings(db)))
+  app.get('/settings', need('manage'), (c) => c.json(getSettings(db)))
 
-  app.put('/settings', async (c) => {
+  app.put('/settings', need('manage'), async (c) => {
     const body = await parseBody(c, venueSettings)
     const { before, after } = immediate(db, (tx) => {
       const before = getSettings(tx)
@@ -425,16 +448,19 @@ export function adminRoutes(deps: Deps) {
     }
   }
 
-  app.get('/coaches', (c) =>
-    c.json(
+  app.get('/coaches', need('view'), (c) => {
+    // A live bind code would let whoever reads it sign in as the coach.
+    const binds = can(c.get('roles'), 'manage')
+    return c.json(
       db
         .select({ id: coaches.id })
         .from(coaches)
         .orderBy(asc(coaches.sort), asc(coaches.id))
         .all()
-        .map((r) => coachView(r.id)),
-    ),
-  )
+        .map((r) => coachView(r.id))
+        .map((v) => (binds ? v : { ...v, bindCode: null, bindCodeExpiresAt: null })),
+    )
+  })
 
   const checkLessonTypes = (tx: Q, ids: number[]) => {
     const known = new Set(
@@ -507,7 +533,7 @@ export function adminRoutes(deps: Deps) {
     })
   }
 
-  app.post('/coaches', async (c) => {
+  app.post('/coaches', need('manage'), async (c) => {
     const body = await parseBody(c, coachBody)
     const id = immediate(db, (tx) => saveCoach(tx, null, body))
     const view = coachView(id)
@@ -515,7 +541,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(view, 201)
   })
 
-  app.put('/coaches/:id', async (c) => {
+  app.put('/coaches/:id', need('manage'), async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, coachBody)
     const before = immediate(db, (tx) => {
@@ -595,7 +621,7 @@ export function adminRoutes(deps: Deps) {
     return categoryId
   }
 
-  app.get('/coach-categories', (c) => c.json(categoryViews()))
+  app.get('/coach-categories', need('manage'), (c) => c.json(categoryViews()))
 
   type CategoryMoney = Pick<ReturnType<typeof categoryView>, 'prices' | 'payRates'>
 
@@ -650,7 +676,7 @@ export function adminRoutes(deps: Deps) {
     }
   }
 
-  app.post('/coach-categories', async (c) => {
+  app.post('/coach-categories', need('manage'), async (c) => {
     const body = await parseBody(c, categoryBody)
     const id = immediate(db, (tx) => saveCategory(tx, null, body))
     const view = categoryView(id)
@@ -658,7 +684,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(view, 201)
   })
 
-  app.put('/coach-categories/:id', async (c) => {
+  app.put('/coach-categories/:id', need('manage'), async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, categoryBody)
     const before = immediate(db, (tx) => {
@@ -672,7 +698,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(view)
   })
 
-  app.delete('/coach-categories/:id', (c) => {
+  app.delete('/coach-categories/:id', need('manage'), (c) => {
     const id = idParam(c)
     immediate(db, (tx) => {
       const used = tx
@@ -689,38 +715,40 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/coaches/:id/bind-code', (c) => c.json(newBindCode(deps, idParam(c)), 201))
+  app.post('/coaches/:id/bind-code', need('manage'), (c) =>
+    c.json(newBindCode(deps, idParam(c)), 201),
+  )
 
-  app.delete('/coaches/:id/binding', (c) => {
+  app.delete('/coaches/:id/binding', need('manage'), (c) => {
     unbindCoach(deps, idParam(c))
     return c.body(null, 204)
   })
 
-  app.get('/coaches/:id/hours', (c) => c.json(hoursView(deps, idParam(c))))
+  app.get('/coaches/:id/hours', need('bookings'), (c) => c.json(hoursView(deps, idParam(c))))
 
-  app.put('/coaches/:id/hours', async (c) => {
+  app.put('/coaches/:id/hours', need('bookings'), async (c) => {
     const { hours } = await parseBody(c, weeklyHoursBody)
     return c.json(saveHours(deps, idParam(c), hours))
   })
 
-  app.put('/coaches/:id/days-off/:date', (c) =>
+  app.put('/coaches/:id/days-off/:date', need('bookings'), (c) =>
     c.json(setDayOff(deps, idParam(c), c.req.param('date'), true)),
   )
 
-  app.delete('/coaches/:id/days-off/:date', (c) =>
+  app.delete('/coaches/:id/days-off/:date', need('bookings'), (c) =>
     c.json(setDayOff(deps, idParam(c), c.req.param('date'), false)),
   )
 
   // Lesson types
 
-  app.get('/lesson-types', (c) =>
+  app.get('/lesson-types', need('view'), (c) =>
     c.json(db.select().from(lessonTypes).orderBy(asc(lessonTypes.sort), asc(lessonTypes.id)).all()),
   )
 
   const lessonPriceLine = (t: z.infer<typeof lessonTypeBody>) =>
     priceLine(t.price, t.salePercent ? `${t.salePercent}%` : null, t.saleStartsAt, t.saleEndsAt)
 
-  app.post('/lesson-types', async (c) => {
+  app.post('/lesson-types', need('manage'), async (c) => {
     const body = await parseBody(c, lessonTypeBody)
     const row = db.insert(lessonTypes).values(body).returning().get()
     log(c.get('staffId'), {
@@ -731,7 +759,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(row, 201)
   })
 
-  app.put('/lesson-types/:id', async (c) => {
+  app.put('/lesson-types/:id', need('manage'), async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, lessonTypeBody)
     const existing = db.select().from(lessonTypes).where(eq(lessonTypes.id, id)).get()
@@ -788,7 +816,7 @@ export function adminRoutes(deps: Deps) {
 
   // Slots
 
-  app.get('/slots', (c) => {
+  app.get('/slots', need('view'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -872,7 +900,7 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
-  app.post('/slots', async (c) => {
+  app.post('/slots', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -934,7 +962,7 @@ export function adminRoutes(deps: Deps) {
     return c.json({ ids: created }, 201)
   })
 
-  app.patch('/slots/:id', async (c) => {
+  app.patch('/slots/:id', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -992,7 +1020,7 @@ export function adminRoutes(deps: Deps) {
   }
 
   // 小班课: sessions of a group class the venue schedules.
-  app.post('/sessions', async (c) => {
+  app.post('/sessions', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -1021,7 +1049,7 @@ export function adminRoutes(deps: Deps) {
     return c.json({ ids }, 201)
   })
 
-  app.post('/slots/:id/cancel', async (c) => {
+  app.post('/slots/:id/cancel', need('bookings'), async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     const before = db.select().from(slots).where(eq(slots.id, id)).get()
@@ -1037,7 +1065,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.delete('/slots/:id', (c) => {
+  app.delete('/slots/:id', need('bookings'), (c) => {
     const id = idParam(c)
     immediate(db, (tx) => {
       const used = tx
@@ -1070,7 +1098,7 @@ export function adminRoutes(deps: Deps) {
 
   // Bookings
 
-  app.get('/bookings', (c) => {
+  app.get('/bookings', need('view'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -1162,13 +1190,13 @@ export function adminRoutes(deps: Deps) {
     lessonTypeId: z.number().int().positive(),
   }
 
-  app.post('/bookings/quote', async (c) => {
+  app.post('/bookings/quote', need('bookings'), async (c) => {
     const body = await parseBody(c, z.object(frontDeskTarget))
     return c.json(frontDeskQuote(deps, body))
   })
 
   // 代约: the front desk books a lesson for a student.
-  app.post('/bookings', async (c) => {
+  app.post('/bookings', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
       z.discriminatedUnion('payWith', [
@@ -1185,7 +1213,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(bookForStudent(deps, c.get('staffId'), body), 201)
   })
 
-  app.put('/bookings/:id/attendance', async (c) => {
+  app.put('/bookings/:id/attendance', need('attendance'), async (c) => {
     const { attendance } = await parseBody(
       c,
       z.object({ attendance: z.enum(['attended', 'no_show']).nullable() }),
@@ -1210,7 +1238,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/bookings/:id/cancel', async (c) => {
+  app.post('/bookings/:id/cancel', need('bookings'), async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     const cancelled = await cancelBooking(deps, id, 'venue', { reason })
@@ -1249,7 +1277,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/bookings/:id/move', async (c) => {
+  app.post('/bookings/:id/move', need('bookings'), async (c) => {
     const { slotId } = await parseBody(c, z.object({ slotId: z.number().int().positive() }))
     const id = idParam(c)
     const before = describeBooking(db, id)
@@ -1273,7 +1301,7 @@ export function adminRoutes(deps: Deps) {
 
   // 课后点评
 
-  app.get('/feedback', (c) => {
+  app.get('/feedback', need('bookings'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -1285,7 +1313,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(adminFeedback(db, q))
   })
 
-  app.put('/feedback/:id/hidden', async (c) => {
+  app.put('/feedback/:id/hidden', need('bookings'), async (c) => {
     const { hidden } = await parseBody(c, z.object({ hidden: z.boolean() }))
     const id = idParam(c)
     const changed = setFeedbackHidden(deps, id, c.get('staffId'), hidden)
@@ -1306,7 +1334,7 @@ export function adminRoutes(deps: Deps) {
 
   // Package products
 
-  app.get('/package-products', (c) =>
+  app.get('/package-products', need('view'), (c) =>
     c.json(
       db
         .select()
@@ -1337,7 +1365,7 @@ export function adminRoutes(deps: Deps) {
       p.saleEndsAt,
     )
 
-  app.post('/package-products', async (c) => {
+  app.post('/package-products', need('manage'), async (c) => {
     const body = await parseBody(c, productBody)
     checkProduct(body)
     const row = db.insert(packageProducts).values(body).returning().get()
@@ -1349,7 +1377,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(row, 201)
   })
 
-  app.put('/package-products/:id', async (c) => {
+  app.put('/package-products/:id', need('manage'), async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, productBody)
     checkProduct(body)
@@ -1391,7 +1419,7 @@ export function adminRoutes(deps: Deps) {
 
   // Students and their packages
 
-  app.get('/students', (c) => {
+  app.get('/students', need('view'), (c) => {
     const { q, expiring } = parseQuery(
       c,
       z.object({
@@ -1466,7 +1494,7 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
-  app.get('/students/:id', (c) => {
+  app.get('/students/:id', need('view'), (c) => {
     const id = idParam(c)
     const student = db.select().from(students).where(eq(students.id, id)).get()
     if (!student) throw notFound('学员')
@@ -1497,7 +1525,7 @@ export function adminRoutes(deps: Deps) {
     })
   })
 
-  app.put('/students/:id/profile', async (c) => {
+  app.put('/students/:id/profile', need('students'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -1535,7 +1563,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(studentProfile(db, id, deps.now()))
   })
 
-  app.patch('/students/:id', async (c) => {
+  app.patch('/students/:id', need('students'), async (c) => {
     const body = await parseBody(
       c,
       z
@@ -1550,6 +1578,10 @@ export function adminRoutes(deps: Deps) {
         })
         .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
+    // Testers see admin-only lesson types, so only 管理员 may make one.
+    if (body.tester !== undefined && !can(c.get('roles'), 'manage')) {
+      throw new ApiError(403, 'forbidden', '没有权限，请联系管理员')
+    }
     const id = idParam(c)
     const before = db.select().from(students).where(eq(students.id, id)).get()
     if (!before) throw notFound('学员')
@@ -1575,7 +1607,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.get('/packages/:id/ledger', (c) =>
+  app.get('/packages/:id/ledger', need('view'), (c) =>
     c.json(
       db
         .select()
@@ -1586,7 +1618,7 @@ export function adminRoutes(deps: Deps) {
     ),
   )
 
-  app.post('/packages/:id/grant', async (c) => {
+  app.post('/packages/:id/grant', need('manage'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -1606,7 +1638,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/packages/:id/extend', async (c) => {
+  app.post('/packages/:id/extend', need('manage'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -1626,7 +1658,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/packages/offline-sale', async (c) => {
+  app.post('/packages/offline-sale', need('students'), async (c) => {
     const body = await parseBody(
       c,
       z.object({
@@ -1651,7 +1683,7 @@ export function adminRoutes(deps: Deps) {
 
   // Orders and refunds
 
-  app.get('/orders', (c) => {
+  app.get('/orders', need('finance'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -1704,7 +1736,7 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
-  app.get('/refunds', (c) => {
+  app.get('/refunds', need('finance'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -1798,7 +1830,7 @@ export function adminRoutes(deps: Deps) {
     return row
   }
 
-  app.post('/refunds/:id/approve', async (c) => {
+  app.post('/refunds/:id/approve', need('finance'), async (c) => {
     const { amount } = await parseBody(c, z.object({ amount: fen.min(1) }))
     const id = idParam(c)
     if (await approvePackageRefund(deps, id, amount)) {
@@ -1815,7 +1847,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(refundOutcome(id))
   })
 
-  app.post('/refunds/:id/reject', async (c) => {
+  app.post('/refunds/:id/reject', need('finance'), async (c) => {
     const { note } = await parseBody(c, z.object({ note: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     if (!rejectPackageRefund(deps, id, note)) return c.body(null, 204)
@@ -1829,7 +1861,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/refunds/:id/paid-back', (c) => {
+  app.post('/refunds/:id/paid-back', need('finance'), (c) => {
     const id = idParam(c)
     if (!markOfflineRefundPaid(deps, id)) return c.body(null, 204)
     const r = refundContext(id)
@@ -1843,7 +1875,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/refunds/:id/retry', async (c) => {
+  app.post('/refunds/:id/retry', need('finance'), async (c) => {
     const id = idParam(c)
     if (await retryRefund(deps, id)) {
       const r = refundContext(id)
@@ -1860,7 +1892,7 @@ export function adminRoutes(deps: Deps) {
 
   // Invoices
 
-  app.get('/invoices', (c) => {
+  app.get('/invoices', need('finance'), (c) => {
     const q = parseQuery(
       c,
       z.object({
@@ -1875,7 +1907,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(adminInvoices(db, q))
   })
 
-  app.post('/invoices/:id/issue', async (c) => {
+  app.post('/invoices/:id/issue', need('finance'), async (c) => {
     const id = idParam(c)
     const form = await c.req.formData().catch(() => null)
     const file = form?.get('file')
@@ -1898,7 +1930,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(view)
   })
 
-  app.post('/invoices/:id/reject', async (c) => {
+  app.post('/invoices/:id/reject', need('finance'), async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     if (rejectInvoice(deps, c.get('staffId'), id, reason)) {
@@ -1913,7 +1945,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(adminInvoice(db, id))
   })
 
-  app.post('/invoices/:id/refund-seen', (c) => {
+  app.post('/invoices/:id/refund-seen', need('finance'), (c) => {
     const id = idParam(c)
     if (markRefundSeen(deps, id)) {
       const { what, studentId } = invoiceLabel(db, id)
@@ -1927,7 +1959,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(adminInvoice(db, id))
   })
 
-  app.get('/invoices/:id/pdf', (c) => {
+  app.get('/invoices/:id/pdf', need('finance'), (c) => {
     const id = idParam(c)
     return c.body(invoicePdf(deps, id), 200, {
       'Content-Type': 'application/pdf',
@@ -1948,7 +1980,7 @@ export function adminRoutes(deps: Deps) {
     invoices: ['requested', 'issued', 'rejected'],
   }
 
-  app.get('/exports/:kind', (c) => {
+  app.get('/exports/:kind', need('finance'), (c) => {
     const kind = c.req.param('kind')
     if (!Object.hasOwn(exportKinds, kind)) throw notFound('导出类型')
     const k = kind as ExportKind
@@ -1995,16 +2027,16 @@ export function adminRoutes(deps: Deps) {
 
   // Banners and uploads
 
-  app.get('/banners', (c) =>
+  app.get('/banners', need('manage'), (c) =>
     c.json(db.select().from(banners).orderBy(asc(banners.sort), asc(banners.id)).all()),
   )
 
-  app.post('/banners', async (c) => {
+  app.post('/banners', need('manage'), async (c) => {
     const body = await parseBody(c, bannerBody)
     return c.json(db.insert(banners).values(body).returning().get(), 201)
   })
 
-  app.put('/banners/:id', async (c) => {
+  app.put('/banners/:id', need('manage'), async (c) => {
     const body = await parseBody(c, bannerBody)
     const id = idParam(c)
     const row = immediate(db, (tx) => {
@@ -2016,7 +2048,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(row)
   })
 
-  app.delete('/banners/:id', (c) => {
+  app.delete('/banners/:id', need('manage'), (c) => {
     const changed = db
       .delete(banners)
       .where(eq(banners.id, idParam(c)))
@@ -2025,7 +2057,7 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.post('/uploads', async (c) => {
+  app.post('/uploads', need('manage'), async (c) => {
     const form = await c.req.formData().catch(() => null)
     const file = form?.get('file')
     if (!(file instanceof File)) throw new ApiError(400, 'no_file', '请选择图片')
@@ -2038,48 +2070,45 @@ export function adminRoutes(deps: Deps) {
     return c.json({ url: `/api/uploads/${name}` }, 201)
   })
 
-  app.get('/reports/monthly', (c) => {
+  app.get('/reports/monthly', need('finance'), (c) => {
     const { month } = parseQuery(c, z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
     return c.json(monthlyReport(deps, month))
   })
 
-  app.get('/reports/stats', (c) => {
+  app.get('/reports/stats', need('finance'), (c) => {
     const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
     const { from, to } = parseQuery(c, z.object({ from: date, to: date }))
     return c.json(statsReport(deps, from, to))
   })
 
-  app.get('/reports/dormant', (c) => c.json(dormantStudents(deps)))
+  app.get('/reports/dormant', need('finance'), (c) => c.json(dormantStudents(deps)))
 
   // Dashboard numbers for the admin home page.
-  app.get('/summary', (c) => {
+  app.get('/summary', need('view'), (c) => {
     const now = deps.now()
     const count = (where: ReturnType<typeof and>) =>
       db.select({ n: sql<number>`count(*)` }).from(bookings).where(where).get()?.n ?? 0
+    const refundCount = (where: ReturnType<typeof and>) =>
+      db
+        .select({ n: sql<number>`count(*)` })
+        .from(refunds)
+        .innerJoin(orders, eq(orders.id, refunds.orderId))
+        .where(where)
+        .get()?.n ?? 0
+    const { revenue, ...today } = dashboard(deps)
+    // Money is left out for staff without finance, who could not act on it anyway.
+    const money = can(c.get('roles'), 'finance')
     return c.json({
       upcomingBookings: count(and(eq(bookings.status, 'confirmed'), gt(bookings.startsAt, now))),
       pendingPayments: count(eq(bookings.status, 'pending_payment')),
-      refundRequests:
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(refunds)
-          .where(eq(refunds.status, 'requested'))
-          .get()?.n ?? 0,
-      failedRefunds:
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(refunds)
-          .where(eq(refunds.status, 'failed'))
-          .get()?.n ?? 0,
+      refundRequests: money ? refundCount(eq(refunds.status, 'requested')) : null,
+      failedRefunds: money ? refundCount(eq(refunds.status, 'failed')) : null,
       // Refunds of front-desk payments, waiting for staff to hand the money back.
-      offlineRefundsOwed:
-        db
-          .select({ n: sql<number>`count(*)` })
-          .from(refunds)
-          .innerJoin(orders, eq(orders.id, refunds.orderId))
-          .where(and(eq(refunds.status, 'pending'), eq(orders.provider, 'offline')))
-          .get()?.n ?? 0,
-      ...dashboard(deps),
+      offlineRefundsOwed: money
+        ? refundCount(and(eq(refunds.status, 'pending'), eq(orders.provider, 'offline')))
+        : null,
+      ...today,
+      revenue: money ? revenue : null,
     })
   })
 

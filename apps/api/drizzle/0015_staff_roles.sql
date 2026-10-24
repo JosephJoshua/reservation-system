@@ -1,0 +1,1 @@
+ALTER TABLE `staff` ADD `roles` text DEFAULT '["admin"]' NOT NULL;

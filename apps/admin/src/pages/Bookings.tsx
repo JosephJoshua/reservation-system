@@ -19,6 +19,7 @@ import { Field } from '../Field'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, hashParam, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundLabel } from '../labels'
+import { useCan } from '../me'
 import { StudentCell } from '../StudentCell'
 import type { AdminBooking, Coach, Slot } from '../types'
 
@@ -35,6 +36,9 @@ export function Bookings() {
   const [unmarked, setUnmarked] = useState(() => hashParam('unmarked') === '1')
   const [coachId, setCoachId] = useState<number | null>(null)
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
+  const canBook = useCan('bookings')
+  const canMark = useCan('attendance')
+  const money = useCan('finance')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [moving, setMoving] = useState<AdminBooking | null>(null)
@@ -131,21 +135,23 @@ export function Bookings() {
           只看未签到
         </Checkbox>
         <span className="spacer" />
-        <ExportButton
-          kind="bookings"
-          range={range}
-          filters={{ status, coachId, unmarked: unmarked ? '1' : undefined }}
-          filterText={
-            [
-              status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
-              coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
-              unmarked && '未签到',
-            ]
-              .filter(Boolean)
-              .join('，') || undefined
-          }
-        />
-        <Button onClick={() => setBooking(true)}>代约</Button>
+        {money && (
+          <ExportButton
+            kind="bookings"
+            range={range}
+            filters={{ status, coachId, unmarked: unmarked ? '1' : undefined }}
+            filterText={
+              [
+                status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
+                coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
+                unmarked && '未签到',
+              ]
+                .filter(Boolean)
+                .join('，') || undefined
+            }
+          />
+        )}
+        {canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
       </div>
       <DataTable
         rowKey="id"
@@ -232,7 +238,15 @@ export function Bookings() {
               const markable = started && (row.status === 'confirmed' || row.status === 'completed')
               return (
                 <div>
-                  {markable ? (
+                  {markable && !canMark ? (
+                    <span className={row.attendance ? undefined : 'muted'}>
+                      {row.attendance === 'attended'
+                        ? '到课'
+                        : row.attendance === 'no_show'
+                          ? '缺席'
+                          : '未签到'}
+                    </span>
+                  ) : markable ? (
                     <Select
                       size="small"
                       style={{ width: 96 }}
@@ -257,27 +271,31 @@ export function Bookings() {
               )
             },
           },
-          {
-            colKey: 'op',
-            title: '操作',
-            cell: ({ row }) => {
-              const upcoming = Date.parse(row.startsAt) > Date.now()
-              return (
-                <Space size={0}>
-                  {row.status === 'confirmed' && upcoming && (
-                    <Button variant="text" theme="primary" onClick={() => setMoving(row)}>
-                      改约
-                    </Button>
-                  )}
-                  {(row.status === 'confirmed' || row.status === 'pending_payment') && (
-                    <Button variant="text" theme="danger" onClick={() => setCancelling(row)}>
-                      取消
-                    </Button>
-                  )}
-                </Space>
-              )
-            },
-          },
+          ...(canBook
+            ? [
+                {
+                  colKey: 'op',
+                  title: '操作',
+                  cell: ({ row }: { row: AdminBooking }) => {
+                    const upcoming = Date.parse(row.startsAt) > Date.now()
+                    return (
+                      <Space size={0}>
+                        {row.status === 'confirmed' && upcoming && (
+                          <Button variant="text" theme="primary" onClick={() => setMoving(row)}>
+                            改约
+                          </Button>
+                        )}
+                        {(row.status === 'confirmed' || row.status === 'pending_payment') && (
+                          <Button variant="text" theme="danger" onClick={() => setCancelling(row)}>
+                            取消
+                          </Button>
+                        )}
+                      </Space>
+                    )
+                  },
+                },
+              ]
+            : []),
         ]}
       />
       {moving && (

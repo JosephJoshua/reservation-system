@@ -1,4 +1,4 @@
-import { venueInstant } from '@rs/shared'
+import { type StaffRole, venueInstant } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {
@@ -19,8 +19,19 @@ import { type Harness, setup } from './test/harness'
 
 const PASSWORD = 'front-desk-1'
 
-async function addStaff(h: Harness, admin: string, username = 'xiaoli', name = '小李') {
-  const res = await h.call('POST', '/admin/staff', { name, username, password: PASSWORD }, admin)
+async function addStaff(
+  h: Harness,
+  admin: string,
+  username = 'xiaoli',
+  name = '小李',
+  roles: StaffRole[] = ['admin'],
+) {
+  const res = await h.call(
+    'POST',
+    '/admin/staff',
+    { name, username, password: PASSWORD, roles },
+    admin,
+  )
   expect(res.status).toBe(201)
   return res.json as { id: number; username: string }
 }
@@ -85,21 +96,21 @@ describe('staff logins', () => {
     const taken = await h.call(
       'POST',
       '/admin/staff',
-      { name: '另一个', username: 'XIAOLI', password: PASSWORD },
+      { name: '另一个', username: 'XIAOLI', password: PASSWORD, roles: ['admin'] },
       admin,
     )
     expect(taken.json.error.code).toBe('username_taken')
     const bad = await h.call(
       'POST',
       '/admin/staff',
-      { name: '某', username: '小李', password: PASSWORD },
+      { name: '某', username: '小李', password: PASSWORD, roles: ['admin'] },
       admin,
     )
     expect(bad.status).toBe(400)
     const short = await h.call(
       'POST',
       '/admin/staff',
-      { name: '某', username: 'mou', password: '1234567' },
+      { name: '某', username: 'mou', password: '1234567', roles: ['admin'] },
       admin,
     )
     expect(short.json.error.message).toBe('密码需为 8 到 100 位')
@@ -174,14 +185,14 @@ describe('staff logins', () => {
     expect((await h.call('GET', '/admin/me', undefined, admin)).status).toBe(200)
   })
 
-  it('always keeps one active login', async () => {
+  it('always keeps one active 管理员', async () => {
     const h = setup()
     const admin = await h.admin()
     const li = await addStaff(h, admin)
     await h.call('PATCH', `/admin/staff/${li.id}`, { active: false }, admin)
     // As if 小李 had deactivated the admin at the same moment.
     expect(() => updateStaff(h.deps, li.id, 1, { active: false })).toThrow(
-      '至少要保留一个启用的账号',
+      '至少要保留一个启用的管理员',
     )
     expect((await h.call('GET', '/admin/me', undefined, admin)).status).toBe(200)
   })

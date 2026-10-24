@@ -1,8 +1,10 @@
+import { canOpenPage, type StaffDto } from '@rs/shared'
 import { useEffect, useState } from 'react'
-import { Button, ConfigProvider, Drawer, Layout, Menu } from 'tdesign-react'
+import { Button, ConfigProvider, Drawer, Layout, Loading, Menu } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
 import { useApi, useIsPhone } from './hooks'
+import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
 import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
@@ -17,7 +19,7 @@ import { Refunds } from './pages/Refunds'
 import { Reports } from './pages/Reports'
 import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
-import { STAFF_CHANGED, Staff } from './pages/Staff'
+import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
 
 const pages = {
@@ -64,7 +66,6 @@ export function App() {
   // Set when the API turned the session away, so the login page can say why it is back.
   const [expired, setExpired] = useState(false)
   const phone = useIsPhone()
-  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     handleUnauthorized(() => {
@@ -82,25 +83,6 @@ export function App() {
     setAuthed(false)
   }
 
-  const Page = pages[page][1]
-
-  const menu = (
-    <Menu
-      value={page}
-      width="100%"
-      onChange={(v) => {
-        window.location.hash = `/${String(v)}`
-      }}
-    >
-      {Object.entries(pages).map(([key, [label]]) => (
-        // Closes the phone menu on every tap, the current page included.
-        <Menu.MenuItem key={key} value={key} onClick={() => setMenuOpen(false)}>
-          {label}
-        </Menu.MenuItem>
-      ))}
-    </Menu>
-  )
-
   return (
     <ConfigProvider globalConfig={zhCN}>
       {!authed ? (
@@ -112,72 +94,114 @@ export function App() {
           }}
         />
       ) : (
-        <Layout className="admin-layout">
-          {phone ? (
-            <Drawer
-              visible={menuOpen}
-              placement="left"
-              size="240px"
-              header="球馆管理"
-              footer={false}
-              className="admin-menu-drawer"
-              onClose={() => setMenuOpen(false)}
-            >
-              {menu}
-            </Drawer>
-          ) : (
-            <Layout.Aside width="200px" className="admin-aside">
-              <div className="admin-brand">球馆管理</div>
-              {menu}
-            </Layout.Aside>
-          )}
-          <Layout className="admin-main">
-            <Layout.Header className="admin-header">
-              <span className="admin-title">
-                {phone && (
-                  <Button
-                    variant="text"
-                    shape="square"
-                    aria-label="菜单"
-                    className="admin-menu-button"
-                    onClick={() => setMenuOpen(true)}
-                  >
-                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-                      <path
-                        d="M4 6h16M4 12h16M4 18h16"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </Button>
-                )}
-                {pages[page][0]}
-              </span>
-              <span className="header-actions">
-                <SignedIn />
-                <Button variant="text" onClick={logout}>
-                  退出登录
-                </Button>
-              </span>
-            </Layout.Header>
-            <Layout.Content className="admin-content">
-              <Page />
-            </Layout.Content>
-          </Layout>
-        </Layout>
+        <SignedInApp page={page} phone={phone} onLogout={logout} />
       )}
     </ConfigProvider>
   )
 }
 
-/** The signed-in staff member's name, so a shared front-desk computer shows whose session it is. */
-function SignedIn() {
-  const { data, reload } = useApi<{ name: string }>('/admin/me')
+function SignedInApp({
+  page: requested,
+  phone,
+  onLogout,
+}: {
+  page: PageKey
+  phone: boolean
+  onLogout: () => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const me = useApi<StaffDto>('/admin/me')
+  const { reload } = me
   useEffect(() => {
     const onChange = () => void reload()
     window.addEventListener(STAFF_CHANGED, onChange)
-    return () => window.removeEventListener(STAFF_CHANGED, onChange)
+    // Also on each page change, so a role another 管理员 changed applies without logging out.
+    window.addEventListener('hashchange', onChange)
+    return () => {
+      window.removeEventListener(STAFF_CHANGED, onChange)
+      window.removeEventListener('hashchange', onChange)
+    }
   }, [reload])
-  return data ? <span className="muted signed-in">{data.name}</span> : null
+
+  const roles = me.data?.roles ?? []
+  const allowed = (Object.keys(pages) as PageKey[]).filter((key) => canOpenPage(roles, key))
+  // A page the roles do not cover, such as from an old link, opens the first one they do.
+  const page = allowed.includes(requested) ? requested : allowed[0]
+  const Page = page ? pages[page][1] : null
+
+  const menu = (
+    <Menu
+      value={page}
+      width="100%"
+      onChange={(v) => {
+        window.location.hash = `/${String(v)}`
+      }}
+    >
+      {allowed.map((key) => (
+        // Closes the phone menu on every tap, the current page included.
+        <Menu.MenuItem key={key} value={key} onClick={() => setMenuOpen(false)}>
+          {pages[key][0]}
+        </Menu.MenuItem>
+      ))}
+    </Menu>
+  )
+
+  return (
+    <MeContext.Provider value={me.data}>
+      <Layout className="admin-layout">
+        {phone ? (
+          <Drawer
+            visible={menuOpen}
+            placement="left"
+            size="240px"
+            header="球馆管理"
+            footer={false}
+            className="admin-menu-drawer"
+            onClose={() => setMenuOpen(false)}
+          >
+            {menu}
+          </Drawer>
+        ) : (
+          <Layout.Aside width="200px" className="admin-aside">
+            <div className="admin-brand">球馆管理</div>
+            {menu}
+          </Layout.Aside>
+        )}
+        <Layout className="admin-main">
+          <Layout.Header className="admin-header">
+            <span className="admin-title">
+              {phone && (
+                <Button
+                  variant="text"
+                  shape="square"
+                  aria-label="菜单"
+                  className="admin-menu-button"
+                  onClick={() => setMenuOpen(true)}
+                >
+                  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                    <path
+                      d="M4 6h16M4 12h16M4 18h16"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </Button>
+              )}
+              {page && pages[page][0]}
+            </span>
+            <span className="header-actions">
+              {me.data && <span className="muted signed-in">{me.data.name}</span>}
+              <Button variant="text" onClick={onLogout}>
+                退出登录
+              </Button>
+            </span>
+          </Layout.Header>
+          <Layout.Content className="admin-content">
+            {Page ? <Page /> : me.error ? <p className="muted">{me.error}</p> : <Loading />}
+          </Layout.Content>
+        </Layout>
+      </Layout>
+    </MeContext.Provider>
+  )
 }
