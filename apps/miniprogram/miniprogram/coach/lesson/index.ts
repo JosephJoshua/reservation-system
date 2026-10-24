@@ -196,7 +196,9 @@ Page({
         ? '课时将退回学员的课时包。'
         : lesson.status === 'pending_payment'
           ? '学员还未付款，订单会关闭。'
-          : '已付款项将全额退回。'
+          : lesson.price > 0
+            ? '已付款项将全额退回。'
+            : ''
     const { confirm } = await wx.showModal({
       title: '取消这节课？',
       content: `${refund}请同时电话告知学员。`,

@@ -10,6 +10,11 @@ export const REFUND_STATUS: Record<RefundStatus, string> = {
   rejected: '未通过',
 }
 
+/** A refund's status for the student. Money paid at the front desk is handed back there. */
+export function refundStatus(status: RefundStatus, paidOffline: boolean): string {
+  return paidOffline && REFUND_STATUS[status] === '退款中' ? '待到店退还' : REFUND_STATUS[status]
+}
+
 export const BOOKING_STATUS: Record<BookingStatus, string> = {
   pending_payment: '待支付',
   confirmed: '已预约',

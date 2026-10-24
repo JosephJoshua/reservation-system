@@ -8,7 +8,7 @@ import { api, errorMessage, publicApi, showError } from '../../utils/api'
 import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
-import { REFUND_STATUS } from '../../utils/labels'
+import { refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 import { ask } from '../../utils/tap'
@@ -132,10 +132,12 @@ Page({
         b.paidWith === 'package'
           ? `课时包 · ${b.packageName ?? ''}`
           : b.price > 0
-            ? `微信支付 · ${yuan(b.price)}`
+            ? `${b.paidOffline ? '前台付款' : '微信支付'} · ${yuan(b.price)}`
             : '免费',
       deadline: `${dateTime(b.cancelDeadline)}${Date.parse(b.cancelDeadline) <= Date.now() ? '（已过）' : ''}`,
-      refund: b.refund ? `${yuan(b.refund.amount)} · ${REFUND_STATUS[b.refund.status]}` : '',
+      refund: b.refund
+        ? `${yuan(b.refund.amount)} · ${refundStatus(b.refund.status, b.paidOffline)}`
+        : '',
       invoice: b.invoice
         ? invoiceAction(b.invoice) === 'request'
           ? b.invoice.state === 'rejected'
@@ -220,12 +222,14 @@ Page({
       }
     }
     if (b.price === 0) return { message: '确定取消这节课吗？', late }
-    if (!late) return { message: `取消后 ${yuan(outcome.refund)} 将原路退回。`, late }
+    // Paid at the front desk, so the money is handed back there.
+    const back = b.paidOffline ? '到店退还' : '将原路退回'
+    if (!late) return { message: `取消后 ${yuan(outcome.refund)} ${back}。`, late }
     return {
       late,
       message:
         outcome.refund > 0
-          ? `已过免费取消时间，取消后退还 ${yuan(outcome.refund)}。`
+          ? `已过免费取消时间，取消后 ${yuan(outcome.refund)} ${back}。`
           : '已过免费取消时间，取消后不退款。',
     }
   },
