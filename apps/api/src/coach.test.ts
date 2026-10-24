@@ -831,10 +831,14 @@ describe('monthly report', () => {
             lines: [
               { lessonTypeId: lesson.id, name: '一对一私教', lessons: 2, rate: null, amount: 0 },
             ],
+            adjustments: [],
           },
         },
       ],
-      payRules: { noShows: true, lateCancels: false },
+      payStatus: expect.objectContaining({
+        rules: { noShows: true, lateCancels: false },
+        confirmed: null,
+      }),
       revenue: {
         wechat: 60000,
         offline: 150000,

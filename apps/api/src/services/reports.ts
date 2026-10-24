@@ -1,35 +1,9 @@
-import { type VenueSettings, venueInstant } from '@rs/shared'
 import { and, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
-import { bookings, coaches, lessonTypes, orders, packages, refunds, slots } from '../db/schema'
+import { bookings, coaches, orders, packages, refunds, slots } from '../db/schema'
 import type { Deps } from '../deps'
-import { ApiError } from '../errors'
-import { countsForPay, onePerSession, payRateLookup } from './coach-pay'
-import { getSettings } from './settings'
+import { onePerSession } from './coach-pay'
+import { type CoachPay, monthPay, monthRange, type PayMonthStatus } from './pay-months'
 import { grantedLessons } from './views'
-
-/** Venue month YYYY-MM to its start and the next month's start. */
-function monthRange(month: string) {
-  const [y, m] = month.split('-').map(Number)
-  if (!y || !m || m < 1 || m > 12) throw new ApiError(400, 'invalid_query', '月份无效')
-  const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
-  return { from: venueInstant(`${month}-01`, 0), to: venueInstant(`${next}-01`, 0) }
-}
-
-export interface CoachPay {
-  /** In fen, for the lessons that have a rate. */
-  amount: number
-  /** Lessons the coach is paid for. */
-  lessons: number
-  /** Of those, lessons whose lesson type has no rate in the coach's category. */
-  unrated: number
-  lines: {
-    lessonTypeId: number
-    name: string
-    lessons: number
-    rate: number | null
-    amount: number
-  }[]
-}
 
 export interface MonthlyReport {
   month: string
@@ -49,8 +23,8 @@ export interface MonthlyReport {
     lateCancelled: number
     pay: CoachPay
   }[]
-  /** Which lessons the pay counts, as set when the report was made. */
-  payRules: VenueSettings['pay']
+  /** Which lessons the pay counts, and whether the month's pay is confirmed. */
+  payStatus: PayMonthStatus
   /** Money that moved in the month, in fen. */
   revenue: {
     wechat: number
@@ -96,36 +70,8 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
     .from(coaches)
     .orderBy(coaches.sort, coaches.id)
     .all()
-  const payRules = getSettings(db).pay
-  const rateOf = payRateLookup(db)
-  const typeNames = new Map(
-    db
-      .select({ id: lessonTypes.id, name: lessonTypes.name })
-      .from(lessonTypes)
-      .orderBy(lessonTypes.sort, lessonTypes.id)
-      .all()
-      .map((t) => [t.id, t.name]),
-  )
-  const payOf = (coachId: number, mine: typeof lessonRows): CoachPay => {
-    const byType = new Map<number, number>()
-    for (const l of onePerSession(mine.filter((l) => countsForPay(l, payRules, now)))) {
-      byType.set(l.lessonTypeId, (byType.get(l.lessonTypeId) ?? 0) + 1)
-    }
-    // In the lesson types' own order.
-    const lines = [...typeNames]
-      .filter(([id]) => byType.has(id))
-      .map(([lessonTypeId, name]) => {
-        const lessons = byType.get(lessonTypeId) ?? 0
-        const rate = rateOf(coachId, lessonTypeId)
-        return { lessonTypeId, name, lessons, rate, amount: (rate ?? 0) * lessons }
-      })
-    return {
-      amount: lines.reduce((sum, l) => sum + l.amount, 0),
-      lessons: lines.reduce((sum, l) => sum + l.lessons, 0),
-      unrated: lines.reduce((sum, l) => sum + (l.rate === null ? l.lessons : 0), 0),
-      lines,
-    }
-  }
+  const pay = monthPay(db, month, now)
+  const noPay: CoachPay = { amount: 0, lessons: 0, unrated: 0, lines: [], adjustments: [] }
   const perCoach = coachRows
     .map((coach) => {
       const mine = lessonRows.filter((l) => l.coachId === coach.id)
@@ -150,11 +96,13 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
         lateCancelled: mine.filter(
           (l) => l.status === 'cancelled' && l.cancelledBy === 'student' && l.late,
         ).length,
-        pay: payOf(coach.id, mine),
+        pay: pay.byCoach.get(coach.id) ?? noPay,
       }
     })
-    // Former coaches show up only in months they taught.
-    .filter((c) => c.active || c.taught + c.venueCancelled + c.lateCancelled > 0)
+    // Former coaches show up only in months they taught or were paid.
+    .filter(
+      (c) => c.active || c.taught + c.venueCancelled + c.lateCancelled > 0 || pay.byCoach.has(c.id),
+    )
     .map(({ active: _, ...c }) => c)
 
   const paid = db
@@ -206,7 +154,7 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
   return {
     month,
     coaches: perCoach,
-    payRules,
+    payStatus: pay.status,
     revenue: {
       wechat: sum(paid.filter((p) => p.provider === 'wechat')),
       offline: sum(paid.filter((p) => p.provider === 'offline')),

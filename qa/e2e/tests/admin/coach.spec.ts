@@ -214,6 +214,9 @@ test('shows the monthly report and exports it', async ({ page }) => {
   // The coach has no category yet, so the lesson has no pay rate.
   await expect(monthly).toContainText('教练课时费')
   await expect(row).toContainText('1 节未设课时费')
+  // The lesson's month is still running, so its pay cannot be confirmed yet.
+  await expect(page.getByText('这个月还没结束')).toBeVisible()
+  await expect(page.locator('.t-button.t-is-disabled', { hasText: '确认本月' })).toBeVisible()
   await both(page, 'reports')
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出 CSV' }).click()

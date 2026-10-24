@@ -134,6 +134,13 @@
       "when": 1792856746978,
       "tag": "0018_attendance_by",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792871523269,
+      "tag": "0019_coach_pay_months",
+      "breakpoints": true
     }
   ]
 }

@@ -35,6 +35,8 @@ export const staffActionLabels = {
   'price.product': '课时包价格',
   'price.coach': '教练价格',
   'price.coach_pay': '课时费',
+  'pay.confirm': '确认课时费',
+  'pay.unconfirm': '撤销课时费确认',
   'invoice.issue': '开票',
   'invoice.reject': '拒绝开票',
   'invoice.refund_seen': '开票后退款已处理',
