@@ -5,7 +5,7 @@ import type { VenueSettings } from './settings'
  * so on for a later change the same day. Change it whenever either text changes in substance:
  * students who agreed to an older version are asked again.
  */
-export const POLICY_VERSION = '2026-10-24.2'
+export const POLICY_VERSION = '2026-10-24.3'
 
 /** The date the texts show. */
 const POLICY_DATE = POLICY_VERSION.slice(0, 10)
@@ -49,6 +49,8 @@ ${op.name}（以下简称“我们”）运营本小程序，为你提供乒乓�
 1. 剪贴板：在你点击场馆地址时写入地址，便于粘贴到地图应用。我们不读取剪贴板。
 2. 地图：打开微信内置地图显示场馆位置。我们不获取你的位置。
 3. 相册和相机：教练写课后点评时，可从相册选择或拍摄照片上传。只上传教练选中的照片，我们不读取相册中的其他内容。
+4. 日历：在你点击“添加到日历”时写入这节课的时间和地点。我们不读取你的日历。
+5. 客服消息：你通过“联系客服”发送的消息经微信转给场馆工作人员，仅用于答复你的问题。
 
 五、保存期限
 账号存续期间保存你的信息。注销账号后，我们删除你的姓名、手机号、微信登录标识、教练备注、课后点评和课堂照片、发票邮箱和个人抬头的发票；订单、支付和退款记录按会计和税务法规要求匿名保存，到期后删除。
