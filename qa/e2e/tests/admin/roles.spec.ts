@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { ADMIN_PASSWORD, call, dialog, login } from './helpers'
+import { ADMIN_PASSWORD, call, dialog, field, login, student } from './helpers'
 
 // Staff roles: what 前台 and 财务 see, and a role change by 管理员 reaching an open session.
 test.describe.configure({ mode: 'serial' })
@@ -9,6 +9,8 @@ const password = 'role-pass-1'
 const desk = { name: `前台${run}`, username: `rdesk${run}` }
 const money = { name: `财务${run}`, username: `rmoney${run}` }
 const ADMIN_URL = 'http://localhost:5173/admin/'
+const productName = `前台价${run}`
+let studentId = 0
 
 const menu = (page: Page) => page.locator('.admin-aside .nav-item')
 
@@ -21,6 +23,42 @@ test('creates a 前台 and a 财务 login', async ({ request }) => {
   ).token
   await call(request, 'POST', '/admin/staff', admin, { ...desk, password, roles: ['front_desk'] })
   await call(request, 'POST', '/admin/staff', admin, { ...money, password, roles: ['finance'] })
+  const lessonTypeId = (
+    await call<{ id: number }>(request, 'POST', '/admin/lesson-types', admin, {
+      name: `前台价课${run}`,
+      durationMinutes: 60,
+      price: 20000,
+    })
+  ).id
+  await call(request, 'POST', '/admin/package-products', admin, {
+    name: productName,
+    lessonTypeId,
+    lessonCount: 10,
+    price: 180000,
+    validityDays: 90,
+  })
+  const token = await student(request, `role-${run}`)
+  studentId = (
+    await call<{ id: number }>(request, 'PUT', '/me', token, {
+      name: `角色学员${run}`,
+      phone: '13900000019',
+    })
+  ).id
+})
+
+test('前台 sells a package at the listed price only', async ({ page }) => {
+  await login(page, desk.username, password)
+  await page.goto(`./#/students?id=${studentId}`)
+  await page.getByRole('button', { name: '前台售卖' }).click()
+  await field(dialog(page), '课时包').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: productName }).click()
+  const amount = field(dialog(page), '实收金额')
+  await expect(amount.locator('input')).toHaveValue('1800.00')
+  await expect(amount.locator('input')).toBeDisabled()
+  await expect(amount).toContainText('按标价收款，改价请联系管理员')
+  await page.screenshot({ path: 'test-results/roles-desk-sale.png' })
+  await dialog(page).getByRole('button', { name: '确认收款' }).click()
+  await expect(page.getByRole('row', { name: new RegExp(productName) })).toBeVisible()
 })
 
 for (const scheme of ['light', 'dark'] as const) {

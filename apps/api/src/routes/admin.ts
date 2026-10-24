@@ -1215,7 +1215,8 @@ export function adminRoutes(deps: Deps) {
         }),
       ]),
     )
-    return c.json(bookForStudent(deps, c.get('staffId'), body), 201)
+    const listedPriceOnly = !can(c.get('roles'), 'manage')
+    return c.json(bookForStudent(deps, c.get('staffId'), { ...body, listedPriceOnly }), 201)
   })
 
   app.put('/bookings/:id/attendance', need('attendance'), async (c) => {
@@ -1687,7 +1688,8 @@ export function adminRoutes(deps: Deps) {
         note: z.string().trim().max(100).default(''),
       }),
     )
-    const packageId = sellPackageOffline(deps, body)
+    const listedPriceOnly = !can(c.get('roles'), 'manage')
+    const packageId = sellPackageOffline(deps, { ...body, listedPriceOnly })
     const pkg = db.select().from(packages).where(eq(packages.id, packageId)).get()
     log(c.get('staffId'), {
       action: 'package.sell',

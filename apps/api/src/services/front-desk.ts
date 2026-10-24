@@ -17,6 +17,7 @@ import { accountDeleted } from './account'
 import { describeBooking, logAction, yuan } from './action-log'
 import { checkBookable, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
+import { listedPriceOnly } from './packages'
 
 export interface FrontDeskBookingInput {
   studentId: number
@@ -27,6 +28,8 @@ export interface FrontDeskBookingInput {
   amount?: number
   method?: OfflineMethod
   note?: string
+  /** Set for staff who may not change prices: an offline payment must be the listed price. */
+  listedPriceOnly?: boolean
 }
 
 /**
@@ -184,6 +187,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
       }
 
       const amount = input.amount ?? price.price
+      if (input.listedPriceOnly && amount !== price.price) throw listedPriceOnly(price.price)
       if (amount > 0 && !input.method) throw new ApiError(400, 'invalid_body', '请选择收款方式')
       const booking = tx
         .insert(bookings)

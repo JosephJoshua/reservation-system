@@ -1,6 +1,6 @@
 import { can, type StaffPermission, type StaffRole } from '@rs/shared'
 import { describe, expect, it } from 'vitest'
-import { actionLog } from './db/schema'
+import { actionLog, packageProducts } from './db/schema'
 import { PERMISSION_CHECK } from './services/auth'
 import { updateStaff } from './services/staff'
 import { type Harness, setup } from './test/harness'
@@ -139,6 +139,74 @@ describe('staff roles', () => {
       (await h.call('GET', '/admin/coaches', undefined, token)).json[0].bindCode
     expect(await seen(admin)).toBe(code)
     expect(await seen(desk)).toBeNull()
+  })
+
+  it('makes 前台 charge the listed price, while 管理员 may change it', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const admin = await h.admin()
+    const desk = (await login(h, admin, 'desk', ['front_desk'])).token
+    await h.student('小明')
+    const student = (await h.call('GET', '/admin/students', undefined, admin)).json[0]
+    const product = (onSale: boolean, salePrice: number | null = null) =>
+      h.db
+        .insert(packageProducts)
+        .values({
+          name: '10 次课',
+          lessonTypeId: lesson.id,
+          lessonCount: 10,
+          price: 180000,
+          validityDays: 90,
+          onSale,
+          salePrice,
+          saleStartsAt: salePrice ? new Date('2026-10-01T00:00:00Z') : null,
+          saleEndsAt: salePrice ? new Date('2026-11-01T00:00:00Z') : null,
+        })
+        .returning()
+        .get()
+    const sell = (token: string, productId: number, amount: number) =>
+      h.call(
+        'POST',
+        '/admin/packages/offline-sale',
+        { studentId: student.id, productId, amount, method: 'cash' },
+        token,
+      )
+
+    const listed = product(true)
+    const free = await sell(desk, listed.id, 0)
+    expect(free.json.error).toMatchObject({
+      code: 'listed_price_only',
+      message: '请按标价 ¥1800 收款，改价请联系管理员',
+    })
+    expect((await sell(desk, listed.id, 180000)).status).toBe(201)
+    expect((await sell(admin, listed.id, 150000)).status).toBe(201)
+    // A running sale is the listed price.
+    const onSale = product(true, 160000)
+    expect((await sell(desk, onSale.id, 180000)).json.error.code).toBe('listed_price_only')
+    expect((await sell(desk, onSale.id, 160000)).status).toBe(201)
+    const off = product(false)
+    expect((await sell(desk, off.id, 180000)).json.error.code).toBe('product_off_sale')
+    expect((await sell(admin, off.id, 180000)).status).toBe(201)
+
+    const book = (token: string, slotId: number, amount?: number) =>
+      h.call(
+        'POST',
+        '/admin/bookings',
+        {
+          studentId: student.id,
+          slotId,
+          lessonTypeId: lesson.id,
+          payWith: 'offline',
+          amount,
+          method: 'cash',
+        },
+        token,
+      )
+    const ten = h.slot(coach.id, '2026-10-25', 10)
+    const noon = h.slot(coach.id, '2026-10-25', 12)
+    expect((await book(desk, ten.id, 0)).json.error.code).toBe('listed_price_only')
+    expect((await book(desk, ten.id, 20000)).status).toBe(201)
+    expect((await book(admin, noon.id, 0)).status).toBe(201)
   })
 
   it('applies a role change at once and logs it', async () => {

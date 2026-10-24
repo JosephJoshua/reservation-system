@@ -698,6 +698,8 @@ function OfflineSale({
   onDone: () => void
 }) {
   const onSale = products.filter((p) => p.onSale)
+  // Only 管理员 may charge other than the listed price.
+  const canPrice = useCan('manage')
   const [productId, setProductId] = useState<number | undefined>(onSale[0]?.id)
   const product = products.find((p) => p.id === productId)
   const [amount, setAmount] = useState<number | undefined>(toYuan(product && priceNow(product)))
@@ -757,10 +759,11 @@ function OfflineSale({
             }}
           />
         </Field>
-        <Field label="实收金额">
+        <Field label="实收金额" help={canPrice ? undefined : '按标价收款，改价请联系管理员'}>
           <InputNumber
             theme="normal"
             value={amount}
+            disabled={!canPrice}
             min={0}
             decimalPlaces={2}
             suffix="元"

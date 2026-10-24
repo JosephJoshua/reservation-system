@@ -1,4 +1,4 @@
-import { packagePrice, suggestedPackageRefund, validityEnd } from '@rs/shared'
+import { formatYuan, packagePrice, suggestedPackageRefund, validityEnd } from '@rs/shared'
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -308,6 +308,8 @@ export function sellPackageOffline(
     amount: number
     method: 'cash' | 'alipay' | 'wechat' | 'transfer'
     note: string
+    /** Set for staff who may not change prices: the product must be on sale, at its price. */
+    listedPriceOnly?: boolean
   },
 ) {
   const now = deps.now()
@@ -325,6 +327,19 @@ export function sellPackageOffline(
       .where(eq(packageProducts.id, input.productId))
       .get()
     if (!product) throw notFound('课时包')
+    if (input.listedPriceOnly) {
+      if (!product.onSale) throw new ApiError(409, 'product_off_sale', '该课时包已下架')
+      const listed = packagePrice(
+        {
+          price: product.price,
+          salePrice: product.salePrice,
+          startsAt: product.saleStartsAt,
+          endsAt: product.saleEndsAt,
+        },
+        now,
+      ).price
+      if (input.amount !== listed) throw listedPriceOnly(listed)
+    }
     const order = tx
       .insert(orders)
       .values({
@@ -344,4 +359,13 @@ export function sellPackageOffline(
       .get()
     return createPackageFromOrder(tx, order.id, now, 'admin')
   })
+}
+
+/** Refused when staff without price rights enter an amount other than the listed price. */
+export function listedPriceOnly(listed: number) {
+  return new ApiError(
+    409,
+    'listed_price_only',
+    `请按标价 ¥${formatYuan(listed)} 收款，改价请联系管理员`,
+  )
 }
