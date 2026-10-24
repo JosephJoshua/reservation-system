@@ -134,11 +134,12 @@ export function Bookings() {
         <ExportButton
           kind="bookings"
           range={range}
-          filters={{ status, coachId }}
+          filters={{ status, coachId, unmarked: unmarked ? '1' : undefined }}
           filterText={
             [
               status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
               coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
+              unmarked && '未签到',
             ]
               .filter(Boolean)
               .join('，') || undefined

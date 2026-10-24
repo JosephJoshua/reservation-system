@@ -1,4 +1,5 @@
 import { UNMARKED_DAYS } from '@rs/shared'
+import { useEffect, useState } from 'react'
 import { Card, Select, Space, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
@@ -99,6 +100,12 @@ function Students({
 export function Overview() {
   const { data, error, loading, reload } = useApi<Summary>('/admin/summary')
   const phone = useIsPhone()
+  // Ticks so a lesson that starts while the page is open can be marked.
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
   if (error && !data) return <p className="muted">{error}</p>
 
   const todo: [string, number | undefined, string][] = [
@@ -115,7 +122,6 @@ export function Overview() {
   ]
   const sessions = data?.sessions ?? []
   const people = sessions.reduce((n, s) => n + s.students.length, 0)
-  const now = Date.now()
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>

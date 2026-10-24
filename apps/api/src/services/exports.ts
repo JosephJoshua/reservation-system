@@ -6,7 +6,7 @@ import {
   venueInstant,
   venueParts,
 } from '@rs/shared'
-import { and, asc, eq, gt, gte, inArray, like, lt, lte, or, type SQL } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, like, lt, lte, or, type SQL } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import {
   bookings,
@@ -46,6 +46,8 @@ export interface ExportQuery {
   q?: string
   /** Invoices only: those with a refund after them that staff have not marked handled. */
   flagged?: boolean
+  /** Bookings only: those with no attendance marked. */
+  unmarked?: boolean
 }
 
 type Cell = string | number | null
@@ -243,6 +245,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
         gte(bookings.startsAt, from),
         lt(bookings.startsAt, to),
         q.coachId ? eq(slots.coachId, q.coachId) : undefined,
+        q.unmarked ? isNull(bookings.attendance) : undefined,
         status,
       ),
     )
@@ -619,5 +622,6 @@ export function describeExport(tx: Q, kind: ExportKind, q: ExportQuery) {
   }
   if (q.q) parts.push('按搜索词筛选')
   if (q.flagged) parts.push('开票后有退款')
+  if (q.unmarked) parts.push('未签到')
   return `导出${exportKinds[kind]}（${parts.join('，')}）`
 }

@@ -1,4 +1,5 @@
 import {
+  addVenueDays,
   bucketOf,
   DORMANT_DAYS,
   type DormantStudent,
@@ -35,9 +36,6 @@ const DAY = 24 * 60 * 60 * 1000
 /** How long after a package runs out a new one still counts as a renewal. */
 export const RENEW_DAYS = 30
 
-function addDays(dateKey: string, days: number) {
-  return venueDateKey(new Date(venueInstant(dateKey, 12 * 60).getTime() + days * DAY))
-}
 /** Adds to one step of a per-step series. */
 function add(series: number[], i: number, value: number) {
   if (i >= 0) series[i] = (series[i] ?? 0) + value
@@ -174,7 +172,7 @@ export function dashboard(deps: Deps) {
         eq(bookings.status, 'confirmed'),
         isNull(bookings.attendance),
         lte(bookings.endsAt, now),
-        gte(bookings.startsAt, venueInstant(addDays(today, -UNMARKED_DAYS), 0)),
+        gte(bookings.startsAt, venueInstant(addVenueDays(today, -UNMARKED_DAYS), 0)),
       ),
     )
     .all().length
@@ -223,6 +221,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
   } catch {
     throw new ApiError(400, 'invalid_query', '日期无效')
   }
+  if (from > today) throw new ApiError(400, 'invalid_query', '开始日期不能晚于今天')
   if (from > to) throw new ApiError(400, 'invalid_query', '开始日期需早于结束日期')
   if (daysBetween(from, to) > STATS_MAX_DAYS) {
     throw new ApiError(400, 'invalid_query', `最多统计 ${STATS_MAX_DAYS} 天`)
@@ -361,10 +360,12 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
   }
   const studentsNew = zeros()
   const studentsReturning = zeros()
-  buckets.forEach((b, i) => {
+  const seen = buckets.map(() => new Set<number>())
+  for (const l of taken) seen[at(l.startsAt)]?.add(l.studentId)
+  seen.forEach((ids, i) => {
+    const b = buckets[i] as (typeof buckets)[number]
     const bFrom = venueInstant(b.from, 0)
     const bTo = venueInstant(b.to, 0)
-    const ids = new Set(taken.filter((l) => at(l.startsAt) === i).map((l) => l.studentId))
     for (const id of ids) {
       if (isNew(id, bFrom, bTo)) add(studentsNew, i, 1)
       else add(studentsReturning, i, 1)

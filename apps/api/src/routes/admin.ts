@@ -1954,6 +1954,13 @@ export function adminRoutes(deps: Deps) {
                 .optional()
                 .transform((v) => v === '1')
             : z.undefined().optional(),
+        unmarked:
+          k === 'bookings'
+            ? z
+                .enum(['1'])
+                .optional()
+                .transform((v) => v === '1')
+            : z.undefined().optional(),
       }),
     )
     const { csv, rows } = buildExport(db, k, q, deps.now())

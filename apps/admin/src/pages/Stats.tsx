@@ -168,9 +168,10 @@ export function Stats() {
   )
   const before = useApi<StatsReport>(`/admin/reports/stats?from=${prev[0]}&to=${prev[1]}`).data
   // While a new range loads, the old figures stay up, dimmed; after a failed load they go.
-  const current = data?.from === range[0] && data.to === range[1]
+  // The API cuts the range at its own today, which can be a day behind this browser's clock.
+  const current = data?.from === range[0] && data.to <= range[1]
   const r = current || loading ? data : null
-  const b = current && before?.from === prev[0] && before.to === prev[1] ? before : null
+  const b = current && before?.from === prev[0] ? before : null
 
   const pick = (key: string) => {
     const p = presets.find((x) => x.key === key)

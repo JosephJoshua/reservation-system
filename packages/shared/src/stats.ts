@@ -1,4 +1,4 @@
-import { venueInstant, venueParts } from './time'
+import { addVenueDays, venueInstant, venueParts } from './time'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -19,10 +19,6 @@ export function daysBetween(from: string, to: string) {
   return Math.round((venueInstant(to, 0).getTime() - venueInstant(from, 0).getTime()) / DAY) + 1
 }
 
-function shift(dateKey: string, days: number) {
-  return new Date(venueInstant(dateKey, 12 * 60).getTime() + days * DAY).toISOString().slice(0, 10)
-}
-
 /** Days for up to a month, weeks for up to half a year, months beyond. */
 export function statsGrain(from: string, to: string): StatsGrain {
   const days = daysBetween(from, to)
@@ -37,16 +33,16 @@ export function statsGrain(from: string, to: string): StatsGrain {
  */
 export function statsBuckets(from: string, to: string): StatsBucket[] {
   const grain = statsGrain(from, to)
-  const end = shift(to, 1)
+  const end = addVenueDays(to, 1)
   const years = from.slice(0, 4) !== to.slice(0, 4)
   const buckets: StatsBucket[] = []
   let start = from
   while (start < end) {
     let next: string
-    if (grain === 'day') next = shift(start, 1)
+    if (grain === 'day') next = addVenueDays(start, 1)
     else if (grain === 'week') {
       const weekday = venueParts(venueInstant(start, 12 * 60)).weekday
-      next = shift(start, weekday === 0 ? 1 : 8 - weekday)
+      next = addVenueDays(start, weekday === 0 ? 1 : 8 - weekday)
     } else {
       const [y, m] = start.split('-').map(Number) as [number, number]
       next = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`

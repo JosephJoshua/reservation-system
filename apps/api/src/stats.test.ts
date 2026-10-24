@@ -352,7 +352,8 @@ describe('GET /admin/reports/stats', () => {
     expect((await get('from=2026-10-10&to=2026-10-01')).status).toBe(400)
     expect((await get('from=2026-02-30&to=2026-03-01')).status).toBe(400)
     expect((await get('from=2024-01-01&to=2026-10-01')).status).toBe(400)
-    expect((await get('from=2026-11-01&to=2026-11-30')).status).toBe(400)
+    const future = await get('from=2026-11-01&to=2026-11-30')
+    expect(future.json.error.message).toBe('开始日期不能晚于今天')
     expect((await get('from=2026-10-01')).status).toBe(400)
     expect((await h.call('GET', '/admin/reports/stats?from=2026-10-01&to=2026-10-02')).status).toBe(
       401,
@@ -467,6 +468,11 @@ describe('GET /admin/summary', () => {
       at('2026-10-18', 9).toISOString(),
       at('2026-10-18', 9).toISOString(),
     ])
+    const file = await h.app.request(
+      '/api/admin/exports/bookings?from=2026-10-17&to=2026-10-24&status=completed&unmarked=1',
+      { headers: { Authorization: `Bearer ${admin}` } },
+    )
+    expect((await file.text()).trimEnd().split('\r\n')).toHaveLength(3)
     expect(s.revenue.month).toBe(150000 + 4 * 20000 + 16000 - 20000)
     // September up to the 24th evening: Bo's 09-20 lesson, paid on 09-19.
     expect(s.revenue.lastMonth).toBe(20000)
