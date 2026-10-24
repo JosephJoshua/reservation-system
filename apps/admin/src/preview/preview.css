@@ -12,9 +12,15 @@
   min-width: 0;
 }
 
+/* TDesign's dialog body scrolls nothing but would still hold the sticky pane, so it lets go. */
+.t-dialog__body:has(> .editor-with-preview) {
+  overflow: visible;
+}
+
 .editor-preview {
   position: sticky;
-  top: 0;
+  /* A page with a sticky header sets this to clear it. */
+  top: var(--preview-sticky-top, 16px);
   width: 395px;
   padding-left: 24px;
   border-left: 1px solid var(--td-component-stroke);
