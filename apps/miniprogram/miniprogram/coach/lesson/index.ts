@@ -3,6 +3,7 @@ import { assetUrl, errorMessage, showError } from '../../utils/api'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
+import { openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
 import { askForNotices, coachApi } from '../utils/coach-api'
 import { confirmDeleteFeedback } from '../utils/feedback'
@@ -211,7 +212,7 @@ Page({
 
   call() {
     const phone = this.data.lesson?.student.phone
-    if (phone) wx.makePhoneCall({ phoneNumber: phone })
+    if (phone) openOnce((complete) => wx.makePhoneCall({ phoneNumber: phone, complete }))
   },
 
   move() {

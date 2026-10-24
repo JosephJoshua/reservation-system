@@ -1,6 +1,7 @@
 /**
  * A quick double tap reaches a handler twice before any busy flag in page data can stop it, so a
- * confirm dialog is guarded here instead. Page links use `navigateOnce` from `nav.ts`.
+ * confirm dialog or system screen is guarded here instead. Page links use `navigateOnce` from
+ * `nav.ts`.
  */
 
 let asking = false
@@ -16,4 +17,18 @@ export async function ask(
   } finally {
     asking = false
   }
+}
+
+let opening = false
+
+/**
+ * Opens a system screen or sheet (map, phone call, photo viewer) unless one is already opening,
+ * so a double tap does not stack two. `open` must pass `complete` to the wx call.
+ */
+export function openOnce(open: (complete: () => void) => void): void {
+  if (opening) return
+  opening = true
+  open(() => {
+    opening = false
+  })
 }
