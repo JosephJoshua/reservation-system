@@ -247,6 +247,10 @@ Page({
         return
       }
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
+        // A coach or lesson turned off: the time picker reloads with the venue's current list.
+        if (e.code === 'not_found' || e.code === 'coach_not_teaching') {
+          await getCatalog(true).catch(() => undefined)
+        }
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
         if (isTop(this)) wx.navigateBack()
         return

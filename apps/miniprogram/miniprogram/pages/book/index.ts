@@ -1,6 +1,6 @@
 import type { CatalogDto, SlotDto } from '../../lib/shared'
 import { api, assetUrl, errorMessage } from '../../utils/api'
-import { getCatalog } from '../../utils/data'
+import { catalogFetchedAt, getCatalog } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 
@@ -59,6 +59,8 @@ Page({
   },
 
   catalog: null as CatalogDto | null,
+  /** When the catalog this page shows was fetched. */
+  catalogAt: 0,
   request: 0,
   /** Set by chooseCoach for the load onShow runs when the coach page goes back here. */
   pendingSeek: undefined as Seek | undefined,
@@ -76,13 +78,17 @@ Page({
     if (this.data.state !== 'ready') return
     const seek = this.pendingSeek
     this.pendingSeek = undefined
-    this.loadSlots(seek)
+    // Another page refreshed the catalog meanwhile, say after a coach or lesson was turned off.
+    if (catalogFetchedAt() !== this.catalogAt) this.load(seek)
+    else this.loadSlots(seek)
   },
 
-  async load() {
+  /** `seek` is for the slots load that follows; the first load is 'quiet'. */
+  async load(seek: Seek | undefined = 'quiet') {
     try {
       const catalog = await getCatalog()
       this.catalog = catalog
+      this.catalogAt = catalogFetchedAt()
       const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
       if (!lessonType) {
         this.setData({ state: 'error', error: '该课程已下架' })
@@ -118,9 +124,10 @@ Page({
         coachId,
         picked: coaches.find((c) => c.id === coachId) ?? null,
         days,
-        date: days[0]?.key ?? '',
+        // A reload keeps the day the student was looking at.
+        date: days.some((d) => d.key === this.data.date) ? this.data.date : (days[0]?.key ?? ''),
       })
-      this.loadSlots('quiet')
+      this.loadSlots(seek)
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }

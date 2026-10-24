@@ -4,7 +4,7 @@ import {
   type CoachSlotDto,
   venueDateKey,
 } from '../../lib/shared'
-import { errorMessage } from '../../utils/api'
+import { ApiError, errorMessage } from '../../utils/api'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { submitMove } from '../../utils/move'
 import { navigateBackOnce } from '../../utils/nav'
@@ -101,7 +101,9 @@ Page({
       })
       this.showDay()
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // Not this coach's lesson any more: reloading would not help.
+      const gone = e instanceof ApiError && e.status === 404
+      this.setData({ state: 'error', fixed: gone, error: errorMessage(e) })
     }
   },
 
