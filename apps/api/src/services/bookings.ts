@@ -116,6 +116,8 @@ export interface CreateBookingInput {
   payWith?: 'package' | 'wechat'
   /** The price the student was shown, in fen; a different price now refuses the booking. */
   expectedPrice?: number
+  /** The package the student was shown; another one now refuses the booking. */
+  expectedPackageId?: number
 }
 
 export interface CancelOptions {
@@ -293,6 +295,10 @@ export async function createBooking(
         : usablePackage(tx, studentId, lessonType.id, slot)
     if (input.payWith === 'package' && !pkg) {
       throw new ApiError(409, 'no_package', '没有可用于该课程的课时包')
+    }
+    // The shown one was used up or expired, and the next one would be used without asking.
+    if (pkg && input.expectedPackageId !== undefined && pkg.id !== input.expectedPackageId) {
+      throw new ApiError(409, 'package_changed', '课时包已变动')
     }
     // Changed by the venue, or a sale ended, since the student saw the price.
     if (!pkg && input.expectedPrice !== undefined && input.expectedPrice !== price.price) {

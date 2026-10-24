@@ -545,6 +545,23 @@ describe('packages', () => {
     expect((await h.call('GET', '/packages', undefined, t)).json[0].lessonsRemaining).toBe(10)
   })
 
+  it('refuses to use another package than the one the student saw', async () => {
+    const h = setup()
+    const { coach, lesson, product, t } = await withPackage(h, 1)
+    const [first] = (await h.call('GET', '/packages', undefined, t)).json
+    const res = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await pay(h, res.json.orderId)
+    expect((await book(h, t, h.slot(coach.id, '2026-10-26').id, lesson.id)).status).toBe(201)
+    const body = { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id, payWith: 'package' }
+    const stale = await h.call('POST', '/bookings', { ...body, expectedPackageId: first.id }, t)
+    expect(stale.json.error.code).toBe('package_changed')
+    const second = (await h.call('GET', '/packages', undefined, t)).json.find(
+      (p: { id: number }) => p.id !== first.id,
+    )
+    const ok = await h.call('POST', '/bookings', { ...body, expectedPackageId: second.id }, t)
+    expect(ok.json).toMatchObject({ status: 'confirmed', orderId: null })
+  })
+
   it('books with a package whatever price the page showed', async () => {
     const h = setup()
     const { coach, lesson, t } = await withPackage(h)

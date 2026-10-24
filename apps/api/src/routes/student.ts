@@ -457,6 +457,8 @@ export function studentRoutes(deps: Deps) {
         payWith: z.enum(['package', 'wechat']).optional(),
         /** The price the student was shown, in fen. */
         expectedPrice: z.number().int().nonnegative().optional(),
+        /** The package the student was shown, when paying with one. */
+        expectedPackageId: z.number().int().positive().optional(),
       }),
     )
     requireConsent(db, c.get('studentId'))

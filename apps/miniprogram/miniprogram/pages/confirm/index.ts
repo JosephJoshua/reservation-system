@@ -223,6 +223,10 @@ Page({
         payWith: this.data.payWith,
         // Refused if the price changed since the page loaded, rather than charging another one.
         ...(this.data.payWith === 'wechat' ? { expectedPrice: this.data.price } : {}),
+        // Likewise if the package shown was used up and another would be used.
+        ...(this.data.payWith === 'package' && this.data.pkg
+          ? { expectedPackageId: this.data.pkg.id }
+          : {}),
       })
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
@@ -246,7 +250,7 @@ Page({
         }
         return
       }
-      if (e instanceof ApiError && e.code === 'no_package') {
+      if (e instanceof ApiError && (e.code === 'no_package' || e.code === 'package_changed')) {
         // Used up at the front desk or expired since the page loaded: quote again without it.
         await this.load()
         if (this.data.state === 'ready') {
