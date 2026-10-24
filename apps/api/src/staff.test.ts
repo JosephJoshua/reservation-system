@@ -265,7 +265,7 @@ describe('action log', () => {
         { amount: 150000 },
         admin,
       )
-      expect(approved.status).toBe(204)
+      expect(approved.json).toEqual({ status: 'pending', failure: null })
     }
     expect(h.db.select().from(refunds).get()?.status).toBe('pending')
     await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)

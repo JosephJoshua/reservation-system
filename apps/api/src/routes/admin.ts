@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   charLength,
   cleanTags,
+  endsSameVenueDay,
   grips,
   groupSettingsError,
   isGroup,
@@ -902,6 +903,9 @@ export function adminRoutes(deps: Deps) {
         if (s.endsAt.getTime() - s.startsAt.getTime() > 8 * 3_600_000) {
           throw new ApiError(400, 'invalid_slot', '单个时段不能超过 8 小时')
         }
+        if (!endsSameVenueDay(s.startsAt, s.endsAt)) {
+          throw new ApiError(400, 'crosses_midnight', '时段不能跨到第二天')
+        }
         // Overlaps with existing slots and with earlier slots in this request (already inserted).
         const overlap = tx
           .select({ id: slots.id })
@@ -1784,19 +1788,31 @@ export function adminRoutes(deps: Deps) {
     }
   }
 
+  const refundOutcome = (id: number) => {
+    const row = db
+      .select({ status: refunds.status, failure: refunds.failure })
+      .from(refunds)
+      .where(eq(refunds.id, id))
+      .get()
+    if (!row) throw notFound('退款')
+    return row
+  }
+
   app.post('/refunds/:id/approve', async (c) => {
     const { amount } = await parseBody(c, z.object({ amount: fen.min(1) }))
     const id = idParam(c)
-    if (!(await approvePackageRefund(deps, id, amount))) return c.body(null, 204)
-    const r = refundContext(id)
-    log(c.get('staffId'), {
-      action: 'refund.approve',
-      summary: `同意${r.what}退款 ${yuan(amount)}`,
-      amount,
-      studentId: r.studentId,
-      target: { kind: 'refund', id },
-    })
-    return c.body(null, 204)
+    if (await approvePackageRefund(deps, id, amount)) {
+      const r = refundContext(id)
+      log(c.get('staffId'), {
+        action: 'refund.approve',
+        summary: `同意${r.what}退款 ${yuan(amount)}`,
+        amount,
+        studentId: r.studentId,
+        target: { kind: 'refund', id },
+      })
+    }
+    // WeChat can refuse at once (merchant balance too low), so the page says how it went.
+    return c.json(refundOutcome(id))
   })
 
   app.post('/refunds/:id/reject', async (c) => {
@@ -1829,16 +1845,17 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/refunds/:id/retry', async (c) => {
     const id = idParam(c)
-    if (!(await retryRefund(deps, id))) return c.body(null, 204)
-    const r = refundContext(id)
-    log(c.get('staffId'), {
-      action: 'refund.retry',
-      summary: `重试${r.what}退款 ${yuan(r.amount)}`,
-      amount: r.amount,
-      studentId: r.studentId,
-      target: { kind: 'refund', id },
-    })
-    return c.body(null, 204)
+    if (await retryRefund(deps, id)) {
+      const r = refundContext(id)
+      log(c.get('staffId'), {
+        action: 'refund.retry',
+        summary: `重试${r.what}退款 ${yuan(r.amount)}`,
+        amount: r.amount,
+        studentId: r.studentId,
+        target: { kind: 'refund', id },
+      })
+    }
+    return c.json(refundOutcome(id))
   })
 
   // Invoices

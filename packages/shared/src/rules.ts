@@ -113,6 +113,11 @@ export function cancelDeadline(
   return new Date(startsAt.getTime() - rules.cancelDeadlineHours * HOUR)
 }
 
+/** Whether a lesson ends on the venue day it starts. Ending at 24:00 counts. */
+export function endsSameVenueDay(startsAt: Date, endsAt: Date): boolean {
+  return venueDateKey(new Date(endsAt.getTime() - 1)) === venueDateKey(startsAt)
+}
+
 /** End of the venue day `days` after `from`, used for package validity. */
 export function validityEnd(from: Date, days: number): Date {
   return venueInstant(venueDateKey(new Date(from.getTime() + days * DAY)), 24 * 60)

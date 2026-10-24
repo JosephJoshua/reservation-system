@@ -756,12 +756,12 @@ function PackageAction({
   onClose: () => void
   onDone: () => void
 }) {
-  const [n, setN] = useState(1)
+  const [n, setN] = useState<number | undefined>(1)
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
   const max = kind === 'grant' ? 50 : 365
-  const valid = Number.isInteger(n) && n >= 1 && n <= max
+  const valid = n !== undefined && Number.isInteger(n) && n >= 1 && n <= max
   const submit = async () => {
     if (!valid) return
     const body = kind === 'grant' ? { lessons: n, note } : { days: n, note }
@@ -798,7 +798,7 @@ function PackageAction({
             suffix={kind === 'grant' ? '节' : '天'}
             status={valid ? 'default' : 'error'}
             tips={valid ? undefined : `请填 1 到 ${max} 的整数`}
-            onChange={(v) => setN(Number(v))}
+            onChange={(v) => setN(v === '' || v === undefined ? undefined : Number(v))}
           />
         </Field>
         <Field label="原因">
