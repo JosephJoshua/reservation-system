@@ -52,6 +52,7 @@ describe('student notices', () => {
       cancelled: 'tpl_student_cancelled',
       reminder: 'tpl_student_reminder',
       moved: 'tpl_student_moved',
+      package: 'tpl_student_package',
     })
 
     const hold = await h.call(

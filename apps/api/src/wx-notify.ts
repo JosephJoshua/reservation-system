@@ -14,6 +14,9 @@ const VALUE_KEYS = [
   'reason',
   'refund',
   'note',
+  'package',
+  'left',
+  'expiry',
 ] as const
 
 /** The values a message can carry; each template field maps to one of them. */
@@ -28,6 +31,7 @@ export interface NoticeTemplate {
 export type NoticeKind =
   | `coach_${'booked' | 'cancelled' | 'moved'}`
   | `student_${StudentNoticeKind}`
+  | 'student_package'
 
 export interface Notifier {
   template(kind: NoticeKind): NoticeTemplate | undefined
@@ -76,10 +80,13 @@ const LIMITS: [prefix: string, chars: number][] = [
 ]
 
 /**
- * Fits a value to its field: one line, cut to the length limit of the field type. WeChat rejects
- * empty values.
+ * Fits a value to its field: one line, cut to the length limit of the field type, or the number
+ * in it for a number field. WeChat rejects empty values.
  */
 export function fieldValue(field: string, value: string) {
+  // Number fields take digits only, such as 3 from 3节. Anything else is sent as it is, for
+  // WeChat to refuse, so a wrong field mapping shows in the log.
+  if (field.startsWith('number')) return value.match(/\d+(\.\d+)?/)?.[0] ?? value
   const limit = LIMITS.find(([prefix]) => field.startsWith(prefix))?.[1]
   const line = value.replace(/\s+/g, ' ').trim()
   const chars = [...line]

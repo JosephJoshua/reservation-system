@@ -37,7 +37,8 @@ function view(p: PackageDto): PackageView {
       100,
       Math.round((p.lessonsRemaining / Math.max(1, p.lessonsPurchased + p.lessonsGranted)) * 100),
     ),
-    expires: `${fullDate(p.expiresAt)}${p.status === 'expired' ? '已过期' : '到期'}`,
+    // Valid through the day before the instant it expires, as admin shows it.
+    expires: `${fullDate(new Date(new Date(p.expiresAt).getTime() - 1))}${p.status === 'expired' ? '已过期' : '到期'}`,
     status: PACKAGE_STATUS[p.status],
     tone:
       p.status === 'active' ? 'primary' : p.status === 'refund_requested' ? 'warning' : 'default',

@@ -361,6 +361,34 @@ export const packages = sqliteTable(
   (t) => [index('packages_student').on(t.studentId)],
 )
 
+/**
+ * Messages to students about a package running out: 7 days before it expires with lessons left,
+ * and once its last lesson is booked. Sent by the sweeper, like student_notices.
+ */
+export const packageNotices = sqliteTable(
+  'package_notices',
+  {
+    id: id(),
+    packageId: integer('package_id')
+      .notNull()
+      .references(() => packages.id),
+    kind: text('kind', { enum: ['expiring', 'used_up'] }).notNull(),
+    // The expiry it tells; an extended package is reminded of its new date.
+    expiresAt: instant('expires_at').notNull(),
+    createdAt: createdAt(),
+    retryAt: instant('retry_at'),
+    doneAt: instant('done_at'),
+    result: text('result', { enum: ['sent', 'refused', 'skipped'] }),
+  },
+  (t) => [
+    uniqueIndex('package_notices_expiring')
+      .on(t.packageId, t.expiresAt)
+      .where(sql`kind = 'expiring'`),
+    uniqueIndex('package_notices_used_up').on(t.packageId).where(sql`kind = 'used_up'`),
+    index('package_notices_pending').on(t.doneAt),
+  ],
+)
+
 export const packageLedger = sqliteTable('package_ledger', {
   id: id(),
   packageId: integer('package_id')

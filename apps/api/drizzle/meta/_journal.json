@@ -78,6 +78,13 @@
       "when": 1792832558252,
       "tag": "0010_coach_pay_rates",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792834073816,
+      "tag": "0011_package_notices",
+      "breakpoints": true
     }
   ]
 }
