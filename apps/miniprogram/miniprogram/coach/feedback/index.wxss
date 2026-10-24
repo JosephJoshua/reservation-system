@@ -51,6 +51,19 @@
   box-sizing: border-box;
 }
 
+.photo-edit {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 8rpx;
+  box-sizing: border-box;
+}
+
 .photo-remove-dot {
   display: flex;
   align-items: center;
@@ -60,6 +73,8 @@
   border-radius: 50%;
   color: #fff;
   background-color: rgba(0, 0, 0, 0.55);
+  /* Keeps the dot visible on a dark photo. */
+  box-shadow: 0 0 0 2rpx rgba(255, 255, 255, 0.6);
 }
 
 .photo-add {

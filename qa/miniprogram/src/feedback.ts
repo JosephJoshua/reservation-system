@@ -190,6 +190,34 @@ async function pickPhotos(count: number) {
   )
 }
 
+/**
+ * Makes wx.editImage return `result` ('cancel' closes it unsaved, 'bad' saves a file that is not
+ * an image), and wx.compressImage hand the file back unchanged.
+ */
+async function mockEditor(result: 'ok' | 'cancel' | 'bad') {
+  await miniProgram.evaluate(() => {
+    const fs = wx.getFileSystemManager()
+    fs.writeFileSync(`${wx.env.USER_DATA_PATH}/qa-bad.png`, 'not an image', 'utf8')
+  })
+  // The automator hands the mock the options without their callbacks and settles the call from
+  // what it returns. No named inner functions: the build wraps them in __name, which DevTools lacks.
+  await miniProgram.mockWxMethod(
+    'editImage',
+    function (this: unknown, _options: Record<string, unknown>, how: string) {
+      if (how === 'cancel') return { errMsg: 'editImage:fail cancel' }
+      const name = how === 'bad' ? 'qa-bad.png' : 'qa-photo.png'
+      return { tempFilePath: `${wx.env.USER_DATA_PATH}/${name}`, errMsg: 'editImage:ok' }
+    },
+    result,
+  )
+  await miniProgram.mockWxMethod(
+    'compressImage',
+    function (this: unknown, options: Record<string, unknown>) {
+      return { tempFilePath: options.src, errMsg: 'compressImage:ok' }
+    },
+  )
+}
+
 // Page data is read whole: data('x') reads a null as undefined.
 interface Lesson {
   feedbackBlocked: string | null
@@ -299,6 +327,47 @@ try {
     await screenshot('editor-ready')
   })
 
+  await step(
+    'editing a photo replaces it; a cancel or a failed upload keeps the old one',
+    async () => {
+      const page = await waitForPage('coach/feedback/index', (d) => uploaded(d, 2))
+      check((await page.data('canEdit')) === true, 'DevTools should offer wx.editImage')
+      const urls = async () => ((await page.data('photos')) as Photo[]).map((p) => p.url)
+      const before = await urls()
+
+      await mockEditor('cancel')
+      await invoke('editPhoto', { currentTarget: { dataset: { index: 0 } } })
+      await sleep(500)
+      check((await urls()).join() === before.join(), 'a cancelled edit should change nothing')
+
+      await mockEditor('bad')
+      await invoke('editPhoto', { currentTarget: { dataset: { index: 0 } } })
+      // The refusal shows as a toast, then the old photo is back.
+      await sleep(1500)
+      await waitForPage('coach/feedback/index', (d) => uploaded(d, 2))
+      check((await urls()).join() === before.join(), 'a refused upload should put the old one back')
+
+      await mockEditor('ok')
+      // A double tap opens the editor once.
+      await miniProgram.evaluate(() => {
+        const pages = getCurrentPages()
+        const page = pages[pages.length - 1] as unknown as Record<string, (e: unknown) => unknown>
+        const tap = { currentTarget: { dataset: { index: 1 } } }
+        page.editPhoto?.(tap)
+        page.editPhoto?.(tap)
+      })
+      await waitForPage(
+        'coach/feedback/index',
+        (d) => uploaded(d, 2) && (d.photos as Photo[])[1]?.url !== before[1],
+      )
+      const after = await urls()
+      check(after[0] === before[0], 'the other photo should stay')
+      check(after[1] !== before[1] && after[1] !== '', 'the edited photo should be a new upload')
+      check((await page.data('canSave')) === true, 'should still be ready to publish')
+      await screenshot('editor-edited')
+    },
+  )
+
   await step('a double tap on 发布 saves once and goes back', async () => {
     await invokeTwice('save')
     const page = await waitForPage(
@@ -367,7 +436,7 @@ try {
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)
   console.log('all feedback flows passed')
 } finally {
-  for (const method of ['showModal', 'chooseMedia']) {
+  for (const method of ['showModal', 'chooseMedia', 'editImage', 'compressImage']) {
     await miniProgram.restoreWxMethod(method).catch(() => {})
   }
   for (const key of ['devLogin', 'token', 'coachToken']) {

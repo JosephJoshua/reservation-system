@@ -27,7 +27,15 @@ export async function typeNumber(input: Locator, value: string) {
 }
 
 export function dialog(page: Page) {
-  return page.locator('.t-dialog:visible')
+  return page.locator('.t-dialog:not(.crop-dialog):visible')
+}
+
+/** Accepts the crop dialog that opens after picking an image, and waits for the upload. */
+export async function useCrop(page: Page) {
+  const crop = page.locator('.crop-dialog:visible')
+  await expect(crop.getByRole('button', { name: '使用图片' })).toBeEnabled()
+  await crop.getByRole('button', { name: '使用图片' }).click()
+  await expect(crop).toHaveCount(0)
 }
 
 /** Signs in a student through the development login, agrees to the policies, returns the token. */

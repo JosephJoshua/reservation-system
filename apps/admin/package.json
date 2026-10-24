@@ -18,6 +18,7 @@
     "@tiptap/starter-kit": "3.31.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
+    "react-easy-crop": "6.2.4",
     "tdesign-icons-react": "0.6.11",
     "tdesign-react": "1.18.5",
     "uqr": "0.1.3"

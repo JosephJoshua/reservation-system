@@ -405,11 +405,17 @@ body {
 }
 
 .banner-thumb {
+  /* The mini program's banner is 686 by 300. */
   width: 160px;
-  height: 64px;
+  height: 70px;
   object-fit: cover;
   border-radius: 4px;
   background: var(--td-bg-color-component);
+}
+
+.banner-thumb.large {
+  width: 343px;
+  height: 150px;
 }
 
 .form-narrow {
@@ -1470,4 +1476,53 @@ a:hover {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.crop-stage {
+  position: relative;
+  /* Leaves room for the tools and buttons on a short laptop screen. */
+  height: clamp(200px, calc(100vh - 400px), 360px);
+  border-radius: var(--td-radius-default);
+  overflow: hidden;
+  /* Dark in both themes, like a photo viewer, so the cut-out stands out. */
+  background: #1f1f1f;
+}
+
+.crop-message {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.crop-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.crop-zoom {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.crop-ratios {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.crop-note {
+  margin-top: 12px;
+  font-size: 12px;
+}
+
+.crop-note.warning {
+  color: var(--td-warning-color);
 }
