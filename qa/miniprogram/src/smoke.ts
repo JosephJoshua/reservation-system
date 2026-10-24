@@ -3,6 +3,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { resetTheme, setTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
 const outDir = fileURLToPath(new URL('../screenshots', import.meta.url))
@@ -13,8 +14,6 @@ const tabs = [
   { path: '/pages/lessons/index', name: 'lessons' },
   { path: '/pages/profile/index', name: 'profile' },
 ]
-// Same key as THEME_STORAGE_KEY in apps/miniprogram/miniprogram/utils/theme.ts.
-const THEME_STORAGE_KEY = 'rs:theme'
 
 const miniProgram = await automator.launch({
   projectPath,
@@ -28,10 +27,9 @@ miniProgram.on('console', (msg: { type: string; args: unknown[] }) => {
 })
 
 try {
-  for (const theme of ['system', 'light', 'dark']) {
+  for (const theme of ['system', 'light', 'dark'] as const) {
     mkdirSync(`${outDir}/${theme}`, { recursive: true })
-    if (theme === 'system') await miniProgram.callWxMethod('removeStorageSync', THEME_STORAGE_KEY)
-    else await miniProgram.callWxMethod('setStorageSync', THEME_STORAGE_KEY, theme)
+    await setTheme(miniProgram, theme === 'system' ? null : theme)
     await miniProgram.reLaunch('/pages/booking/index')
     for (const tab of tabs) {
       const page = await miniProgram.switchTab(tab.path)
@@ -51,6 +49,9 @@ try {
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)
 } finally {
   // Back to the default, following the system.
-  await miniProgram.callWxMethod('removeStorageSync', THEME_STORAGE_KEY).catch(() => {})
-  await miniProgram.close()
+  try {
+    await resetTheme(miniProgram)
+  } finally {
+    await miniProgram.close()
+  }
 }

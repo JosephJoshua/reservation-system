@@ -361,7 +361,46 @@ describe('invoice queue', () => {
     expect(order).toMatchObject({ state: expect.stringMatching(/^refund(ing|ed)$/), amount: 0 })
   })
 
-  it('will not issue for an order that was fully refunded after the request', async () => {
+  it('closes a waiting request once its order is fully refunded, so it does not block 注销', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const admin = await h.admin()
+    const t = await h.student('a')
+    const slot = h.slot(1)
+    const booked = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
+      t,
+    )
+    await h.call('POST', `/dev/fake-pay/${booked.json.orderId}`)
+    await h.call('POST', '/invoices', { orderId: booked.json.orderId, ...person }, t)
+    await h.call('POST', `/bookings/${booked.json.bookingId}/cancel`, {}, t)
+
+    const order = (await h.call('GET', '/invoices', undefined, t)).json.orders[0]
+    expect(order).toMatchObject({ state: 'refunded', amount: 0 })
+    const queue = (await h.call('GET', '/admin/invoices?status=requested', undefined, admin)).json
+    expect(queue).toEqual([])
+    expect(h.db.select().from(invoices).get()).toMatchObject({
+      status: 'rejected',
+      rejectReason: '订单已全额退款',
+    })
+    expect((await h.call('DELETE', '/me', undefined, t)).status).toBeLessThan(300)
+  })
+
+  it('keeps a request after a partial refund, for what is left', async () => {
+    const h = setup()
+    const { t, orderId } = await paidPackage(h)
+    const admin = await h.admin()
+    await h.call('POST', '/invoices', { orderId, ...person }, t)
+    const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
+    await h.call('POST', `/packages/${pkg.id}/refund-request`, undefined, t)
+    const refund = (await h.call('GET', '/admin/refunds', undefined, admin)).json[0]
+    await h.call('POST', `/admin/refunds/${refund.id}/approve`, { amount: 100000 }, admin)
+    expect(h.db.select().from(invoices).get()?.status).toBe('requested')
+  })
+
+  it('cannot issue for a request closed by a full refund of its order', async () => {
     const h = setup()
     const { lesson } = h.seed()
     const admin = await h.admin()
@@ -382,10 +421,14 @@ describe('invoice queue', () => {
       { reason: '停电' },
       admin,
     )
-    const queue = (await h.call('GET', '/admin/invoices?status=requested', undefined, admin)).json
-    expect(queue[0]).toMatchObject({ refundFlag: true, order: { refunded: 20000 } })
+    const closed = (await h.call('GET', '/admin/invoices?status=rejected', undefined, admin)).json
+    expect(closed[0]).toMatchObject({
+      id,
+      rejectReason: '订单已全额退款',
+      order: { refunded: 20000 },
+    })
     const res = await upload(h, id, admin)
-    expect(res.json.error.code).toBe('order_refunded')
+    expect(res.json.error.code).toBe('invoice_handled')
     expect(readdirSync(invoicesDir(h.deps))).toEqual([])
   })
 })

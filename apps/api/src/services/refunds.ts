@@ -5,6 +5,7 @@ import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { GatewayError, type RefundState } from '../pay/gateway'
 import { newOutRefundNo } from './ids'
+import { closeRefundedRequests } from './invoices'
 
 /** Fen already refunded or on its way back for an order. */
 export function refundedSoFar(tx: Q, orderId: number): number {
@@ -90,26 +91,37 @@ export async function submitRefund(deps: Deps, refundId: number): Promise<void> 
     if (retryable) return
     update = { status: 'failed', failure: (e as GatewayError).message.slice(0, 200) }
   }
-  db.update(refunds)
-    .set({ ...update, updatedAt: deps.now() })
-    .where(and(eq(refunds.id, refundId), eq(refunds.status, 'pending')))
-    .run()
+  immediate(db, (tx) => {
+    const changed = tx
+      .update(refunds)
+      .set({ ...update, updatedAt: deps.now() })
+      .where(and(eq(refunds.id, refundId), eq(refunds.status, 'pending')))
+      .run()
+    if (changed.changes && update.status === 'succeeded') closeRefundedRequests(tx, row.order.id)
+  })
 }
 
 /** Applies a refund result from a callback or query. */
 export function settleRefund(deps: Deps, outRefundNo: string, result: RefundState) {
   if (result.status === 'processing') return
-  deps.db
-    .update(refunds)
-    .set(
-      result.status === 'failed'
-        ? { status: 'failed', failure: result.reason, updatedAt: deps.now() }
-        : { status: 'succeeded', providerRefundId: result.refundId, updatedAt: deps.now() },
-    )
-    .where(
-      and(eq(refunds.outRefundNo, outRefundNo), inArray(refunds.status, ['pending', 'processing'])),
-    )
-    .run()
+  immediate(deps.db, (tx) => {
+    const settled = tx
+      .update(refunds)
+      .set(
+        result.status === 'failed'
+          ? { status: 'failed', failure: result.reason, updatedAt: deps.now() }
+          : { status: 'succeeded', providerRefundId: result.refundId, updatedAt: deps.now() },
+      )
+      .where(
+        and(
+          eq(refunds.outRefundNo, outRefundNo),
+          inArray(refunds.status, ['pending', 'processing']),
+        ),
+      )
+      .returning({ orderId: refunds.orderId })
+      .get()
+    if (settled && result.status === 'succeeded') closeRefundedRequests(tx, settled.orderId)
+  })
 }
 
 /** Retries stuck pending refunds and polls processing ones. Run by the sweeper. */
@@ -173,7 +185,7 @@ export function markOfflineRefundPaid(deps: Deps, refundId: number) {
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const row = tx
-      .select({ status: refunds.status, provider: orders.provider })
+      .select({ status: refunds.status, provider: orders.provider, orderId: refunds.orderId })
       .from(refunds)
       .innerJoin(orders, eq(orders.id, refunds.orderId))
       .where(eq(refunds.id, refundId))
@@ -186,6 +198,7 @@ export function markOfflineRefundPaid(deps: Deps, refundId: number) {
       .set({ status: 'succeeded', updatedAt: now })
       .where(eq(refunds.id, refundId))
       .run()
+    closeRefundedRequests(tx, row.orderId)
     return true
   })
 }

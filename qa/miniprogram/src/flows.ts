@@ -5,6 +5,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
@@ -122,6 +123,8 @@ async function step(name: string, fn: () => Promise<void>) {
 }
 
 try {
+  // Clears a forced theme an earlier run may have left, or applies QA_THEME.
+  await startTheme(miniProgram)
   const student = `qa_${Date.now()}`
   await miniProgram.callWxMethod('setStorageSync', 'devLogin', student)
   await miniProgram.callWxMethod('removeStorageSync', 'token')

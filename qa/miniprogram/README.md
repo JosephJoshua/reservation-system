@@ -82,4 +82,5 @@ It uses the same seeded API as the student flows and signs in to the admin API w
 
 ```sh
 pnpm --filter @rs/qa-miniprogram invoices
+QA_THEME=dark pnpm --filter @rs/qa-miniprogram invoices   # forces the 外观 setting instead
 ```
