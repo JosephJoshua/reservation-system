@@ -1,6 +1,14 @@
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings, orders, packageProducts, refunds, slots } from './db/schema'
+import {
+  bookings,
+  coaches,
+  coachLessonTypes,
+  orders,
+  packageProducts,
+  refunds,
+  slots,
+} from './db/schema'
 import { sweep } from './sweeper'
 import { type Harness, setup } from './test/harness'
 
@@ -624,6 +632,40 @@ describe('slots', () => {
       [s1.id, false],
       [s2.id, true],
     ])
+  })
+
+  it('lists the days in the window with a slot that can be booked now', async () => {
+    // 10:00 at the venue on 10-23, with 2 hours' notice and 14 days ahead.
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
+    h.slot(coach.id, '2026-10-23', 11) // too soon
+    const taken = h.slot(coach.id, '2026-10-24', 10)
+    h.slot(coach.id, '2026-10-26', 10)
+    h.slot(coach.id, '2026-10-26', 15)
+    const closed = h.slot(coach.id, '2026-10-27', 10)
+    h.db.update(slots).set({ open: false }).where(eq(slots.id, closed.id)).run()
+    h.slot(coach.id, '2026-11-06', 9) // last day of the window, 14 days ahead
+    h.slot(coach.id, '2026-11-07', 9) // past it
+    h.slot(other.id, '2026-10-25', 10)
+    const a = await h.student('a')
+    await book(h, a, taken.id, lesson.id)
+    const days = (q: string) => h.call('GET', `/slots/open-days?${q}`, undefined, a)
+    expect((await days(`lessonTypeId=${lesson.id}&coachId=${coach.id}`)).json).toEqual([
+      '2026-10-26',
+      '2026-11-06',
+    ])
+    expect((await days(`lessonTypeId=${lesson.id}`)).json).toEqual([
+      '2026-10-25',
+      '2026-10-26',
+      '2026-11-06',
+    ])
+    expect((await days(`lessonTypeId=${lesson.id}&coachId=${other.id}`)).json).toEqual([
+      '2026-10-25',
+    ])
+    expect((await days('lessonTypeId=999')).status).toBe(404)
+    expect((await h.call('GET', `/slots/open-days?lessonTypeId=${lesson.id}`)).status).toBe(401)
   })
 
   it('refuses overlapping slots for one coach when the admin creates them', async () => {

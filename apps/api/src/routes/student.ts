@@ -15,6 +15,7 @@ import {
   type SlotDto,
   studentNoticeKinds,
   type VenueSettings,
+  venueDateKey,
   venueInstant,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm'
@@ -113,6 +114,7 @@ export function studentRoutes(deps: Deps) {
   app.use('/catalog', requireStudent(deps))
   app.use('/coaches/*', requireStudent(deps))
   app.use('/slots', requireStudent(deps))
+  app.use('/slots/*', requireStudent(deps))
   app.use('/bookings', requireStudent(deps))
   app.use('/bookings/*', requireStudent(deps))
   app.use('/feedback', requireStudent(deps))
@@ -297,23 +299,9 @@ export function studentRoutes(deps: Deps) {
     } satisfies CatalogDto)
   })
 
-  app.get('/slots', (c) => {
-    const q = parseQuery(
-      c,
-      z.object({
-        date: dateKey,
-        coachId: positiveId.optional(),
-        lessonTypeId: positiveId.optional(),
-      }),
-    )
+  /** The slots a student sees from `from` to `to`: closed ones hidden, taken ones unavailable. */
+  function studentSlots(from: Date, to: Date, q: { coachId?: number; lessonTypeId?: number }) {
     const now = deps.now()
-    let from: Date
-    try {
-      from = venueInstant(q.date, 0)
-    } catch {
-      throw new ApiError(400, 'invalid_query', '日期无效')
-    }
-    const to = venueInstant(q.date, 24 * 60)
     const settings = getSettings(db)
     const lessonType = q.lessonTypeId
       ? db.select().from(lessonTypes).where(eq(lessonTypes.id, q.lessonTypeId)).get()
@@ -374,7 +362,7 @@ export function studentRoutes(deps: Deps) {
             .map((r) => r.slotId)
         : [],
     )
-    return c.json(
+    return (
       rows
         // Closed slots and slots outside the window are hidden; taken ones show as full.
         .filter(
@@ -389,8 +377,39 @@ export function studentRoutes(deps: Deps) {
             available:
               !takenIds.has(s.id) && bookingWindowError(s.startsAt, now, settings.booking) === null,
           }),
-        ),
+        )
     )
+  }
+
+  const slotFilter = {
+    coachId: positiveId.optional(),
+    lessonTypeId: positiveId.optional(),
+  }
+
+  app.get('/slots', (c) => {
+    const q = parseQuery(c, z.object({ date: dateKey, ...slotFilter }))
+    let from: Date
+    try {
+      from = venueInstant(q.date, 0)
+    } catch {
+      throw new ApiError(400, 'invalid_query', '日期无效')
+    }
+    return c.json(studentSlots(from, venueInstant(q.date, 24 * 60), q))
+  })
+
+  // The venue days in the booking window with a slot that can be booked now, so the booking page
+  // can go straight to a coach's next open day.
+  app.get('/slots/open-days', (c) => {
+    const q = parseQuery(c, z.object(slotFilter))
+    const now = deps.now()
+    const days = getSettings(db).booking.advanceDays
+    const last = venueDateKey(new Date(now.getTime() + days * 86_400_000))
+    const open = studentSlots(
+      venueInstant(venueDateKey(now), 0),
+      venueInstant(last, 24 * 60),
+      q,
+    ).filter((s) => s.available)
+    return c.json([...new Set(open.map((s) => venueDateKey(new Date(s.startsAt))))])
   })
 
   app.post('/bookings', async (c) => {

@@ -286,8 +286,10 @@ try {
     const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
     const list = (await book.data('coaches')) as { id: number; name: string }[]
     const chip = async (name: string) => {
+      const index = list.findIndex((c) => c.name === name)
+      check(index >= 0, `${name} should teach this lesson`)
       // The strip starts with 不限教练, so a coach's chip is one after their place in the list.
-      await tap(book, '.coach', list.findIndex((c) => c.name === name) + 1)
+      await tap(book, '.coach', index + 1)
       await sleep(800)
       return waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
     }
@@ -295,6 +297,7 @@ try {
     let page = await chip('王磊')
     check((await page.data('date')) === day, '王磊 is free that day, so it should stay')
     const today = ((await page.data('days')) as { key: string }[])[0]?.key
+    check(day !== today, 'the step before should have left the page after today')
     await tap(page, '.day', 0)
     await sleep(800)
     page = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')

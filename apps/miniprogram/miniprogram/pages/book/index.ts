@@ -54,14 +54,14 @@ Page({
   catalog: null as CatalogDto | null,
   request: 0,
   /**
-   * While set, the day a search for an open day started from: a day with nothing to book moves on
-   * to the next one, wrapping to today once, and the search ends back on this day if no day has
-   * anything. Picking a day by hand ends it.
+   * Set when the next load should move on if the selected day has nothing to book: to the next
+   * open day after it, or the first one in the window. Picking a day by hand clears it.
    */
-  seekFrom: '',
-  seekWrapped: false,
-  /** Whether to say so when the search lands on another day: not on first load. */
+  seeking: false,
+  /** Whether to say so when the page moves to another day: not on first load. */
   seekTell: false,
+  /** Set while loading the day the page moved to, so the toast shows once it has loaded. */
+  moved: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -128,8 +128,8 @@ Page({
     const { date, coachId, lessonTypeId, coaches } = this.data
     this.setData({ slotsState: 'loading' })
     try {
-      const query = `date=${date}&lessonTypeId=${lessonTypeId}${coachId ? `&coachId=${coachId}` : ''}`
-      const rows = await api<SlotDto[]>('GET', `/slots?${query}`)
+      const filter = `lessonTypeId=${lessonTypeId}${coachId ? `&coachId=${coachId}` : ''}`
+      const rows = await api<SlotDto[]>('GET', `/slots?date=${date}&${filter}`)
       if (request !== this.request) return
       const names = new Map(coaches.map((c) => [c.id, c.name]))
       const now = Date.now()
@@ -148,45 +148,40 @@ Page({
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
         }))
       const availableCount = slots.filter((s) => s.available).length
-      if (this.seekFrom && availableCount === 0) {
-        const next = this.nextSeekDay(date) ?? (date === this.seekFrom ? '' : this.seekFrom)
-        if (next === this.seekFrom) this.seekFrom = ''
-        if (next) {
+      const seeking = this.seeking
+      this.seeking = false
+      if (seeking && availableCount === 0) {
+        const open = await api<string[]>('GET', `/slots/open-days?${filter}`)
+        if (request !== this.request) return
+        const keys = new Set(this.data.days.map((d) => d.key))
+        const shown = open.filter((k) => keys.has(k))
+        const next = shown.find((k) => k > date) ?? shown[0]
+        if (next && next !== date) {
+          this.moved = this.seekTell
           this.setData({ date: next, dayAnchor: dayAnchor(this.data.days, next) })
           this.loadSlots()
           return
         }
       }
-      const from = this.seekFrom
-      this.seekFrom = ''
       this.setData({ slotsState: 'ready', slots, availableCount })
-      const found = this.data.days.find((d) => d.key === date)
-      if (from && from !== date && found && this.seekTell) {
-        wx.showToast({ title: `当天无可约时段，已跳到 ${found.date}`, icon: 'none' })
+      const day = this.data.days.find((d) => d.key === date)
+      if (this.moved && day) {
+        wx.showToast({ title: `当天无可约时段，已跳到 ${day.date}`, icon: 'none' })
       }
+      this.moved = false
     } catch (e) {
       if (request !== this.request) return
-      this.seekFrom = ''
+      this.seeking = false
+      this.moved = false
       this.setData({ slotsState: 'error', error: errorMessage(e) })
     }
   },
 
-  /** Starts a search for an open day from the selected one; the next loadSlots runs it. */
+  /** Lets the next loadSlots move on from the selected day if it has nothing to book. */
   seek(tell = true) {
-    this.seekFrom = this.data.date
-    this.seekWrapped = false
+    this.seeking = true
     this.seekTell = tell
-  },
-
-  /** The day after `date` in the search, or undefined once it is back where it started. */
-  nextSeekDay(date: string): string | undefined {
-    const days = this.data.days
-    let next = days[days.findIndex((d) => d.key === date) + 1]
-    if (!next && !this.seekWrapped) {
-      this.seekWrapped = true
-      next = days[0]
-    }
-    return next && next.key !== this.seekFrom ? next.key : undefined
+    this.moved = false
   },
 
   pickCoach(e: WechatMiniprogram.TouchEvent) {
@@ -235,7 +230,8 @@ Page({
   pickDate(e: WechatMiniprogram.TouchEvent) {
     const date = e.currentTarget.dataset.key as string
     if (date === this.data.date) return
-    this.seekFrom = ''
+    this.seeking = false
+    this.moved = false
     this.setData({ date })
     this.loadSlots()
   },
