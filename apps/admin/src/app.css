@@ -1625,3 +1625,64 @@ a:hover {
 .crop-note.warning {
   color: var(--td-warning-color);
 }
+
+/* 学员详情 and other pages for one record. */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.breadcrumb a {
+  color: inherit;
+}
+
+.breadcrumb a:hover {
+  color: var(--td-brand-color);
+}
+
+.breadcrumb > span:last-child {
+  color: var(--td-text-color-primary);
+}
+
+.detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.detail-id {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.detail-tabs.t-tabs {
+  background: transparent;
+}
+
+.detail-tabs .t-tab-panel {
+  padding-top: 16px;
+}
+
+.drawer-head {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 32px;
+}

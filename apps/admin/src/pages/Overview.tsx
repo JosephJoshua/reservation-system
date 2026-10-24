@@ -1,11 +1,8 @@
 import { UNMARKED_DAYS } from '@rs/shared'
 import { useEffect, useState } from 'react'
-import { Button, Card, Checkbox, Select, Space, Tag } from 'tdesign-react'
-import { api } from '../api'
-import { BookForStudent } from '../BookForStudent'
-import { DataTable } from '../DataTable'
+import { Button, Card, Space, Tag } from 'tdesign-react'
 import { addDays, fmtTime, yuanGrouped } from '../format'
-import { attempt, useApi, useIsPhone } from '../hooks'
+import { useApi } from '../hooks'
 import { useCan } from '../me'
 import { Delta } from '../StatDelta'
 import { StudentCell } from '../StudentCell'
@@ -35,75 +32,39 @@ interface Summary {
   newStudents: { month: number; lastMonth: number }
 }
 
+/** Read-only here: 签到 is marked on 今日. */
 function Attendance({
   booking,
   started,
-  onMarked,
 }: {
   booking: TodaySession['students'][number]
   started: boolean
-  onMarked: () => void
 }) {
-  const canMark = useCan('attendance')
   if (!started) return <Tag variant="light">未开始</Tag>
-  if (!canMark) {
-    return booking.attendance === null ? (
-      <Tag variant="light">未签到</Tag>
-    ) : (
-      <Tag variant="light" theme={booking.attendance === 'attended' ? 'success' : 'warning'}>
-        {booking.attendance === 'attended' ? '到课' : '缺席'}
-      </Tag>
-    )
-  }
-  return (
-    <Select
-      size="small"
-      style={{ width: 96 }}
-      placeholder="未签到"
-      clearable
-      value={booking.attendance ?? undefined}
-      options={[
-        { label: '到课', value: 'attended' },
-        { label: '缺席', value: 'no_show' },
-      ]}
-      onChange={async (v) => {
-        if (
-          await attempt(
-            () =>
-              api('PUT', `/admin/bookings/${booking.bookingId}/attendance`, {
-                attendance: v ? String(v) : null,
-              }),
-            '已更新签到',
-            { key: `attendance-${booking.bookingId}`, onStale: onMarked },
-          )
-        ) {
-          onMarked()
-        }
-      }}
-    />
+  return booking.attendance === null ? (
+    <Tag variant="light">未签到</Tag>
+  ) : (
+    <Tag variant="light" theme={booking.attendance === 'attended' ? 'success' : 'warning'}>
+      {booking.attendance === 'attended' ? '到课' : '缺席'}
+    </Tag>
   )
 }
+
+// Lessons on now and next that the overview lists.
+const TODAY_SHOWN = 5
 
 const lessonName = (row: TodaySession) =>
   row.capacity === null
     ? row.lessonType
     : `${row.lessonType}（${row.students.length}/${row.capacity} 人）`
 
-function Students({
-  row,
-  now,
-  onMarked,
-}: {
-  row: TodaySession
-  now: number
-  onMarked: () => void
-}) {
+function Students({ row, now }: { row: TodaySession; now: number }) {
   return (
     <div className="today-students">
       {row.students.map((b) => (
         <div key={b.bookingId} className="today-student">
           <StudentCell student={b.student} />
-          <Attendance booking={b} started={Date.parse(row.startsAt) <= now} onMarked={onMarked} />
+          <Attendance booking={b} started={Date.parse(row.startsAt) <= now} />
         </div>
       ))}
     </div>
@@ -112,18 +73,18 @@ function Students({
 
 export function Overview() {
   const { data, error, loading, reload } = useApi<Summary>('/admin/summary')
-  const phone = useIsPhone()
   const money = useCan('finance')
-  const canBook = useCan('bookings')
-  // Ticks so a lesson that starts while the page is open can be marked.
+  const toToday = useCan('attendance')
+  // Ticks so a lesson that starts while the page is open shows as started, and picks up 签到
+  // marked on 今日, by coaches or by student scans.
   const [now, setNow] = useState(Date.now)
-  const [coach, setCoach] = useState<string | null>(null)
-  const [unmarkedOnly, setUnmarkedOnly] = useState(false)
-  const [booking, setBooking] = useState(false)
   useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    const timer = setInterval(() => {
+      setNow(Date.now())
+      void reload()
+    }, 30_000)
     return () => clearInterval(timer)
-  }, [])
+  }, [reload])
   if (error && !data) return <p className="muted">{error}</p>
 
   const todo: [string, number | null | undefined, string][] = [
@@ -144,14 +105,9 @@ export function Overview() {
   ]
   const all = data?.sessions ?? []
   const people = all.reduce((n, s) => n + s.students.length, 0)
-  const coaches = [...new Set(all.map((s) => s.coach))]
-  // A busy day has a lesson per coach per hour: the front desk narrows it to what needs marking.
-  const sessions = all.filter(
-    (s) =>
-      (!coach || s.coach === coach) &&
-      (!unmarkedOnly ||
-        (Date.parse(s.startsAt) <= now && s.students.some((b) => b.attendance === null))),
-  )
+  // What is on now and next; the whole day is on 今日.
+  const sessions = all.filter((s) => Date.parse(s.endsAt) > now).slice(0, TODAY_SHOWN)
+  const done = all.length - all.filter((s) => Date.parse(s.endsAt) > now).length
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -210,76 +166,42 @@ export function Overview() {
       <Card
         bordered
         title="今日课程"
-        actions={canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
+        actions={
+          toToday && (
+            <Button variant="outline" href="#/checkin">
+              去今日签到
+            </Button>
+          )
+        }
       >
-        <div className="toolbar">
-          <Select
-            style={{ width: 140 }}
-            clearable
-            placeholder="全部教练"
-            value={coach ?? undefined}
-            onChange={(v) => setCoach(v ? String(v) : null)}
-            options={coaches.map((c) => ({ label: c, value: c }))}
-          />
-          <Checkbox checked={unmarkedOnly} onChange={(v) => setUnmarkedOnly(v)}>
-            只看待签到
-          </Checkbox>
-        </div>
-        {phone ? (
-          <div className="today-list">
-            {!data && loading && <div className="viz-empty">加载中</div>}
-            {data && sessions.length === 0 && (
-              <div className="viz-empty">{all.length ? '没有符合条件的课' : '今天没有课'}</div>
-            )}
-            {sessions.map((row) => (
-              <div key={row.slotId} className="today-item">
-                <div className="today-item-head">
-                  <strong>
-                    {fmtTime(row.startsAt)}-{fmtTime(row.endsAt)}
-                  </strong>{' '}
-                  {row.coach} · {lessonName(row)}
-                </div>
-                <Students row={row} now={now} onMarked={() => void reload()} />
+        <div className="today-list">
+          {!data && loading && <div className="viz-empty">加载中</div>}
+          {data && all.length === 0 && <div className="viz-empty">今天没有课</div>}
+          {data && all.length > 0 && sessions.length === 0 && (
+            <div className="viz-empty">今天的 {all.length} 节课都已结束</div>
+          )}
+          {sessions.map((row) => (
+            <div key={row.slotId} className="today-item">
+              <div className="today-item-head">
+                <strong>
+                  {fmtTime(row.startsAt)}-{fmtTime(row.endsAt)}
+                </strong>{' '}
+                {row.coach} · {lessonName(row)}
               </div>
-            ))}
+              <Students row={row} now={now} />
+            </div>
+          ))}
+        </div>
+        {data && (done > 0 || all.length > done + sessions.length) && (
+          <div className="stat-sub">
+            {done > 0 && `已结束 ${done} 节`}
+            {done > 0 && all.length > done + sessions.length && '，'}
+            {all.length > done + sessions.length &&
+              `之后还有 ${all.length - done - sessions.length} 节`}
+            {toToday && '，全部在“今日”页查看'}
           </div>
-        ) : (
-          <DataTable
-            rowKey="slotId"
-            loading={loading && !data}
-            data={sessions}
-            empty={all.length ? '没有符合条件的课' : '今天没有课'}
-            columns={[
-              {
-                colKey: 'time',
-                title: '时间',
-                width: 120,
-                cell: ({ row }) => `${fmtTime(row.startsAt)}-${fmtTime(row.endsAt)}`,
-              },
-              { colKey: 'coach', title: '教练', width: 120 },
-              {
-                colKey: 'lessonType',
-                title: '课程',
-                cell: ({ row }) => lessonName(row),
-              },
-              {
-                colKey: 'students',
-                title: '学员与签到',
-                cell: ({ row }) => <Students row={row} now={now} onMarked={() => void reload()} />,
-              },
-            ]}
-          />
         )}
       </Card>
-      {booking && (
-        <BookForStudent
-          onClose={() => setBooking(false)}
-          onDone={() => {
-            setBooking(false)
-            void reload()
-          }}
-        />
-      )}
     </Space>
   )
 }

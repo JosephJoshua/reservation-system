@@ -233,9 +233,11 @@ test("shows the lesson on today's overview and in the business stats", async ({ 
   await page.clock.setFixedTime(lessonTime)
   await login(page)
   const today = page.locator('.t-card').filter({ hasText: '今日课程' }).last()
-  const lesson = today.getByRole('row').filter({ hasText: coachName })
+  const lesson = today.locator('.today-item').filter({ hasText: coachName })
   await expect(lesson).toContainText(lessonName)
-  await expect(lesson.locator('.t-select input')).toHaveValue('到课')
+  // Read-only on the overview; 签到 is marked on 今日.
+  await expect(lesson.locator('.t-tag')).toHaveText('到课')
+  await expect(today.getByRole('link', { name: '去今日签到' })).toHaveAttribute('href', '#/checkin')
   await both(page, 'overview')
 
   await page.goto('./#/reports')

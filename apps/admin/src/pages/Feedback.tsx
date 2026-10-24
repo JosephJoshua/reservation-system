@@ -18,17 +18,24 @@ function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default
   return ['学员可见', 'success']
 }
 
-/** Coaches' 课后点评, newest lesson first, which the venue can hide from the student. */
-export function Feedback() {
+/**
+ * Coaches' 课后点评, newest lesson first, which the venue can hide from the student. With
+ * `studentId`, all of one student's, as on their 学员详情.
+ */
+export function Feedback({ studentId }: { studentId?: number } = {}) {
   const [range, setRange] = useState<[string, string]>([addDays(today(), -30), today()])
   const [coachId, setCoachId] = useState<number | null>(null)
-  const coaches = useApi<Coach[]>('/admin/coaches')
+  const coaches = useApi<Coach[]>(studentId ? null : '/admin/coaches')
 
-  const params = new URLSearchParams({
-    from: venueInstant(range[0], 0).toISOString(),
-    to: venueInstant(range[1], 24 * 60).toISOString(),
-  })
-  if (coachId) params.set('coachId', String(coachId))
+  const params = new URLSearchParams(
+    studentId
+      ? { studentId: String(studentId) }
+      : {
+          from: venueInstant(range[0], 0).toISOString(),
+          to: venueInstant(range[1], 24 * 60).toISOString(),
+        },
+  )
+  if (coachId && !studentId) params.set('coachId', String(coachId))
   const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
   const { reload } = list
 
@@ -46,26 +53,28 @@ export function Feedback() {
 
   return (
     <div>
-      <div className="toolbar">
-        <DateRangePicker
-          style={{ width: 280 }}
-          value={range}
-          onChange={(v) => setRange([String(v[0] ?? today()), String(v[1] ?? today())])}
-        />
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部教练"
-          value={coachId ?? undefined}
-          onChange={(v) => setCoachId(v ? Number(v) : null)}
-          options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
-        />
-      </div>
+      {!studentId && (
+        <div className="toolbar">
+          <DateRangePicker
+            style={{ width: 280 }}
+            value={range}
+            onChange={(v) => setRange([String(v[0] ?? today()), String(v[1] ?? today())])}
+          />
+          <Select
+            style={{ width: 140 }}
+            clearable
+            placeholder="全部教练"
+            value={coachId ?? undefined}
+            onChange={(v) => setCoachId(v ? Number(v) : null)}
+            options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
+          />
+        </div>
+      )}
       <DataTable
         rowKey="id"
         loading={list.loading && !list.loaded}
         data={list.rows}
-        empty={list.error ?? '这段时间没有课后点评'}
+        empty={list.error ?? (studentId ? '还没有课后点评' : '这段时间没有课后点评')}
         columns={[
           {
             colKey: 'startsAt',
@@ -73,12 +82,18 @@ export function Feedback() {
             width: 130,
             cell: ({ row }) => <span className="nowrap">{fmtDateTime(row.startsAt)}</span>,
           },
-          {
-            colKey: 'student',
-            title: '学员',
-            width: 140,
-            cell: ({ row }) => <StudentCell student={row.student} />,
-          },
+          ...(studentId
+            ? []
+            : [
+                {
+                  colKey: 'student',
+                  title: '学员',
+                  width: 140,
+                  cell: ({ row }: { row: AdminFeedbackDto }) => (
+                    <StudentCell student={row.student} />
+                  ),
+                },
+              ]),
           {
             colKey: 'coach',
             title: '教练',

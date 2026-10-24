@@ -9,9 +9,14 @@ import { offlineMethodLabel, orderStatusLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Order } from '../types'
 
-export function Orders() {
+/** Every order, or with `studentId` one student's, as on their 学员详情. */
+export function Orders({ studentId }: { studentId?: number } = {}) {
   const [status, setStatus] = useState('')
-  const list = usePagedApi<Order>(`/admin/orders${status ? `?status=${status}` : ''}`, 'before')
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  if (studentId) params.set('studentId', String(studentId))
+  const qs = params.toString()
+  const list = usePagedApi<Order>(`/admin/orders${qs ? `?${qs}` : ''}`, 'before')
   return (
     <div>
       <div className="toolbar">
@@ -23,19 +28,22 @@ export function Orders() {
           onChange={(v) => setStatus(String(v ?? ''))}
           options={Object.entries(orderStatusLabel).map(([value, [label]]) => ({ value, label }))}
         />
-        <div className="toolbar-actions">
-          <ExportButton
-            kind="orders"
-            filters={{ status }}
-            filterText={status ? `状态：${orderStatusLabel[status as 'paid'][0]}` : undefined}
-          />
-        </div>
+        {/* The export has no student filter, so it stays on the 订单 page. */}
+        {!studentId && (
+          <div className="toolbar-actions">
+            <ExportButton
+              kind="orders"
+              filters={{ status }}
+              filterText={status ? `状态：${orderStatusLabel[status as 'paid'][0]}` : undefined}
+            />
+          </div>
+        )}
       </div>
       <DataTable
         rowKey="id"
         loading={list.loading && !list.loaded}
         data={list.rows}
-        empty={list.error ?? '没有订单'}
+        empty={list.error ?? (studentId ? '还没有订单' : '没有订单')}
         columns={[
           {
             colKey: 'createdAt',
@@ -43,11 +51,15 @@ export function Orders() {
             width: 120,
             cell: ({ row }) => fmtDateTime(row.createdAt),
           },
-          {
-            colKey: 'student',
-            title: '学员',
-            cell: ({ row }) => <StudentCell student={row.student} />,
-          },
+          ...(studentId
+            ? []
+            : [
+                {
+                  colKey: 'student',
+                  title: '学员',
+                  cell: ({ row }: { row: Order }) => <StudentCell student={row.student} />,
+                },
+              ]),
           {
             colKey: 'kind',
             title: '类型',

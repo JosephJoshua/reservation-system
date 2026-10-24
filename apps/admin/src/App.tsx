@@ -51,7 +51,7 @@ type Page = { label: string; icon: ComponentType; component: ComponentType }
 const pages = {
   overview: { label: '概览', icon: DashboardIcon, component: Overview },
   schedule: { label: '排课', icon: CalendarIcon, component: Schedule },
-  checkin: { label: '前台签到', icon: CheckCircleIcon, component: CheckIn },
+  checkin: { label: '今日', icon: CheckCircleIcon, component: CheckIn },
   bookings: { label: '预约', icon: AssignmentIcon, component: Bookings },
   students: { label: '学员', icon: UsergroupIcon, component: Students },
   feedback: { label: '课后点评', icon: ChatMessageIcon, component: Feedback },
@@ -79,7 +79,8 @@ const navGroups: { title?: string; keys: PageKey[] }[] = [
 ]
 
 function currentPage(): PageKey {
-  const key = window.location.hash.replace(/^#\/?/, '').split('?')[0] ?? ''
+  // The first part names the page, as in `#/students/12`.
+  const key = window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] ?? ''
   return key in pages ? (key as PageKey) : 'overview'
 }
 
