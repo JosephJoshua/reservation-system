@@ -201,20 +201,24 @@ export function Bookings() {
                     {label}
                   </Tag>
                   {row.status === 'cancelled' && (
-                    <span className="muted">
+                    <>
                       {' '}
-                      {row.cancelledBy === 'venue'
-                        ? '场馆取消'
-                        : row.late
-                          ? '学员逾时取消'
-                          : '学员取消'}
-                    </span>
+                      <span className="muted nowrap">
+                        {row.cancelledBy === 'venue'
+                          ? '场馆取消'
+                          : row.late
+                            ? '学员逾时取消'
+                            : '学员取消'}
+                      </span>
+                    </>
                   )}
                   {refund && row.refund && (
-                    <span className="muted">
+                    <>
                       {' '}
-                      {refund[0]} {yuan(row.refund.amount)}
-                    </span>
+                      <span className="muted nowrap">
+                        {refund[0]} {yuan(row.refund.amount)}
+                      </span>
+                    </>
                   )}
                 </span>
               )

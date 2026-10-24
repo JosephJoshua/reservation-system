@@ -3,6 +3,7 @@ import {
   Button,
   Dialog,
   InputNumber,
+  MessagePlugin,
   Popconfirm,
   Select,
   Space,
@@ -95,7 +96,8 @@ export function Refunds() {
               row.package ? (
                 <span>
                   {row.package.name}，剩 {row.package.lessonsRemaining}/
-                  {row.package.lessonsPurchased} 节，实付 {yuan(row.package.pricePaid)}
+                  {row.package.lessonsPurchased + row.package.lessonsGranted} 节，实付{' '}
+                  {yuan(row.package.pricePaid)}
                   <br />
                   <span className="muted">
                     有效期至 {fmtDate(new Date(new Date(row.package.expiresAt).getTime() - 1))}
@@ -224,6 +226,15 @@ function Decide({
           '已拒绝',
           { onStale: onDone },
         )
+    if (ok && approve) {
+      // WeChat Pay can refuse a refund at once (balance too low, say). Say so here, or the row
+      // just leaves the 待审核 list and the failure is only found later.
+      const failed = await api<Refund[]>('GET', '/admin/refunds?status=failed').catch(() => [])
+      if (failed.some((r) => r.id === refund.id)) {
+        void MessagePlugin.closeAll()
+        void MessagePlugin.warning('退款没有成功，可在“退款失败”中查看原因并重试', 5000)
+      }
+    }
     if (ok) onDone()
   }
 

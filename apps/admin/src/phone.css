@@ -241,4 +241,9 @@
     height: auto !important;
     aspect-ratio: 5 / 2;
   }
+
+  /* All six period presets fit on a phone without scrolling. */
+  .t-radio-group.range-presets .t-radio-button {
+    padding: 0 8px;
+  }
 }

@@ -18,6 +18,8 @@ export function Login({ notice, onDone }: { notice?: string; onDone: () => void 
         password,
       })
       setToken(token)
+      // An error from an earlier try would otherwise stay over the first page.
+      MessagePlugin.closeAll()
       onDone()
     } catch (e) {
       void MessagePlugin.error((e as Error).message)

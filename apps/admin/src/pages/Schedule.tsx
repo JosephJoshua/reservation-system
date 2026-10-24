@@ -307,8 +307,13 @@ function planned(plan: Plan, coachId: number, minutes: number) {
 }
 
 /** Why a plan cannot be sent, or null. */
-function planError(plan: Plan, count: number, what: string) {
+function planError(plan: Plan, count: number, what: string, minutes: number) {
   if (!plan.parsed) return '时间格式应为 09:00，多个用逗号分隔'
+  const late = plan.parsed.find((t) => {
+    const [h = 0, m = 0] = t.split(':').map(Number)
+    return h * 60 + m + minutes > 24 * 60
+  })
+  if (late) return `${late} 开始会上到第二天，请改开始时间`
   if (count === 0) return `没有要创建的${what}`
   if (count > MAX_SLOTS) return `一次最多创建 ${MAX_SLOTS} 个${what}，请缩短日期范围`
   return null
@@ -365,7 +370,7 @@ function CreateSlots({
   const count = slots.length
 
   const submit = async () => {
-    const error = planError(plan, count, '时段')
+    const error = planError(plan, count, '时段', minutes)
     if (error) {
       void MessagePlugin.warning(error)
       return
@@ -450,7 +455,7 @@ function CreateSessions({
 
   const submit = async () => {
     if (!lessonType) return
-    const error = planError(plan, count, '小班课')
+    const error = planError(plan, count, '小班课', lessonType.durationMinutes)
     if (error) {
       void MessagePlugin.warning(error)
       return

@@ -327,7 +327,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
               data={s.packages}
               empty="没有课时包"
               columns={[
-                { colKey: 'name', title: '名称', ellipsis: true },
+                { colKey: 'name', title: '名称' },
                 {
                   colKey: 'left',
                   title: '剩余',
@@ -341,10 +341,16 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                   width: 120,
                   cell: ({ row }) => lastDay(row.expiresAt),
                 },
-                { colKey: 'pricePaid', title: '实付', cell: ({ row }) => yuan(row.pricePaid) },
+                {
+                  colKey: 'pricePaid',
+                  title: '实付',
+                  width: 90,
+                  cell: ({ row }) => yuan(row.pricePaid),
+                },
                 {
                   colKey: 'status',
                   title: '状态',
+                  width: 90,
                   cell: ({ row }) => {
                     const [label, theme] = packageStatusLabel[row.status]
                     return (
@@ -386,6 +392,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                       <Button
                         size="small"
                         variant="text"
+                        theme="primary"
                         onClick={() => setAction({ kind: 'ledger', packageId: row.id })}
                       >
                         记录
@@ -753,7 +760,10 @@ function PackageAction({
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
+  const max = kind === 'grant' ? 50 : 365
+  const valid = Number.isInteger(n) && n >= 1 && n <= max
   const submit = async () => {
+    if (!valid) return
     const body = kind === 'grant' ? { lessons: n, note } : { days: n, note }
     if (
       await attempt(
@@ -772,7 +782,7 @@ function PackageAction({
       header={kind === 'grant' ? '赠送课时' : '延长有效期'}
       confirmBtn={{
         content: '确认',
-        disabled: kind === 'grant' && !note.trim(),
+        disabled: !valid || (kind === 'grant' && !note.trim()),
         loading: submitting,
       }}
       onConfirm={submit}
@@ -784,9 +794,11 @@ function PackageAction({
             theme="normal"
             value={n}
             min={1}
-            max={kind === 'grant' ? 50 : 365}
+            max={max}
             suffix={kind === 'grant' ? '节' : '天'}
-            onChange={(v) => setN(Number(v) || 1)}
+            status={valid ? 'default' : 'error'}
+            tips={valid ? undefined : `请填 1 到 ${max} 的整数`}
+            onChange={(v) => setN(Number(v))}
           />
         </Field>
         <Field label="原因">
