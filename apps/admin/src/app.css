@@ -943,3 +943,16 @@ a:hover {
 .today-item-head {
   margin-bottom: 8px;
 }
+
+.role-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.role-option {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 20px;
+}

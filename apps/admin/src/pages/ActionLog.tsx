@@ -28,7 +28,7 @@ const groups: { label: string; actions: StaffAction[] }[] = [
     actions: ['price.lesson_type', 'price.product', 'price.coach', 'price.coach_pay'],
   },
   { label: '其他', actions: ['settings.update', 'student.update', 'data.export'] },
-  { label: '员工', actions: ['staff.create', 'staff.update', 'staff.password'] },
+  { label: '员工', actions: ['staff.create', 'staff.update', 'staff.roles', 'staff.password'] },
 ]
 
 /** Read-only record of what each staff member did, newest first. */

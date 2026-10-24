@@ -44,6 +44,7 @@ export const staffActionLabels = {
   'staff.create': '新增员工',
   'staff.update': '修改员工',
   'staff.password': '修改密码',
+  'staff.roles': '修改角色',
 } as const
 
 export type StaffAction = keyof typeof staffActionLabels
@@ -66,6 +67,70 @@ export interface StaffDto {
   id: number
   name: string
   username: string
+  roles: StaffRole[]
   active: boolean
   createdAt: string
+}
+
+/**
+ * Admin app roles. A login holds one or more; what it may do is the union of their permissions.
+ * 管理员 can do everything, including managing staff.
+ */
+export const staffRoleLabels = {
+  admin: '管理员',
+  front_desk: '前台',
+  finance: '财务',
+} as const
+
+export type StaffRole = keyof typeof staffRoleLabels
+
+export const staffRoles = Object.keys(staffRoleLabels) as [StaffRole, ...StaffRole[]]
+
+export const staffRoleHelp: Record<StaffRole, string> = {
+  admin: '全部功能，包括员工、设置和价格',
+  front_desk: '排课、代约、签到、学员和线下售课时包',
+  finance: '订单、退款、发票、报表和导出',
+}
+
+/**
+ * What a route or button needs. `view` is reading bookings, students and the catalog;
+ * `bookings` is 代约, cancelling, moving and 排课; `students` is editing students and selling
+ * packages at the desk; `finance` is orders, refunds, invoices, reports and exports; `manage` is
+ * settings, prices, the catalog, staff and the action log.
+ */
+export type StaffPermission = 'view' | 'bookings' | 'attendance' | 'students' | 'finance' | 'manage'
+
+const rolePermissions: Record<StaffRole, readonly StaffPermission[]> = {
+  admin: ['view', 'bookings', 'attendance', 'students', 'finance', 'manage'],
+  front_desk: ['view', 'bookings', 'attendance', 'students'],
+  finance: ['view', 'finance'],
+}
+
+export function can(roles: readonly StaffRole[], permission: StaffPermission) {
+  return roles.some((r) => rolePermissions[r]?.includes(permission))
+}
+
+/** What each admin page needs to appear in the menu, keyed by the page's hash route. */
+export const pagePermissions = {
+  overview: 'view',
+  schedule: 'bookings',
+  bookings: 'view',
+  students: 'view',
+  feedback: 'bookings',
+  catalog: 'manage',
+  products: 'manage',
+  orders: 'finance',
+  refunds: 'finance',
+  invoices: 'finance',
+  reports: 'finance',
+  banners: 'manage',
+  settings: 'manage',
+  staff: 'manage',
+  actions: 'manage',
+} as const satisfies Record<string, StaffPermission>
+
+/** A page not listed above is for 管理员 only, until it is given a permission there. */
+export function canOpenPage(roles: readonly StaffRole[], page: string) {
+  const need = (pagePermissions as Record<string, StaffPermission | undefined>)[page]
+  return can(roles, need ?? 'manage')
 }

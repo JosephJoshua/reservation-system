@@ -1,3 +1,4 @@
+import { can, type StaffPermission, type StaffRole } from '@rs/shared'
 import { and, eq, gt, lt } from 'drizzle-orm'
 import type { MiddlewareHandler } from 'hono'
 import { coaches, sessions, staff, students } from '../db/schema'
@@ -12,7 +13,7 @@ const COACH_SESSION_MS = 30 * 86_400_000
 
 export type AuthVars = { Variables: { studentId: number } }
 export type CoachVars = { Variables: { coachId: number } }
-export type AdminVars = { Variables: { staffId: number } }
+export type AdminVars = { Variables: { staffId: number; roles: StaffRole[] } }
 
 export async function loginStudent(deps: Deps, code: string) {
   const openid = await deps.wxLogin(code)
@@ -139,8 +140,24 @@ export function requireAdmin(deps: Deps): MiddlewareHandler<AdminVars> {
       : undefined
     if (!member?.active) throw new ApiError(401, 'unauthorized', '请重新登录')
     c.set('staffId', member.id)
+    // Read on every request, so a role change applies at once.
+    c.set('roles', member.roles)
     await next()
   }
+}
+
+/** Marks `need` middleware, so a test can check that every admin route has one. */
+export const PERMISSION_CHECK = Symbol('permission check')
+
+/** Turns away a signed-in staff member whose roles lack `permission`. */
+export function need(permission: StaffPermission) {
+  const check: MiddlewareHandler<AdminVars> = async (c, next) => {
+    if (!can(c.get('roles'), permission)) {
+      throw new ApiError(403, 'forbidden', '没有权限，请联系管理员')
+    }
+    await next()
+  }
+  return Object.assign(check, { [PERMISSION_CHECK]: permission })
 }
 
 export function requireCoach(deps: Deps): MiddlewareHandler<CoachVars> {

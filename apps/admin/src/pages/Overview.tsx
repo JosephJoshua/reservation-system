@@ -5,6 +5,7 @@ import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { addDays, fmtTime, yuanGrouped } from '../format'
 import { attempt, useApi, useIsPhone } from '../hooks'
+import { useCan } from '../me'
 import { Delta } from '../StatDelta'
 import { StudentCell } from '../StudentCell'
 import type { Person } from '../types'
@@ -22,13 +23,14 @@ interface TodaySession {
 interface Summary {
   upcomingBookings: number
   pendingPayments: number
-  refundRequests: number
-  failedRefunds: number
-  offlineRefundsOwed: number
+  // Null for staff without finance, as is revenue.
+  refundRequests: number | null
+  failedRefunds: number | null
+  offlineRefundsOwed: number | null
   date: string
   sessions: TodaySession[]
   unmarked: number
-  revenue: { today: number; month: number; lastMonth: number }
+  revenue: { today: number; month: number; lastMonth: number } | null
   newStudents: { month: number; lastMonth: number }
 }
 
@@ -41,7 +43,17 @@ function Attendance({
   started: boolean
   onMarked: () => void
 }) {
+  const canMark = useCan('attendance')
   if (!started) return <Tag variant="light">未开始</Tag>
+  if (!canMark) {
+    return booking.attendance === null ? (
+      <Tag variant="light">未签到</Tag>
+    ) : (
+      <Tag variant="light" theme={booking.attendance === 'attended' ? 'success' : 'warning'}>
+        {booking.attendance === 'attended' ? '到课' : '缺席'}
+      </Tag>
+    )
+  }
   return (
     <Select
       size="small"
@@ -100,6 +112,7 @@ function Students({
 export function Overview() {
   const { data, error, loading, reload } = useApi<Summary>('/admin/summary')
   const phone = useIsPhone()
+  const money = useCan('finance')
   // Ticks so a lesson that starts while the page is open can be marked.
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -108,7 +121,7 @@ export function Overview() {
   }, [])
   if (error && !data) return <p className="muted">{error}</p>
 
-  const todo: [string, number | undefined, string][] = [
+  const todo: [string, number | null | undefined, string][] = [
     [
       '待签到',
       data?.unmarked,
@@ -116,9 +129,13 @@ export function Overview() {
     ],
     ['待上课预约', data?.upcomingBookings, '#/bookings?status=confirmed'],
     ['待支付', data?.pendingPayments, '#/bookings?status=pending_payment'],
-    ['待审核退款', data?.refundRequests, '#/refunds?status=requested'],
-    ['待线下退还', data?.offlineRefundsOwed, '#/refunds?status=pending'],
-    ['退款失败', data?.failedRefunds, '#/refunds?status=failed'],
+    ...((money
+      ? [
+          ['待审核退款', data?.refundRequests, '#/refunds?status=requested'],
+          ['待线下退还', data?.offlineRefundsOwed, '#/refunds?status=pending'],
+          ['退款失败', data?.failedRefunds, '#/refunds?status=failed'],
+        ]
+      : []) as typeof todo),
   ]
   const sessions = data?.sessions ?? []
   const people = sessions.reduce((n, s) => n + s.students.length, 0)
@@ -126,23 +143,27 @@ export function Overview() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div className="stat-grid kpi-grid">
-        <Card bordered>
-          <div className="muted">今日收款</div>
-          <div className="stat">{data ? yuanGrouped(data.revenue.today) : '-'}</div>
-          <div className="stat-sub">已扣除退款</div>
-        </Card>
-        <Card bordered>
-          <div className="muted">本月收款</div>
-          <div className="stat">{data ? yuanGrouped(data.revenue.month) : '-'}</div>
-          {data && (
-            <Delta
-              now={data.revenue.month}
-              before={data.revenue.lastMonth}
-              label="比上月同期"
-              format={yuanGrouped}
-            />
-          )}
-        </Card>
+        {money && (
+          <>
+            <Card bordered>
+              <div className="muted">今日收款</div>
+              <div className="stat">{data?.revenue ? yuanGrouped(data.revenue.today) : '-'}</div>
+              <div className="stat-sub">已扣除退款</div>
+            </Card>
+            <Card bordered>
+              <div className="muted">本月收款</div>
+              <div className="stat">{data?.revenue ? yuanGrouped(data.revenue.month) : '-'}</div>
+              {data?.revenue && (
+                <Delta
+                  now={data.revenue.month}
+                  before={data.revenue.lastMonth}
+                  label="比上月同期"
+                  format={yuanGrouped}
+                />
+              )}
+            </Card>
+          </>
+        )}
         <Card bordered>
           <div className="muted">本月新学员</div>
           <div className="stat">{data ? `${data.newStudents.month} 人` : '-'}</div>

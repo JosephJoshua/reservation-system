@@ -1,17 +1,18 @@
+import { type StaffRole, staffRoleHelp, staffRoleLabels, staffRoles } from '@rs/shared'
 import { useState } from 'react'
-import { Button, Dialog, Input, Space, Tag } from 'tdesign-react'
+import { Button, Checkbox, Dialog, Input, Space, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate } from '../format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
+import { STAFF_CHANGED } from '../me'
 import type { Staff as StaffMember } from '../types'
-
-export const STAFF_CHANGED = 'staff-changed'
 
 type Editing =
   | { kind: 'create' }
   | { kind: 'rename'; member: StaffMember }
+  | { kind: 'roles'; member: StaffMember }
   | { kind: 'reset'; member: StaffMember }
   | { kind: 'toggle'; member: StaffMember }
   | { kind: 'own-password' }
@@ -31,7 +32,7 @@ export function Staff() {
     <div>
       <div className="toolbar">
         <span className="muted">
-          每位员工用自己的账号登录，退款、售卖、代约等操作都会记下是谁做的。
+          每位员工用自己的账号登录，角色决定能看到和操作的内容，所有操作都会记下是谁做的。
         </span>
         <span className="spacer" />
         <Button variant="outline" onClick={() => setEditing({ kind: 'own-password' })}>
@@ -59,7 +60,29 @@ export function Staff() {
               </Space>
             ),
           },
-          { colKey: 'username', title: '登录名' },
+          {
+            colKey: 'username',
+            title: '登录名',
+            cell: ({ row }) => <span className="nowrap">{row.username}</span>,
+          },
+          {
+            colKey: 'roles',
+            title: '角色',
+            cell: ({ row }) => (
+              <Space size={4} breakLine>
+                {row.roles.map((r) => (
+                  <Tag
+                    key={r}
+                    size="small"
+                    variant="light"
+                    theme={r === 'admin' ? 'primary' : 'default'}
+                  >
+                    {staffRoleLabels[r]}
+                  </Tag>
+                ))}
+              </Space>
+            ),
+          },
           {
             colKey: 'active',
             title: '状态',
@@ -76,7 +99,7 @@ export function Staff() {
           {
             colKey: 'op',
             title: '操作',
-            width: 220,
+            width: 280,
             cell: ({ row }) => (
               <div className="nowrap">
                 <Button
@@ -88,6 +111,13 @@ export function Staff() {
                 </Button>
                 {row.id !== me.data?.id && (
                   <>
+                    <Button
+                      variant="text"
+                      theme="primary"
+                      onClick={() => setEditing({ kind: 'roles', member: row })}
+                    >
+                      角色
+                    </Button>
                     <Button
                       variant="text"
                       theme="primary"
@@ -112,6 +142,9 @@ export function Staff() {
       {editing?.kind === 'create' && <CreateStaff onClose={() => setEditing(null)} onDone={done} />}
       {editing?.kind === 'rename' && (
         <Rename member={editing.member} onClose={() => setEditing(null)} onDone={done} />
+      )}
+      {editing?.kind === 'roles' && (
+        <EditRoles member={editing.member} onClose={() => setEditing(null)} onDone={done} />
       )}
       {editing?.kind === 'reset' && (
         <ResetPassword member={editing.member} onClose={() => setEditing(null)} onDone={done} />
@@ -140,13 +173,15 @@ function CreateStaff({ onClose, onDone }: DialogProps) {
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [roles, setRoles] = useState<StaffRole[]>([])
   const submitting = useSubmitting()
-  const ready = name.trim() !== '' && usernameOk(username) && passwordOk(password)
+  const ready =
+    name.trim() !== '' && usernameOk(username) && passwordOk(password) && roles.length > 0
   const submit = async () => {
     if (!ready) return
     if (
       await attempt(
-        () => api('POST', '/admin/staff', { name, username, password }),
+        () => api('POST', '/admin/staff', { name, username, password, roles }),
         '已添加，请把登录名和密码告诉对方',
       )
     )
@@ -181,7 +216,72 @@ function CreateStaff({ onClose, onDone }: DialogProps) {
             onChange={(v) => setPassword(String(v))}
           />
         </Field>
+        <Field label="角色">
+          <RolePicker value={roles} onChange={setRoles} />
+        </Field>
       </div>
+    </Dialog>
+  )
+}
+
+/** 管理员 already covers the others, so picking it clears and locks them. */
+function RolePicker({
+  value,
+  onChange,
+}: {
+  value: StaffRole[]
+  onChange: (roles: StaffRole[]) => void
+}) {
+  const admin = value.includes('admin')
+  return (
+    <div className="role-picker">
+      {staffRoles.map((role) => (
+        <Checkbox
+          key={role}
+          checked={value.includes(role)}
+          disabled={admin && role !== 'admin'}
+          onChange={(on) => {
+            if (role === 'admin') onChange(on ? ['admin'] : [])
+            else onChange(staffRoles.filter((r) => (r === role ? on : value.includes(r))))
+          }}
+        >
+          <span className="role-option">
+            <span>{staffRoleLabels[role]}</span>
+            <span className="muted">{staffRoleHelp[role]}</span>
+          </span>
+        </Checkbox>
+      ))}
+    </div>
+  )
+}
+
+function EditRoles({ member, onClose, onDone }: DialogProps & { member: StaffMember }) {
+  const [roles, setRoles] = useState<StaffRole[]>(member.roles)
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+  const changed = roles.join() !== member.roles.join()
+  const ready = roles.length > 0 && changed
+  const submit = async () => {
+    if (!ready) return
+    if (
+      await attempt(
+        () => api('PATCH', `/admin/staff/${member.id}`, { roles }, { key }),
+        '已保存，对方下次操作时生效',
+        { onStale: onDone },
+      )
+    )
+      onDone()
+  }
+  return (
+    <Dialog
+      visible
+      header={`${member.name} 的角色`}
+      confirmBtn={{ content: '保存', disabled: !ready, loading: submitting }}
+      cancelBtn="返回"
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <RolePicker value={roles} onChange={setRoles} />
     </Dialog>
   )
 }

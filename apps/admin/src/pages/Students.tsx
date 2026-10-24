@@ -46,6 +46,7 @@ import {
   offlineMethodLabel,
   packageStatusLabel,
 } from '../labels'
+import { useCan } from '../me'
 import type { LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
 
 function idFromHash() {
@@ -54,6 +55,7 @@ function idFromHash() {
 }
 
 export function Students() {
+  const money = useCan('finance')
   const [q, setQ] = useState('')
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<number | null>(idFromHash)
@@ -102,7 +104,7 @@ export function Students() {
         />
         <span className="spacer" />
         {/* The export lists every student; it has no 即将到期 filter. */}
-        {!expiring && (
+        {!expiring && money && (
           <ExportButton
             kind="students"
             filters={{ q: query }}
@@ -263,6 +265,9 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   } | null>(null)
   const s = detail.data
   const phone = useIsPhone()
+  const canEdit = useCan('students')
+  const canBook = useCan('bookings')
+  const canManage = useCan('manage')
 
   return (
     <Drawer
@@ -285,15 +290,21 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             <Space align="center">
               <span>{s.phone || '未填写手机号'}</span>
               <span className="muted">注册于 {fmtDate(s.createdAt)}</span>
-              <span className="muted">测试学员</span>
-              <Switch
-                size="small"
-                value={s.tester}
-                onChange={async (v) => {
-                  if (await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v })))
-                    await detail.reload()
-                }}
-              />
+              {canManage && (
+                <>
+                  <span className="muted">测试学员</span>
+                  <Switch
+                    size="small"
+                    value={s.tester}
+                    onChange={async (v) => {
+                      if (
+                        await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v }))
+                      )
+                        await detail.reload()
+                    }}
+                  />
+                </>
+              )}
             </Space>
           )}
 
@@ -301,7 +312,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             title="学员档案"
             bordered
             actions={
-              s.deletedAt ? null : (
+              s.deletedAt || !canEdit ? null : (
                 <Button size="small" onClick={() => setEditingProfile(profileEdit(s.profile))}>
                   编辑
                 </Button>
@@ -315,7 +326,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             title="课时包"
             bordered
             actions={
-              s.deletedAt ? null : (
+              s.deletedAt || !canEdit ? null : (
                 <Button size="small" onClick={() => setSelling(true)}>
                   前台售卖
                 </Button>
@@ -367,6 +378,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                   cell: ({ row }) => (
                     <Space size={0} breakLine={false}>
                       {!s.deletedAt &&
+                      canManage &&
                       (row.status === 'active' ||
                         row.status === 'used_up' ||
                         row.status === 'expired') ? (
@@ -408,7 +420,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             title="预约记录"
             bordered
             actions={
-              s.deletedAt ? null : (
+              s.deletedAt || !canBook ? null : (
                 <Button size="small" onClick={() => setBooking(true)}>
                   代约
                 </Button>

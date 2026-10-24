@@ -1,4 +1,5 @@
 import { type ApiErrorBody, versionOf } from '@rs/shared'
+import { STAFF_CHANGED } from './me'
 
 const TOKEN_KEY = 'rs-admin-token'
 
@@ -68,6 +69,9 @@ export async function api<T = unknown>(
       setToken(null)
       onUnauthorized()
     }
+    // Roles changed since the page loaded: reload them, so the menu drops what is no longer allowed.
+    if (res.status === 403 && err?.code === 'forbidden')
+      window.dispatchEvent(new Event(STAFF_CHANGED))
     throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? '操作失败，请重试')
   }
   return data as T
@@ -100,6 +104,9 @@ async function fetchFile(path: string): Promise<{ blob: Blob; name: string }> {
       setToken(null)
       onUnauthorized()
     }
+    // Roles changed since the page loaded: reload them, so the menu drops what is no longer allowed.
+    if (res.status === 403 && err?.code === 'forbidden')
+      window.dispatchEvent(new Event(STAFF_CHANGED))
     throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? '操作失败，请重试')
   }
   const disposition = res.headers.get('Content-Disposition') ?? ''
