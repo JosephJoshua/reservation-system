@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
-import { startTheme } from './theme'
+import { qaTheme, resetTheme, startTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
 const outDir = fileURLToPath(new URL('../screenshots/coach-profile', import.meta.url))
@@ -317,5 +317,10 @@ try {
   if (errors.length > 0) throw new Error(`Runtime errors:\n${errors.join('\n')}`)
   console.log('coach page checks passed')
 } finally {
-  await miniProgram.close()
+  try {
+    // A forced theme would otherwise stay set for the next run.
+    if (qaTheme()) await resetTheme(miniProgram)
+  } finally {
+    await miniProgram.close()
+  }
 }
