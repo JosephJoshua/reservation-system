@@ -12,6 +12,8 @@ import type { Coach, LessonType, Person, Slot } from './types'
 interface Quote {
   price: PriceTag
   package: { id: number; name: string; lessonsRemaining: number; expiresAt: string } | null
+  /** Why the student's package can't pay for this slot, when they have one. */
+  packageNote: string | null
 }
 
 type Method = keyof typeof offlineMethodLabel
@@ -297,7 +299,7 @@ export function BookForStudent({
                 <Radio value="package" disabled={!quote.package}>
                   {quote.package
                     ? `课时包「${quote.package.name}」剩 ${quote.package.lessonsRemaining} 节`
-                    : '没有可用课时包'}
+                    : (quote.packageNote ?? '没有可用课时包')}
                 </Radio>
                 <Radio value="offline">线下收款（标价 {yuan(quote.price.price)}）</Radio>
               </Radio.Group>
