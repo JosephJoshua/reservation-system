@@ -31,6 +31,7 @@ Page({
   },
 
   orderId: 0,
+  picking: false,
   meName: '',
   // What was typed for the other kind, so switching back and forth keeps it.
   typed: {} as Partial<Record<InvoiceTitleKind, { name: string; taxNumber: string }>>,
@@ -71,9 +72,15 @@ Page({
   },
 
   async pickKind() {
+    // A double tap would open a second sheet over the first.
+    if (this.picking) return
+    this.picking = true
     const res = await wx
       .showActionSheet({ itemList: KINDS.map((k) => invoiceTitleKindLabels[k]) })
       .catch(() => null)
+      .finally(() => {
+        this.picking = false
+      })
     const kind = res ? KINDS[res.tapIndex] : undefined
     if (!kind || kind === this.data.kind) return
     this.typed[this.data.kind] = { name: this.data.name, taxNumber: this.data.taxNumber }
@@ -126,7 +133,10 @@ Page({
         this.setData({ showAgreement: false })
       }
       await api('POST', '/invoices', { orderId: this.orderId, ...title })
-      wx.navigateBack({ success: () => wx.showToast({ title: '已提交', icon: 'success' }) })
+      const done = () => wx.showToast({ title: '已提交', icon: 'success' })
+      // Opened from a shared link there is nothing to go back to, so show the list instead.
+      if (getCurrentPages().length > 1) wx.navigateBack({ success: done })
+      else wx.redirectTo({ url: '/pages/invoices/index', success: done })
     } catch (e) {
       showError(e)
     } finally {
