@@ -22,14 +22,28 @@ import { getSettings } from './settings'
 // has time to arrive before the slot is released.
 const EXPIRY_GRACE_MS = 2 * 60_000
 
+/** The order was paid already; the mini program shows it as paid rather than as an error. */
+export const orderPaid = () => new ApiError(409, 'order_paid', '订单已支付')
+
 /** Places a pending order with WeChat Pay and returns what wx.requestPayment needs. */
 export async function startPayment(
   deps: Deps,
   orderId: number,
   openid: string,
 ): Promise<PaymentParams> {
-  const order = deps.db.select().from(orders).where(eq(orders.id, orderId)).get()
+  let order = deps.db.select().from(orders).where(eq(orders.id, orderId)).get()
   if (!order) throw notFound('订单')
+  // Paid before the callback arrived, say just before the app was closed or on another phone:
+  // WeChat would refuse to take the money twice, so the student is told it is done instead.
+  if (order.status === 'pending' && order.prepayId) {
+    try {
+      await syncOrder(deps, orderId)
+    } catch (e) {
+      deps.log('order sync failed', { orderId, error: (e as Error).message })
+    }
+    order = deps.db.select().from(orders).where(eq(orders.id, orderId)).get() ?? order
+  }
+  if (order.status === 'paid') throw orderPaid()
   if (order.status !== 'pending' || !order.expiresAt || order.expiresAt <= deps.now()) {
     throw new ApiError(409, 'order_not_payable', '订单已关闭，请重新下单')
   }
@@ -55,14 +69,15 @@ export async function startPayment(
 /**
  * Starts payment for an order just created for the student. If that fails, the order is closed at
  * once so a booking's slot is not held for the whole timeout. A repeated request that reuses an
- * order passes `release: false`: the first request may still be paying it.
+ * order passes `release: false`: the first request may still be paying it, or have paid it, in
+ * which case there is nothing to pay and this returns null.
  */
 export async function startPaymentOrRelease(
   deps: Deps,
   orderId: number,
   studentId: number,
   { release = true } = {},
-): Promise<PaymentParams> {
+): Promise<PaymentParams | null> {
   const student = deps.db
     .select({ openid: students.openid })
     .from(students)
@@ -71,6 +86,7 @@ export async function startPaymentOrRelease(
   try {
     return await startPayment(deps, orderId, student?.openid ?? '')
   } catch (e) {
+    if (!release && e instanceof ApiError && e.code === 'order_paid') return null
     if (!release) throw e
     await closeOrder(deps, orderId).catch((closeError) =>
       deps.log('release order failed', { orderId, error: (closeError as Error).message }),
@@ -228,6 +244,70 @@ export async function syncOrder(deps: Deps, orderId: number) {
   if (state.state === 'paid') applyPayment(deps, order.outTradeNo, state)
   return deps.db.select({ status: orders.status }).from(orders).where(eq(orders.id, orderId)).get()
     ?.status
+}
+
+// When each order was last asked about by syncPendingOrders, per database, so a page shown again
+// and again does not ask WeChat Pay every time.
+const lastSyncedBy = new WeakMap<Deps['db'], Map<number, number>>()
+const RESYNC_MS = 10_000
+// A page waits this long for WeChat Pay at most; a slower answer still lands in the background.
+const VIEW_SYNC_WAIT_MS = 3_000
+
+/**
+ * Asks WeChat Pay about the student's orders still waiting for payment, so a payment whose
+ * callback is late or lost shows up when the student next looks rather than at expiry. Only a
+ * booking's own order with `bookingId`, only package orders with 'package'. Failures are logged;
+ * the callback and the sweeper still settle the order.
+ */
+export async function syncPendingOrders(
+  deps: Deps,
+  studentId: number,
+  which: 'package' | 'booking' | { bookingId: number },
+) {
+  const now = deps.now().getTime()
+  let lastSynced = lastSyncedBy.get(deps.db)
+  if (!lastSynced) {
+    lastSynced = new Map()
+    lastSyncedBy.set(deps.db, lastSynced)
+  }
+  for (const [id, at] of lastSynced) if (Math.abs(now - at) >= RESYNC_MS) lastSynced.delete(id)
+  const due = deps.db
+    .select({ id: orders.id, kind: orders.kind, bookingId: orders.bookingId })
+    .from(orders)
+    .where(
+      and(
+        eq(orders.studentId, studentId),
+        eq(orders.status, 'pending'),
+        eq(orders.provider, 'wechat'),
+        isNotNull(orders.prepayId),
+      ),
+    )
+    .all()
+    .filter((o) =>
+      which === 'package'
+        ? o.kind === 'package'
+        : which === 'booking'
+          ? o.kind !== 'package'
+          : o.bookingId === which.bookingId,
+    )
+    .filter((o) => !lastSynced.has(o.id))
+  if (!due.length) return
+  for (const { id } of due) lastSynced.set(id, now)
+  const synced = Promise.all(
+    due.map(({ id }) =>
+      syncOrder(deps, id).catch((e) =>
+        deps.log('order sync failed', { orderId: id, error: (e as Error).message }),
+      ),
+    ),
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    synced,
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, VIEW_SYNC_WAIT_MS)
+    }),
+  ])
+  clearTimeout(timer)
 }
 
 /**

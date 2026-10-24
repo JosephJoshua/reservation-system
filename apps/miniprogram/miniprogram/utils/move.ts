@@ -1,6 +1,6 @@
 // Submitting a move from the student's and the coach's move pages.
 import { ApiError, showError } from './api'
-import { navigateBackOnce } from './nav'
+import { isTop, navigateBackOnce } from './nav'
 
 /**
  * Refusals that mean the lesson itself can no longer move: late, used up, cancelled meanwhile, or
@@ -37,7 +37,7 @@ export async function submitMove(
   try {
     opener.emit?.('moved', await request())
     wx.showToast({ title: '已改约', icon: 'success' })
-    setTimeout(() => navigateBackOnce(), 600)
+    setTimeout(() => isTop(page) && navigateBackOnce(), 600)
     return 'moved'
   } catch (e) {
     if (!(e instanceof ApiError)) {
@@ -47,7 +47,7 @@ export async function submitMove(
     if (LESSON_FIXED.includes(e.code)) {
       opener.emit?.('stale')
       await wx.showModal({ title: e.message, showCancel: false })
-      navigateBackOnce()
+      if (isTop(page)) navigateBackOnce()
       return 'fixed'
     }
     if (TIME_REFUSED.includes(e.code) || e.status === 409 || e.status === 404) {

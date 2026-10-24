@@ -11,6 +11,9 @@ import type {
 } from './gateway'
 import { GatewayError } from './gateway'
 
+/** How long a call to WeChat Pay may take. Every call is safe to repeat. */
+const WECHAT_TIMEOUT_MS = 10_000
+
 export interface WechatPayConfig {
   appId: string
   mchId: string
@@ -212,6 +215,8 @@ export class WechatPayGateway implements PaymentGateway {
           'Wechatpay-Serial': this.config.platformPublicKeyId,
         },
         body: method === 'GET' ? undefined : body,
+        // A hung connection would hold the student's request and every later sweep.
+        signal: AbortSignal.timeout(WECHAT_TIMEOUT_MS),
       })
     } catch (e) {
       throw new GatewayError(`network error: ${(e as Error).message}`, 'NETWORK', 0)

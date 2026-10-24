@@ -1,4 +1,5 @@
 import { showError } from '../../utils/api'
+import { isTop } from '../../utils/nav'
 import { bind } from '../utils/coach-api'
 
 Page({
@@ -17,6 +18,7 @@ Page({
     this.setData({ binding: true })
     try {
       await bind(this.data.code)
+      if (!isTop(this)) return
       wx.redirectTo({
         url: '/coach/index/index',
         success: () => wx.showToast({ title: '绑定成功', icon: 'success' }),

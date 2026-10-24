@@ -1,7 +1,7 @@
 import { type CoachLessonDto, FEEDBACK_PHOTOS } from '../../lib/shared'
 import { ApiError, assetUrl, errorMessage, showError } from '../../utils/api'
 import { lessonTime } from '../../utils/format'
-import { navigateBackOnce } from '../../utils/nav'
+import { isTop, navigateBackOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
 import { askForNotices, coachApi, coachUpload } from '../utils/coach-api'
 import { confirmDeleteFeedback } from '../utils/feedback'
@@ -221,7 +221,7 @@ Page({
   done(lesson: CoachLessonDto, message: string) {
     wx.disableAlertBeforeUnload()
     this.getOpenerEventChannel().emit?.('saved', lesson)
-    navigateBackOnce()
+    if (isTop(this)) navigateBackOnce()
     wx.showToast({ title: message, icon: 'success' })
   },
 
@@ -233,6 +233,6 @@ Page({
     this.getOpenerEventChannel().emit?.('stale')
     wx.disableAlertBeforeUnload()
     await wx.showModal({ title: '无法保存', content: err.message, showCancel: false })
-    navigateBackOnce()
+    if (isTop(this)) navigateBackOnce()
   },
 })

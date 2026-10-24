@@ -1,7 +1,7 @@
 import { type CoachMeDto, type CoachSlotDto, venueDateKey } from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
-import { navigateOnce } from '../../utils/nav'
+import { isTop, navigateOnce } from '../../utils/nav'
 import { askForNotices, coachApi, isNotBound, remember } from '../utils/coach-api'
 import { lessonTag } from '../utils/labels'
 
@@ -122,7 +122,8 @@ Page({
       await this.loadSchedule()
       this.setData({ state: 'ready' })
     } catch (e) {
-      if (isNotBound(e)) {
+      // Left for another page meanwhile: the error state's retry gets here again.
+      if (isNotBound(e) && isTop(this)) {
         wx.redirectTo({ url: '/coach/bind/index' })
         return
       }

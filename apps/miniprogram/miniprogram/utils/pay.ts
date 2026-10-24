@@ -53,15 +53,39 @@ export async function waitForOrder(orderId: number): Promise<OrderStatusDto | nu
   }
 }
 
-/** Opens the cashier for an order and waits for the server to confirm it. */
+/** Whether the server has the order as paid, asking it once; false when it cannot be reached. */
+function paidNow(orderId: number): Promise<boolean> {
+  return api<OrderStatusDto>('GET', `/orders/${orderId}`)
+    .then((order) => order.status === 'paid')
+    .catch(() => false)
+}
+
+/**
+ * Opens the cashier for an order and waits for the server to confirm it. An order paid already,
+ * say before the app was closed or on another phone, comes back as paid without a cashier.
+ */
 export async function payOrder(
   orderId: number,
   amount: number,
   params?: PaymentParamsDto | null,
 ): Promise<PayResult> {
-  const payment = params ?? (await api<PaymentParamsDto>('POST', `/orders/${orderId}/payment`))
-  const outcome = payment.fake ? await fakePayment(orderId, amount) : await requestPayment(payment)
-  if (outcome === 'cancelled') return 'cancelled'
+  let payment: PaymentParamsDto
+  try {
+    payment = params ?? (await api<PaymentParamsDto>('POST', `/orders/${orderId}/payment`))
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'order_paid') return 'paid'
+    throw e
+  }
+  let outcome: 'ok' | 'cancelled'
+  try {
+    outcome = payment.fake ? await fakePayment(orderId, amount) : await requestPayment(payment)
+  } catch (e) {
+    // WeChat also fails an order that was paid meanwhile, so ask the server before saying so.
+    if (await paidNow(orderId)) return 'paid'
+    throw e
+  }
+  // The server has the last word, even on a cancel.
+  if (outcome === 'cancelled') return (await paidNow(orderId)) ? 'paid' : 'cancelled'
   const order = await waitForOrder(orderId)
   return order?.status === 'paid' ? 'paid' : 'pending'
 }

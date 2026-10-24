@@ -2,6 +2,7 @@ import { type CatalogDto, formatYuan, type MeDto, type PaymentParamsDto } from '
 import { api, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, getCatalog, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
+import { isTop } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 import { ask } from '../../utils/tap'
 
@@ -114,13 +115,15 @@ Page({
         await agreePolicies()
         this.setData({ showAgreement: false })
       }
-      const res = await api<{ orderId: number; payment: PaymentParamsDto }>(
+      const res = await api<{ orderId: number; payment: PaymentParamsDto | null }>(
         'POST',
         '/packages/purchase',
         { productId: product.id },
       )
       const result = await payOrder(res.orderId, product.amount, res.payment)
-      if (result === 'paid') {
+      if (result === 'paid' && !isTop(this)) {
+        wx.showToast({ title: '购买成功', icon: 'success' })
+      } else if (result === 'paid') {
         wx.redirectTo({
           url: '/pages/my-packages/index',
           success: () => wx.showToast({ title: '购买成功', icon: 'success' }),
