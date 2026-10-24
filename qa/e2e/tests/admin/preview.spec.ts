@@ -72,7 +72,7 @@ test('a new coach shows on their page as it is typed', async ({ page }) => {
   await page.getByRole('button', { name: '新建教练' }).click()
   const d = dialog(page)
   // Nothing typed yet: no lessons to book, and the page says so.
-  await expect(screen(d)).toContainText('该教练暂未开放预约')
+  await expect(screen(d)).toContainText('这位教练暂未开放预约')
   await expect(d.locator('.mp-preview-alert')).toContainText('还没有可预约的课程')
 
   await field(d, '姓名').locator('input').fill(coachName)

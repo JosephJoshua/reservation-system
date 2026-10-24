@@ -282,7 +282,7 @@ export function CoachScreen({
       {lessons.length === 0 ? (
         <div className="card">
           <div className="inline-empty">
-            <TEmpty icon="calendar" size="48px" description="该教练暂未开放预约" />
+            <TEmpty icon="calendar" size="48px" description="这位教练暂未开放预约" />
           </div>
         </div>
       ) : (
@@ -496,7 +496,7 @@ export function PackagesScreen({
         </div>
       ))}
       <div className="footnote">
-        课时包仅限本人使用，过期后剩余课时失效。未使用的课时可申请退款，由场馆审核。
+        课时包仅限本人使用，过期后剩余课时将失效。未使用的课时可以申请退款，由场馆审核。
       </div>
     </div>
   )
