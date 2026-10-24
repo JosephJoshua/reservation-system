@@ -5,7 +5,7 @@ import type { VenueSettings } from './settings'
  * so on for a later change the same day. Change it whenever either text changes in substance:
  * students who agreed to an older version are asked again.
  */
-export const POLICY_VERSION = '2026-10-24.3'
+export const POLICY_VERSION = '2026-10-24.4'
 
 /** The date the texts show. */
 const POLICY_DATE = POLICY_VERSION.slice(0, 10)
