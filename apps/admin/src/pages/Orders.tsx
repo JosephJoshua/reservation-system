@@ -1,9 +1,11 @@
+import { orderTitle } from '@rs/shared'
 import { useState } from 'react'
 import { Select, Tag } from 'tdesign-react'
 import { DataTable } from '../DataTable'
+import { ExportButton } from '../ExportButton'
 import { fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
-import { offlineMethodLabel, orderKindLabel, orderStatusLabel } from '../labels'
+import { offlineMethodLabel, orderStatusLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Order } from '../types'
 
@@ -23,6 +25,12 @@ export function Orders() {
           onChange={(v) => setStatus(String(v ?? ''))}
           options={Object.entries(orderStatusLabel).map(([value, [label]]) => ({ value, label }))}
         />
+        <span className="spacer" />
+        <ExportButton
+          kind="orders"
+          filters={{ status }}
+          filterText={status ? `状态：${orderStatusLabel[status as 'paid'][0]}` : undefined}
+        />
       </div>
       <DataTable
         rowKey="id"
@@ -40,10 +48,7 @@ export function Orders() {
             colKey: 'kind',
             title: '类型',
             // A trial order is described by its lesson name, which is often just 体验课.
-            cell: ({ row }) =>
-              row.description === orderKindLabel[row.kind]
-                ? row.description
-                : `${orderKindLabel[row.kind]} · ${row.description}`,
+            cell: ({ row }) => orderTitle(row.kind, row.description),
           },
           { colKey: 'amount', title: '金额', cell: ({ row }) => yuan(row.amount) },
           {

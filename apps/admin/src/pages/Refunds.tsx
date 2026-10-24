@@ -11,12 +11,22 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
+import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
+
+const statusOptions = [
+  { value: 'requested', label: '待审核' },
+  { value: 'pending', label: '待提交/待退还' },
+  { value: 'processing', label: '退款中' },
+  { value: 'succeeded', label: '已退款' },
+  { value: 'failed', label: '退款失败' },
+  { value: 'rejected', label: '已拒绝' },
+]
 
 export function Refunds() {
   const [status, setStatus] = useState('requested')
@@ -54,14 +64,15 @@ export function Refunds() {
           placeholder="全部状态"
           value={status || undefined}
           onChange={(v) => setStatus(String(v ?? ''))}
-          options={[
-            { value: 'requested', label: '待审核' },
-            { value: 'pending', label: '待提交/待退还' },
-            { value: 'processing', label: '退款中' },
-            { value: 'succeeded', label: '已退款' },
-            { value: 'failed', label: '退款失败' },
-            { value: 'rejected', label: '已拒绝' },
-          ]}
+          options={statusOptions}
+        />
+        <span className="spacer" />
+        <ExportButton
+          kind="refunds"
+          filters={{ status }}
+          filterText={
+            status ? `状态：${statusOptions.find((o) => o.value === status)?.label}` : undefined
+          }
         />
       </div>
       <DataTable
@@ -114,6 +125,13 @@ export function Refunds() {
                   )}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
+                  )}
+                  {row.invoiceStatus && (
+                    <div>
+                      <a href="#/invoices" className="warning-text">
+                        {row.invoiceStatus === 'issued' ? '该订单已开票' : '该订单正在申请开票'}
+                      </a>
+                    </div>
                   )}
                 </span>
               )

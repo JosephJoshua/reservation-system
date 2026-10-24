@@ -54,10 +54,14 @@
   min-width: 0;
 }
 
+/* A 44px tap target beside the text. */
 .refund-link {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
   margin-left: 24rpx;
-  padding: 16rpx 0 16rpx 24rpx;
+  padding-left: 24rpx;
   font-size: 28rpx;
   color: var(--td-text-color-link);
 }

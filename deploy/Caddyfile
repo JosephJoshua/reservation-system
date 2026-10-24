@@ -4,6 +4,10 @@
 
 (site) {
 	encode zstd gzip
+	# The largest upload is an invoice PDF of up to 10MB.
+	request_body {
+		max_size 12MB
+	}
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff

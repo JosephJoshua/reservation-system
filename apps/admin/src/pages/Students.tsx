@@ -17,6 +17,7 @@ import {
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { DataTable } from '../DataTable'
+import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
@@ -69,6 +70,12 @@ export function Students() {
           onClear={() => setQuery('')}
         />
         <Button type="submit">搜索</Button>
+        <span className="spacer" />
+        <ExportButton
+          kind="students"
+          filters={{ q: query }}
+          filterText={query ? `搜索“${query}”` : undefined}
+        />
       </form>
       <DataTable
         rowKey="id"

@@ -1,0 +1,39 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:elif="{{!orders.length}}" class="centered">
+  <t-empty icon="{{emptyIcon}}" description="还没有可开票的订单" />
+</view>
+
+<view wx:else class="list">
+  <view class="footnote">已支付的订单可申请电子发票，开具后发送到你填写的邮箱，也可在这里查看。</view>
+  <view wx:for="{{orders}}" wx:key="orderId" class="order card {{item.dim ? 'order-dim' : ''}}">
+    <view class="order-head">
+      <view class="order-title">{{item.title}}</view>
+      <t-tag size="small" theme="{{item.tone}}" variant="light">{{item.state}}</t-tag>
+    </view>
+    <view class="order-foot">
+      <view class="grow">
+        <view class="order-meta">{{item.meta}}</view>
+        <view wx:if="{{item.note}}" class="order-meta">{{item.note}}</view>
+      </view>
+      <view
+        wx:if="{{item.link}}"
+        class="order-link"
+        hover-class="order-link-hover"
+        data-id="{{item.orderId}}"
+        bind:tap="open"
+      >{{item.link}}</view>
+    </view>
+  </view>
+</view>
+</theme-root>

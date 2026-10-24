@@ -2,6 +2,7 @@
 export * from './availability'
 export * from './coach'
 export * from './dto'
+export * from './invoices'
 export * from './pricing'
 export * from './rules'
 export type { LateCancelRule } from './settings'

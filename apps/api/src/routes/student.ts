@@ -43,6 +43,7 @@ import {
 import { type AuthVars, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
 import { coachViews, visibleTo } from '../services/catalog'
+import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
 import { startPayment, syncOrder } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { getSettings } from '../services/settings'
@@ -114,6 +115,8 @@ export function studentRoutes(deps: Deps) {
   app.use('/bookings/*', requireStudent(deps))
   app.use('/orders/*', requireStudent(deps))
   app.use('/packages', requireStudent(deps))
+  app.use('/invoices', requireStudent(deps))
+  app.use('/invoices/*', requireStudent(deps))
   app.use('/packages/*', requireStudent(deps))
 
   const me = (studentId: number) => {
@@ -501,6 +504,35 @@ export function studentRoutes(deps: Deps) {
     requestPackageRefund(deps, c.get('studentId'), idParam(c))
     const pkg = studentPackages(db, c.get('studentId'), deps.now()).find((p) => p.id === idParam(c))
     return c.json(pkg)
+  })
+
+  app.get('/invoices', (c) => c.json(studentInvoices(db, c.get('studentId'))))
+
+  app.post('/invoices', async (c) => {
+    const { orderId, ...title } = await parseBody(
+      c,
+      z.object({
+        orderId: z.number().int().positive(),
+        kind: z.enum(['personal', 'company']),
+        name: z.string().max(100),
+        taxNumber: z.string().max(40).default(''),
+        email: z.string().max(200),
+      }),
+    )
+    requireConsent(db, c.get('studentId'))
+    const id = requestInvoice(deps, c.get('studentId'), orderId, title)
+    const order = studentInvoices(db, c.get('studentId')).orders.find((o) => o.orderId === orderId)
+    return c.json({ id, order }, 201)
+  })
+
+  app.get('/invoices/:id/pdf', (c) => {
+    const id = idParam(c)
+    return c.body(invoicePdf(deps, id, c.get('studentId')), 200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="invoice-${id}.pdf"`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    })
   })
 
   return app

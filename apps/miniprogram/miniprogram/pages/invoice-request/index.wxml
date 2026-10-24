@@ -1,0 +1,54 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<block wx:else>
+  <view class="form has-action-bar">
+    <t-cell-group theme="card">
+      <t-cell title="项目" note="{{item}}" />
+      <t-cell title="开票金额" note="{{amount}}" />
+    </t-cell-group>
+    <view class="section-title">发票抬头</view>
+    <t-cell-group theme="card">
+      <t-cell title="抬头类型" note="{{kindLabel}}" arrow hover bind:click="pickKind" />
+      <t-input
+        label="{{kind === 'company' ? '单位名称' : '抬头'}}"
+        placeholder="{{kind === 'company' ? '与营业执照一致' : '个人姓名'}}"
+        maxlength="{{50}}"
+        value="{{name}}"
+        bind:change="onName"
+      />
+      <t-input
+        wx:if="{{kind === 'company'}}"
+        label="税号"
+        placeholder="纳税人识别号"
+        maxlength="{{20}}"
+        value="{{taxNumber}}"
+        bind:change="onTaxNumber"
+      />
+      <t-input
+        label="邮箱"
+        placeholder="用于接收电子发票"
+        maxlength="{{100}}"
+        value="{{email}}"
+        bind:change="onEmail"
+      />
+    </t-cell-group>
+    <view class="footnote">电子发票由场馆开具，开具后发送到邮箱，也可在“我的 - 发票”中查看。下次申请会自动填入本次的抬头。</view>
+    <agree-check id="agree-check" wx:if="{{showAgreement}}" checked="{{agreed}}" bind:change="onAgree" />
+  </view>
+  <view class="action-bar">
+    <view class="grow">
+      <t-button theme="primary" block t-class="action-button" loading="{{saving}}" bind:tap="submit">提交申请</t-button>
+    </view>
+  </view>
+</block>
+</theme-root>

@@ -4,6 +4,7 @@ import { Button, DateRangePicker, Dialog, Select, Tag, Textarea } from 'tdesign-
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { DataTable } from '../DataTable'
+import { ExportButton } from '../ExportButton'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
 import { attempt, useApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundLabel } from '../labels'
@@ -106,6 +107,19 @@ export function Bookings() {
           ]}
         />
         <span className="spacer" />
+        <ExportButton
+          kind="bookings"
+          range={range}
+          filters={{ status, coachId }}
+          filterText={
+            [
+              status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
+              coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
+            ]
+              .filter(Boolean)
+              .join('，') || undefined
+          }
+        />
         <Button onClick={() => setBooking(true)}>代约</Button>
       </div>
       <DataTable

@@ -76,6 +76,10 @@ Page({
     navigateOnce('/pages/theme/index')
   },
 
+  openInvoices() {
+    navigateOnce('/pages/invoices/index')
+  },
+
   openPolicy(e: WechatMiniprogram.TouchEvent) {
     navigateOnce(`/pages/policy/index?kind=${e.currentTarget.dataset.kind}`)
   },

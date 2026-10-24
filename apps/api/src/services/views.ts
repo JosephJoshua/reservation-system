@@ -18,6 +18,7 @@ import {
   refunds,
   slots,
 } from '../db/schema'
+import { orderInvoices } from './invoices'
 
 type BookingRow = typeof bookings.$inferSelect
 type PackageRow = typeof packages.$inferSelect
@@ -95,6 +96,7 @@ export function bookingViews(
       : [],
   )
   const refundByBooking = latestRefunds(tx, 'bookingId', ids)
+  const invoiceByOrder = orderInvoices(tx, [...orderByBooking.values()])
   return rows.map((b) => {
     const status = bookingStatus(b, now)
     const order = orderByBooking.get(b.id)
@@ -117,6 +119,7 @@ export function bookingViews(
       late: b.late,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
       attendance: b.attendance,
+      invoice: order ? (invoiceByOrder.get(order.id) ?? null) : null,
     }
   })
 }
@@ -144,6 +147,21 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
   const ids = rows.map((r) => r.id)
   const refundByPackage = latestRefunds(tx, 'packageId', ids)
   const granted = grantedLessons(tx, ids)
+  const invoiceByOrder = orderInvoices(
+    tx,
+    rows.length
+      ? tx
+          .select()
+          .from(orders)
+          .where(
+            inArray(
+              orders.id,
+              rows.map((p) => p.orderId),
+            ),
+          )
+          .all()
+      : [],
+  )
   return rows.map((p) => {
     const refund = refundByPackage.get(p.id)
     return {
@@ -159,6 +177,7 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
       status: packageStatus(p, now),
       pricePaid: p.pricePaid,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
+      invoice: invoiceByOrder.get(p.orderId) ?? null,
     }
   })
 }

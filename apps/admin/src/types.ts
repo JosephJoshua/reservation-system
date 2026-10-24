@@ -137,6 +137,8 @@ export interface Refund {
   }
   student: Person
   package: PackageDto | null
+  /** A live invoice on the order, which a refund makes wrong. */
+  invoiceStatus: 'requested' | 'issued' | null
 }
 
 export interface Banner {
@@ -160,4 +162,8 @@ export interface LedgerEntry {
   createdAt: string
 }
 
-export type { ActionLogEntryDto as ActionLogEntry, StaffDto as Staff } from '@rs/shared'
+export type {
+  ActionLogEntryDto as ActionLogEntry,
+  AdminInvoiceDto as AdminInvoice,
+  StaffDto as Staff,
+} from '@rs/shared'

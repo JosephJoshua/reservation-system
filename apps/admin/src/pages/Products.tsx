@@ -16,9 +16,11 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
+import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { packageStatusLabel } from '../labels'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 
 type ProductForm = Omit<PackageProduct, 'id'>
@@ -95,9 +97,18 @@ export function Products() {
       title="课时包"
       bordered
       actions={
-        <Button onClick={create} disabled={regular.length === 0}>
-          新建课时包
-        </Button>
+        <Space>
+          <ExportButton
+            kind="packages"
+            statuses={Object.entries(packageStatusLabel).map(([value, [label]]) => ({
+              value,
+              label,
+            }))}
+          />
+          <Button onClick={create} disabled={regular.length === 0}>
+            新建课时包
+          </Button>
+        </Space>
       }
     >
       <DataTable

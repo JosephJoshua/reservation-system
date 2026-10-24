@@ -16,6 +16,23 @@ describe('GET /api/health', () => {
   })
 })
 
+describe('request size', () => {
+  it('turns away a body larger than any upload before reading it', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    for (const headers of [{}, { 'Idempotency-Key': 'big' }] as Record<string, string>[]) {
+      const form = new FormData()
+      form.append('file', new File([new Uint8Array(12 * 1024 * 1024)], 'big.pdf'))
+      const res = await h.app.request('/api/admin/invoices/1/issue', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin}`, ...headers },
+        body: form,
+      })
+      expect(res.status).toBe(413)
+    }
+  })
+})
+
 describe('validation messages', () => {
   it('names the field in Chinese instead of its code name', async () => {
     const h = setup()

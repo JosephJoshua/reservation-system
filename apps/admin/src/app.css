@@ -447,3 +447,40 @@ a:hover {
   justify-content: center;
   margin-top: 16px;
 }
+
+.tag-gap {
+  margin-left: 4px;
+}
+
+/* Facts to copy, label beside value, such as an invoice title. */
+.facts {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  text-align: right;
+  color: var(--td-text-color-secondary);
+}
+
+.facts dd {
+  margin: 0;
+  word-break: break-all;
+  user-select: all;
+}
+
+.file-name {
+  word-break: break-all;
+}
+
+.field-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--td-error-color);
+}
+
+.warning-text {
+  color: var(--td-warning-color);
+}

@@ -1,0 +1,70 @@
+@import '../../styles/common.wxss';
+
+.list {
+  padding-bottom: 48rpx;
+}
+
+.order {
+  margin-bottom: 24rpx;
+  padding: 32rpx;
+}
+
+.order-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.order-title {
+  min-width: 0;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-dim .order-title {
+  color: var(--td-text-color-secondary);
+}
+
+.order-foot {
+  display: flex;
+  align-items: center;
+  margin-top: 12rpx;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-meta {
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+}
+
+/* A 44px tap target beside the text. */
+.order-link {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  margin-left: 24rpx;
+  padding-left: 24rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-link);
+}
+
+.order-link-hover {
+  opacity: 0.5;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

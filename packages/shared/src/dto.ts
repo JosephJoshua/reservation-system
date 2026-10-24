@@ -1,5 +1,6 @@
 // Response shapes of the student API. Instants are ISO strings; money is fen.
 import type { Attendance } from './availability'
+import type { OrderInvoiceDto } from './invoices'
 import type { PriceTag } from './pricing'
 import type { LateCancelRule } from './settings'
 
@@ -113,6 +114,8 @@ export interface BookingDto {
   refund: { amount: number; status: RefundStatus } | null
   /** Marked by the coach or the venue once the lesson has started. */
   attendance: Attendance | null
+  /** Invoicing of the lesson's paid order; null when nothing was paid. */
+  invoice: OrderInvoiceDto | null
 }
 
 export type PackageStatus = 'active' | 'expired' | 'used_up' | 'refund_requested' | 'refunded'
@@ -131,6 +134,8 @@ export interface PackageDto {
   status: PackageStatus
   pricePaid: number
   refund: { amount: number; status: RefundStatus } | null
+  /** Invoicing of the purchase; null when nothing was paid. */
+  invoice: OrderInvoiceDto | null
 }
 
 export interface PaymentParamsDto {

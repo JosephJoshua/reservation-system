@@ -70,3 +70,15 @@ await miniProgram.callWxMethod('removeStorageSync', 'rs:theme') // back to follo
 
 Following the system is the default, so a release still needs one run with DevTools itself in dark
 mode and the key removed. Native dialogs such as `wx.showModal` always follow the system theme.
+
+## Invoices
+
+Requests an invoice from the 发票 page (a wrong tax number, then a double tap on submit), sees it
+rejected with the reason and asks again with the saved title, then sees it issued on the list and
+the package page and opens the PDF, saving screenshots to `qa/miniprogram/screenshots/invoices/`.
+It uses the same seeded API as the student flows and signs in to the admin API with
+`ADMIN_PASSWORD` (default `admin`). Run it once in light and once in dark mode:
+
+```sh
+pnpm --filter @rs/qa-miniprogram invoices
+```

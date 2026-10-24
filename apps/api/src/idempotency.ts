@@ -12,6 +12,26 @@ const MAX_WAITS = 200
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
 /**
+ * The body as it matters for a repeat. A browser picks a new multipart boundary each time it
+ * sends a form, so the boundary is left out: a retried upload of the same file is a repeat.
+ */
+async function bodyHashOf(req: Request) {
+  const bytes = Buffer.from(await req.clone().arrayBuffer())
+  const boundary = /boundary="?([^";]+)"?/.exec(req.headers.get('Content-Type') ?? '')?.[1]
+  const hash = createHash('sha256')
+  if (boundary) {
+    const sep = Buffer.from(boundary)
+    let at = 0
+    for (let i = bytes.indexOf(sep); i !== -1; i = bytes.indexOf(sep, at)) {
+      hash.update(bytes.subarray(at, i))
+      at = i + sep.length
+    }
+    hash.update(bytes.subarray(at))
+  } else hash.update(bytes)
+  return hash.digest('hex')
+}
+
+/**
  * Makes a signed-in caller's mutating request safe to repeat when it carries an Idempotency-Key:
  * the first request runs, and a repeat with the same key and body to the same endpoint gets the
  * first successful response back instead of running again, waiting for it if the first is still
@@ -38,7 +58,7 @@ export function idempotency(deps: Deps): MiddlewareHandler {
     // The route's own auth answers this one.
     if (!signedIn) return next()
     const id = sha256([auth, c.req.method, c.req.path, key].join('\n'))
-    const bodyHash = sha256(await c.req.raw.clone().text())
+    const bodyHash = await bodyHashOf(c.req.raw)
 
     for (let wait = 0; ; wait++) {
       const claimed = db

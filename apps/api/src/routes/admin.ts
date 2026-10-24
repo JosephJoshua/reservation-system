@@ -19,6 +19,7 @@ import {
   coachCategories,
   coaches,
   coachLessonTypes,
+  invoices,
   lessonTypes,
   orders,
   packageLedger,
@@ -43,7 +44,17 @@ import {
 } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
+import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
+import {
+  adminInvoice,
+  adminInvoices,
+  invoiceLabel,
+  invoicePdf,
+  issueInvoice,
+  markRefundSeen,
+  rejectInvoice,
+} from '../services/invoices'
 import { setAttendance } from '../services/lessons'
 import {
   approvePackageRefund,
@@ -1401,12 +1412,30 @@ export function adminRoutes(deps: Deps) {
         deps.now(),
       ).map((p) => [p.id, p]),
     )
+    const orderIds = [...new Set(rows.map((r) => r.order.id))]
+    // A refund on an order with an invoice means the invoice may need voiding in the tax system.
+    const invoiced = new Map(
+      orderIds.length
+        ? db
+            .select({ orderId: invoices.orderId, status: invoices.status })
+            .from(invoices)
+            .where(
+              and(
+                inArray(invoices.orderId, orderIds),
+                inArray(invoices.status, ['requested', 'issued']),
+              ),
+            )
+            .all()
+            .map((i) => [i.orderId, i.status])
+        : [],
+    )
     return c.json(
       rows.map((r) => ({
         ...r.refund,
         order: r.order,
         student: r.student,
         package: r.refund.packageId ? (pkgs.get(r.refund.packageId) ?? null) : null,
+        invoiceStatus: invoiced.get(r.order.id) ?? null,
       })),
     )
   })
@@ -1484,6 +1513,134 @@ export function adminRoutes(deps: Deps) {
       target: { kind: 'refund', id },
     })
     return c.body(null, 204)
+  })
+
+  // Invoices
+
+  app.get('/invoices', (c) => {
+    const q = parseQuery(
+      c,
+      z.object({
+        status: z.enum(['requested', 'issued', 'rejected']).optional(),
+        flagged: z
+          .enum(['1'])
+          .optional()
+          .transform((v) => v === '1'),
+        studentId: z.coerce.number().int().positive().optional(),
+      }),
+    )
+    return c.json(adminInvoices(db, q))
+  })
+
+  app.post('/invoices/:id/issue', async (c) => {
+    const id = idParam(c)
+    const form = await c.req.formData().catch(() => null)
+    const file = form?.get('file')
+    if (!(file instanceof File)) throw new ApiError(400, 'no_file', '请选择发票 PDF')
+    const replaced = issueInvoice(
+      deps,
+      c.get('staffId'),
+      id,
+      new Uint8Array(await file.arrayBuffer()),
+    )
+    const view = adminInvoice(db, id)
+    const { what, studentId } = invoiceLabel(db, id)
+    log(c.get('staffId'), {
+      action: 'invoice.issue',
+      summary: replaced ? `重新上传${what}的发票` : `${what}开票 ${yuan(view.amount)}`,
+      amount: replaced ? null : view.amount,
+      studentId,
+      target: { kind: 'invoice', id },
+    })
+    return c.json(view)
+  })
+
+  app.post('/invoices/:id/reject', async (c) => {
+    const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
+    const id = idParam(c)
+    if (rejectInvoice(deps, c.get('staffId'), id, reason)) {
+      const { what, studentId } = invoiceLabel(db, id)
+      log(c.get('staffId'), {
+        action: 'invoice.reject',
+        summary: `拒绝${what}的开票申请：${reason}`,
+        studentId,
+        target: { kind: 'invoice', id },
+      })
+    }
+    return c.json(adminInvoice(db, id))
+  })
+
+  app.post('/invoices/:id/refund-seen', (c) => {
+    const id = idParam(c)
+    if (markRefundSeen(deps, id)) {
+      const { what, studentId } = invoiceLabel(db, id)
+      log(c.get('staffId'), {
+        action: 'invoice.refund_seen',
+        summary: `${what}开票后的退款已处理`,
+        studentId,
+        target: { kind: 'invoice', id },
+      })
+    }
+    return c.json(adminInvoice(db, id))
+  })
+
+  app.get('/invoices/:id/pdf', (c) => {
+    const id = idParam(c)
+    return c.body(invoicePdf(deps, id), 200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="invoice-${id}.pdf"`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  })
+
+  // Exports
+
+  const exportStatuses: Record<ExportKind, [string, ...string[]] | null> = {
+    students: null,
+    bookings: ['pending_payment', 'confirmed', 'completed', 'cancelled', 'expired'],
+    orders: ['pending', 'paid', 'closed'],
+    refunds: ['requested', 'pending', 'processing', 'succeeded', 'failed', 'rejected'],
+    packages: ['active', 'expired', 'used_up', 'refund_requested', 'refunded'],
+    invoices: ['requested', 'issued', 'rejected'],
+  }
+
+  app.get('/exports/:kind', (c) => {
+    const kind = c.req.param('kind')
+    if (!Object.hasOwn(exportKinds, kind)) throw notFound('导出类型')
+    const k = kind as ExportKind
+    const statuses = exportStatuses[k]
+    const q = parseQuery(
+      c,
+      z.object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        status: statuses ? z.enum(statuses).optional() : z.undefined().optional(),
+        coachId:
+          k === 'bookings'
+            ? z.coerce.number().int().positive().optional()
+            : z.undefined().optional(),
+        q: k === 'students' ? z.string().trim().max(30).optional() : z.undefined().optional(),
+        flagged:
+          k === 'invoices'
+            ? z
+                .enum(['1'])
+                .optional()
+                .transform((v) => v === '1')
+            : z.undefined().optional(),
+      }),
+    )
+    const { csv, rows } = buildExport(db, k, q, deps.now())
+    log(c.get('staffId'), {
+      action: 'data.export',
+      summary: `${describeExport(db, k, q)}，${rows} 行`,
+    })
+    const name = `${exportKinds[k]}-${q.from}-${q.to}.csv`
+    return c.body(csv, 200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${k}-${q.from}-${q.to}.csv"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'Cache-Control': 'private, no-store',
+    })
   })
 
   // Banners and uploads
