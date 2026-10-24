@@ -47,7 +47,11 @@ export function payRoutes(deps: Deps) {
   return app
 }
 
-/** Development only: lets the mini program finish a payment against the fake gateway. */
+/**
+ * Development only: lets the mini program finish a payment against the fake gateway. With
+ * `?callback=lost` the payment is taken but the API is not told, as when WeChat Pay's callback is
+ * late or lost, so QA can check that the student still sees it.
+ */
 export function devPayRoutes(deps: Deps, gateway: FakeGateway) {
   const app = new Hono()
   app.post('/dev/fake-pay/:orderId', (c) => {
@@ -61,10 +65,13 @@ export function devPayRoutes(deps: Deps, gateway: FakeGateway) {
     let result: ReturnType<FakeGateway['pay']>
     try {
       result = gateway.pay(outTradeNo, deps.now())
-    } catch (e) {
-      throw new ApiError(409, 'fake_pay_failed', (e as Error).message)
+    } catch {
+      // Real WeChat Pay refuses a closed order in the cashier; say so in the same words.
+      throw new ApiError(409, 'fake_pay_failed', '订单已失效，请重新预约')
     }
-    if (result.order.state === 'paid') applyPayment(deps, outTradeNo, result.order)
+    if (result.order.state === 'paid' && c.req.query('callback') !== 'lost') {
+      applyPayment(deps, outTradeNo, result.order)
+    }
     return c.body(null, 204)
   })
   return app

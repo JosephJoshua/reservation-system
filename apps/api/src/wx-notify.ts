@@ -3,6 +3,9 @@
 
 import { type StudentNoticeKind, venueParts } from '@rs/shared'
 
+// A hung call would hold up every later sweep, payments included.
+const SEND_TIMEOUT_MS = 15_000
+
 const VALUE_KEYS = [
   'student',
   'lesson',
@@ -115,6 +118,7 @@ export function wechatNotifier(options: {
         appid: options.appId,
         secret: options.secret,
       }),
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     })
     const data = (await res.json()) as {
       access_token?: string
@@ -151,6 +155,7 @@ export function wechatNotifier(options: {
             miniprogram_state: options.state,
             lang: 'zh_CN',
           }),
+          signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         },
       )
       const result = (await res.json()) as { errcode?: number; errmsg?: string }

@@ -12,7 +12,9 @@ export function wechatLogin(appId: string, secret: string, fetchImpl: typeof fet
     }).toString()
     let data: { openid?: string; errcode?: number; errmsg?: string }
     try {
-      data = (await (await fetchImpl(url)).json()) as typeof data
+      data = (await (
+        await fetchImpl(url, { signal: AbortSignal.timeout(10_000) })
+      ).json()) as typeof data
     } catch {
       throw new ApiError(502, 'wx_unavailable', '微信登录暂不可用，请稍后再试')
     }

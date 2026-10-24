@@ -1,6 +1,6 @@
 import { api, showError } from '../../utils/api'
 import { agreePolicies, getMe } from '../../utils/data'
-import { navigateOnce } from '../../utils/nav'
+import { isTop, navigateOnce } from '../../utils/nav'
 
 Page({
   data: {
@@ -54,7 +54,9 @@ Page({
         this.setData({ showAgreement: false })
       }
       await api('PUT', '/me', { name, phone })
-      wx.navigateBack({ success: () => wx.showToast({ title: '已保存', icon: 'success' }) })
+      const done = () => wx.showToast({ title: '已保存', icon: 'success' })
+      if (isTop(this)) wx.navigateBack({ success: done })
+      else done()
     } catch (e) {
       showError(e)
     } finally {

@@ -47,7 +47,7 @@ import { coachViews, visibleTo } from '../services/catalog'
 import { studentFeedback } from '../services/feedback'
 import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
 import { moveBooking, moveOptions } from '../services/moves'
-import { startPayment, syncOrder } from '../services/orders'
+import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { getSettings } from '../services/settings'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
@@ -435,10 +435,11 @@ export function studentRoutes(deps: Deps) {
     return c.json(quoteBooking(deps, c.get('studentId'), q.slotId, q.lessonTypeId))
   })
 
-  app.get('/bookings', (c) => {
+  app.get('/bookings', async (c) => {
     const q = parseQuery(c, z.object({ scope: z.enum(['upcoming', 'past']).default('upcoming') }))
-    const now = deps.now()
     const studentId = c.get('studentId')
+    if (q.scope === 'upcoming') await syncPendingOrders(deps, studentId, 'booking')
+    const now = deps.now()
     const rows = db
       .select()
       .from(bookings)
@@ -468,7 +469,10 @@ export function studentRoutes(deps: Deps) {
     return view
   }
 
-  app.get('/bookings/:id', (c) => c.json(ownBookingView(idParam(c), c.get('studentId'))))
+  app.get('/bookings/:id', async (c) => {
+    await syncPendingOrders(deps, c.get('studentId'), { bookingId: idParam(c) })
+    return c.json(ownBookingView(idParam(c), c.get('studentId')))
+  })
 
   // 学习记录
   app.get('/feedback', (c) => c.json(studentFeedback(db, c.get('studentId'))))
@@ -529,7 +533,10 @@ export function studentRoutes(deps: Deps) {
     return c.json(await startPayment(deps, id, student.openid))
   })
 
-  app.get('/packages', (c) => c.json(studentPackages(db, c.get('studentId'), deps.now())))
+  app.get('/packages', async (c) => {
+    await syncPendingOrders(deps, c.get('studentId'), 'package')
+    return c.json(studentPackages(db, c.get('studentId'), deps.now()))
+  })
 
   app.post('/packages/purchase', async (c) => {
     const { productId } = await parseBody(c, z.object({ productId: z.number().int().positive() }))

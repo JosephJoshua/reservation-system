@@ -2,7 +2,7 @@ import type { BookingQuoteDto, CreateBookingResponse, MeDto, StudentDto } from '
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
-import { navigateOnce } from '../../utils/nav'
+import { isTop, navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
@@ -42,6 +42,9 @@ Page({
     noticeTemplates: {} as MeDto['noticeTemplates'],
     submitting: false,
   },
+
+  /** Set once the student has gone back from this page. */
+  left: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -201,7 +204,7 @@ Page({
     } catch (e) {
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
-        wx.navigateBack()
+        if (isTop(this)) wx.navigateBack()
         return
       }
       showError(e)
@@ -210,9 +213,18 @@ Page({
     }
   },
 
-  /** Replaces this page with the booking, so going back lands on the time picker. */
+  /**
+   * Replaces this page with the booking, so going back lands on the time picker. If the student
+   * left while it was booking, the booking opens on top of where they are now.
+   */
   finish(bookingId: number) {
-    wx.redirectTo({ url: `/pages/booking-detail/index?id=${bookingId}` })
+    const url = `/pages/booking-detail/index?id=${bookingId}`
+    if (isTop(this)) wx.redirectTo({ url })
+    else if (this.left) wx.navigateTo({ url })
+  },
+
+  onUnload() {
+    this.left = true
   },
 
   retry() {

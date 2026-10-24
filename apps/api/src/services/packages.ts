@@ -27,12 +27,15 @@ import { grantedLessons } from './views'
 // An open order is reused only while there is still time to pay it.
 const REUSE_MARGIN_MS = 2 * 60_000
 
-/** Starts a WeChat Pay purchase of a package product. */
+/**
+ * Starts a WeChat Pay purchase of a package product. `payment` is null when a repeat finds the
+ * open order already paid.
+ */
 export async function purchasePackage(
   deps: Deps,
   studentId: number,
   productId: number,
-): Promise<{ orderId: number; payment: PaymentParams }> {
+): Promise<{ orderId: number; payment: PaymentParams | null }> {
   const now = deps.now()
   const { id: orderId, repeat } = immediate(deps.db, (tx) => {
     const settings = getSettings(tx)

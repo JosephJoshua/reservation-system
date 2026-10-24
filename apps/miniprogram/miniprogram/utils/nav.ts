@@ -7,6 +7,14 @@ function topPage(): unknown {
 }
 
 /**
+ * Whether `page` is still the one on screen. The user can go back with the nav bar or a swipe
+ * while a request runs, and going back or redirecting then would act on another page.
+ */
+export function isTop(page: unknown): boolean {
+  return topPage() === page
+}
+
+/**
  * Runs one navigation and ignores further ones until it settles, so a quick double tap does not
  * push a page twice or go back two pages.
  */

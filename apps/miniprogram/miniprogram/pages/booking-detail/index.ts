@@ -4,7 +4,7 @@ import {
   cancellationOutcome,
   type HomeDto,
 } from '../../lib/shared'
-import { api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
+import { ApiError, api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { addLessonToCalendar } from '../../utils/calendar'
 import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
@@ -89,7 +89,10 @@ Page({
   },
 
   onShow() {
-    if (this.data.booking?.status === 'pending_payment') this.startTimer()
+    // Back from the background or another page: the lesson may have been paid, cancelled or
+    // moved meanwhile, here or on another phone.
+    if (this.data.state === 'ready' && !this.data.busy) this.refresh()
+    else if (this.data.booking?.status === 'pending_payment') this.startTimer()
   },
 
   onHide() {
@@ -101,7 +104,7 @@ Page({
   },
 
   onPullDownRefresh() {
-    this.load().finally(() => wx.stopPullDownRefresh())
+    this.refresh(true).finally(() => wx.stopPullDownRefresh())
   },
 
   async load() {
@@ -116,6 +119,24 @@ Page({
       this.show(booking)
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
+    }
+  },
+
+  /**
+   * Fetches the booking shown again. A failure keeps it on screen, said out loud when `loud`,
+   * unless the booking is gone.
+   */
+  async refresh(loud = false) {
+    if (!this.data.booking) return this.load()
+    try {
+      this.show(await api<BookingDto>('GET', `/bookings/${this.id}`))
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        this.setData({ state: 'error', error: errorMessage(e) })
+        return
+      }
+      if (loud) showError(e)
+      if (this.data.booking?.status === 'pending_payment') this.startTimer()
     }
   },
 
@@ -193,11 +214,14 @@ Page({
     if (!b?.orderId || this.data.busy) return
     this.setData({ busy: true })
     try {
-      await payOrder(b.orderId, b.price)
-      await this.load()
+      const result = await payOrder(b.orderId, b.price)
+      await this.refresh()
+      if (result === 'pending' && this.data.booking?.status === 'pending_payment') {
+        wx.showToast({ title: '支付结果确认中，请稍后下拉刷新', icon: 'none', duration: 2500 })
+      }
     } catch (e) {
       showError(e)
-      await this.load()
+      await this.refresh()
     } finally {
       this.setData({ busy: false })
     }
@@ -266,7 +290,7 @@ Page({
       this.show(updated)
     } catch (e) {
       showError(e)
-      await this.load()
+      await this.refresh()
     } finally {
       this.setData({ busy: false })
     }
@@ -282,7 +306,7 @@ Page({
     navigateOnce(`/pages/move/index?id=${b.id}`, {
       moved: (updated: BookingDto) => this.show(updated),
       // The move was refused because the lesson changed: show it as it is now.
-      stale: () => this.load(),
+      stale: () => this.refresh(),
     })
   },
 

@@ -10,6 +10,7 @@ import {
 import { api, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
+import { isTop } from '../../utils/nav'
 
 const KINDS: InvoiceTitleKind[] = ['personal', 'company']
 
@@ -135,7 +136,8 @@ Page({
       await api('POST', '/invoices', { orderId: this.orderId, ...title })
       const done = () => wx.showToast({ title: '已提交', icon: 'success' })
       // Opened from a shared link there is nothing to go back to, so show the list instead.
-      if (getCurrentPages().length > 1) wx.navigateBack({ success: done })
+      if (!isTop(this)) done()
+      else if (getCurrentPages().length > 1) wx.navigateBack({ success: done })
       else wx.redirectTo({ url: '/pages/invoices/index', success: done })
     } catch (e) {
       showError(e)
