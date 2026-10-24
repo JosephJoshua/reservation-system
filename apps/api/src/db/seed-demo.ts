@@ -2,11 +2,11 @@
 // two weeks of slots, banners and a notice. Refuses to touch a database that already has coaches.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { crc32, deflateSync } from 'node:zlib'
 import { defaultSettings, venueDateKey, venueInstant } from '@rs/shared'
 import { config } from '../config'
 import { saveSettings } from '../services/settings'
 import { openDb } from './client'
+import { gradientPng } from './demo-png'
 import { runMigrations } from './migrate'
 import {
   banners,
@@ -19,40 +19,6 @@ import {
   packageProducts,
   slots,
 } from './schema'
-
-/** A 750x300 PNG with a diagonal gradient, so banners have something real to show. */
-function gradientPng(from: [number, number, number], to: [number, number, number]): Buffer {
-  const width = 750
-  const height = 300
-  const raw = Buffer.alloc((width * 3 + 1) * height)
-  for (let y = 0; y < height; y++) {
-    const row = y * (width * 3 + 1)
-    for (let x = 0; x < width; x++) {
-      const t = (x / width) * 0.7 + (y / height) * 0.3
-      for (let c = 0; c < 3; c++) {
-        raw[row + 1 + x * 3 + c] = Math.round((from[c] ?? 0) + ((to[c] ?? 0) - (from[c] ?? 0)) * t)
-      }
-    }
-  }
-  const chunk = (type: string, data: Buffer) => {
-    const length = Buffer.alloc(4)
-    length.writeUInt32BE(data.length)
-    const body = Buffer.concat([Buffer.from(type), data])
-    const crc = Buffer.alloc(4)
-    crc.writeUInt32BE(crc32(body))
-    return Buffer.concat([length, body, crc])
-  }
-  const header = Buffer.alloc(13)
-  header.writeUInt32BE(width, 0)
-  header.writeUInt32BE(height, 4)
-  header.set([8, 2, 0, 0, 0], 8)
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', header),
-    chunk('IDAT', deflateSync(raw)),
-    chunk('IEND', Buffer.alloc(0)),
-  ])
-}
 
 const db = openDb(config.databasePath)
 runMigrations(db)
