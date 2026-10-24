@@ -142,7 +142,7 @@ interface ProfileView {
   counts: string
 }
 
-const NOTE = '左膝旧伤，避免大步移动。\n目标：下个月区赛。'
+const NOTE = '反手推挡偏慢，多练步法。\n目标：下个月区赛。'
 
 try {
   await startTheme(miniProgram)

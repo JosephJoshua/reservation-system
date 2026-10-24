@@ -31,13 +31,8 @@ export function studentProfile(tx: Q, studentId: number, now: Date): StudentProf
   return { ...editOf(tx, studentId), lessons: counts?.lessons ?? 0, noShows: counts?.noShows ?? 0 }
 }
 
-/** Tags trimmed, empty ones dropped and repeats removed, in the order given. */
-export function cleanTags(tags: string[]): string[] {
-  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
-}
-
 /**
- * Replaces the profile. Returns the names of the fields that changed, empty when nothing did, so a
+ * Replaces the profile, its tags already cleaned. Returns the names of the fields that changed, empty when nothing did, so a
  * repeat of the same save succeeds and logs nothing. `check` sees the profile as it was, to refuse
  * a save made on top of someone else's change.
  */
@@ -47,7 +42,7 @@ export function saveStudentProfile(
   edit: StudentProfileEdit,
   check: (current: StudentProfileEdit) => void,
 ): string[] {
-  const next = profileEdit({ ...edit, tags: cleanTags(edit.tags), note: edit.note.trim() })
+  const next = profileEdit(edit)
   return immediate(deps.db, (tx) => {
     const student = tx
       .select({ deletedAt: students.deletedAt })

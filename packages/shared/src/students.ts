@@ -40,6 +40,17 @@ export interface StudentProfileDto extends StudentProfileEdit {
   noShows: number
 }
 
+/** Length in characters as people count them, so an emoji is one, like the admin's counters. */
+export function charLength(text: string): number {
+  return Array.from(text).length
+}
+
+/** Tags trimmed, cut to the longest allowed, with empty ones and repeats dropped, in order. */
+export function cleanTags(tags: string[]): string[] {
+  const cut = tags.map((t) => Array.from(t.trim()).slice(0, PROFILE_TAG_LENGTH).join('').trim())
+  return [...new Set(cut.filter(Boolean))]
+}
+
 /** The editable fields in a fixed order, for `versionOf` on both sides. */
 export function profileEdit(p: StudentProfileEdit): StudentProfileEdit {
   return { level: p.level, grip: p.grip, tags: p.tags, note: p.note }

@@ -6,7 +6,7 @@ import { type Harness, setup } from './test/harness'
 
 // The harness clock is 2026-10-23 10:00 at the venue.
 
-const NOTE = '左膝旧伤，避免大步移动'
+const NOTE = '反手推挡偏慢，下次多练步法'
 
 const profile = (over: Record<string, unknown> = {}) => ({
   level: 'intermediate',
@@ -103,6 +103,43 @@ describe('学员档案', () => {
     expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
   })
 
+  it('counts characters as people do, and tags after repeats and blanks are dropped', async () => {
+    const h = setup()
+    const { studentId } = await booked(h)
+    const admin = await h.admin()
+    const eight = Array.from({ length: 8 }, (_, i) => `标签${i}`)
+    const res = await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      // An emoji is two UTF-16 units but one character, as the admin's counter shows it.
+      profile({
+        tags: [...eight, '标签0', ' ', '🏓'.repeat(10)].slice(0, 11),
+        note: '🏓'.repeat(500),
+      }),
+      admin,
+    )
+    expect(res.status).toBe(400)
+    const ok = await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      profile({
+        tags: [...eight.slice(0, 7), '标签0', ' ', '🏓'.repeat(10)],
+        note: '🏓'.repeat(500),
+      }),
+      admin,
+    )
+    expect(ok.status).toBe(200)
+    expect(ok.json.tags).toEqual([...eight.slice(0, 7), '🏓'.repeat(10)])
+    expect(ok.json.note).toBe('🏓'.repeat(500))
+    const long = await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      profile({ tags: [], note: '🏓'.repeat(501) }),
+      admin,
+    )
+    expect(long.status).toBe(400)
+  })
+
   it('refuses a save on top of a change made since the editor loaded it', async () => {
     const h = setup()
     const { studentId } = await booked(h)
@@ -162,6 +199,12 @@ describe('学员档案', () => {
     const put = await h.call('PUT', `/coach/students/${studentId}/profile`, profile(), ct)
     expect(put.status).toBe(404)
 
+    // Once the lesson is cancelled the coach no longer sees it.
+    await h.call('POST', `/bookings/${bookingId}/cancel`, {}, t)
+    const cancelled = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, ct)
+    expect(cancelled.json.status).toBe('cancelled')
+    expect(cancelled.json.profile).toBeNull()
+
     for (const path of ['/me', '/bookings', `/bookings/${bookingId}`, '/feedback', '/home']) {
       const res = await h.call('GET', path, undefined, t)
       expect(res.status, path).toBe(200)
@@ -174,12 +217,13 @@ describe('学员档案', () => {
   it('goes with the account when the student deletes it', async () => {
     const h = setup()
     const { coach, t, studentId, bookingId } = await booked(h)
-    const admin = await h.admin()
+    let admin = await h.admin()
     await h.call('PUT', `/admin/students/${studentId}/profile`, profile(), admin)
-    await h.call('POST', `/bookings/${bookingId}/cancel`, {}, t)
+    h.clock.now = new Date('2026-10-25T04:00:00Z') // after the lesson, which stays confirmed
     expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(204)
 
     expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
+    admin = await h.admin()
     const detail = await h.call('GET', `/admin/students/${studentId}`, undefined, admin)
     expect(detail.json.profile).toMatchObject({ level: null, grip: null, tags: [], note: '' })
     const put = await h.call('PUT', `/admin/students/${studentId}/profile`, profile(), admin)

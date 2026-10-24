@@ -1,4 +1,5 @@
 import {
+  cleanTags,
   gripLabels,
   grips,
   PROFILE_MAX_TAGS,
@@ -20,6 +21,7 @@ import {
   Input,
   InputNumber,
   Loading,
+  MessagePlugin,
   Radio,
   Select,
   Space,
@@ -250,7 +252,8 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const [selling, setSelling] = useState(false)
   const [booking, setBooking] = useState(false)
-  const [editingProfile, setEditingProfile] = useState(false)
+  // The profile as it was when the editor opened, which the save is checked against.
+  const [editingProfile, setEditingProfile] = useState<StudentProfileEdit | null>(null)
   const [action, setAction] = useState<{
     kind: 'grant' | 'extend' | 'ledger'
     packageId: number
@@ -296,7 +299,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             bordered
             actions={
               s.deletedAt ? null : (
-                <Button size="small" onClick={() => setEditingProfile(true)}>
+                <Button size="small" onClick={() => setEditingProfile(profileEdit(s.profile))}>
                   编辑
                 </Button>
               )
@@ -434,10 +437,10 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
       {editingProfile && s && (
         <ProfileDialog
           studentId={s.id}
-          loaded={profileEdit(s.profile)}
-          onClose={() => setEditingProfile(false)}
+          loaded={editingProfile}
+          onClose={() => setEditingProfile(null)}
           onDone={() => {
-            setEditingProfile(false)
+            setEditingProfile(null)
             void detail.reload()
           }}
         />
@@ -530,12 +533,13 @@ function ProfileDialog({
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
   const set = (patch: Partial<StudentProfileEdit>) => setForm((f) => ({ ...f, ...patch }))
-  const cleanTags = (tags: string[]) => [
-    ...new Set(tags.map((t) => t.trim().slice(0, PROFILE_TAG_LENGTH)).filter(Boolean)),
-  ]
-  const tags = cleanTags([...form.tags, typing]).slice(0, PROFILE_MAX_TAGS)
+  const tags = cleanTags([...form.tags, typing])
 
   const submit = async () => {
+    if (tags.length > PROFILE_MAX_TAGS) {
+      void MessagePlugin.warning(`最多 ${PROFILE_MAX_TAGS} 个标签`)
+      return
+    }
     const ok = await attempt(
       () =>
         api(
@@ -597,23 +601,25 @@ function ProfileDialog({
             placeholder="如 反手弱、备赛、青少年"
             onInputChange={(v, ctx) => {
               // The box drops unadded text on blur; keep it as a tag instead.
-              if (ctx?.trigger === 'blur') {
+              if (ctx?.trigger === 'blur' && tags.length <= PROFILE_MAX_TAGS) {
                 set({ tags })
                 setTyping('')
-              } else setTyping(String(v).slice(0, PROFILE_TAG_LENGTH))
+              } else if (ctx?.trigger !== 'blur') {
+                setTyping(Array.from(String(v)).slice(0, PROFILE_TAG_LENGTH).join(''))
+              }
             }}
             onChange={(v) => {
               setTyping('')
-              set({ tags: cleanTags((v as string[]).map(String)) })
+              set({ tags: cleanTags((v as string[]).map(String)).slice(0, PROFILE_MAX_TAGS) })
             }}
           />
         </Field>
-        <Field label="备注" help="仅场馆和教练可见，学员看不到">
+        <Field label="备注" help="仅场馆和教练可见，学员看不到。不要记录病史等健康信息。">
           <Textarea
             value={form.note}
             maxlength={PROFILE_NOTE_LENGTH}
             autosize={{ minRows: 4, maxRows: 10 }}
-            placeholder="如 打法特点、训练目标、身体情况"
+            placeholder="如 打法特点、训练目标"
             onChange={(v) => set({ note: String(v) })}
           />
         </Field>

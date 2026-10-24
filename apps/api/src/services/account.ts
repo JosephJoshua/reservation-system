@@ -126,9 +126,9 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
 }
 
 /**
- * Deletes the student's account: their name, phone, WeChat identity, the venue's 学员档案 and the
- * coach's notes on them and their lesson feedback with its photos go, while bookings, orders, refunds and invoices stay
- * for the accounts, pointing at an empty row.
+ * Deletes the student's account. Their name, phone, WeChat identity, 学员档案, the coach's notes
+ * and their lesson feedback with its photos go; bookings, orders, refunds and invoices stay for
+ * the accounts, pointing at an empty row.
  */
 export function deleteAccount(deps: Deps, studentId: number) {
   const now = deps.now()

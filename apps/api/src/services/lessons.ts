@@ -148,7 +148,11 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
       phone: student?.phone ?? '',
     },
-    profile: student && !student.deletedAt ? studentProfile(db, student.id, now) : null,
+    // Only while the coach is to teach this lesson, not after it was cancelled or never paid.
+    profile:
+      student && !student.deletedAt && (LIVE as readonly string[]).includes(b.status)
+        ? studentProfile(db, student.id, now)
+        : null,
     paidWith: b.paidWith,
     price: b.price,
     packageName: pkg?.name ?? null,

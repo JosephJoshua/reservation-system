@@ -41,7 +41,7 @@ test('fills in the profile, keeping a tag typed without Enter', async ({ page, r
   await page.keyboard.type('反手弱')
   await page.keyboard.press('Enter')
   await page.keyboard.type('一二三四五六七八九十十一')
-  await field(d, '备注').locator('textarea').fill('左膝旧伤\n避免大步移动')
+  await field(d, '备注').locator('textarea').fill('反手推挡偏慢\n多练步法')
   // A double click saves once.
   await d.getByRole('button', { name: '保存' }).dblclick()
   await expect(d).toHaveCount(0)
@@ -54,7 +54,7 @@ test('fills in the profile, keeping a tag typed without Enter', async ({ page, r
     '反手弱',
     '一二三四五六七八九十',
   ])
-  await expect(card.locator('.profile-note')).toHaveText('左膝旧伤\n避免大步移动')
+  await expect(card.locator('.profile-note')).toHaveText('反手推挡偏慢\n多练步法')
 
   const log = await call<{ summary: string }[]>(
     request,
@@ -63,7 +63,7 @@ test('fills in the profile, keeping a tag typed without Enter', async ({ page, r
     admin,
   )
   expect(log.map((e) => e.summary)).toEqual(['修改档案：水平、握拍、标签、备注'])
-  expect(JSON.stringify(log)).not.toContain('左膝旧伤')
+  expect(JSON.stringify(log)).not.toContain('反手推挡偏慢')
 })
 
 test('refuses a save on top of another staff member’s change', async ({ page, browser }) => {

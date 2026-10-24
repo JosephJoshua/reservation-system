@@ -42,7 +42,7 @@ export interface CoachLessonDto {
   endsAt: string
   lessonType: { id: number; name: string; isTrial: boolean }
   student: { id: number; name: string; phone: string }
-  /** The venue's 学员档案, read only; null once the student deleted their account. */
+  /** The venue's 学员档案, read only; null unless the booking is live and the account exists. */
   profile: StudentProfileDto | null
   paidWith: 'order' | 'package'
   price: number

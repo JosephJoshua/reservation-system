@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  charLength,
+  cleanTags,
   grips,
   offlineMethodLabels,
   offlineMethods,
@@ -1354,10 +1356,25 @@ export function adminRoutes(deps: Deps) {
         grip: z.enum(grips).nullable(),
         tags: z
           .array(
-            z.string().trim().max(PROFILE_TAG_LENGTH, `标签不能超过 ${PROFILE_TAG_LENGTH} 个字`),
+            z
+              .string()
+              .trim()
+              .refine(
+                (t) => charLength(t) <= PROFILE_TAG_LENGTH,
+                `标签不能超过 ${PROFILE_TAG_LENGTH} 个字`,
+              ),
           )
-          .max(PROFILE_MAX_TAGS, `最多 ${PROFILE_MAX_TAGS} 个标签`),
-        note: z.string().trim().max(PROFILE_NOTE_LENGTH),
+          .max(50)
+          // Counted after blanks and repeats are dropped.
+          .transform(cleanTags)
+          .pipe(z.array(z.string()).max(PROFILE_MAX_TAGS, `最多 ${PROFILE_MAX_TAGS} 个标签`)),
+        note: z
+          .string()
+          .trim()
+          .refine(
+            (n) => charLength(n) <= PROFILE_NOTE_LENGTH,
+            `备注不能超过 ${PROFILE_NOTE_LENGTH} 字`,
+          ),
       }),
     )
     const id = idParam(c)
