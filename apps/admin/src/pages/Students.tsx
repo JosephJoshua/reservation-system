@@ -490,7 +490,7 @@ function StudentFacts({ student }: { student: Student }) {
         {s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
       </span>
       {canManage && (
-        <>
+        <Space size={6} align="center">
           <span className="muted">测试学员</span>
           <Switch
             size="small"
@@ -500,7 +500,7 @@ function StudentFacts({ student }: { student: Student }) {
                 await detail.reload()
             }}
           />
-        </>
+        </Space>
       )}
     </Space>
   )
