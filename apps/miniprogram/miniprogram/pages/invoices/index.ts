@@ -24,7 +24,11 @@ function view(o: InvoiceOrderDto): OrderView {
   return {
     orderId: o.orderId,
     title: orderTitle(o.kind, o.description),
-    meta: `${fullDate(o.paidAt)}支付 · 可开票 ${yuan(o.amount)}`,
+    // Nothing can be invoiced while or after it is refunded; the note says so.
+    meta:
+      o.state === 'refunded' || o.state === 'refunding'
+        ? `${fullDate(o.paidAt)}支付`
+        : `${fullDate(o.paidAt)}支付 · 可开票 ${yuan(o.amount)}`,
     state: INVOICE_STATE[o.state],
     tone:
       o.state === 'issued'
