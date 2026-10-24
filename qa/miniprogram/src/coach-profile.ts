@@ -6,6 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
@@ -99,8 +100,8 @@ async function step(name: string, fn: () => Promise<void>) {
 try {
   // Clears a forced theme an earlier run may have left, or applies QA_THEME.
   await startTheme(miniProgram)
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_coach_page_${Date.now()}`)
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
+  const studentLogin = `qa_coach_page_${Date.now()}`
+  await switchStudent(miniProgram, studentLogin)
 
   type CoachRow = { id: number; name: string; category: string; title: string }
   let coaches: CoachRow[] = []
@@ -118,6 +119,8 @@ try {
     const home = await waitForPage('pages/booking/index')
     await tap(home, '.lesson', ((await home.data('lessonTypes')) as unknown[]).length)
     const page = await waitForPage('pages/coach-detail/index')
+    // 首页 may use the catalog cached before the switch, so this page is the first to sign in.
+    await expectStudent(miniProgram, studentLogin)
     const data = await page.data()
     check(data.state === 'ready', `coach page state ${data.state}: ${data.error}`)
     check(data.category === '主教练' && (data.tags as string[]).length === 3, 'category and tags')

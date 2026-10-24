@@ -6,6 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
+import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
@@ -123,14 +124,13 @@ try {
   const admin = (await call('POST', '/admin/login', { username: 'admin', password: adminPassword }))
     .token as string
 
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', devName)
   // Set on the instance just launched, so the pages below read it. Unset clears a leftover.
   await startTheme(miniProgram)
-  await miniProgram.callWxMethod('removeStorageSync', 'token')
+  await switchStudent(miniProgram, devName)
 
   await step('the 发票 page lists the paid package', async () => {
     await miniProgram.reLaunch('/pages/profile/index')
-    await sleep(800)
+    await expectStudent(miniProgram, devName)
     await miniProgram.navigateTo('/pages/invoices/index')
     const page = await waitForPage('pages/invoices/index')
     const orders = (await page.data('orders')) as { orderId: number; link: string }[]

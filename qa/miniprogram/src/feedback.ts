@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { venueDateKey } from '@rs/shared'
 import automator from 'miniprogram-automator'
+import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
@@ -203,12 +204,6 @@ interface Photo {
 const uploaded = (d: Record<string, unknown>, n: number) =>
   (d.photos as Photo[]).length === n && (d.photos as Photo[]).every((p) => !p.uploading && p.url)
 
-async function signIn(login: string) {
-  await miniProgram.callWxMethod('setStorageSync', 'devLogin', login)
-  for (const key of ['token', 'coachToken'])
-    await miniProgram.callWxMethod('removeStorageSync', key)
-}
-
 try {
   await startTheme(miniProgram)
   const run = Date.now().toString(36)
@@ -258,9 +253,10 @@ try {
   await autoConfirmModals()
 
   await step('学习记录 is empty before any feedback', async () => {
-    await signIn(studentLogin)
+    await switchStudent(miniProgram, studentLogin)
     await miniProgram.reLaunch('/pages/feedback/index')
     const page = await waitForPage('pages/feedback/index')
+    await expectStudent(miniProgram, studentLogin)
     check(((await page.data('items')) as unknown[]).length === 0, 'should start empty')
     await screenshot('record-empty')
   })
@@ -268,7 +264,7 @@ try {
   await step('the coach opens the editor once on a double tap', async () => {
     if (coach.bound) await call('DELETE', `/admin/coaches/${coach.id}/binding`, undefined, admin)
     const { code } = await call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)
-    await signIn(`qa_fb_coach_${run}`)
+    await switchStudent(miniProgram, `qa_fb_coach_${run}`)
     await miniProgram.reLaunch('/coach/bind/index')
     await waitForPage('coach/bind/index', () => true)
     await invoke('onCode', { detail: { value: code } })
@@ -319,7 +315,7 @@ try {
   })
 
   await step('the student sees it on the lesson and in 学习记录', async () => {
-    await signIn(studentLogin)
+    await switchStudent(miniProgram, studentLogin)
     await miniProgram.reLaunch(`/pages/booking-detail/index?id=${bookingId}`)
     const detail = await waitForPage('pages/booking-detail/index', (d) => d.feedback !== null)
     const feedback = (await detail.data('feedback')) as { photos: string[] }
@@ -343,7 +339,7 @@ try {
         (f: { bookingId: number }) => f.bookingId === bookingId,
       )
       await call('PUT', `/admin/feedback/${item.id}/hidden`, { hidden: true }, admin)
-      await signIn(`qa_fb_coach_${run}`)
+      await switchStudent(miniProgram, `qa_fb_coach_${run}`)
       await miniProgram.reLaunch(`/coach/lesson/index?id=${bookingId}`)
       const page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
       const data = await page.data()
