@@ -41,7 +41,10 @@ function subtitle(b: BookingDto, now: number): string {
     case 'cancelled':
       return b.cancelledBy === 'venue'
         ? b.cancelReason
-          ? `场馆已取消：${b.cancelReason}`
+          ? // A coach's own cancel is stored as 教练取消：<reason>.
+            b.cancelReason.startsWith('教练取消：')
+            ? `教练已取消：${b.cancelReason.slice(5)}`
+            : `场馆已取消：${b.cancelReason}`
           : '场馆已取消本节课'
         : b.late
           ? '已过免费取消时间'
