@@ -71,6 +71,8 @@ test('a cash 代约 the student cancels shows on the overview as owed and clears
 
   await login(page)
   const tile = page.locator('a', { hasText: '待线下退还' })
+  // The count shows "-" until the overview loads.
+  await expect(tile.locator('.stat')).toHaveText(/^\d+$/)
   const owed = Number(await tile.locator('.stat').textContent())
   expect(owed).toBeGreaterThan(0)
   await tile.click()

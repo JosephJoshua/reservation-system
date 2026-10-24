@@ -1,5 +1,5 @@
 import { venueDateKey, venueInstant } from '@rs/shared'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
   Checkbox,
@@ -690,8 +690,12 @@ function SessionDialog({
     )
       onChanged()
   }
+  // Held from the click until the dialog closes: a second click landing after the request but
+  // before the dialog goes away must not cancel again.
+  const sent = useRef(false)
   const cancel = async () => {
-    if (!reason.trim() || cancelling === null) return
+    if (!reason.trim() || cancelling === null || sent.current) return
+    sent.current = true
     const ok =
       cancelling === 'session'
         ? await attempt(
@@ -705,6 +709,7 @@ function SessionDialog({
             { onStale: onChanged },
           )
     if (ok) onChanged()
+    else sent.current = false
   }
   const mark = async (bookingId: number, attendance: string) => {
     if (
