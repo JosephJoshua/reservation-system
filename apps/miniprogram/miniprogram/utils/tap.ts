@@ -22,8 +22,8 @@ export async function ask(
 let opening = false
 
 /**
- * Opens a system screen or sheet (map, phone call, photo viewer) unless one is already opening,
- * so a double tap does not stack two. `open` must pass `complete` to the wx call.
+ * Opens a system screen or sheet (map, phone call, photo viewer, copy toast) unless one is
+ * already opening, so a double tap does not stack two. `open` must pass `complete` to the wx call.
  */
 export function openOnce(open: (complete: () => void) => void): void {
   if (opening) return

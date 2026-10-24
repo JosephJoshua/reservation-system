@@ -109,7 +109,8 @@ Page({
     if (!venue) return
     const { latitude, longitude } = venue
     if (latitude == null || longitude == null) {
-      if (venue.address) wx.setClipboardData({ data: venue.address })
+      const { address } = venue
+      if (address) openOnce((complete) => wx.setClipboardData({ data: address, complete }))
       return
     }
     openOnce((complete) =>
