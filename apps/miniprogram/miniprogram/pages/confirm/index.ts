@@ -237,6 +237,8 @@ Page({
       }
       this.finish(res.bookingId, res.existing ? '你已预约这节课' : '')
     } catch (e) {
+      // Gone back while it was booking: nothing here to reload or ask about.
+      if (this.left) return
       if (e instanceof ApiError && e.code === 'price_changed') {
         const { payWith } = this.data
         await this.load()

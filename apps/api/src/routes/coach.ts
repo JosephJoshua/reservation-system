@@ -1,4 +1,5 @@
 // The coach mode of the mini program. PUT and DELETE only, since wx.request cannot send PATCH.
+import { COACH_CANCEL_PREFIX } from '@rs/shared'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -178,7 +179,7 @@ export function coachRoutes(deps: Deps) {
     }
     // Marked before cancelling, so the sweeper never tells the coach about their own cancel. Only a
     // live booking is marked: a cancel by the student that got in first must still be announced.
-    const cancelReason = `教练取消：${reason}`
+    const cancelReason = `${COACH_CANCEL_PREFIX}${reason}`
     const marked = deps.db
       .update(bookings)
       .set({ coachToldCancelledAt: deps.now() })

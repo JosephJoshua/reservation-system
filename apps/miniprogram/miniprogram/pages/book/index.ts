@@ -70,7 +70,7 @@ Page({
       lessonTypeId: Number(query.lessonTypeId),
       coachId: Number(query.coachId ?? 0),
     })
-    this.load()
+    this.load('quiet')
   },
 
   onShow() {
@@ -84,7 +84,7 @@ Page({
   },
 
   /** `seek` is for the slots load that follows; the first load is 'quiet'. */
-  async load(seek: Seek | undefined = 'quiet') {
+  async load(seek?: Seek) {
     try {
       const catalog = await getCatalog()
       this.catalog = catalog
@@ -255,7 +255,7 @@ Page({
 
   retry() {
     this.setData({ state: 'loading' })
-    this.load()
+    this.load('quiet')
   },
 
   onShareAppMessage() {

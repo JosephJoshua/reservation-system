@@ -18,6 +18,7 @@ Page({
     hasBookingPolicy: false,
     isCoach: false,
     meLoaded: false,
+    meFailed: false,
     themeLabel: '',
   },
 
@@ -47,9 +48,13 @@ Page({
           studentNo: me.id,
           isCoach: me.isCoach,
           meLoaded: true,
+          meFailed: false,
         }),
       )
-      .catch(fail)
+      .catch((e: unknown) => {
+        this.setData({ meFailed: true })
+        fail(e)
+      })
     const packages = api<PackageDto[]>('GET', '/packages')
       .then((packages) => {
         const left = packages

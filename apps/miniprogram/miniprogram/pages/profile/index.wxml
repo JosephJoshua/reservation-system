@@ -7,7 +7,7 @@
       <view class="me-phone">{{phone || '填写手机号，便于场馆联系'}}</view>
       <view wx:if="{{studentNo}}" class="me-no">学员编号 {{studentNo}}</view>
     </block>
-    <block wx:else>
+    <block wx:elif="{{meFailed}}">
       <view class="me-name">我的资料</view>
       <view class="me-phone">下拉刷新</view>
     </block>

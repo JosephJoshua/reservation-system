@@ -3,6 +3,9 @@ import type { Attendance, WeeklyHours } from './availability'
 import type { BookingStatus, FeedbackDto } from './dto'
 import type { StudentProfileDto } from './students'
 
+/** Starts the stored reason of a lesson the coach cancelled, before the coach's own words. */
+export const COACH_CANCEL_PREFIX = '教练取消：'
+
 export interface CoachMeDto {
   id: number
   name: string

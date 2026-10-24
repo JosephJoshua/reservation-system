@@ -1,6 +1,7 @@
 import {
   type BookingDto,
   type CatalogDto,
+  COACH_CANCEL_PREFIX,
   cancellationOutcome,
   type HomeDto,
 } from '../../lib/shared'
@@ -41,9 +42,8 @@ function subtitle(b: BookingDto, now: number): string {
     case 'cancelled':
       return b.cancelledBy === 'venue'
         ? b.cancelReason
-          ? // A coach's own cancel is stored as 教练取消：<reason>.
-            b.cancelReason.startsWith('教练取消：')
-            ? `教练已取消：${b.cancelReason.slice(5)}`
+          ? b.cancelReason.startsWith(COACH_CANCEL_PREFIX)
+            ? `教练已取消：${b.cancelReason.slice(COACH_CANCEL_PREFIX.length)}`
             : `场馆已取消：${b.cancelReason}`
           : '场馆已取消本节课'
         : b.late
@@ -135,17 +135,22 @@ Page({
    * Fetches the booking shown again. A failure keeps it on screen, said out loud when `loud`,
    * unless the booking is gone.
    */
-  async refresh(loud = false) {
-    if (!this.data.booking) return this.load()
+  async refresh(loud = false): Promise<boolean> {
+    if (!this.data.booking) {
+      await this.load()
+      return this.data.state === 'ready'
+    }
     try {
       this.show(await api<BookingDto>('GET', `/bookings/${this.id}`))
+      return true
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
         this.setData({ state: 'error', error: errorMessage(e) })
-        return
+        return false
       }
       if (loud) showError(e)
       if (this.data.booking?.status === 'pending_payment') this.startTimer()
+      return false
     }
   },
 
@@ -174,7 +179,8 @@ Page({
         : '',
       // A refunded lesson has nothing to invoice, and the 退款 row already says so.
       invoice:
-        b.invoice && !(b.refund && b.invoice.state === 'refunded')
+        b.invoice &&
+        !(b.refund && (b.invoice.state === 'refunded' || b.invoice.state === 'refunding'))
           ? invoiceAction(b.invoice) === 'request'
             ? b.invoice.state === 'rejected'
               ? '未通过，重新申请'
@@ -297,12 +303,14 @@ Page({
     // Cancelled or changed on another phone since this page loaded: show that, not a refund
     // that will not happen. The modal is asked right after, which keeps it inside the tap.
     this.cancelChecking = true
+    let fresh = false
     try {
-      await this.refresh(true)
+      fresh = await this.refresh(true)
     } finally {
       this.cancelChecking = false
     }
     const b = this.data.booking
+    if (!fresh) return
     if (!b?.canCancel || this.data.busy) return
     const quote = this.cancelQuote(b)
     const answer = await ask({
