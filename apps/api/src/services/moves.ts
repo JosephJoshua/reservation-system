@@ -26,6 +26,7 @@ import { coachNowKnows } from './coach-notices'
 import { moveSummaries } from './move-history'
 import { getSettings } from './settings'
 import { queueStudentNotice } from './student-notices'
+import { assertTableFree } from './tables'
 
 /** Who moves a lesson: the student, the coach (to their own slots only), or the venue. */
 export type Mover = { studentId: number } | { coachId: number } | 'venue'
@@ -204,6 +205,7 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
       student !== null ? '你在这个时间已有预约' : '学员在这个时间已有预约',
       booking.id,
     )
+    assertTableFree(tx, slot, booking.id)
 
     // A coach moving their own lesson knows about it; anyone else's move is announced to the
     // coach by the sweeper, which compares the booking with what the coach was last told.

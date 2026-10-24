@@ -31,7 +31,8 @@ function slotLabel(s: Slot, types: LessonType[]) {
   const b = s.booking
   if (!b) {
     if (new Date(s.startsAt) <= new Date()) return '已过'
-    return s.open ? '可预约' : '已关闭'
+    if (!s.open) return '已关闭'
+    return s.tableFull ? '球台已满' : '可预约'
   }
   const state =
     b.status === 'pending_payment'
@@ -590,7 +591,13 @@ function SlotDialog({
             </Space>
           </div>
         ) : (
-          <span className="muted">{slot.open ? '尚无预约' : '已关闭，学员看不到'}</span>
+          <span className="muted">
+            {!slot.open
+              ? '已关闭，学员看不到'
+              : slot.tableFull
+                ? '尚无预约，该时段球台已满'
+                : '尚无预约'}
+          </span>
         )}
 
         {/* The API refuses to cancel a lesson that has ended. */}
@@ -623,7 +630,9 @@ function SlotDialog({
           </>
         )}
 
-        {!b && slot.open && !started && <Button onClick={() => setBooking(true)}>代约</Button>}
+        {!b && slot.open && !slot.tableFull && !started && (
+          <Button onClick={() => setBooking(true)}>代约</Button>
+        )}
 
         <Space>
           {!started && (

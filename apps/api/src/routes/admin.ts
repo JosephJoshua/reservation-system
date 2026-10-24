@@ -104,6 +104,7 @@ import {
   verifyPassword,
 } from '../services/staff'
 import { saveStudentProfile, studentProfile } from '../services/student-profiles'
+import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { weeklyHoursBody } from './coach'
 
@@ -791,6 +792,8 @@ export function adminRoutes(deps: Deps) {
         from: instant,
         to: instant,
         coachId: z.coerce.number().int().positive().optional(),
+        // A booking being moved, which gives up its table.
+        moving: z.coerce.number().int().positive().optional(),
       }),
     )
     const rows = db
@@ -845,6 +848,7 @@ export function adminRoutes(deps: Deps) {
     )
     const bySlot = new Map<number, typeof live>()
     for (const b of live) bySlot.set(b.slotId, [...(bySlot.get(b.slotId) ?? []), b])
+    const noTable = slotsWithoutTable(db, rows, q.moving)
     const now = deps.now()
     return c.json(
       rows.map((s) => {
@@ -857,6 +861,7 @@ export function adminRoutes(deps: Deps) {
         // `booking` is the one lesson in a private slot; a group session lists `bookings`.
         return {
           ...s,
+          tableFull: noTable.has(s.id),
           booking: s.lessonTypeId === null ? (seats[0] ?? null) : null,
           bookings: seats,
         }

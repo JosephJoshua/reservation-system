@@ -117,3 +117,35 @@ export function cancelDeadline(
 export function validityEnd(from: Date, days: number): Date {
   return venueInstant(venueDateKey(new Date(from.getTime() + days * DAY)), 24 * 60)
 }
+
+interface Span {
+  startsAt: Date
+  endsAt: Date
+}
+
+/**
+ * The most lessons from `others` running at one moment during `lesson`. Lessons that only touch
+ * at an end do not overlap.
+ */
+export function peakOverlap(lesson: Span, others: readonly Span[]): number {
+  const edges: [number, number][] = []
+  for (const o of others) {
+    const start = Math.max(o.startsAt.getTime(), lesson.startsAt.getTime())
+    const end = Math.min(o.endsAt.getTime(), lesson.endsAt.getTime())
+    if (start < end) edges.push([start, 1], [end, -1])
+  }
+  // Ends sort before starts at the same moment, so back-to-back lessons share a table.
+  edges.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  let on = 0
+  let peak = 0
+  for (const [, d] of edges) {
+    on += d
+    peak = Math.max(peak, on)
+  }
+  return peak
+}
+
+/** Whether one more lesson at `lesson` fits the venue's tables; null tables means no limit. */
+export function tablesFree(lesson: Span, others: readonly Span[], tables: number | null): boolean {
+  return tables === null || peakOverlap(lesson, others) < tables
+}

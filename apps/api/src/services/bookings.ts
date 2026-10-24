@@ -27,6 +27,7 @@ import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
 import { createRefund, submitRefund } from './refunds'
 import { getSettings } from './settings'
+import { assertTableFree } from './tables'
 
 export const LIVE = ['pending_payment', 'confirmed'] as const
 
@@ -199,6 +200,7 @@ export function checkBookable(
   if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
   const seat = takeSeat(tx, slot)
   assertNoClash(tx, studentId, slot, `${who}在这个时间已有预约`)
+  assertTableFree(tx, slot)
   if (lessonType.isTrial) {
     const settings = getSettings(tx)
     if (!settings.payment.trialEnabled) throw new ApiError(409, 'trial_off', '暂不提供体验课')

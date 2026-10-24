@@ -16,6 +16,7 @@ const TIME_REFUSED = [
   'package_expires',
   'student_clash',
   'duration_mismatch',
+  'tables_full',
 ]
 
 /**

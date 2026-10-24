@@ -31,6 +31,8 @@ export const venueSettings = z.object({
     lateCancel: lateCancelRule,
     // Times a student can move a booking themselves, before the free-cancel deadline. 0 turns it off.
     studentMoves: z.number().int().min(0).max(5),
+    // Lessons that can run at once, one per table. null is no limit.
+    tables: z.number().int().min(1).max(99).nullable(),
   }),
   payment: z.object({
     trialEnabled: z.boolean(),
@@ -77,6 +79,7 @@ export const defaultSettings: VenueSettings = {
     cancelDeadlineHours: 24,
     lateCancel: { kind: 'forfeit' },
     studentMoves: 1,
+    tables: null,
   },
   payment: {
     trialEnabled: true,

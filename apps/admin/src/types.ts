@@ -89,6 +89,8 @@ export interface Slot {
   capacity: number
   cancelledAt: string | null
   cancelReason: string | null
+  /** Every table is in use at some moment of it, so it cannot take a new lesson. */
+  tableFull: boolean
   /** The one lesson in a private slot; null in a group session. */
   booking: SlotBooking | null
   /** Every live booking, the students of a group session. */

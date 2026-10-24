@@ -22,6 +22,8 @@ interface SlotView {
   startsAt: string
   /** Refused for this lesson, say when the student has another lesson then. */
   refused?: boolean
+  /** Every table is in use then. */
+  full?: boolean
 }
 
 Page({
@@ -67,7 +69,10 @@ Page({
       const strip = bookableDays(me.advanceDays)
       const first = strip[0]?.key ?? ''
       const last = strip[strip.length - 1]?.key ?? first
-      const rows = await coachApi<CoachSlotDto[]>('GET', `/schedule?from=${first}&to=${last}`)
+      const rows = await coachApi<CoachSlotDto[]>(
+        'GET',
+        `/schedule?from=${first}&to=${last}&moving=${this.id}`,
+      )
       const length = Date.parse(lesson.endsAt) - Date.parse(lesson.startsAt)
       this.free = rows.filter(
         (s) =>
@@ -78,7 +83,8 @@ Page({
       )
       const days = strip.map((d) => ({
         ...d,
-        free: this.free.filter((s) => venueDateKey(new Date(s.startsAt)) === d.key).length,
+        free: this.free.filter((s) => !s.tableFull && venueDateKey(new Date(s.startsAt)) === d.key)
+          .length,
       }))
       const own = venueDateKey(new Date(lesson.startsAt))
       const date = days.some((d) => d.key === own) ? own : first
@@ -106,6 +112,7 @@ Page({
           time: time(s.startsAt),
           startsAt: s.startsAt,
           refused: this.refused.has(s.id),
+          full: s.tableFull,
         })),
     })
   },
@@ -120,7 +127,7 @@ Page({
 
   pickSlot(e: WechatMiniprogram.TouchEvent) {
     const slot = this.data.slots[e.currentTarget.dataset.index as number]
-    if (!slot || slot.refused || this.data.submitting) return
+    if (!slot || slot.refused || slot.full || this.data.submitting) return
     this.setData({ picked: slot, pickedDay: `${dateText(slot.startsAt)} ${slot.time}` })
   },
 

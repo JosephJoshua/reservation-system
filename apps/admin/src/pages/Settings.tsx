@@ -228,6 +228,23 @@ export function Settings() {
               }
             />
           </Field>
+          <Field label="球台数" help="同一时间最多上几节课，留空为不限">
+            <InputNumber
+              theme="normal"
+              value={s.booking.tables ?? undefined}
+              min={1}
+              max={99}
+              placeholder="不限"
+              suffix="张"
+              onChange={(v) =>
+                set((d) => {
+                  const n = Math.floor(Number(v))
+                  d.booking.tables =
+                    v === '' || v === undefined || !(n >= 1) ? null : Math.min(n, 99)
+                })
+              }
+            />
+          </Field>
         </div>
       </Card>
 

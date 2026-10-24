@@ -92,11 +92,18 @@ export function coachRoutes(deps: Deps) {
   })
 
   app.get('/schedule', (c) => {
-    const q = parseQuery(c, z.object({ from: dateKey, to: dateKey }))
+    const q = parseQuery(
+      c,
+      z.object({
+        from: dateKey,
+        to: dateKey,
+        moving: z.coerce.number().int().positive().optional(),
+      }),
+    )
     const days = (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000
     // A week back plus the longest booking window the settings allow.
     if (!(days >= 0 && days <= 100)) throw new ApiError(400, 'invalid_query', '日期范围无效')
-    return c.json(coachSchedule(deps, c.get('coachId'), q.from, q.to))
+    return c.json(coachSchedule(deps, c.get('coachId'), q.from, q.to, q.moving))
   })
 
   app.get('/lessons/:id', (c) => c.json(coachLesson(deps, idParam(c), c.get('coachId'))))

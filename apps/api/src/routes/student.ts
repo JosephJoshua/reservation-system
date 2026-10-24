@@ -52,6 +52,7 @@ import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { liveCounts } from '../services/sessions'
 import { getSettings } from '../services/settings'
+import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
 
 const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -303,12 +304,17 @@ export function studentRoutes(deps: Deps) {
     } satisfies CatalogDto)
   })
 
-  /** The slots a student sees from `from` to `to`: closed ones hidden, taken ones unavailable. */
+  /**
+   * The slots a student sees from `from` to `to`: closed ones hidden, taken ones and ones without a
+   * free table unavailable. `moving` is the student's own booking being moved, which gives up its
+   * table.
+   */
   function studentSlots(
     now: Date,
     from: Date,
     to: Date,
     q: { coachId?: number; lessonTypeId?: number },
+    moving?: number,
   ) {
     const settings = getSettings(db)
     const lessonType = q.lessonTypeId
@@ -358,9 +364,11 @@ export function studentRoutes(deps: Deps) {
       db,
       rows.map((r) => r.id),
     )
+    const noTable = slotsWithoutTable(db, rows, moving)
     return (
       rows
-        // Closed slots and slots outside the window are hidden; full ones show as full.
+        // Closed slots and slots outside the window are hidden; full ones and ones without a free
+        // table show as full.
         .filter(
           (s) => s.open && bookingWindowError(s.startsAt, now, settings.booking) !== 'too_far',
         )
@@ -372,7 +380,9 @@ export function studentRoutes(deps: Deps) {
             startsAt: s.startsAt.toISOString(),
             endsAt: s.endsAt.toISOString(),
             available:
-              seatsLeft > 0 && bookingWindowError(s.startsAt, now, settings.booking) === null,
+              seatsLeft > 0 &&
+              !noTable.has(s.id) &&
+              bookingWindowError(s.startsAt, now, settings.booking) === null,
             lessonTypeId: s.lessonTypeId,
             capacity: s.capacity,
             seatsLeft,
@@ -387,14 +397,25 @@ export function studentRoutes(deps: Deps) {
   }
 
   app.get('/slots', (c) => {
-    const q = parseQuery(c, z.object({ date: dateKey, ...slotFilter }))
+    const q = parseQuery(
+      c,
+      // `moving`: the student's booking being moved, which gives up its table.
+      z.object({ date: dateKey, ...slotFilter, moving: positiveId.optional() }),
+    )
     let from: Date
     try {
       from = venueInstant(q.date, 0)
     } catch {
       throw new ApiError(400, 'invalid_query', '日期无效')
     }
-    return c.json(studentSlots(deps.now(), from, venueInstant(q.date, 24 * 60), q))
+    const moving = q.moving
+      ? db
+          .select({ id: bookings.id })
+          .from(bookings)
+          .where(and(eq(bookings.id, q.moving), eq(bookings.studentId, c.get('studentId'))))
+          .get()
+      : undefined
+    return c.json(studentSlots(deps.now(), from, venueInstant(q.date, 24 * 60), q, moving?.id))
   })
 
   // The venue days in the booking window with a slot that can be booked now, so the booking page

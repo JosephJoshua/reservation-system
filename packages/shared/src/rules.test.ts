@@ -4,7 +4,9 @@ import {
   cancelDeadline,
   cancellationOutcome,
   freeCancelDeadline,
+  peakOverlap,
   studentMoveError,
+  tablesFree,
   validityEnd,
 } from './rules'
 import { defaultSettings, type VenueSettings } from './settings'
@@ -177,5 +179,40 @@ describe('validityEnd', () => {
     expect(validityEnd(at('2026-10-23T15:30:00Z'), 30).toISOString()).toBe(
       '2026-11-22T16:00:00.000Z',
     )
+  })
+})
+
+describe('peakOverlap', () => {
+  const span = (from: string, to: string) => ({
+    startsAt: at(`2026-10-25T${from}:00Z`),
+    endsAt: at(`2026-10-25T${to}:00Z`),
+  })
+  const lesson = span('02:00', '03:00')
+
+  it('counts lessons running together, not every lesson that overlaps', () => {
+    // 02:00-02:30 and 02:30-03:00 never run together.
+    expect(peakOverlap(lesson, [span('01:30', '02:30'), span('02:30', '03:30')])).toBe(1)
+    expect(peakOverlap(lesson, [span('01:30', '02:31'), span('02:30', '03:30')])).toBe(2)
+    expect(peakOverlap(lesson, [span('02:00', '03:00'), span('02:15', '02:45')])).toBe(2)
+  })
+
+  it('ignores lessons that only touch its ends', () => {
+    expect(peakOverlap(lesson, [span('01:00', '02:00'), span('03:00', '04:00')])).toBe(0)
+    expect(peakOverlap(lesson, [])).toBe(0)
+  })
+
+  it('only counts the part inside the lesson', () => {
+    // Three lessons overlap each other before 02:00, but only one runs during the lesson.
+    const before = [span('01:00', '02:00'), span('01:00', '02:00'), span('01:30', '02:10')]
+    expect(peakOverlap(lesson, before)).toBe(1)
+  })
+})
+
+describe('tablesFree', () => {
+  const lesson = { startsAt: at('2026-10-25T02:00:00Z'), endsAt: at('2026-10-25T03:00:00Z') }
+  it('allows anything without a limit and fills up to the limit', () => {
+    expect(tablesFree(lesson, [lesson, lesson], null)).toBe(true)
+    expect(tablesFree(lesson, [lesson], 2)).toBe(true)
+    expect(tablesFree(lesson, [lesson, lesson], 2)).toBe(false)
   })
 })

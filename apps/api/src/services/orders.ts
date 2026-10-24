@@ -18,6 +18,7 @@ import { seatFor } from './bookings'
 import { trialsUsed } from './catalog'
 import { createRefund, submitRefund } from './refunds'
 import { getSettings } from './settings'
+import { hasFreeTable } from './tables'
 
 // Local expiry waits this long past WeChat's time_expire, so a payment made in the last second
 // has time to arrive before the slot is released.
@@ -186,17 +187,13 @@ function revivedSeat(tx: Q, slotId: number) {
 /**
  * Whether a booking whose hold ran out can still be confirmed by a late payment: the lesson is
  * ahead, the slot still takes bookings, a trial is still within the student's limit and the
- * student has not booked that time since. Whether a seat is left is checked when it is revived,
- * and the unique index backs that up.
+ * student has not booked that time since, and a table is still free. Whether a seat is left is
+ * checked when it is revived, and the unique index backs that up.
  */
 function revivable(tx: Q, booking: typeof bookings.$inferSelect, now: Date) {
   if (booking.startsAt <= now) return false
-  const slot = tx
-    .select({ open: slots.open, cancelledAt: slots.cancelledAt })
-    .from(slots)
-    .where(eq(slots.id, booking.slotId))
-    .get()
-  if (!slot?.open || slot.cancelledAt) return false
+  const slot = tx.select().from(slots).where(eq(slots.id, booking.slotId)).get()
+  if (!slot?.open || slot.cancelledAt || !hasFreeTable(tx, slot)) return false
   const lessonType = tx
     .select({ isTrial: lessonTypes.isTrial })
     .from(lessonTypes)

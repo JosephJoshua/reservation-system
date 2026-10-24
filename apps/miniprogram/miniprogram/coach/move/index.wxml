@@ -45,13 +45,13 @@
       <view
         wx:for="{{slots}}"
         wx:key="id"
-        class="slot {{item.refused ? 'slot-full' : ''}} {{picked.id === item.id ? 'slot-picked' : ''}}"
-        hover-class="{{item.refused ? 'none' : 'slot-hover'}}"
+        class="slot {{item.refused || item.full ? 'slot-full' : ''}} {{picked.id === item.id ? 'slot-picked' : ''}}"
+        hover-class="{{item.refused || item.full ? 'none' : 'slot-hover'}}"
         data-index="{{index}}"
         bind:tap="pickSlot"
       >
         <view class="slot-time">{{item.time}}</view>
-        <view class="slot-sub">{{item.refused ? '不可选' : '空闲'}}</view>
+        <view class="slot-sub">{{item.refused ? '不可选' : item.full ? '球台已满' : '空闲'}}</view>
       </view>
     </view>
   </view>
