@@ -46,9 +46,10 @@ test('fills in the profile, keeping a tag typed without Enter', async ({ page, r
   await d.getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('每个标签不超过 10 个字')).toBeVisible()
   await expect(d).toHaveCount(1)
-  await field(d, '标签').locator('.t-tag').last().locator('.t-tag__icon-close').click()
+  // Removing a tag keeps text that is still being typed.
   await field(d, '标签').locator('.t-tag-input').click()
   await page.keyboard.type('比赛型')
+  await field(d, '标签').locator('.t-tag').last().locator('.t-tag__icon-close').click()
   // A double click saves once.
   await d.getByRole('button', { name: '保存' }).dblclick()
   await expect(d).toHaveCount(0)

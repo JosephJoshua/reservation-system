@@ -605,12 +605,12 @@ function ProfileDialog({
                 set({ tags })
                 setTyping('')
               } else if (ctx?.trigger !== 'blur') {
-                // Cut to length when added, not while a pinyin input method is composing.
                 setTyping(String(v))
               }
             }}
-            onChange={(v) => {
-              setTyping('')
+            onChange={(v, ctx) => {
+              // Removing a tag keeps what is still being typed.
+              if (ctx.trigger !== 'tag-remove') setTyping('')
               set({ tags: cleanTags((v as string[]).map(String)) })
             }}
           />
