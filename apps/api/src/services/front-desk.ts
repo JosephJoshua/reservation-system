@@ -148,7 +148,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
           throw new ApiError(
             409,
             'no_package',
-            packageMismatch(tx, input.studentId, lessonType.id, slot) ??
+            (!lessonType.isTrial && packageMismatch(tx, input.studentId, lessonType.id, slot)) ||
               '该学员没有可用于这节课的课时包',
           )
         }
