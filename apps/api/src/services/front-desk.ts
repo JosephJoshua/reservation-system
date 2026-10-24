@@ -1,8 +1,9 @@
 import type { OfflineMethod } from '@rs/shared'
-import { and, eq, gt, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
+  coaches,
   lessonTypes,
   orders,
   packageLedger,
@@ -62,14 +63,55 @@ function check(
   return { student, slot, lessonType, price, seat, pkg }
 }
 
+/**
+ * Why the student's package for this lesson can't pay for the slot, when they have one: it is
+ * kept to other coaches or runs out before the lesson. Null when there is no such package.
+ */
+function packageMismatch(
+  tx: Q,
+  studentId: number,
+  lessonTypeId: number,
+  slot: { coachId: number; startsAt: Date },
+) {
+  const held = tx
+    .select()
+    .from(packages)
+    .where(
+      and(
+        eq(packages.studentId, studentId),
+        eq(packages.lessonTypeId, lessonTypeId),
+        eq(packages.status, 'active'),
+        gt(packages.lessonsRemaining, 0),
+      ),
+    )
+    .all()
+  const forCoach = held.find((p) => p.coachIds.length > 0 && !p.coachIds.includes(slot.coachId))
+  if (forCoach) {
+    const names = tx
+      .select({ name: coaches.name })
+      .from(coaches)
+      .where(inArray(coaches.id, forCoach.coachIds))
+      .all()
+      .map((c) => c.name)
+    return `课时包「${forCoach.name}」只能约${names.join('、')}的课`
+  }
+  const expiring = held.find((p) => p.expiresAt <= slot.startsAt)
+  if (expiring) return `课时包「${expiring.name}」在这节课前到期`
+  return null
+}
+
 /** What the booking would cost, for the front desk's confirm step. */
 export function frontDeskQuote(
   deps: Deps,
   input: { studentId: number; slotId: number; lessonTypeId: number },
 ) {
-  const { price, pkg } = check(deps.db, deps.now(), input)
+  const { price, pkg, slot, lessonType } = check(deps.db, deps.now(), input)
   return {
     price,
+    packageNote:
+      pkg || lessonType.isTrial
+        ? null
+        : packageMismatch(deps.db, input.studentId, lessonType.id, slot),
     package: pkg
       ? {
           id: pkg.id,
@@ -102,7 +144,14 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
     }
     try {
       if (input.payWith === 'package') {
-        if (!pkg) throw new ApiError(409, 'no_package', '该学员没有可用于这节课的课时包')
+        if (!pkg) {
+          throw new ApiError(
+            409,
+            'no_package',
+            (!lessonType.isTrial && packageMismatch(tx, input.studentId, lessonType.id, slot)) ||
+              '该学员没有可用于这节课的课时包',
+          )
+        }
         const used = tx
           .update(packages)
           .set({ lessonsRemaining: sql`${packages.lessonsRemaining} - 1` })

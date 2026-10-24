@@ -772,6 +772,26 @@ describe('front-desk booking', () => {
 
     const later = h.slot(coach.id, '2026-10-28')
     expect(await code({ slotId: later.id, payWith: 'package' })).toBe('no_package')
+    // A package kept to another coach says so, on the quote and on the refusal.
+    const pkgId = await sellPackage(h, admin, 1, product(h, lesson.id).id)
+    h.db
+      .update(packages)
+      .set({ coachIds: [otherCoach.id] })
+      .where(eq(packages.id, pkgId))
+      .run()
+    const target = { studentId: 1, slotId: later.id, lessonTypeId: lesson.id }
+    const quote = await h.call('POST', '/admin/bookings/quote', target, admin)
+    expect(quote.json).toMatchObject({
+      package: null,
+      packageNote: expect.stringContaining('只能约李教练的课'),
+    })
+    const refused = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...base, ...target, payWith: 'package' },
+      admin,
+    )
+    expect(refused.json.error.message).toBe(quote.json.packageNote)
     expect(await code({ slotId: later.id, studentId: 99 })).toBe('not_found')
 
     h.settings((s) => {
