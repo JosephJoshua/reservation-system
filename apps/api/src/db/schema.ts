@@ -226,7 +226,7 @@ export const slots = sqliteTable(
     coachToldCancelledAt: instant('coach_told_cancelled_at'),
     createdAt: createdAt(),
   },
-  (t) => [index('slots_coach_time').on(t.coachId, t.startsAt)],
+  (t) => [index('slots_coach_time').on(t.coachId, t.startsAt), index('slots_time').on(t.startsAt)],
 )
 
 export const bookingStatuses = ['pending_payment', 'confirmed', 'cancelled', 'expired'] as const
@@ -282,6 +282,10 @@ export const bookings = sqliteTable(
       .on(t.slotId, t.studentId)
       .where(sql`status in ('pending_payment', 'confirmed')`),
     index('bookings_student_time').on(t.studentId, t.startsAt),
+    // Lists and reports over a stretch of time, a slot's lessons and a package's lessons.
+    index('bookings_time').on(t.startsAt),
+    index('bookings_slot').on(t.slotId),
+    index('bookings_package').on(t.packageId),
   ],
 )
 
@@ -436,20 +440,27 @@ export const packageNotices = sqliteTable(
   ],
 )
 
-export const packageLedger = sqliteTable('package_ledger', {
-  id: id(),
-  packageId: integer('package_id')
-    .notNull()
-    .references(() => packages.id),
-  delta: integer('delta').notNull(),
-  kind: text('kind', {
-    enum: ['purchase', 'use', 'return', 'grant', 'extend', 'refund'],
-  }).notNull(),
-  bookingId: integer('booking_id'),
-  note: text('note').notNull().default(''),
-  actor: text('actor', { enum: ['student', 'admin', 'system'] }).notNull(),
-  createdAt: createdAt(),
-})
+export const packageLedger = sqliteTable(
+  'package_ledger',
+  {
+    id: id(),
+    packageId: integer('package_id')
+      .notNull()
+      .references(() => packages.id),
+    delta: integer('delta').notNull(),
+    kind: text('kind', {
+      enum: ['purchase', 'use', 'return', 'grant', 'extend', 'refund'],
+    }).notNull(),
+    bookingId: integer('booking_id'),
+    note: text('note').notNull().default(''),
+    actor: text('actor', { enum: ['student', 'admin', 'system'] }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('package_ledger_package').on(t.packageId),
+    index('package_ledger_booking').on(t.bookingId),
+  ],
+)
 
 export const orders = sqliteTable(
   'orders',
@@ -475,7 +486,12 @@ export const orders = sqliteTable(
     note: text('note').notNull().default(''),
     createdAt: createdAt(),
   },
-  (t) => [index('orders_status_expiry').on(t.status, t.expiresAt)],
+  (t) => [
+    index('orders_status_expiry').on(t.status, t.expiresAt),
+    index('orders_paid').on(t.status, t.paidAt),
+    index('orders_booking').on(t.bookingId),
+    index('orders_student').on(t.studentId),
+  ],
 )
 
 export const refundStatuses = [
@@ -505,7 +521,7 @@ export const refunds = sqliteTable(
     createdAt: createdAt(),
     updatedAt: instant('updated_at').notNull(),
   },
-  (t) => [index('refunds_status').on(t.status)],
+  (t) => [index('refunds_status').on(t.status), index('refunds_order').on(t.orderId)],
 )
 
 /**
@@ -600,5 +616,9 @@ export const actionLog = sqliteTable(
     targetId: integer('target_id'),
     createdAt: createdAt(),
   },
-  (t) => [index('action_log_time').on(t.createdAt), index('action_log_staff').on(t.staffId)],
+  (t) => [
+    index('action_log_time').on(t.createdAt),
+    index('action_log_staff').on(t.staffId),
+    index('action_log_student').on(t.studentId),
+  ],
 )

@@ -12,11 +12,11 @@ import {
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, hashParam, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, hashParam, useIdempotencyKey, usePagedApi, useSubmitting } from '../hooks'
 import { refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
@@ -50,9 +50,8 @@ function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
 export function Refunds() {
   // The overview links here with the status it counted.
   const [status, setStatus] = useState(() => hashParam('status') ?? 'requested')
-  const { data, loading, error, reload } = useApi<Refund[]>(
-    `/admin/refunds${status ? `?status=${status}` : ''}`,
-  )
+  const list = usePagedApi<Refund>(`/admin/refunds${status ? `?status=${status}` : ''}`, 'before')
+  const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
 
   const paidBack = async (r: Refund) => {
@@ -92,20 +91,21 @@ export function Refunds() {
           onChange={(v) => setStatus(String(v ?? ''))}
           options={statusOptions}
         />
-        <span className="spacer" />
-        <ExportButton
-          kind="refunds"
-          filters={{ status }}
-          filterText={
-            status ? `状态：${statusOptions.find((o) => o.value === status)?.label}` : undefined
-          }
-        />
+        <div className="toolbar-actions">
+          <ExportButton
+            kind="refunds"
+            filters={{ status }}
+            filterText={
+              status ? `状态：${statusOptions.find((o) => o.value === status)?.label}` : undefined
+            }
+          />
+        </div>
       </div>
       <DataTable
         rowKey="id"
-        loading={loading}
-        data={data ?? []}
-        empty={error ?? '没有记录'}
+        loading={list.loading && !list.loaded}
+        data={list.rows}
+        empty={list.error ?? '没有记录'}
         columns={[
           { colKey: 'createdAt', title: '申请时间', cell: ({ row }) => fmtDateTime(row.createdAt) },
           {
@@ -203,6 +203,12 @@ export function Refunds() {
               ) : null,
           },
         ]}
+      />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
       />
       {deciding && (
         <Decide

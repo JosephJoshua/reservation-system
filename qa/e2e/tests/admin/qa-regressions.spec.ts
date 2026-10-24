@@ -127,8 +127,7 @@ test('a retry after a lost sale response records the sale once', async ({ page, 
 test('back closes a student opened from the list', async ({ page }) => {
   await login(page)
   await page.goto('./#/students')
-  await page.getByPlaceholder('姓名或手机号').fill(studentName)
-  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(studentName)
   // The full list may still be showing until the search answers.
   await expect(page.getByRole('button', { name: '查看' })).toHaveCount(1)
   await page.getByRole('button', { name: '查看' }).click()

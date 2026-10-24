@@ -13,30 +13,118 @@ body {
   color: var(--td-text-color-primary);
 }
 
+/*
+ * The shell: a sidebar and header that stay put while the page scrolls with the window, so the
+ * browser's own scroll, find and back-to-position keep working.
+ */
 .admin-layout {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
   min-height: 100vh;
 }
 
 .admin-aside {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--td-bg-color-container);
   border-right: 1px solid var(--td-component-stroke);
 }
 
 .admin-brand {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   height: 56px;
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  padding: 0 20px;
   font-size: 16px;
+  font-weight: 600;
+  background: var(--td-bg-color-container);
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 24px;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group + .nav-group {
+  margin-top: 8px;
+}
+
+.nav-group-title {
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--td-text-color-placeholder);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--td-radius-medium);
+  color: var(--td-text-color-primary);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.nav-item:hover {
+  background: var(--td-bg-color-container-hover);
+  text-decoration: none;
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid var(--td-brand-color-focus, var(--td-brand-color));
+  outline-offset: -2px;
+}
+
+.nav-item.active {
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
   font-weight: 600;
 }
 
+.nav-item .t-icon {
+  flex: none;
+  font-size: 18px;
+  color: var(--td-text-color-secondary);
+}
+
+.nav-item.active .t-icon {
+  color: var(--td-brand-color);
+}
+
+.admin-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .admin-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   height: 56px;
   padding: 0 24px;
+  box-sizing: border-box;
   font-size: 16px;
   font-weight: 600;
   color: var(--td-text-color-primary);
@@ -45,6 +133,8 @@ body {
 }
 
 .admin-content {
+  flex: 1;
+  min-width: 0;
   padding: 24px;
 }
 
@@ -58,6 +148,24 @@ body {
 
 .toolbar .spacer {
   flex: 1;
+}
+
+/* A list page's own buttons, at the right end of its filters. */
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.toolbar-actions .t-button {
+  margin: 0;
+}
+
+.ellipsis {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .week-nav {
@@ -412,11 +520,6 @@ a:hover {
   white-space: nowrap;
 }
 
-/* Lets wide content scroll inside the page instead of pushing the header off screen. */
-.admin-main {
-  min-width: 0;
-}
-
 .week-scroll {
   overflow-x: auto;
 }
@@ -428,8 +531,22 @@ a:hover {
   min-width: 0;
 }
 
+.admin-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .admin-menu-drawer .t-drawer__body {
   padding: 0;
+}
+
+.admin-menu-drawer .admin-nav {
+  padding-top: 8px;
+}
+
+.admin-menu-drawer .nav-item {
+  height: 44px;
 }
 
 .day-strip {
@@ -468,6 +585,7 @@ a:hover {
 
 .header-actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
 }
@@ -955,4 +1073,130 @@ a:hover {
   flex-direction: column;
   gap: 2px;
   line-height: 20px;
+}
+
+/* Header student search. */
+.student-search {
+  position: relative;
+  width: 260px;
+  font-weight: 400;
+}
+
+.student-search-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: 20;
+  padding: 4px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-medium);
+  background: var(--td-bg-color-container);
+  box-shadow: var(--td-shadow-2);
+}
+
+.student-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--td-radius-default);
+  background: none;
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.student-search-item.active {
+  background: var(--td-bg-color-container-hover);
+}
+
+.student-search-item.more {
+  justify-content: center;
+  color: var(--td-brand-color);
+}
+
+.student-search-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-search-item .muted {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.student-search-note {
+  padding: 10px 12px;
+  color: var(--td-text-color-placeholder);
+  font-size: 13px;
+}
+
+/* 概览 待办: counts that link to the list to work through. */
+.todo-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  row-gap: 16px;
+}
+
+.todo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px;
+  border-left: 1px solid var(--td-component-stroke);
+  color: var(--td-text-color-primary);
+}
+
+.todo-item:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.todo-item:hover {
+  text-decoration: none;
+}
+
+.todo-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.todo-value {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-item:hover .todo-label {
+  color: var(--td-brand-color);
+}
+
+.todo-item.none .todo-value {
+  color: var(--td-text-color-placeholder);
+}
+
+/* A name with its tags, wrapping between them rather than inside the name. */
+.name-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }

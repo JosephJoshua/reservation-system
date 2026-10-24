@@ -72,8 +72,8 @@ test('a cash 代约 the student cancels shows on the overview as owed and clears
   await login(page)
   const tile = page.locator('a', { hasText: '待线下退还' })
   // The count shows "-" until the overview loads.
-  await expect(tile.locator('.stat')).toHaveText(/^\d+$/)
-  const owed = Number(await tile.locator('.stat').textContent())
+  await expect(tile.locator('.todo-value')).toHaveText(/^\d+$/)
+  const owed = Number(await tile.locator('.todo-value').textContent())
   expect(owed).toBeGreaterThan(0)
   await tile.click()
   await expect(page).toHaveURL(/#\/refunds\?status=pending/)
@@ -84,7 +84,7 @@ test('a cash 代约 the student cancels shows on the overview as owed and clears
   await expect(row).toHaveCount(0)
 
   await page.goto('./#/overview')
-  await expect(page.locator('a', { hasText: '待线下退还' }).locator('.stat')).toHaveText(
+  await expect(page.locator('a', { hasText: '待线下退还' }).locator('.todo-value')).toHaveText(
     String(owed - 1),
   )
 })

@@ -1,11 +1,11 @@
 import type { AdminFeedbackDto } from '@rs/shared'
-import { FEEDBACK_LIST_LIMIT, venueInstant } from '@rs/shared'
+import { venueInstant } from '@rs/shared'
 import { useState } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { addDays, fmtDateTime, today } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, usePagedApi } from '../hooks'
 import { StudentCell } from '../StudentCell'
 import type { Coach } from '../types'
 
@@ -28,7 +28,8 @@ export function Feedback() {
     to: venueInstant(range[1], 24 * 60).toISOString(),
   })
   if (coachId) params.set('coachId', String(coachId))
-  const { data, loading, error, reload } = useApi<AdminFeedbackDto[]>(`/admin/feedback?${params}`)
+  const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
+  const { reload } = list
 
   const setHidden = async (row: AdminFeedbackDto, hidden: boolean) => {
     if (
@@ -59,14 +60,11 @@ export function Feedback() {
           options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
         />
       </div>
-      {data?.length === FEEDBACK_LIST_LIMIT && (
-        <p className="muted">只显示最近 {FEEDBACK_LIST_LIMIT} 条，请缩小日期范围。</p>
-      )}
       <DataTable
         rowKey="id"
-        loading={loading}
-        data={data ?? []}
-        empty={error ?? '这段时间没有课后点评'}
+        loading={list.loading && !list.loaded}
+        data={list.rows}
+        empty={list.error ?? '这段时间没有课后点评'}
         columns={[
           {
             colKey: 'startsAt',
@@ -151,6 +149,12 @@ export function Feedback() {
               ),
           },
         ]}
+      />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
       />
     </div>
   )

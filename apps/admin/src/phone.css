@@ -7,8 +7,17 @@
     min-height: 36px;
   }
 
+  .admin-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .admin-header {
-    padding: 0 12px 0 4px;
+    padding: 0 4px;
+    gap: 4px;
+  }
+
+  .header-actions {
+    gap: 0;
   }
 
   .admin-content {
@@ -49,6 +58,17 @@
 
   .toolbar .spacer {
     display: none;
+  }
+
+  /* The page's own buttons come first, sharing a row. */
+  .toolbar-actions {
+    order: -1;
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
+  .toolbar-actions > * {
+    flex: 1;
   }
 
   /* Coach and batch scheduling on the first row, week paging below. */
@@ -112,9 +132,14 @@
     width: 100% !important;
   }
 
-  /* Each row becomes a card; each cell shows its column title beside the value. */
+  /*
+   * Each row becomes a card: the first cell is its title, the others show their column title
+   * beside the value, lined up on the first line of text, and row buttons form a footer.
+   */
+  .card-table,
   .card-table .t-table__content {
     overflow: visible;
+    background: transparent;
   }
 
   .card-table table {
@@ -134,8 +159,9 @@
 
   .card-table tbody tr {
     display: block;
+    overflow: hidden;
     margin-bottom: 8px;
-    padding: 8px 12px;
+    padding: 4px 16px;
     border: 1px solid var(--td-component-stroke);
     border-radius: 8px;
     background: var(--td-bg-color-container);
@@ -143,38 +169,47 @@
 
   .card-table tbody td {
     display: flex;
-    align-items: flex-start;
+    align-items: baseline;
     gap: 12px;
     width: auto !important;
     padding: 6px 0 !important;
     border: none !important;
     text-align: left !important;
+    line-height: 22px;
   }
 
   .card-table tbody td[data-label]::before {
     content: attr(data-label);
     flex: 0 0 64px;
     color: var(--td-text-color-secondary);
-    font-size: 12px;
-    line-height: 22px;
-  }
-
-  .card-table tbody td[data-label=""]::before {
-    display: none;
-  }
-
-  .card-table tbody td:empty {
-    display: none;
+    font-size: 13px;
   }
 
   .card-table tbody td > * {
+    flex: 1;
     min-width: 0;
   }
 
-  /* Row actions line up with the values instead of their own button padding. */
-  .card-table tbody td .t-button--variant-text {
-    padding-left: 0;
-    padding-right: 20px;
+  .card-table tbody td[data-label=""]::before,
+  .card-table tbody td:first-child::before,
+  .card-table tbody td[data-actions]::before {
+    display: none;
+  }
+
+  /* The title: the first column, without its label. */
+  .card-table tbody td:first-child {
+    padding-top: 10px !important;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .card-table tbody td:first-child .muted {
+    font-weight: 400;
+  }
+
+  .card-table tbody td:empty,
+  .card-table tbody td[data-actions]:not(:has(button, a)) {
+    display: none;
   }
 
   .card-table .t-table__empty-row,
@@ -245,5 +280,87 @@
   /* All six period presets fit on a phone without scrolling. */
   .t-radio-group.range-presets .t-radio-button {
     padding: 0 8px;
+  }
+
+  .todo-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .todo-item {
+    padding: 0 12px;
+  }
+
+  .todo-item:nth-child(3n + 1) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .todo-value {
+    font-size: 20px;
+  }
+
+  /* The search opens over the whole header. */
+  .student-search.compact {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: auto;
+    padding: 0 4px 0 12px;
+    background: var(--td-bg-color-container);
+  }
+
+  .student-search.compact .t-input__wrap {
+    flex: 1;
+  }
+
+  .student-search.compact .t-input {
+    height: 36px;
+  }
+
+  .student-search.compact .student-search-list {
+    top: 100%;
+    right: 0;
+    left: 0;
+    max-height: calc(100dvh - 64px);
+    overflow-y: auto;
+    border-radius: 0 0 var(--td-radius-medium) var(--td-radius-medium);
+  }
+
+  .student-search-item {
+    min-height: 48px;
+  }
+
+  /*
+   * Row buttons share the footer evenly, text centered, whatever wraps them. The 1px gap shows
+   * the footer's background as dividers.
+   */
+  .card-table tbody td[data-actions] {
+    margin: 4px -16px 0;
+    padding: 0 !important;
+    border-top: 1px solid var(--td-component-stroke) !important;
+  }
+
+  .card-table tbody td[data-actions] > .cell {
+    display: flex;
+    gap: 1px;
+    background: var(--td-component-stroke);
+  }
+
+  .card-table tbody td[data-actions] > .cell :not(.t-button, .t-button *) {
+    display: contents;
+  }
+
+  .card-table tbody td[data-actions] .t-button {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    margin: 0;
+    padding: 0 8px;
+    border-radius: 0;
+    justify-content: center;
+    background: var(--td-bg-color-container);
   }
 }

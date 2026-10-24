@@ -177,10 +177,11 @@ function Monthly() {
           value={month}
           onChange={(v) => setMonth(String(v || today().slice(0, 7)))}
         />
-        <span className="spacer" />
-        <Button variant="outline" disabled={!r} onClick={() => r && downloadCsv(r)}>
-          导出 CSV
-        </Button>
+        <div className="toolbar-actions">
+          <Button variant="outline" disabled={!r} onClick={() => r && downloadCsv(r)}>
+            导出 CSV
+          </Button>
+        </div>
       </div>
       {error && <div className="danger-text">{error}</div>}
       <div className="stat-grid">

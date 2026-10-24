@@ -1,19 +1,17 @@
 import { orderTitle } from '@rs/shared'
 import { useState } from 'react'
 import { Select, Tag } from 'tdesign-react'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { fmtDateTime, yuan } from '../format'
-import { useApi } from '../hooks'
+import { usePagedApi } from '../hooks'
 import { offlineMethodLabel, orderStatusLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Order } from '../types'
 
 export function Orders() {
   const [status, setStatus] = useState('')
-  const { data, loading, error } = useApi<Order[]>(
-    `/admin/orders${status ? `?status=${status}` : ''}`,
-  )
+  const list = usePagedApi<Order>(`/admin/orders${status ? `?status=${status}` : ''}`, 'before')
   return (
     <div>
       <div className="toolbar">
@@ -25,18 +23,19 @@ export function Orders() {
           onChange={(v) => setStatus(String(v ?? ''))}
           options={Object.entries(orderStatusLabel).map(([value, [label]]) => ({ value, label }))}
         />
-        <span className="spacer" />
-        <ExportButton
-          kind="orders"
-          filters={{ status }}
-          filterText={status ? `状态：${orderStatusLabel[status as 'paid'][0]}` : undefined}
-        />
+        <div className="toolbar-actions">
+          <ExportButton
+            kind="orders"
+            filters={{ status }}
+            filterText={status ? `状态：${orderStatusLabel[status as 'paid'][0]}` : undefined}
+          />
+        </div>
       </div>
       <DataTable
         rowKey="id"
-        loading={loading}
-        data={data ?? []}
-        empty={error ?? '没有订单'}
+        loading={list.loading && !list.loaded}
+        data={list.rows}
+        empty={list.error ?? '没有订单'}
         columns={[
           {
             colKey: 'createdAt',
@@ -86,6 +85,12 @@ export function Orders() {
             cell: ({ row }) => <span className="muted nowrap">{row.outTradeNo}</span>,
           },
         ]}
+      />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
       />
     </div>
   )

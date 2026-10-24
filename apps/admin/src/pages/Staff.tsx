@@ -34,11 +34,12 @@ export function Staff() {
         <span className="muted">
           每位员工用自己的账号登录，角色决定能看到和操作的内容，所有操作都会记下是谁做的。
         </span>
-        <span className="spacer" />
-        <Button variant="outline" onClick={() => setEditing({ kind: 'own-password' })}>
-          修改我的密码
-        </Button>
-        <Button onClick={() => setEditing({ kind: 'create' })}>新增员工</Button>
+        <div className="toolbar-actions">
+          <Button variant="outline" onClick={() => setEditing({ kind: 'own-password' })}>
+            修改我的密码
+          </Button>
+          <Button onClick={() => setEditing({ kind: 'create' })}>新增员工</Button>
+        </div>
       </div>
       <DataTable
         rowKey="id"

@@ -67,8 +67,7 @@ test('lists students whose packages expire soon, soonest first', async ({ page, 
 
   await login(page)
   await page.goto('./#/students')
-  await page.getByPlaceholder('姓名或手机号').fill(run)
-  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(run)
   await expect(page.getByRole('row')).toHaveCount(4)
   await expect(page.getByRole('button', { name: '导出' })).toBeVisible()
 
@@ -91,11 +90,9 @@ test('lists students whose packages expire soon, soonest first', async ({ page, 
   await page.setViewportSize({ width: 1280, height: 720 })
 
   // Search narrows the filtered list; a name with nothing expiring shows the empty state.
-  await page.getByPlaceholder('姓名或手机号').fill(`丙${run}`)
-  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(`丙${run}`)
   await expect(page.getByText('没有找到学员')).toBeVisible()
-  await page.getByPlaceholder('姓名或手机号').fill(`乙${run}`)
-  await page.getByRole('button', { name: '搜索' }).click()
+  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(`乙${run}`)
   await expect(rows).toHaveCount(1)
 
   // Opening a student keeps the filter.

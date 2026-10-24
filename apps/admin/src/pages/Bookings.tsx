@@ -13,11 +13,11 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
-import { DataTable } from '../DataTable'
+import { DataTable, LoadMore } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
-import { attempt, hashParam, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, hashParam, useApi, useIdempotencyKey, usePagedApi, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundLabel } from '../labels'
 import { useCan } from '../me'
 import { StudentCell } from '../StudentCell'
@@ -54,7 +54,8 @@ export function Bookings() {
   if (status) params.set('status', status)
   if (coachId) params.set('coachId', String(coachId))
   if (unmarked) params.set('unmarked', '1')
-  const { data, loading, error, reload } = useApi<AdminBooking[]>(`/admin/bookings?${params}`)
+  const list = usePagedApi<AdminBooking>(`/admin/bookings?${params}`, 'offset')
+  const { reload } = list
 
   const closeCancel = () => {
     setCancelling(null)
@@ -134,30 +135,31 @@ export function Bookings() {
         <Checkbox checked={unmarked} onChange={(v) => setUnmarked(v)}>
           只看未签到
         </Checkbox>
-        <span className="spacer" />
-        {money && (
-          <ExportButton
-            kind="bookings"
-            range={range}
-            filters={{ status, coachId, unmarked: unmarked ? '1' : undefined }}
-            filterText={
-              [
-                status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
-                coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
-                unmarked && '未签到',
-              ]
-                .filter(Boolean)
-                .join('，') || undefined
-            }
-          />
-        )}
-        {canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
+        <div className="toolbar-actions">
+          {money && (
+            <ExportButton
+              kind="bookings"
+              range={range}
+              filters={{ status, coachId, unmarked: unmarked ? '1' : undefined }}
+              filterText={
+                [
+                  status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
+                  coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
+                  unmarked && '未签到',
+                ]
+                  .filter(Boolean)
+                  .join('，') || undefined
+              }
+            />
+          )}
+          {canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
+        </div>
       </div>
       <DataTable
         rowKey="id"
-        loading={loading}
-        data={data ?? []}
-        empty={error ?? '这段时间没有预约'}
+        loading={list.loading && !list.loaded}
+        data={list.rows}
+        empty={list.error ?? '这段时间没有预约'}
         columns={[
           {
             colKey: 'startsAt',
@@ -184,16 +186,24 @@ export function Bookings() {
           {
             colKey: 'paid',
             title: '支付',
-            cell: ({ row }) => (
-              <div>
-                {row.paidWith === 'package'
-                  ? `课时包 ${row.packageName ?? ''}`
-                  : row.price
-                    ? yuan(row.price)
-                    : '免费'}
-                {row.bookedBy && <div className="muted nowrap">{row.bookedBy.name} 代约</div>}
-              </div>
-            ),
+            cell: ({ row }) => {
+              const how = [
+                row.paidWith === 'package' && '课时包',
+                row.bookedBy && `${row.bookedBy.name} 代约`,
+              ].filter(Boolean)
+              return (
+                <>
+                  <div className="ellipsis" title={row.packageName ?? undefined}>
+                    {row.paidWith === 'package'
+                      ? (row.packageName ?? '课时包')
+                      : row.price
+                        ? yuan(row.price)
+                        : '免费'}
+                  </div>
+                  {how.length > 0 && <div className="muted nowrap">{how.join(' · ')}</div>}
+                </>
+              )
+            },
           },
           {
             colKey: 'status',
@@ -297,6 +307,12 @@ export function Bookings() {
               ]
             : []),
         ]}
+      />
+      <LoadMore
+        shown={list.rows.length}
+        more={list.more}
+        loading={list.loading}
+        onMore={list.loadMore}
       />
       {moving && (
         <MoveDialog

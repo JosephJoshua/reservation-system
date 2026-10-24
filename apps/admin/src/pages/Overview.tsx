@@ -1,7 +1,8 @@
 import { UNMARKED_DAYS } from '@rs/shared'
 import { useEffect, useState } from 'react'
-import { Card, Select, Space, Tag } from 'tdesign-react'
+import { Button, Card, Checkbox, Select, Space, Tag } from 'tdesign-react'
 import { api } from '../api'
+import { BookForStudent } from '../BookForStudent'
 import { DataTable } from '../DataTable'
 import { addDays, fmtTime, yuanGrouped } from '../format'
 import { attempt, useApi, useIsPhone } from '../hooks'
@@ -113,8 +114,12 @@ export function Overview() {
   const { data, error, loading, reload } = useApi<Summary>('/admin/summary')
   const phone = useIsPhone()
   const money = useCan('finance')
+  const canBook = useCan('bookings')
   // Ticks so a lesson that starts while the page is open can be marked.
   const [now, setNow] = useState(Date.now)
+  const [coach, setCoach] = useState<string | null>(null)
+  const [unmarkedOnly, setUnmarkedOnly] = useState(false)
+  const [booking, setBooking] = useState(false)
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(timer)
@@ -137,8 +142,16 @@ export function Overview() {
         ]
       : []) as typeof todo),
   ]
-  const sessions = data?.sessions ?? []
-  const people = sessions.reduce((n, s) => n + s.students.length, 0)
+  const all = data?.sessions ?? []
+  const people = all.reduce((n, s) => n + s.students.length, 0)
+  const coaches = [...new Set(all.map((s) => s.coach))]
+  // A busy day has a lesson per coach per hour: the front desk narrows it to what needs marking.
+  const sessions = all.filter(
+    (s) =>
+      (!coach || s.coach === coach) &&
+      (!unmarkedOnly ||
+        (Date.parse(s.startsAt) <= now && s.students.some((b) => b.attendance === null))),
+  )
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -178,27 +191,46 @@ export function Overview() {
         </Card>
         <Card bordered>
           <div className="muted">今日课程</div>
-          <div className="stat">{data ? `${sessions.length} 节` : '-'}</div>
+          <div className="stat">{data ? `${all.length} 节` : '-'}</div>
           {data && <div className="stat-sub">{people} 人次</div>}
         </Card>
       </div>
 
-      <div className="stat-grid">
-        {todo.map(([label, value, href]) => (
-          <a key={label} href={href} style={{ textDecoration: 'none' }}>
-            <Card bordered hoverShadow>
-              <div className="muted">{label}</div>
-              <div className="stat">{value ?? '-'}</div>
-            </Card>
-          </a>
-        ))}
-      </div>
+      <Card bordered title="待办" className="todo-card">
+        <div className="todo-grid">
+          {todo.map(([label, value, href]) => (
+            <a key={label} href={href} className={value ? 'todo-item' : 'todo-item none'}>
+              <span className="todo-label">{label}</span>
+              <span className="todo-value">{value ?? '-'}</span>
+            </a>
+          ))}
+        </div>
+      </Card>
 
-      <Card bordered title="今日课程">
+      <Card
+        bordered
+        title="今日课程"
+        actions={canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
+      >
+        <div className="toolbar">
+          <Select
+            style={{ width: 140 }}
+            clearable
+            placeholder="全部教练"
+            value={coach ?? undefined}
+            onChange={(v) => setCoach(v ? String(v) : null)}
+            options={coaches.map((c) => ({ label: c, value: c }))}
+          />
+          <Checkbox checked={unmarkedOnly} onChange={(v) => setUnmarkedOnly(v)}>
+            只看待签到
+          </Checkbox>
+        </div>
         {phone ? (
           <div className="today-list">
             {!data && loading && <div className="viz-empty">加载中</div>}
-            {data && sessions.length === 0 && <div className="viz-empty">今天没有课</div>}
+            {data && sessions.length === 0 && (
+              <div className="viz-empty">{all.length ? '没有符合条件的课' : '今天没有课'}</div>
+            )}
             {sessions.map((row) => (
               <div key={row.slotId} className="today-item">
                 <div className="today-item-head">
@@ -216,7 +248,7 @@ export function Overview() {
             rowKey="slotId"
             loading={loading && !data}
             data={sessions}
-            empty="今天没有课"
+            empty={all.length ? '没有符合条件的课' : '今天没有课'}
             columns={[
               {
                 colKey: 'time',
@@ -239,6 +271,15 @@ export function Overview() {
           />
         )}
       </Card>
+      {booking && (
+        <BookForStudent
+          onClose={() => setBooking(false)}
+          onDone={() => {
+            setBooking(false)
+            void reload()
+          }}
+        />
+      )}
     </Space>
   )
 }
