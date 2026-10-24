@@ -208,6 +208,10 @@ export const bookings = sqliteTable(
     coachToldCancelledAt: instant('coach_told_cancelled_at'),
     // Set when the front desk booked the lesson for the student.
     bookedByStaffId: integer('booked_by_staff_id').references(() => staff.id),
+    // The coach and time the coach was last told about, so a moved lesson is announced to them.
+    coachToldCoachId: integer('coach_told_coach_id'),
+    coachToldStartsAt: instant('coach_told_starts_at'),
+    coachToldEndsAt: instant('coach_told_ends_at'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -217,6 +221,27 @@ export const bookings = sqliteTable(
       .where(sql`status in ('pending_payment', 'confirmed')`),
     index('bookings_student_time').on(t.studentId, t.startsAt),
   ],
+)
+
+/** Each time a lesson moved to another slot, for the move allowance and the lesson's history. */
+export const bookingMoves = sqliteTable(
+  'booking_moves',
+  {
+    id: id(),
+    bookingId: integer('booking_id')
+      .notNull()
+      .references(() => bookings.id),
+    by: text('by', { enum: ['student', 'coach', 'venue'] }).notNull(),
+    // Times and coaches rather than slots, since a slot left empty may be deleted.
+    fromCoachId: integer('from_coach_id').notNull(),
+    fromStartsAt: instant('from_starts_at').notNull(),
+    fromEndsAt: instant('from_ends_at').notNull(),
+    toCoachId: integer('to_coach_id').notNull(),
+    toStartsAt: instant('to_starts_at').notNull(),
+    toEndsAt: instant('to_ends_at').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('booking_moves_booking').on(t.bookingId)],
 )
 
 /**

@@ -1,0 +1,20 @@
+/* The current lesson and the bottom bar of the student's and the coach's move pages. */
+.current {
+  padding: 24rpx 32rpx 0;
+}
+
+.current-label {
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.current-time {
+  margin-top: 8rpx;
+  font-size: 32rpx;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+
+.submit {
+  width: 240rpx;
+}

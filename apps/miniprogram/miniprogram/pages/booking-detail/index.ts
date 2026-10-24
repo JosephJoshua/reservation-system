@@ -63,6 +63,7 @@ Page({
     statusTone: '',
     statusText: '',
     when: '',
+    movedFrom: '',
     payment: '',
     deadline: '',
     refund: '',
@@ -126,6 +127,7 @@ Page({
       statusTone: status.tone,
       statusText: subtitle(b, Date.now()),
       when: lessonTime(b.startsAt, b.endsAt),
+      movedFrom: b.movedFrom ? dateTime(b.movedFrom) : '',
       payment:
         b.paidWith === 'package'
           ? `课时包 · ${b.packageName ?? ''}`
@@ -145,7 +147,13 @@ Page({
         : '',
       invoiceTappable: !!invoiceAction(b.invoice),
       address: this.venue?.address ?? '',
-      cancelRule: booking ? cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel) : '',
+      cancelRule: booking
+        ? // Moved by the venue or coach after the usual deadline: free until it starts.
+          (b.movedLate
+            ? '课程时间已调整，开课前可免费取消。'
+            : cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel)) +
+          (b.canMove ? `免费取消截止前可改约 ${b.movesLeft} 次。` : '')
+        : '',
     })
     if (b.status === 'pending_payment') this.startTimer()
     else this.stopTimer()
@@ -199,6 +207,7 @@ Page({
       paidWith: b.paidWith,
       amountPaid: b.price,
       rules,
+      deadline: new Date(b.cancelDeadline),
     })
     if (typeof outcome === 'string') return { message: '课程已开始，无法取消。', late: false }
     const { late } = outcome
@@ -249,6 +258,16 @@ Page({
 
   openInvoice() {
     openInvoice(this.data.booking?.invoice ?? null)
+  },
+
+  move() {
+    const b = this.data.booking
+    if (!b?.canMove || this.data.busy) return
+    navigateOnce(`/pages/move/index?id=${b.id}`, {
+      moved: (updated: BookingDto) => this.show(updated),
+      // The move was refused because the lesson changed: show it as it is now.
+      stale: () => this.load(),
+    })
   },
 
   rebook() {

@@ -56,6 +56,7 @@ import {
   rejectInvoice,
 } from '../services/invoices'
 import { setAttendance } from '../services/lessons'
+import { moveBooking } from '../services/moves'
 import {
   approvePackageRefund,
   extendPackage,
@@ -1064,6 +1065,28 @@ export function adminRoutes(deps: Deps) {
       studentId,
       target: { kind: 'booking', id },
     })
+    return c.body(null, 204)
+  })
+
+  app.post('/bookings/:id/move', async (c) => {
+    const { slotId } = await parseBody(c, z.object({ slotId: z.number().int().positive() }))
+    const id = idParam(c)
+    const before = describeBooking(db, id)
+    // A repeat of a move that already happened logs nothing.
+    if (moveBooking(deps, id, slotId, 'venue')) {
+      const to = db
+        .select({ startsAt: slots.startsAt, coach: coaches.name })
+        .from(slots)
+        .innerJoin(coaches, eq(coaches.id, slots.coachId))
+        .where(eq(slots.id, slotId))
+        .get()
+      log(c.get('staffId'), {
+        action: 'booking.move',
+        summary: `${before.what} 改到 ${to ? `${venueMoment(to.startsAt)} ${to.coach}` : `时段 #${slotId}`}`,
+        studentId: before.studentId,
+        target: { kind: 'booking', id },
+      })
+    }
     return c.body(null, 204)
   })
 

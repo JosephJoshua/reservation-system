@@ -108,7 +108,18 @@ export interface BookingDto {
   /** Unpaid bookings: when the hold ends. */
   payBy: string | null
   cancelDeadline: string
+  /**
+   * The venue or coach moved it after its usual free-cancel deadline, so it stays free to cancel
+   * or move until it starts.
+   */
+  movedLate: boolean
   canCancel: boolean
+  /** The student can move it to another time now. */
+  canMove: boolean
+  /** Moves the student has left on this booking. */
+  movesLeft: number
+  /** Start of the lesson's first time, when it was moved. */
+  movedFrom: string | null
   cancelledBy: 'student' | 'venue' | null
   late: boolean
   refund: { amount: number; status: RefundStatus } | null
@@ -153,6 +164,11 @@ export interface BookingQuoteDto {
   /** The package that will pay, unless the student chooses WeChat Pay. */
   package: { id: number; name: string; lessonsRemaining: number } | null
   perClassEnabled: boolean
+}
+
+/** Coaches a student may move a booking to: the same coach, or one at the same price. */
+export interface MoveOptionsDto {
+  coachIds: number[]
 }
 
 export interface CreateBookingResponse {

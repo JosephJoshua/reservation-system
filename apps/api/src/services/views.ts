@@ -2,8 +2,10 @@ import {
   type BookingDto,
   type BookingStatus,
   cancelDeadline,
+  freeCancelDeadline,
   type PackageDto,
   type PackageStatus,
+  studentMoveError,
   type VenueSettings,
 } from '@rs/shared'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
@@ -19,6 +21,7 @@ import {
   slots,
 } from '../db/schema'
 import { orderInvoices } from './invoices'
+import { movedFromIso, moveSummaries } from './move-history'
 
 type BookingRow = typeof bookings.$inferSelect
 type PackageRow = typeof packages.$inferSelect
@@ -97,10 +100,14 @@ export function bookingViews(
   )
   const refundByBooking = latestRefunds(tx, 'bookingId', ids)
   const invoiceByOrder = orderInvoices(tx, [...orderByBooking.values()])
+  const moves = moveSummaries(tx, ids)
   return rows.map((b) => {
     const status = bookingStatus(b, now)
     const order = orderByBooking.get(b.id)
     const refund = refundByBooking.get(b.id)
+    const moved = moves.get(b.id)
+    const movesUsed = moved?.studentMoves ?? 0
+    const deadline = freeCancelDeadline(b.startsAt, rules, moved?.lastMove)
     return {
       id: b.id,
       status,
@@ -113,8 +120,12 @@ export function bookingViews(
       packageName: b.packageId ? (pkgNames.get(b.packageId) ?? null) : null,
       orderId: order?.id ?? null,
       payBy: status === 'pending_payment' ? (order?.expiresAt?.toISOString() ?? null) : null,
-      cancelDeadline: cancelDeadline(b.startsAt, rules).toISOString(),
+      cancelDeadline: deadline.toISOString(),
+      movedLate: deadline.getTime() !== cancelDeadline(b.startsAt, rules).getTime(),
       canCancel: (status === 'confirmed' || status === 'pending_payment') && b.startsAt > now,
+      canMove: studentMoveError({ status: b.status, deadline, now, movesUsed, rules }) === null,
+      movesLeft: Math.max(0, rules.studentMoves - movesUsed),
+      movedFrom: movedFromIso(moved, b.startsAt),
       cancelledBy: b.cancelledBy,
       late: b.late,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,

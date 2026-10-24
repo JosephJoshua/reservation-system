@@ -3,8 +3,9 @@ import {
   bookingWindowError,
   type CancelledBy,
   cancellationOutcome,
+  freeCancelDeadline,
 } from '@rs/shared'
-import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -20,16 +21,53 @@ import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { PaymentParams } from '../pay/gateway'
 import { priceFor, trialsUsed, visibleTo } from './catalog'
 import { newOutTradeNo } from './ids'
+import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
 import { createRefund, submitRefund } from './refunds'
 import { getSettings } from './settings'
 
 export const LIVE = ['pending_payment', 'confirmed'] as const
 
+export const slotTaken = () => new ApiError(409, 'slot_taken', '该时段已被预约')
+
+/** Refuses a slot someone holds or booked. The unique index backs this up on insert. */
+export function assertSlotFree(tx: Q, slotId: number) {
+  const taken = tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(eq(bookings.slotId, slotId), inArray(bookings.status, LIVE)))
+    .get()
+  if (taken) throw slotTaken()
+}
+
+/** Refuses a time the student already has another lesson at; `except` is the one being moved. */
+export function assertNoClash(
+  tx: Q,
+  studentId: number,
+  slot: { startsAt: Date; endsAt: Date },
+  message: string,
+  except?: number,
+) {
+  const clash = tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        except === undefined ? undefined : ne(bookings.id, except),
+        inArray(bookings.status, LIVE),
+        lt(bookings.startsAt, slot.endsAt),
+        gt(bookings.endsAt, slot.startsAt),
+      ),
+    )
+    .get()
+  if (clash) throw new ApiError(409, 'student_clash', message)
+}
+
 // Each unpaid booking holds its slot until the order expires, so one student cannot hold many.
 const MAX_UNPAID_HOLDS = 3
 
-const windowMessages = {
+export const windowMessages = {
   started: '该时段已开始',
   too_soon: '离上课时间太近，无法预约',
   too_far: '该时段暂未开放预约',
@@ -118,25 +156,8 @@ export function checkBookable(
   }
   const price = priceFor(tx, slot.coachId, lessonType, now)
   if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
-  const taken = tx
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(and(eq(bookings.slotId, slot.id), inArray(bookings.status, LIVE)))
-    .get()
-  if (taken) throw new ApiError(409, 'slot_taken', '该时段已被预约')
-  const clash = tx
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.studentId, studentId),
-        inArray(bookings.status, LIVE),
-        lt(bookings.startsAt, slot.endsAt),
-        gt(bookings.endsAt, slot.startsAt),
-      ),
-    )
-    .get()
-  if (clash) throw new ApiError(409, 'student_clash', `${who}在这个时间已有预约`)
+  assertSlotFree(tx, slot.id)
+  assertNoClash(tx, studentId, slot, `${who}在这个时间已有预约`)
   if (lessonType.isTrial) {
     const settings = getSettings(tx)
     if (!settings.payment.trialEnabled) throw new ApiError(409, 'trial_off', '暂不提供体验课')
@@ -300,7 +321,7 @@ export async function createBooking(
       return { bookingId: booking.id, status: 'pending_payment' as const, orderId: order.id }
     } catch (e) {
       // Another process won the slot between our check and insert.
-      if (isUniqueViolation(e)) throw new ApiError(409, 'slot_taken', '该时段已被预约')
+      if (isUniqueViolation(e)) throw slotTaken()
       throw e
     }
   })
@@ -367,6 +388,7 @@ export async function cancelBooking(
         ? tx.select().from(orders).where(eq(orders.bookingId, booking.id)).get()
         : undefined
     const amountPaid = order?.status === 'paid' ? order.amount : 0
+    const settings = getSettings(tx).booking
     const rules = cancellationOutcome({
       startsAt: booking.startsAt,
       endsAt: booking.endsAt,
@@ -374,7 +396,12 @@ export async function cancelBooking(
       cancelledBy: by,
       paidWith: booking.paidWith,
       amountPaid,
-      rules: getSettings(tx).booking,
+      rules: settings,
+      deadline: freeCancelDeadline(
+        booking.startsAt,
+        settings,
+        moveSummaries(tx, [booking.id]).get(booking.id)?.lastMove,
+      ),
     })
     // A payment that landed during the cancel is refunded in full, since the student was told
     // cancelling costs nothing, but only while the lesson can still be cancelled at all.

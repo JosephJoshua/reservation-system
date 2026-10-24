@@ -26,7 +26,8 @@ export function askForNotices(
   templates: MeDto['noticeTemplates'],
   kinds: StudentNoticeKind[],
 ): Promise<void> {
-  const tmplIds = kinds.flatMap((kind) => templates[kind] ?? [])
+  // One template may serve two kinds, such as a 课程变动 template for cancels and moves.
+  const tmplIds = [...new Set(kinds.flatMap((kind) => templates[kind] ?? []))]
   if (!tmplIds.length) return Promise.resolve()
   return new Promise((resolve) => {
     // Booking must never hang on the prompt, should WeChat not report back.

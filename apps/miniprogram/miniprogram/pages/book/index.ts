@@ -1,7 +1,7 @@
-import { type CatalogDto, type SlotDto, venueDateKey } from '../../lib/shared'
+import type { CatalogDto, SlotDto } from '../../lib/shared'
 import { api, assetUrl, errorMessage } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
-import { dayName, monthDay, priceText, time, weekday } from '../../utils/format'
+import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 
 interface CoachOption {
@@ -24,8 +24,6 @@ interface SlotView {
   available: boolean
   closed: boolean
 }
-
-const DAY = 24 * 60 * 60 * 1000
 
 Page({
   data: {
@@ -91,15 +89,7 @@ Page({
           },
         ]
       })
-      const now = Date.now()
-      const days = Array.from({ length: catalog.booking.advanceDays + 1 }, (_, i) => {
-        const at = new Date(now + i * DAY)
-        return {
-          key: venueDateKey(at),
-          label: i < 3 ? dayName(at) : weekday(at),
-          date: monthDay(at),
-        }
-      })
+      const days = bookableDays(catalog.booking.advanceDays)
       const coachId = coaches.some((c) => c.id === this.data.coachId)
         ? this.data.coachId
         : coaches.length === 1
@@ -149,10 +139,7 @@ Page({
       const days = this.data.days
       const next = days[days.findIndex((d) => d.key === date) + 1]
       if (this.autoAdvance && availableCount === 0 && next) {
-        // Days on the first screen keep the strip at its start; later ones scroll the day
-        // before into view, so the picked day keeps some room on its left.
-        const index = days.indexOf(next)
-        this.setData({ date: next.key, dayAnchor: index < 4 ? 'day-start' : `day-${date}` })
+        this.setData({ date: next.key, dayAnchor: dayAnchor(days, next.key) })
         this.loadSlots()
         return
       }

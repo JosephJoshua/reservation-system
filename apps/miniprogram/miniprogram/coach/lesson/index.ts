@@ -1,6 +1,7 @@
 import type { Attendance, CoachLessonDto } from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
-import { fullDate, lessonTime, yuan } from '../../utils/format'
+import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
+import { navigateOnce } from '../../utils/nav'
 import { modalDangerColor } from '../../utils/theme'
 import { askForNotices, coachApi } from '../utils/coach-api'
 import { ATTENDANCE, lessonTag, type Tag } from '../utils/labels'
@@ -34,6 +35,7 @@ Page({
     lesson: null as CoachLessonDto | null,
     tag: { text: '', tone: 'default' } as Tag,
     when: '',
+    movedFrom: '',
     lessonName: '',
     payment: '',
     together: '',
@@ -77,6 +79,7 @@ Page({
       lesson: l,
       tag: lessonTag(l, l.startsAt, Date.now()),
       when: lessonTime(l.startsAt, l.endsAt),
+      movedFrom: l.movedFrom ? dateTime(l.movedFrom) : '',
       lessonName: l.lessonType.isTrial ? `${l.lessonType.name}（体验课）` : l.lessonType.name,
       payment: paymentText(l),
       together: l.lessonsTogether ? `与你的第 ${l.lessonsTogether + 1} 节课` : '第一次上你的课',
@@ -149,6 +152,17 @@ Page({
   call() {
     const phone = this.data.lesson?.student.phone
     if (phone) wx.makePhoneCall({ phoneNumber: phone })
+  },
+
+  move() {
+    askForNotices()
+    const lesson = this.data.lesson
+    if (!lesson?.canMove || this.data.cancelling) return
+    navigateOnce(`/coach/move/index?id=${lesson.id}`, {
+      moved: (moved: CoachLessonDto) => this.show(moved),
+      // The move was refused because the lesson changed: show it as it is now.
+      stale: () => this.load(),
+    })
   },
 
   async cancel() {

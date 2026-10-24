@@ -21,6 +21,7 @@
 
   <t-cell-group theme="card">
     <t-cell title="课程" note="{{lessonName}}" />
+    <t-cell wx:if="{{movedFrom}}" title="原定时间" note="{{movedFrom}}" />
     <t-cell wx:if="{{lesson.student.phone}}" title="电话" note="{{lesson.student.phone}}" arrow hover bind:click="call" />
     <t-cell title="支付" note="{{payment}}" />
     <t-cell title="上课次数" note="{{together}}" />
@@ -81,6 +82,9 @@
   <view wx:if="{{lesson.canCancel}}" class="action-bar">
     <view class="grow">
       <t-button block t-class="action-button" theme="danger" variant="outline" loading="{{cancelling}}" bind:tap="cancel">取消这节课</t-button>
+    </view>
+    <view wx:if="{{lesson.canMove}}" class="grow">
+      <t-button block t-class="action-button" theme="primary" disabled="{{cancelling}}" bind:tap="move">改约</t-button>
     </view>
   </view>
 </view>

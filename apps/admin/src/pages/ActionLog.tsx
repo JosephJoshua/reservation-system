@@ -12,7 +12,10 @@ import type { ActionLogEntry, Staff } from '../types'
 const PAGE = 50
 
 const groups: { label: string; actions: StaffAction[] }[] = [
-  { label: '预约', actions: ['booking.create', 'booking.cancel', 'booking.attendance'] },
+  {
+    label: '预约',
+    actions: ['booking.create', 'booking.cancel', 'booking.move', 'booking.attendance'],
+  },
   { label: '课时包', actions: ['package.sell', 'package.grant', 'package.extend'] },
   {
     label: '退款',

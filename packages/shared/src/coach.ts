@@ -48,6 +48,10 @@ export interface CoachLessonDto {
   coachNote: string
   canMarkAttendance: boolean
   canCancel: boolean
+  /** The coach can move it to another of their slots. */
+  canMove: boolean
+  /** Start of the lesson's first time, when it was moved. */
+  movedFrom: string | null
   cancelledBy: 'student' | 'venue' | null
   cancelReason: string | null
   /** Earlier lessons this student came to with this coach, no-shows left out. */

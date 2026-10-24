@@ -8,6 +8,7 @@ const VALUE_KEYS = [
   'lesson',
   'time',
   'oldTime',
+  'status',
   'coach',
   'place',
   'reason',
@@ -24,7 +25,9 @@ export interface NoticeTemplate {
   fields: Record<string, keyof NoticeValues>
 }
 
-export type NoticeKind = `coach_${'booked' | 'cancelled'}` | `student_${StudentNoticeKind}`
+export type NoticeKind =
+  | `coach_${'booked' | 'cancelled' | 'moved'}`
+  | `student_${StudentNoticeKind}`
 
 export interface Notifier {
   template(kind: NoticeKind): NoticeTemplate | undefined
