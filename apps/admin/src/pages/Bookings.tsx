@@ -16,14 +16,15 @@ import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { addDays, fmtDateTime, fmtTime, today, yuan } from '../format'
-import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, hashParam, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { bookingStatusLabel, refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { AdminBooking, Coach, Slot } from '../types'
 
 export function Bookings() {
   const [range, setRange] = useState<[string, string]>([today(), addDays(today(), 13)])
-  const [status, setStatus] = useState<string>('')
+  // The overview links here with the status it counted.
+  const [status, setStatus] = useState(() => hashParam('status') ?? '')
   const [coachId, setCoachId] = useState<number | null>(null)
   const [order, setOrder] = useState<'asc' | 'desc'>('asc')
   const coaches = useApi<Coach[]>('/admin/coaches')

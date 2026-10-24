@@ -5,6 +5,7 @@ import {
   bookings,
   coaches,
   lessonTypes,
+  orders,
   packageLedger,
   refunds,
   slots,
@@ -258,8 +259,9 @@ function refundText(db: Q, b: { bookingId: number; paidWith: 'order' | 'package'
     return returned ? '课时已退回课时包' : '未退回课时'
   }
   const rows = db
-    .select({ amount: refunds.amount, status: refunds.status })
+    .select({ amount: refunds.amount, status: refunds.status, provider: orders.provider })
     .from(refunds)
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
     .where(eq(refunds.bookingId, b.bookingId))
     .all()
   if (rows.length === 0) return '未扣费'
@@ -267,7 +269,11 @@ function refundText(db: Q, b: { bookingId: number; paidWith: 'order' | 'package'
   const refunded = rows
     .filter((r) => !['failed', 'rejected', 'requested'].includes(r.status))
     .reduce((total, r) => total + r.amount, 0)
-  return refunded ? `¥${formatYuan(refunded)} 原路退回` : '退款处理中'
+  if (!refunded) return '退款处理中'
+  // Paid at the front desk, so the money is handed back there.
+  return rows[0]?.provider === 'offline'
+    ? `¥${formatYuan(refunded)} 到店退还`
+    : `¥${formatYuan(refunded)} 原路退回`
 }
 
 /** A notice with what its message says, read as it is now. */

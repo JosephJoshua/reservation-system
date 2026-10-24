@@ -103,6 +103,8 @@ export interface BookingDto {
   lessonType: { id: number; name: string; isTrial: boolean }
   paidWith: 'order' | 'package'
   price: number
+  /** Paid at the front desk, so any refund is handed back there. */
+  paidOffline: boolean
   packageName: string | null
   orderId: number | null
   /** Unpaid bookings: when the hold ends. */
@@ -144,6 +146,8 @@ export interface PackageDto {
   expiresAt: string
   status: PackageStatus
   pricePaid: number
+  /** Bought at the front desk, so any refund is handed back there. */
+  paidOffline: boolean
   refund: { amount: number; status: RefundStatus } | null
   /** Invoicing of the purchase; null when nothing was paid. */
   invoice: OrderInvoiceDto | null

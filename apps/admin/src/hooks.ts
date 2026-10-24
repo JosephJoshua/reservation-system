@@ -120,6 +120,11 @@ export function useIdempotencyKey() {
   return useState(newKey)[0]
 }
 
+/** A query parameter of the current page, as in `#/refunds?status=failed`. */
+export function hashParam(name: string) {
+  return new URLSearchParams(window.location.hash.split('?')[1] ?? '').get(name)
+}
+
 // Matches the breakpoint in phone.css.
 const phoneQuery = '(max-width: 767px)'
 

@@ -21,7 +21,7 @@ import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
 import { RichText } from '../RichText'
-import type { Coach, CoachCategory, LessonType } from '../types'
+import type { AdminBooking, Coach, CoachCategory, LessonType } from '../types'
 import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
 
 type LessonForm = Omit<LessonType, 'id'>
@@ -94,6 +94,10 @@ export function Catalog() {
   } | null>(null)
   const [binding, setBinding] = useState<Coach | null>(null)
   const [hoursOf, setHoursOf] = useState<Coach | null>(null)
+  // The coach's lessons still to come, so turning 在职 off can say what happens to them.
+  const upcoming = useApi<AdminBooking[]>(
+    coach?.id ? `/admin/bookings?coachId=${coach.id}&status=confirmed` : null,
+  )
   const submitting = useSubmitting()
 
   const saveLesson = async () => {
@@ -500,6 +504,7 @@ export function Catalog() {
             value={coach.form}
             types={types.data ?? []}
             categories={categories.data ?? []}
+            upcomingLessons={coach.id ? (upcoming.data?.length ?? 0) : 0}
             onChange={(patch) => setCoach((c) => c && { ...c, form: { ...c.form, ...patch } })}
           />
         </Dialog>
@@ -694,11 +699,14 @@ function CoachEditor({
   value: f,
   types,
   categories,
+  upcomingLessons,
   onChange: set,
 }: {
   value: CoachForm
   types: LessonType[]
   categories: CoachCategory[]
+  /** Booked lessons of this coach that have not ended. */
+  upcomingLessons: number
   /** Takes a patch, not the whole form, so an upload finishing late can't undo newer edits. */
   onChange: (patch: Partial<CoachForm>) => void
 }) {
@@ -812,6 +820,11 @@ function CoachEditor({
       </Field>
       <Field label="在职">
         <Switch value={f.active} onChange={(v) => set({ active: v })} />
+        {!f.active && upcomingLessons > 0 && (
+          <div className="field-help danger-text">
+            还有 {upcomingLessons} 节课未上。停用后课程保留，但教练无法再登录小程序查看。
+          </div>
+        )}
       </Field>
       <Field label="排序">
         <InputNumber

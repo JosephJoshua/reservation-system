@@ -128,6 +128,32 @@ describe('student notices', () => {
     expect(sent.at(-1)?.values.refund).toBe('退款处理中')
   })
 
+  it('says a front-desk payment is handed back at the venue', async () => {
+    const h = setup()
+    const sent = withNotifier(h)
+    const { coach, lesson } = h.seed()
+    const admin = await h.admin()
+    const student = await h.student('a')
+    const me = await h.call('GET', '/me', undefined, student)
+    const booked = await h.call(
+      'POST',
+      '/admin/bookings',
+      {
+        studentId: me.json.id,
+        slotId: h.slot(coach.id, '2026-10-26', 10).id,
+        lessonTypeId: lesson.id,
+        payWith: 'offline',
+        amount: 18000,
+        method: 'cash',
+      },
+      admin,
+    )
+    const id = booked.json.bookingId
+    await h.call('POST', `/admin/bookings/${id}/cancel`, { reason: '教练生病' }, admin)
+    await notifyStudents(h.deps)
+    expect(sent.find((s) => s.kind === 'cancelled')?.values.refund).toBe('¥180 到店退还')
+  })
+
   it('says the package lesson came back, and that an unpaid hold cost nothing', async () => {
     const h = setup()
     const sent = withNotifier(h)

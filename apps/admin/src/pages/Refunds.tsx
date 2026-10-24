@@ -14,7 +14,7 @@ import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, hashParam, useApi, useIdempotencyKey, useSubmitting } from '../hooks'
 import { refundLabel } from '../labels'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
@@ -29,7 +29,8 @@ const statusOptions = [
 ]
 
 export function Refunds() {
-  const [status, setStatus] = useState('requested')
+  // The overview links here with the status it counted.
+  const [status, setStatus] = useState(() => hashParam('status') ?? 'requested')
   const { data, loading, error, reload } = useApi<Refund[]>(
     `/admin/refunds${status ? `?status=${status}` : ''}`,
   )

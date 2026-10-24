@@ -11,12 +11,10 @@ import { immediate } from '../db/client'
 import { bookings, lessonTypes, packages, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
+import { DELETED_NAME } from './account'
 import { LIVE } from './bookings'
 import { movedFromIso, moveSummaries } from './move-history'
 import { bookingStatus } from './views'
-
-// What a coach sees in place of the name of a student who deleted their account.
-const DELETED_NAME = '已注销学员'
 
 const attendanceMessages = {
   not_confirmed: '该课程未在进行，无法签到',

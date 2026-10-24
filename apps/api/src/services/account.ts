@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { POLICY_VERSION } from '@rs/shared'
-import { and, eq, gt, inArray } from 'drizzle-orm'
+import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { bookings, invoices, orders, packages, refunds, sessions, students } from '../db/schema'
 import type { Deps } from '../deps'
@@ -10,6 +10,16 @@ import { newToken } from './ids'
 import { invoicesDir } from './invoices'
 
 export const accountDeleted = () => new ApiError(409, 'account_deleted', '该学员已注销')
+
+/** What staff and coaches see in place of the name of a student who deleted their account. */
+export const DELETED_NAME = '已注销学员'
+
+/** A student's id, name and phone for staff lists. A deleted account's phone is already empty. */
+export const personColumns = {
+  id: students.id,
+  name: sql<string>`case when ${students.deletedAt} is null then ${students.name} else ${DELETED_NAME} end`,
+  phone: students.phone,
+}
 
 /** Refuses an admin change to a package whose owner deleted their account. */
 export function refuseDeletedOwner(tx: Q, packageId: number) {

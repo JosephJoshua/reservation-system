@@ -117,6 +117,7 @@ export function bookingViews(
       lessonType: types.get(b.lessonTypeId) ?? { id: b.lessonTypeId, name: '', isTrial: false },
       paidWith: b.paidWith,
       price: b.price,
+      paidOffline: order?.provider === 'offline',
       packageName: b.packageId ? (pkgNames.get(b.packageId) ?? null) : null,
       orderId: order?.id ?? null,
       payBy: status === 'pending_payment' ? (order?.expiresAt?.toISOString() ?? null) : null,
@@ -158,21 +159,20 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
   const ids = rows.map((r) => r.id)
   const refundByPackage = latestRefunds(tx, 'packageId', ids)
   const granted = grantedLessons(tx, ids)
-  const invoiceByOrder = orderInvoices(
-    tx,
-    rows.length
-      ? tx
-          .select()
-          .from(orders)
-          .where(
-            inArray(
-              orders.id,
-              rows.map((p) => p.orderId),
-            ),
-          )
-          .all()
-      : [],
-  )
+  const packageOrders = rows.length
+    ? tx
+        .select()
+        .from(orders)
+        .where(
+          inArray(
+            orders.id,
+            rows.map((p) => p.orderId),
+          ),
+        )
+        .all()
+    : []
+  const invoiceByOrder = orderInvoices(tx, packageOrders)
+  const offline = new Set(packageOrders.filter((o) => o.provider === 'offline').map((o) => o.id))
   return rows.map((p) => {
     const refund = refundByPackage.get(p.id)
     return {
@@ -187,6 +187,7 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
       expiresAt: p.expiresAt.toISOString(),
       status: packageStatus(p, now),
       pricePaid: p.pricePaid,
+      paidOffline: offline.has(p.orderId),
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
       invoice: invoiceByOrder.get(p.orderId) ?? null,
     }
