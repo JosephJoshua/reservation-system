@@ -74,6 +74,21 @@ export const categoryPrices = sqliteTable(
   (t) => [primaryKey({ columns: [t.categoryId, t.lessonTypeId] })],
 )
 
+/** What the venue pays a coach in a category for teaching one lesson of a lesson type. */
+export const categoryPayRates = sqliteTable(
+  'category_pay_rates',
+  {
+    categoryId: integer('category_id')
+      .notNull()
+      .references(() => coachCategories.id),
+    lessonTypeId: integer('lesson_type_id')
+      .notNull()
+      .references(() => lessonTypes.id),
+    rate: integer('rate').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.categoryId, t.lessonTypeId] })],
+)
+
 export const coaches = sqliteTable('coaches', {
   id: id(),
   name: text('name').notNull(),

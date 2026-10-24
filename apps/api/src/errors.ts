@@ -63,6 +63,7 @@ const FIELD_LABELS: Record<string, string> = {
   studentMoves: '学员自助改约次数',
   durationMinutes: '时长',
   price: '价格',
+  rate: '课时费',
   salePrice: '限时价',
   salePercent: '折扣',
   saleStartsAt: '优惠开始时间',
