@@ -216,6 +216,7 @@ Page({
         this.finish(res.bookingId)
         return
       }
+      if (res.existing) wx.showToast({ title: '你已预约这节课', icon: 'none' })
       this.finish(res.bookingId)
     } catch (e) {
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {

@@ -228,6 +228,8 @@ export interface CreateBookingResponse {
   status: 'pending_payment' | 'confirmed'
   orderId: number | null
   payment: PaymentParamsDto | null
+  /** The student already held this slot: this is that booking, not a new one. */
+  existing: boolean
 }
 
 export interface OrderStatusDto {

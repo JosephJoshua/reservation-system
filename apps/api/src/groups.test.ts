@@ -363,6 +363,7 @@ describe('booking seats', () => {
     const [a, b] = await Promise.all([book(h, t, id, kids.id), book(h, t, id, kids.id)])
     expect([a.status, b.status]).toEqual([201, 201])
     expect(b.json.bookingId).toBe(a.json.bookingId)
+    expect([a.json.existing, b.json.existing].sort()).toEqual([false, true])
     expect(live(h, id)).toHaveLength(1)
   })
 

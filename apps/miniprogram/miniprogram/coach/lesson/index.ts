@@ -136,7 +136,7 @@ Page({
       lessonName: l.lessonType.isTrial
         ? `${l.lessonType.name}（体验课）`
         : l.sessionId
-          ? `${l.lessonType.name}（小班课）`
+          ? `${l.lessonType.name}${l.lessonType.name.includes('小班') ? '' : '（小班课）'}`
           : l.lessonType.name,
       payment: paymentText(l),
       profile: profileView(l.profile),

@@ -126,6 +126,8 @@ export interface CreateBookingResult {
   status: 'pending_payment' | 'confirmed'
   orderId: number | null
   payment: PaymentParams | null
+  /** The student already held this slot: this is that booking, not a new one. */
+  existing: boolean
 }
 
 /** The student's package that would pay for a lesson in this slot: the one expiring first. */
@@ -367,9 +369,9 @@ export async function createBooking(
   })
 
   const { repeat, ...result } = { repeat: false, ...created }
-  if (result.orderId === null) return { ...result, payment: null }
+  if (result.orderId === null) return { ...result, payment: null, existing: repeat }
   const payment = await startPaymentOrRelease(deps, result.orderId, studentId, { release: !repeat })
-  return { ...result, payment }
+  return { ...result, payment, existing: repeat }
 }
 
 /** Whether a booking was already cancelled by this same request: same side, same reason. */
