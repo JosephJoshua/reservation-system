@@ -82,7 +82,13 @@ test('shows a paid booking and refunds it in full when the venue cancels', async
   if (!lesson || !coach) throw new Error('setup missing')
   expect(coach.lessons[0]?.price.price).toBe(30000)
 
-  const date = new Date(Date.now() + 8 * 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10)
+  // The Wednesday of the venue week after this one, where the test above created the slots. Eight
+  // days ahead missed that week when run on a venue Sunday.
+  const venueNow = new Date(Date.now() + 8 * 3_600_000)
+  const toNextMonday = 7 - ((venueNow.getUTCDay() + 6) % 7)
+  const date = new Date(venueNow.getTime() + (toNextMonday + 2) * 86_400_000)
+    .toISOString()
+    .slice(0, 10)
   const slots = await call<SlotDto[]>(
     request,
     'GET',
