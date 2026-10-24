@@ -455,6 +455,8 @@ export function studentRoutes(deps: Deps) {
         slotId: z.number().int().positive(),
         lessonTypeId: z.number().int().positive(),
         payWith: z.enum(['package', 'wechat']).optional(),
+        /** The price the student was shown, in fen. */
+        expectedPrice: z.number().int().nonnegative().optional(),
       }),
     )
     requireConsent(db, c.get('studentId'))

@@ -26,7 +26,11 @@
 }
 
 .coach-name {
+  max-width: 128rpx;
   margin-top: 12rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 28rpx;
   color: var(--td-text-color-primary);
 }

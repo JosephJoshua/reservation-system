@@ -36,7 +36,8 @@ function subtitle(b: BookingDto, now: number): string {
     case 'confirmed':
       return '请按时到场上课'
     case 'completed':
-      return '课程已结束'
+      // Counted like an attended lesson: no refund and the package lesson is used.
+      return b.attendance === 'no_show' ? '缺席，照常计课' : '课程已结束'
     case 'cancelled':
       return b.cancelledBy === 'venue'
         ? '场馆已取消本节课'
@@ -189,7 +190,11 @@ Page({
           (b.movedLate
             ? '课程时间已调整，开课前可免费取消。'
             : cancelRuleText(booking.cancelDeadlineHours, booking.lateCancel)) +
-          (b.canMove ? `免费取消截止前可改约 ${b.movesLeft} 次。` : '')
+          (b.canMove
+            ? `免费取消截止前可改约 ${b.movesLeft} 次。`
+            : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
+              ? '改约次数已用完。'
+              : '')
         : '',
       feedback: b.feedback
         ? {

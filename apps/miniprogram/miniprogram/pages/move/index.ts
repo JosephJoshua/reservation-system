@@ -11,6 +11,15 @@ import { api, assetUrl, errorMessage } from '../../utils/api'
 import { askForNotices, getCatalog, getMe } from '../../utils/data'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { submitMove } from '../../utils/move'
+import { navigateBackOnce } from '../../utils/nav'
+
+/** Why a lesson the student opened 改约 for can no longer move. */
+function whyFixed(b: BookingDto): string {
+  if (b.status !== 'confirmed' || Date.parse(b.startsAt) <= Date.now()) return '这节课现在不能改约'
+  if (b.movedFrom && b.movesLeft === 0) return '改约次数已用完'
+  if (Date.parse(b.cancelDeadline) <= Date.now()) return '已过改约截止时间，如需调整请联系场馆'
+  return '这节课现在不能改约'
+}
 
 interface CoachOption {
   id: number
@@ -40,6 +49,8 @@ Page({
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     emptyIcon: { name: 'time', size: '112rpx' },
+    /** The lesson can no longer move, so reloading would not help. */
+    fixed: false,
     current: '',
     coaches: [] as CoachOption[],
     coachId: 0,
@@ -81,7 +92,7 @@ Page({
       ])
       if (!booking.canMove) {
         this.getOpenerEventChannel().emit?.('stale')
-        this.setData({ state: 'error', error: '这节课现在不能改约' })
+        this.setData({ state: 'error', fixed: true, error: whyFixed(booking) })
         return
       }
       if (!options.coachIds.length) {
@@ -234,5 +245,9 @@ Page({
   retry() {
     this.setData({ state: 'loading' })
     this.load()
+  },
+
+  leave() {
+    navigateBackOnce()
   },
 })
