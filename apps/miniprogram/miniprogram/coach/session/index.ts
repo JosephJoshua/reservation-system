@@ -83,9 +83,11 @@ Page({
       when: lessonTime(s.startsAt, s.endsAt),
       count: s.students.length,
       students,
-      footnote: started
-        ? '缺席照常计课，不退费用和课时。再点一次已选的按钮可撤销，点学员可写备注和课后点评。'
-        : '课程开始后可以签到。调整名单或取消课程请联系场馆。',
+      footnote: s.coachMarksOff
+        ? '签到由前台办理。点学员可写备注和课后点评，调整名单或取消课程请联系场馆。'
+        : started
+          ? '缺席照常计课，不退费用和课时。再点一次已选的按钮可撤销，点学员可写备注和课后点评。'
+          : '课程开始后可以签到。调整名单或取消课程请联系场馆。',
       canMarkAll: students.some((st) => st.canMark && st.attendance === null),
     })
   },

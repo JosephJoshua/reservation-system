@@ -1,4 +1,4 @@
-import type { VenueSettings } from '@rs/shared'
+import { CHECK_IN_EARLY_MINUTES, type VenueSettings } from '@rs/shared'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -374,6 +374,39 @@ export function Settings() {
                 })
               }
             />
+          </Field>
+        </div>
+      </Card>
+
+      <Card title="签到" bordered>
+        <div className="fields form-narrow">
+          <Field
+            label="学员扫码签到"
+            help={`学员课前 ${CHECK_IN_EARLY_MINUTES} 分钟起用小程序扫前台的签到码`}
+          >
+            <Switch
+              value={s.attendance.selfCheckIn}
+              onChange={(v) =>
+                set((d) => {
+                  d.attendance.selfCheckIn = v
+                })
+              }
+            />
+          </Field>
+          <Field label="教练点名" help="教练在小程序里记到课或缺席">
+            <Switch
+              value={s.attendance.coachMarks}
+              onChange={(v) =>
+                set((d) => {
+                  d.attendance.coachMarks = v
+                })
+              }
+            />
+          </Field>
+          <Field>
+            <span className="muted">
+              前台随时可在前台签到页签到和更正。签到不影响扣课和收款，课时包在预约时已扣除。
+            </span>
           </Field>
         </div>
       </Card>

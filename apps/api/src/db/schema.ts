@@ -270,6 +270,9 @@ export const bookings = sqliteTable(
     late: integer('late', { mode: 'boolean' }).notNull().default(false),
     attendance: text('attendance', { enum: ['attended', 'no_show'] }),
     attendanceAt: instant('attendance_at'),
+    attendanceBy: text('attendance_by', { enum: ['student', 'coach', 'staff'] }),
+    // The front desk login that marked it, when attendanceBy is staff.
+    attendanceStaffId: integer('attendance_staff_id').references(() => staff.id),
     // Private to the coach and the venue.
     coachNote: text('coach_note').notNull().default(''),
     // When the coach was told about the booking and its cancellation, or decided not to be.

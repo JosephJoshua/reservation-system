@@ -1,0 +1,29 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" text="签到中" />
+</view>
+
+<view wx:else class="has-action-bar">
+  <view class="result">
+    <view class="result-icon tone-{{state === 'done' ? 'success' : 'hint'}}">
+      <t-icon name="{{state === 'done' ? 'check-circle-filled' : 'error-circle-filled'}}" size="96rpx" />
+    </view>
+    <view class="result-title">{{state === 'done' ? (already ? '已签到过' : '签到成功') : '无法签到'}}</view>
+    <view wx:if="{{state === 'error'}}" class="result-text">{{error}}</view>
+  </view>
+
+  <t-cell-group wx:if="{{lessons.length}}" theme="card">
+    <t-cell wx:for="{{lessons}}" wx:key="id" title="{{item.name}}" description="{{item.when}}" />
+  </t-cell-group>
+
+  <view class="action-bar">
+    <view wx:if="{{state === 'error'}}" class="grow">
+      <t-button block t-class="action-button" theme="default" bind:tap="rescan">重新扫码</t-button>
+    </view>
+    <view class="grow">
+      <t-button block t-class="action-button" theme="primary" bind:tap="lessons">查看课程</t-button>
+    </view>
+  </view>
+</view>
+<privacy-popup id="privacy-popup" />
+</theme-root>

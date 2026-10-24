@@ -25,6 +25,16 @@
 </view>
 
 <view wx:else class="list">
+  <view wx:if="{{checkIn}}" class="check-in card">
+    <view class="info">
+      <view class="info-time nowrap">{{checkIn.time}}</view>
+      <view class="info-name">{{checkIn.name}}</view>
+      <view class="info-name">{{checkIn.coach}}</view>
+    </view>
+    <view class="check-in-action">
+      <t-button size="small" theme="primary" t-class="check-in-button" bind:tap="scan">扫码签到</t-button>
+    </view>
+  </view>
   <view
     wx:for="{{lessons}}"
     wx:key="id"
@@ -44,4 +54,5 @@
     <t-tag size="small" theme="{{item.tone}}" variant="light">{{item.status}}</t-tag>
   </view>
 </view>
+<privacy-popup id="privacy-popup" />
 </theme-root>

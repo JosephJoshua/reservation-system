@@ -6,6 +6,7 @@ import {
 } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { addLessonToCalendar } from '../../utils/calendar'
+import { scanToCheckIn } from '../../utils/check-in'
 import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
@@ -71,6 +72,7 @@ Page({
     refund: '',
     invoice: '',
     invoiceTappable: false,
+    attendance: '',
     address: '',
     canAddToCalendar: false,
     cancelRule: '',
@@ -173,6 +175,13 @@ Page({
             : INVOICE_STATE[b.invoice.state]
         : '',
       invoiceTappable: !!invoiceAction(b.invoice),
+      attendance: b.canCheckIn
+        ? '扫码签到'
+        : b.attendance === 'attended'
+          ? '已签到'
+          : b.attendance === 'no_show'
+            ? '缺席'
+            : '',
       address: this.venue?.address ?? '',
       canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > Date.now(),
       cancelRule: booking
@@ -294,6 +303,11 @@ Page({
     } finally {
       this.setData({ busy: false })
     }
+  },
+
+  async checkIn() {
+    if (!this.data.booking?.canCheckIn) return
+    if (await scanToCheckIn()) await this.refresh()
   },
 
   openInvoice() {

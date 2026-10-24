@@ -1,5 +1,5 @@
 // Response shapes of the student API. Instants are ISO strings; money is fen.
-import type { Attendance } from './availability'
+import type { Attendance, AttendanceBy } from './availability'
 import type { OrderInvoiceDto } from './invoices'
 import type { PriceTag } from './pricing'
 import type { LateCancelRule } from './settings'
@@ -137,8 +137,10 @@ export interface BookingDto {
   cancelledBy: 'student' | 'venue' | null
   late: boolean
   refund: { amount: number; status: RefundStatus } | null
-  /** Marked by the coach or the venue once the lesson has started. */
+  /** Marked by the coach or the venue, or by the student scanning the venue's 签到码. */
   attendance: Attendance | null
+  /** The student can scan the venue's 签到码 for this lesson now. */
+  canCheckIn: boolean
   /** Invoicing of the lesson's paid order; null when nothing was paid. */
   invoice: OrderInvoiceDto | null
   /** The coach wrote a 课后点评 the student can see. */
@@ -269,4 +271,34 @@ export interface AccountDeletionDto {
 
 export interface ApiErrorBody {
   error: { code: string; message: string }
+}
+
+/** One lesson the student checked in to by scanning the venue's 签到码. */
+export interface CheckInLessonDto {
+  bookingId: number
+  startsAt: string
+  endsAt: string
+  coachName: string
+  lessonTypeName: string
+  /** Already checked in before this scan. */
+  already: boolean
+}
+
+/** One student's lesson today on the front desk's 签到 list. */
+export interface FrontDeskLessonDto {
+  bookingId: number
+  slotId: number
+  startsAt: string
+  endsAt: string
+  coach: { id: number; name: string }
+  lessonTypeName: string
+  /** Seats in the slot: more than 1 for a group class. */
+  capacity: number
+  student: { id: number; name: string; phone: string }
+  attendance: Attendance | null
+  attendanceAt: string | null
+  /** Who marked it, with the login's name when the front desk did; null on marks from before this was kept. */
+  markedBy: { kind: AttendanceBy; name: string | null } | null
+  canArrive: boolean
+  canMarkAbsent: boolean
 }

@@ -70,3 +70,29 @@
   justify-content: center;
   margin-top: 32rpx;
 }
+
+.check-in {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 20rpx;
+  padding: 28rpx 32rpx;
+}
+
+/* The button keeps its own width, so the lesson and coach get the rest. */
+.check-in-action {
+  flex: none;
+}
+
+/* 44px tap target, as WeChat asks. */
+.check-in-button {
+  /* t-button is a native button, which defaults to 184px wide. */
+  width: auto !important;
+  margin: 0 !important;
+  min-height: 88rpx;
+  padding: 0 32rpx !important;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
