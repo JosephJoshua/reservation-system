@@ -237,7 +237,6 @@ function tencentPoint({ params }: Link): LatLng | null {
     pairAt(`${numberParam(params, 'pointy')},${numberParam(params, 'pointx')}`, 'latlng') ??
     pairAt(params.get('coord'), 'latlng') ??
     pairAt(params.get('latlng'), 'latlng') ??
-    pairAt(params.get('center'), 'latlng') ??
     pairAt(`${numberParam(params, 'lat')},${numberParam(params, 'lng')}`, 'latlng')
   if (!found) return null
   // In the 腾讯 URI API, coord_type 1 is GPS (WGS-84); the default 2 is GCJ-02.
@@ -283,8 +282,9 @@ function worthOpening(source: MapApp, { host, path, params }: Link) {
       path.startsWith('/mobile/webapp/')
     )
   }
-  // No 腾讯 app short link format is known, so any 腾讯 link is worth a look at its redirects.
-  return true
+  // No 腾讯 app short link format is known, so 腾讯 links are worth a look at their redirects,
+  // except the URI API's routes and searches, which lead to no one place.
+  return !/^\/uri\/v1\/(?!marker)/.test(path)
 }
 
 /** Coordinates in one map link, or what to do with it. Null when the link is not a map link. */
@@ -316,11 +316,11 @@ export function parseMapText(text: string): MapParse | null {
       fallback = result
     }
   }
-  if (fallback) return fallback
+  if (fallback?.kind === 'open') return fallback
   const rest = text.replace(URL_RE, ' ')
   const m = new RegExp(`(${NUM})[^\\d.-]{1,8}?(${NUM})`).exec(rest)
   const point = inRange(m ? pairAt(`${m[1]},${m[2]}`, 'any') : null)
-  return point ? { kind: 'point', point, source: 'text' } : null
+  return point ? { kind: 'point', point, source: 'text' } : fallback
 }
 
 /**
@@ -336,7 +336,9 @@ export function pointInBaiduPage(body: string): LatLng | null {
       ...body.matchAll(new RegExp(`"current_city":\\{[^}]*?"geo":"1\\|${MC},${MC}`, 'g')),
     ].map((m) => `${m[1]},${m[2]}`),
   )
-  const point = new RegExp(`"point":\\{"x":"?${MC}"?,"y":"?${MC}"?\\}`).exec(body)
+  const point = [
+    ...body.matchAll(new RegExp(`"point":\\{"x":"?${MC}"?,"y":"?${MC}"?\\}`, 'g')),
+  ].find((m) => !viewer.has(`${m[1]},${m[2]}`))
   const geo = [...body.matchAll(new RegExp(`[{,]"geo":"1\\|${MC},${MC}`, 'g'))].find(
     (m) => !viewer.has(`${m[1]},${m[2]}`),
   )

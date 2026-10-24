@@ -61,6 +61,12 @@ export function VenueLocation({
   const [picking, setPicking] = useState(false)
   const point = pointOf(value)
 
+  const use = (p: LatLng, from: string) => {
+    onChange(asText(p))
+    setPasted('')
+    void MessagePlugin.success(from)
+  }
+
   const read = async (text: string) => {
     if (!text.trim() || busy.current) return
     const parsed = parseMapText(text)
@@ -71,11 +77,9 @@ export function VenueLocation({
       return
     }
     if (parsed.kind === 'point') {
-      onChange(asText(parsed.point))
-      setPasted('')
-      void MessagePlugin.success(
-        parsed.source === 'text' ? '已填入坐标' : `已从${mapAppLabels[parsed.source]}读取位置`,
-      )
+      const from =
+        parsed.source === 'text' ? '已填入坐标' : `已从${mapAppLabels[parsed.source]}读取位置`
+      use(parsed.point, from)
       return
     }
     if (parsed.kind === 'none') {
@@ -92,9 +96,7 @@ export function VenueLocation({
         '/admin/map/resolve',
         { url: parsed.url },
       )
-      onChange(asText(r.point))
-      setPasted('')
-      void MessagePlugin.success(`已从${mapAppLabels[r.source]}读取位置`)
+      use(r.point, `已从${mapAppLabels[r.source]}读取位置`)
     } catch (e) {
       void MessagePlugin.warning((e as Error).message)
     } finally {
@@ -114,8 +116,10 @@ export function VenueLocation({
           onChange={(v) => setPasted(String(v))}
           onPaste={({ e }) => {
             const text = e.clipboardData.getData('text')
-            // Into an empty box a paste is read at once; otherwise it goes in as usual.
-            if (!text || pasted.trim()) return
+            const box = e.target as HTMLInputElement
+            const replacesAll = box.selectionStart === 0 && box.selectionEnd === box.value.length
+            // A paste that replaces the whole box is read at once; otherwise it goes in as usual.
+            if (!text || (pasted.trim() && !replacesAll)) return
             e.preventDefault()
             setPasted(text)
             void read(text)
@@ -213,8 +217,9 @@ function PickerDialog({
         poiaddress?: string
       } | null
       if (d?.module !== 'locationPicker' || !d.latlng || !inChina(d.latlng)) return
-      const name = d.poiname === '我的位置' ? '' : (d.poiname ?? '')
-      setPicked({ point: d.latlng, name, address: d.poiaddress ?? '' })
+      // The picker first reports the viewer's own position as 我的位置, before anything is chosen.
+      if (d.poiname === '我的位置') return
+      setPicked({ point: d.latlng, name: d.poiname ?? '', address: d.poiaddress ?? '' })
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)

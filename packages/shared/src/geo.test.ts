@@ -208,8 +208,16 @@ describe('腾讯地图 links', () => {
     )
   })
 
-  it('opens other 腾讯 links', () => {
+  it('opens other 腾讯 links, but not routes, searches or a map view', () => {
     expect(parseMapLink('https://map.qq.com/m/detail/poi/123')).toMatchObject({ kind: 'open' })
+    expect(
+      parseMapLink(
+        'https://apis.map.qq.com/uri/v1/routeplan?type=drive&fromcoord=39.1,116.1&tocoord=39.2,116.2',
+      ),
+    ).toMatchObject({ kind: 'none' })
+    expect(parseMapLink('https://map.qq.com/?center=39.9,116.4&zoom=12')).toMatchObject({
+      kind: 'open',
+    })
   })
 })
 
@@ -257,6 +265,14 @@ describe('plain text', () => {
     expect(parseMapText('飞羽乒乓球馆')).toBeNull()
     expect(parseMapText('1.5, 2.5')).toBeNull()
     expect(parseMapText('https://example.com/?q=39.9,116.3')).toBeNull()
+  })
+
+  it('takes coordinates next to a link that has none', () => {
+    expect(parseMapText('球馆 https://www.amap.com/place/B000A83M61 39.9087,116.3975')).toEqual({
+      kind: 'point',
+      point: { lat: 39.9087, lng: 116.3975 },
+      source: 'text',
+    })
   })
 
   it('takes a point over a link it has to open', () => {

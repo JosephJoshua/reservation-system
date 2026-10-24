@@ -7,6 +7,8 @@ const shots = 'test-results/venue-location'
 const PICKER = `<!doctype html><meta charset="utf-8"><body style="margin:0;font:14px sans-serif">
 <button id="pick" style="margin:24px;padding:12px">选这里</button>
 <script>
+// Like the real page, it first reports the viewer's own position.
+parent.postMessage({ module: 'locationPicker', latlng: { lat: 31.1, lng: 121.1 }, poiname: '我的位置' }, '*')
 document.getElementById('pick').onclick = () => parent.postMessage({
   module: 'locationPicker', latlng: { lat: 39.9086921234, lng: 116.3974771234 },
   poiname: '飞羽乒乓球馆', poiaddress: '北京市海淀区中关村大街59号',
