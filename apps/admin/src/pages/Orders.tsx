@@ -38,7 +38,12 @@ export function Orders() {
         data={data ?? []}
         empty={error ?? '没有订单'}
         columns={[
-          { colKey: 'createdAt', title: '下单时间', cell: ({ row }) => fmtDateTime(row.createdAt) },
+          {
+            colKey: 'createdAt',
+            title: '下单时间',
+            width: 120,
+            cell: ({ row }) => fmtDateTime(row.createdAt),
+          },
           {
             colKey: 'student',
             title: '学员',
@@ -50,10 +55,11 @@ export function Orders() {
             // A trial order is described by its lesson name, which is often just 体验课.
             cell: ({ row }) => orderTitle(row.kind, row.description),
           },
-          { colKey: 'amount', title: '金额', cell: ({ row }) => yuan(row.amount) },
+          { colKey: 'amount', title: '金额', width: 90, cell: ({ row }) => yuan(row.amount) },
           {
             colKey: 'provider',
             title: '支付方式',
+            width: 110,
             cell: ({ row }) =>
               row.provider === 'wechat'
                 ? '微信支付'

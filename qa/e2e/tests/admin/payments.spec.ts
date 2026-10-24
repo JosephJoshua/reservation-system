@@ -141,6 +141,8 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
   await page.reload()
   const refundRow = page.getByRole('row').filter({ hasText: `前台${run}` })
   await expect(refundRow).toContainText('建议 ¥2400')
+  // The gifted lesson counts in the total.
+  await expect(refundRow).toContainText('剩 11/11 节')
   await refundRow.getByRole('button', { name: '同意' }).click()
   await typeNumber(field(dialog(page), '退款金额').locator('input'), '2000')
   await expect(dialog(page)).toContainText('当面退还')

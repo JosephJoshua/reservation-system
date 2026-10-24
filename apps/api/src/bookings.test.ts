@@ -372,8 +372,8 @@ describe('cancelling a paid lesson', () => {
     h.gateway.refunds.clear()
     const admin = await h.admin()
     expect(
-      (await h.call('POST', `/admin/refunds/${refund?.id}/retry`, undefined, admin)).status,
-    ).toBe(204)
+      (await h.call('POST', `/admin/refunds/${refund?.id}/retry`, undefined, admin)).json.status,
+    ).toBe('succeeded')
     expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
   })
 })
@@ -523,15 +523,33 @@ describe('packages', () => {
     )
     expect(tooMuch.json.error.code).toBe('refund_too_large')
     expect(
-      (await h.call('POST', `/admin/refunds/${refund.id}/approve`, { amount: 150000 }, admin))
+      (await h.call('POST', `/admin/refunds/${refund.id}/approve`, { amount: 150000 }, admin)).json
         .status,
-    ).toBe(204)
+    ).toBe('succeeded')
     const [pkg] = (await h.call('GET', '/packages', undefined, t)).json
     expect(pkg).toMatchObject({
       status: 'refunded',
       lessonsRemaining: 0,
       refund: { amount: 150000, status: 'succeeded' },
     })
+  })
+
+  it('tells the admin when WeChat refuses an approved refund at once', async () => {
+    const h = setup()
+    const { t } = await withPackage(h)
+    const pkgId = (await h.call('GET', '/packages', undefined, t)).json[0].id
+    await h.call('POST', `/packages/${pkgId}/refund-request`, undefined, t)
+    const admin = await h.admin()
+    const [refund] = (await h.call('GET', '/admin/refunds', undefined, admin)).json
+    h.gateway.refundMode = 'fail'
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refund.id}/approve`,
+      { amount: 100000 },
+      admin,
+    )
+    expect(res.json.status).toBe('failed')
+    expect(res.json.failure).toBeTruthy()
   })
 
   it('puts the package back in use when the admin rejects the request', async () => {
@@ -704,6 +722,19 @@ describe('slots', () => {
       admin,
     )
     expect(res.json.error.code).toBe('slot_in_past')
+  })
+
+  it('refuses slots that run past midnight at the venue', async () => {
+    const h = setup()
+    const { coach } = h.seed()
+    const admin = await h.admin()
+    const create = (startsAt: string, endsAt: string) =>
+      h.call('POST', '/admin/slots', { slots: [{ coachId: coach.id, startsAt, endsAt }] }, admin)
+    // 23:30 to 00:30 at the venue.
+    const late = await create('2026-10-25T15:30:00Z', '2026-10-25T16:30:00Z')
+    expect(late.json.error.code).toBe('crosses_midnight')
+    // 23:00 to 24:00 ends on the same day.
+    expect((await create('2026-10-25T15:00:00Z', '2026-10-25T16:00:00Z')).status).toBe(201)
   })
 })
 
@@ -1196,8 +1227,8 @@ describe('review round 2', () => {
     h.gateway.refundMode = 'succeeded'
     const admin = await h.admin()
     expect(
-      (await h.call('POST', `/admin/refunds/${failed?.id}/retry`, undefined, admin)).status,
-    ).toBe(204)
+      (await h.call('POST', `/admin/refunds/${failed?.id}/retry`, undefined, admin)).json.status,
+    ).toBe('succeeded')
     const retried = h.db.select().from(refunds).get()
     expect(retried?.status).toBe('succeeded')
     expect(retried?.outRefundNo).not.toBe(failed?.outRefundNo)

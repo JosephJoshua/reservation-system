@@ -229,8 +229,8 @@ describe('repeated requests without a key', () => {
     const admin = await h.admin()
     const approve = (amount: number) =>
       h.call('POST', `/admin/refunds/${refund?.id}/approve`, { amount }, admin)
-    expect((await approve(100000)).status).toBe(204)
-    expect((await approve(100000)).status).toBe(204)
+    expect((await approve(100000)).json.status).toBe('succeeded')
+    expect((await approve(100000)).json.status).toBe('succeeded')
     expect((await approve(90000)).json.error.code).toBe('refund_not_requested')
     const rows = h.db.select().from(refunds).all()
     expect(rows).toHaveLength(1)
@@ -282,8 +282,8 @@ describe('repeated requests without a key', () => {
     const refund = h.db.select().from(refunds).get()
     const admin = await h.admin()
     const retry = () => h.call('POST', `/admin/refunds/${refund?.id}/retry`, undefined, admin)
-    expect((await retry()).status).toBe(204)
-    expect((await retry()).status).toBe(204)
+    expect((await retry()).json.status).toBe('succeeded')
+    expect((await retry()).json.status).toBe('succeeded')
     expect(
       h.db
         .select()

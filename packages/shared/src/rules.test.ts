@@ -3,6 +3,7 @@ import {
   bookingWindowError,
   cancelDeadline,
   cancellationOutcome,
+  endsSameVenueDay,
   freeCancelDeadline,
   peakOverlap,
   studentMoveError,
@@ -171,6 +172,14 @@ describe('freeCancelDeadline', () => {
       deadline: startsAt,
     })
     expect(outcome).toEqual({ late: false, refund: 20000, returnLesson: false })
+  })
+})
+
+describe('endsSameVenueDay', () => {
+  it('allows a lesson ending at 24:00 venue time and refuses one running past it', () => {
+    // 23:00 to 24:00 at the venue is 15:00 to 16:00 UTC.
+    expect(endsSameVenueDay(at('2026-10-25T15:00:00Z'), at('2026-10-25T16:00:00Z'))).toBe(true)
+    expect(endsSameVenueDay(at('2026-10-25T15:30:00Z'), at('2026-10-25T16:30:00Z'))).toBe(false)
   })
 })
 

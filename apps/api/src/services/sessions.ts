@@ -1,5 +1,12 @@
 // Group sessions (小班课): slots the venue schedules for one group class, with a seat per student.
-import { isGroup, MAX_CAPACITY, minCheckDue, minCheckHours, venueParts } from '@rs/shared'
+import {
+  endsSameVenueDay,
+  isGroup,
+  MAX_CAPACITY,
+  minCheckDue,
+  minCheckHours,
+  venueParts,
+} from '@rs/shared'
 import { and, eq, gt, inArray, isNotNull, isNull, lt, ne } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { bookings, coaches, lessonTypes, orders, slots } from '../db/schema'
@@ -58,6 +65,9 @@ export function createSessions(tx: Q, now: Date, input: NewSessions) {
     if (s.startsAt <= now) throw new ApiError(400, 'slot_in_past', '不能给已过去的时间排课')
     if (s.endsAt.getTime() - s.startsAt.getTime() !== lessonType.durationMinutes * 60_000) {
       throw new ApiError(400, 'duration_mismatch', `每节需为 ${lessonType.durationMinutes} 分钟`)
+    }
+    if (!endsSameVenueDay(s.startsAt, s.endsAt)) {
+      throw new ApiError(400, 'crosses_midnight', `${when(s.startsAt)} 开始会上到第二天`)
     }
     if (!priceFor(tx, s.coachId, lessonType, now)) {
       throw new ApiError(409, 'coach_not_teaching', `${coach.name}不教${lessonType.name}`)

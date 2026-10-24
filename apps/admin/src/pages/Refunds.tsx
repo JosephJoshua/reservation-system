@@ -1,8 +1,10 @@
+import type { RefundStatus } from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
   Dialog,
   InputNumber,
+  MessagePlugin,
   Popconfirm,
   Select,
   Space,
@@ -28,6 +30,23 @@ const statusOptions = [
   { value: 'rejected', label: '已拒绝' },
 ]
 
+interface RefundOutcome {
+  status: RefundStatus
+  failure: string | null
+}
+
+/** WeChat Pay can refuse a refund at once (balance too low, say), so say so instead of success. */
+function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
+  if (outcome?.status === 'failed') {
+    void MessagePlugin.warning(
+      `退款没有成功${outcome.failure ? `：${outcome.failure}` : ''}，可在“退款失败”中重试`,
+      5000,
+    )
+  } else {
+    void MessagePlugin.success(success)
+  }
+}
+
 export function Refunds() {
   // The overview links here with the status it counted.
   const [status, setStatus] = useState(() => hashParam('status') ?? 'requested')
@@ -47,13 +66,19 @@ export function Refunds() {
   }
 
   const retry = async (r: Refund) => {
+    let outcome: RefundOutcome | undefined
     if (
-      await attempt(() => api('POST', `/admin/refunds/${r.id}/retry`), '已重新提交', {
-        onStale: reload,
-        key: `retry-${r.id}`,
-      })
-    )
+      await attempt(
+        async () => {
+          outcome = await api<RefundOutcome>('POST', `/admin/refunds/${r.id}/retry`)
+        },
+        undefined,
+        { onStale: reload, key: `retry-${r.id}` },
+      )
+    ) {
+      tellOutcome(outcome, '已重新提交')
       await reload()
+    }
   }
 
   return (
@@ -95,7 +120,8 @@ export function Refunds() {
               row.package ? (
                 <span>
                   {row.package.name}，剩 {row.package.lessonsRemaining}/
-                  {row.package.lessonsPurchased} 节，实付 {yuan(row.package.pricePaid)}
+                  {row.package.lessonsPurchased + row.package.lessonsGranted} 节，实付{' '}
+                  {yuan(row.package.pricePaid)}
                   <br />
                   <span className="muted">
                     有效期至 {fmtDate(new Date(new Date(row.package.expiresAt).getTime() - 1))}
@@ -212,11 +238,19 @@ function Decide({
   const amountValid = fen !== null && fen > 0 && fen <= refund.order.amount
 
   const submit = async () => {
+    let outcome: RefundOutcome | undefined
     const ok = approve
       ? amountValid &&
         (await attempt(
-          () => api('POST', `/admin/refunds/${refund.id}/approve`, { amount: fen }, { key }),
-          '已同意退款',
+          async () => {
+            outcome = await api<RefundOutcome>(
+              'POST',
+              `/admin/refunds/${refund.id}/approve`,
+              { amount: fen },
+              { key },
+            )
+          },
+          undefined,
           { onStale: onDone },
         ))
       : await attempt(
@@ -224,6 +258,7 @@ function Decide({
           '已拒绝',
           { onStale: onDone },
         )
+    if (ok && approve) tellOutcome(outcome, '已同意退款')
     if (ok) onDone()
   }
 

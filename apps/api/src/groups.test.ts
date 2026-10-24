@@ -267,6 +267,24 @@ describe('scheduling sessions', () => {
     )
     expect(wrongLength.json.error.code).toBe('duration_mismatch')
 
+    const overnight = await h.call(
+      'POST',
+      '/admin/sessions',
+      {
+        lessonTypeId: kids.id,
+        capacity: 4,
+        sessions: [
+          {
+            coachId: coach.id,
+            startsAt: venueInstant('2026-10-26', 23 * 60 + 30).toISOString(),
+            endsAt: venueInstant('2026-10-26', 24 * 60 + 30).toISOString(),
+          },
+        ],
+      },
+      admin,
+    )
+    expect(overnight.json.error.message).toBe('10月26日 23:30 开始会上到第二天')
+
     const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
     const notTeaching = await schedule(h, admin, { lessonTypeId: kids.id, coachId: other.id })
     expect(notTeaching.json.error.code).toBe('coach_not_teaching')
