@@ -282,6 +282,29 @@ try {
     },
   )
 
+  await step('the coach row keeps the day when the coach is free then, else moves on', async () => {
+    const book = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    const list = (await book.data('coaches')) as { id: number; name: string }[]
+    const chip = async (name: string) => {
+      // The strip starts with 不限教练, so a coach's chip is one after their place in the list.
+      await tap(book, '.coach', list.findIndex((c) => c.name === name) + 1)
+      await sleep(800)
+      return waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    }
+    const day = (await book.data('date')) as string
+    let page = await chip('王磊')
+    check((await page.data('date')) === day, '王磊 is free that day, so it should stay')
+    const today = ((await page.data('days')) as { key: string }[])[0]?.key
+    await tap(page, '.day', 0)
+    await sleep(800)
+    page = await waitForPage('pages/book/index', (d) => d.slotsState !== 'loading')
+    check((await page.data('date')) === today, 'picking today by hand should stay on today')
+    page = await chip('赵鹏')
+    const data = await page.data()
+    check(data.date !== today && (data.availableCount as number) > 0, '赵鹏 should move on')
+    await screenshot('book-chip-moved-on')
+  })
+
   await step('an unknown coach shows the error state', async () => {
     await miniProgram.reLaunch('/pages/coach-detail/index?id=99999')
     await waitForPage('pages/coach-detail/index', (d) => d.state === 'error')

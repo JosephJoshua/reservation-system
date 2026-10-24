@@ -53,9 +53,15 @@ Page({
 
   catalog: null as CatalogDto | null,
   request: 0,
-  /** Until the student picks a day, skip ahead past days with nothing to book. */
-  autoAdvance: true,
-  dayPicked: false,
+  /**
+   * While set, the day a search for an open day started from: a day with nothing to book moves on
+   * to the next one, wrapping to today once, and the search ends back on this day if no day has
+   * anything. Picking a day by hand ends it.
+   */
+  seekFrom: '',
+  seekWrapped: false,
+  /** Whether to say so when the search lands on another day: not on first load. */
+  seekTell: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -110,6 +116,7 @@ Page({
         days,
         date: days[0]?.key ?? '',
       })
+      this.seek(false)
       this.loadSlots()
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -141,39 +148,66 @@ Page({
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
         }))
       const availableCount = slots.filter((s) => s.available).length
-      const days = this.data.days
-      const next = days[days.findIndex((d) => d.key === date) + 1]
-      if (this.autoAdvance && availableCount === 0 && next) {
-        this.setData({ date: next.key, dayAnchor: dayAnchor(days, next.key) })
-        this.loadSlots()
-        return
+      if (this.seekFrom && availableCount === 0) {
+        const next = this.nextSeekDay(date) ?? (date === this.seekFrom ? '' : this.seekFrom)
+        if (next === this.seekFrom) this.seekFrom = ''
+        if (next) {
+          this.setData({ date: next, dayAnchor: dayAnchor(this.data.days, next) })
+          this.loadSlots()
+          return
+        }
       }
-      this.autoAdvance = false
+      const from = this.seekFrom
+      this.seekFrom = ''
       this.setData({ slotsState: 'ready', slots, availableCount })
+      const found = this.data.days.find((d) => d.key === date)
+      if (from && from !== date && found && this.seekTell) {
+        wx.showToast({ title: `当天无可约时段，已跳到 ${found.date}`, icon: 'none' })
+      }
     } catch (e) {
       if (request !== this.request) return
+      this.seekFrom = ''
       this.setData({ slotsState: 'error', error: errorMessage(e) })
     }
+  },
+
+  /** Starts a search for an open day from the selected one; the next loadSlots runs it. */
+  seek(tell = true) {
+    this.seekFrom = this.data.date
+    this.seekWrapped = false
+    this.seekTell = tell
+  },
+
+  /** The day after `date` in the search, or undefined once it is back where it started. */
+  nextSeekDay(date: string): string | undefined {
+    const days = this.data.days
+    let next = days[days.findIndex((d) => d.key === date) + 1]
+    if (!next && !this.seekWrapped) {
+      this.seekWrapped = true
+      next = days[0]
+    }
+    return next && next.key !== this.seekFrom ? next.key : undefined
   },
 
   pickCoach(e: WechatMiniprogram.TouchEvent) {
     const coachId = Number(e.currentTarget.dataset.id)
     if (coachId === this.data.coachId) return
-    this.autoAdvance = false
+    // Stay on the selected day if the coach has time then, else move to their next open day.
+    this.seek()
     this.setData({ coachId, picked: this.data.coaches.find((c) => c.id === coachId) ?? null })
     this.loadSlots()
   },
 
   /**
    * Called by the coach page when the student books that coach from it, just before it goes back
-   * here; onShow then loads the coach's slots. Unless the student picked a day, the page still
-   * skips ahead to the coach's first open one.
+   * here; onShow then loads the coach's slots, moving to their next open day if the selected one
+   * has nothing.
    */
   chooseCoach(coachId: number) {
     const coaches = this.data.coaches
     const index = coaches.findIndex((c) => c.id === coachId)
     if (index < 0) return
-    this.autoAdvance = !this.dayPicked
+    this.seek()
     // Coaches on the first screen keep the strip at its start; later ones bring the coach before
     // into view, so the picked one is not flush with the screen edge.
     const before = coaches[index - 1]
@@ -201,8 +235,7 @@ Page({
   pickDate(e: WechatMiniprogram.TouchEvent) {
     const date = e.currentTarget.dataset.key as string
     if (date === this.data.date) return
-    this.autoAdvance = false
-    this.dayPicked = true
+    this.seekFrom = ''
     this.setData({ date })
     this.loadSlots()
   },
