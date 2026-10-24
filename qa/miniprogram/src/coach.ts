@@ -7,7 +7,7 @@ import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import automator from 'miniprogram-automator'
-import { startTheme } from './theme'
+import { qaTheme, resetTheme, startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const adminPassword = process.env.ADMIN_PASSWORD ?? 'admin'
@@ -262,6 +262,8 @@ try {
       ((await page.data('lesson')) as { canMarkAttendance: boolean }).canMarkAttendance,
       'should be markable',
     )
+    // The lesson has just ended; its 课堂备注 stays open after class.
+    check(await page.data('noteEditable'), 'should keep the note editor after the lesson')
     await screenshot('lesson-to-mark')
     await invoke('mark', { currentTarget: { dataset: { value: 'attended' } } })
     await waitForPage(
@@ -411,5 +413,9 @@ try {
   for (const key of ['devLogin', 'token', 'coachToken']) {
     await miniProgram.callWxMethod('removeStorageSync', key).catch(() => {})
   }
-  await miniProgram.close()
+  try {
+    if (qaTheme()) await resetTheme(miniProgram)
+  } finally {
+    await miniProgram.close()
+  }
 }
