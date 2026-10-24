@@ -51,10 +51,11 @@ function baiduUid(url: string) {
 }
 
 /** 百度 phone pages for a place id. Which of them has the place in it varies by place. */
-const baiduPages = (uid: string) => [
-  `https://map.baidu.com/mobile/webapp/search/search/qt=inf&uid=${uid}/newmap=1&vt=map&da_from=weixin&openna=1`,
-  `https://map.baidu.com/mobile/webapp/place/detail/qt=inf&uid=${uid}/shareurl=1&da_from=weixin&openna=1`,
-]
+const baiduPages = (uid: string) =>
+  [
+    `https://map.baidu.com/mobile/webapp/search/search/qt=inf&uid=${uid}/newmap=1&vt=map&da_from=weixin&openna=1`,
+    `https://map.baidu.com/mobile/webapp/place/detail/qt=inf&uid=${uid}/shareurl=1&da_from=weixin&openna=1`,
+  ].map((u) => new URL(u).toString())
 
 /**
  * Follows a map share link that has no coordinates in it, one redirect at a time, until a
@@ -66,19 +67,21 @@ export async function resolveMapLink(
 ): Promise<{ point: LatLng; source: MapApp }> {
   const first = parseMapLink(url)
   if (!first) throw new ApiError(400, 'not_map_link', '请粘贴高德、腾讯或百度地图的链接')
-  if (first.kind === 'point') return { point: first.point, source: first.source as MapApp }
+  if (first.kind === 'point') return { point: first.point, source: first.source }
   if (first.kind === 'none') throw unreadable(first.source)
 
   const source = first.source
-  const deadline = AbortSignal.timeout(TIMEOUT_MS)
+  let deadline = AbortSignal.timeout(TIMEOUT_MS)
   const tried = new Set<string>()
   let uid = baiduUid(first.url)
   const found = await follow(first.url)
   if (found) return found
   // The redirects ended on a page without the place: try the other 百度 phone pages.
+  // Its own time limit, and a failure here means the link could not be read, not a network error.
   for (const page of source === 'baidu' && uid ? baiduPages(uid) : []) {
     if (tried.has(page)) continue
-    const point = await follow(page)
+    deadline = AbortSignal.timeout(TIMEOUT_MS)
+    const point = await follow(page).catch(() => null)
     if (point) return point
   }
   throw unreadable(source)
@@ -86,7 +89,6 @@ export async function resolveMapLink(
   async function follow(start: string): Promise<{ point: LatLng; source: MapApp } | null> {
     let current = start
     for (let hop = 0; hop < MAX_HOPS; hop++) {
-      tried.add(current)
       // Checked on the URL as fetch will read it, not only as the parser reads it.
       let target: URL
       try {
@@ -100,6 +102,7 @@ export async function resolveMapLink(
         break
       }
       if (target.port || target.username || target.password) break
+      tried.add(target.toString())
       let res: Response
       try {
         res = await fetchFn(target.toString(), {
@@ -113,10 +116,14 @@ export async function resolveMapLink(
       const location = res.headers.get('location')
       if (res.status >= 300 && res.status < 400 && location) {
         await res.body?.cancel().catch(() => {})
-        current = new URL(location, current).toString()
+        try {
+          current = new URL(location, current).toString()
+        } catch {
+          break
+        }
         uid ??= baiduUid(current)
         const next = parseMapLink(current)
-        if (next?.kind === 'point') return { point: next.point, source: next.source as MapApp }
+        if (next?.kind === 'point') return { point: next.point, source: next.source }
         if (!next || next.kind === 'none') break
         continue
       }

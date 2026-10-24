@@ -20,13 +20,17 @@ export interface LatLng {
 export type MapSource = 'amap' | 'tencent' | 'baidu' | 'text'
 export type MapApp = Exclude<MapSource, 'text'>
 
-export type MapParse =
+/** What a map link gives. */
+export type MapLinkParse =
   /** Coordinates, already in GCJ-02. */
-  | { kind: 'point'; point: LatLng; source: MapSource }
+  | { kind: 'point'; point: LatLng; source: MapApp }
   /** A link that leads to coordinates, such as a short link: the server opens it. */
   | { kind: 'open'; url: string; source: MapApp }
   /** A map link with no way to coordinates, such as a 高德 place page. */
   | { kind: 'none'; source: MapApp }
+
+/** What pasted text gives: a map link's result, or plain coordinates. */
+export type MapParse = MapLinkParse | { kind: 'point'; point: LatLng; source: 'text' }
 
 export const mapAppLabels: Record<MapApp, string> = {
   amap: '高德地图',
@@ -284,7 +288,7 @@ function worthOpening(source: MapApp, { host, path, params }: Link) {
 }
 
 /** Coordinates in one map link, or what to do with it. Null when the link is not a map link. */
-export function parseMapLink(raw: string): MapParse | null {
+export function parseMapLink(raw: string): MapLinkParse | null {
   const link = splitLink(raw)
   const source = link && mapAppOf(link.host)
   if (!link || !source) return null

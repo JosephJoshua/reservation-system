@@ -125,6 +125,14 @@ describe('map share links', () => {
     expect(other.asked.map((a) => a.url)).toEqual(['https://surl.amap.com/c'])
   })
 
+  it('treats a broken redirect as unreadable', async () => {
+    const res = await resolve(
+      { 'https://surl.amap.com/bad': { location: 'http://[bad' } },
+      'https://surl.amap.com/bad',
+    )
+    expect(res.status).toBe(422)
+  })
+
   it('reports a page that stops halfway as a network failure', async () => {
     const h = setup({
       mapFetch: (async () =>

@@ -78,13 +78,13 @@ export function VenueLocation({
       )
       return
     }
-    busy.current = true
     if (parsed.kind === 'none') {
       void MessagePlugin.warning(
         `这个${mapAppLabels[parsed.source]}链接里没有位置，请在地图 App 里点“分享”并复制链接，或在地图上选点`,
       )
       return
     }
+    busy.current = true
     setReading(true)
     try {
       const r = await api<{ point: LatLng; source: keyof typeof mapAppLabels }>(
@@ -114,7 +114,8 @@ export function VenueLocation({
           onChange={(v) => setPasted(String(v))}
           onPaste={({ e }) => {
             const text = e.clipboardData.getData('text')
-            if (!text) return
+            // Into an empty box a paste is read at once; otherwise it goes in as usual.
+            if (!text || pasted.trim()) return
             e.preventDefault()
             setPasted(text)
             void read(text)

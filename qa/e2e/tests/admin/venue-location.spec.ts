@@ -60,6 +60,11 @@ test('reads coordinates from 高德 share text, plain coordinates and a pasted s
   await expect(view).toHaveAttribute('href', /position=121\.468407,31\.222812/)
   await expect(view).toHaveAttribute('target', '_blank')
 
+  // A 高德 place page has no point in it; the box still reads the next paste.
+  await paste.fill('【高德地图】球馆 https://www.amap.com/place/B000A83M61')
+  await row.getByRole('button', { name: '识别' }).click()
+  await expect(page.getByText(/这个高德地图链接里没有位置/)).toBeVisible()
+
   // Longitude first, with a Chinese comma, by pressing Enter.
   await paste.fill('116.397477，39.908692')
   await paste.press('Enter')
@@ -80,6 +85,7 @@ test('reads coordinates from 高德 share text, plain coordinates and a pasted s
     await new Promise((done) => setTimeout(done, 400))
     await r.fulfill({ json: { point: { lat: 30.123456, lng: 120.654321 }, source: 'amap' } })
   })
+  await paste.fill('')
   await paste.focus()
   await page.evaluate(() => {
     const data = new DataTransfer()

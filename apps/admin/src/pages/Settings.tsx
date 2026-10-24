@@ -48,13 +48,15 @@ export function Settings() {
   }
 
   const save = async () => {
-    if (!coordValid(coord.lat, 90) || !coordValid(coord.lng, 180) || !coord.lat !== !coord.lng) {
+    const lat = coord.lat.trim()
+    const lng = coord.lng.trim()
+    if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {
       void MessagePlugin.warning('请填写完整、有效的经纬度，或都留空')
       return
     }
     const body = structuredClone(s)
-    body.venue.latitude = coord.lat ? Number(coord.lat) : null
-    body.venue.longitude = coord.lng ? Number(coord.lng) : null
+    body.venue.latitude = lat ? Number(lat) : null
+    body.venue.longitude = lng ? Number(lng) : null
     setSaving(true)
     if (await attempt(() => api('PUT', '/admin/settings', body, { ifMatch: data, key }), '已保存'))
       await reload()
