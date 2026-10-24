@@ -272,7 +272,8 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           {s.deletedAt ? (
             <span className="muted">
-              {fmtDate(s.deletedAt)} 注销，姓名、手机号和微信身份已删除。订单和上课记录保留。
+              {fmtDate(s.deletedAt)}{' '}
+              注销，姓名、手机号、学员档案和微信身份已删除。订单和上课记录保留。
             </span>
           ) : (
             <Space align="center">
@@ -482,37 +483,31 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
 
 function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; deleted: boolean }) {
   const traits = [p.level && studentLevelLabels[p.level], p.grip && gripLabels[p.grip]].filter(
-    Boolean,
+    (t): t is NonNullable<typeof t> => Boolean(t),
   )
-  const empty = !traits.length && !p.tags.length && !p.note
   return (
     <div className="profile">
+      {(traits.length > 0 || p.tags.length > 0) && (
+        <Space size={8} breakLine>
+          {traits.map((t) => (
+            <Tag key={`trait:${t}`} theme="primary" variant="light">
+              {t}
+            </Tag>
+          ))}
+          {p.tags.map((t) => (
+            <Tag key={`tag:${t}`} variant="outline">
+              {t}
+            </Tag>
+          ))}
+        </Space>
+      )}
+      {p.note && <div className="profile-note">{p.note}</div>}
+      {!deleted && !traits.length && !p.tags.length && !p.note && (
+        <div className="muted">还没有填写水平、握拍、标签和备注，教练上课前会看到这些。</div>
+      )}
       <div className="muted">
         已上课 {p.lessons} 次{p.noShows ? `，缺席 ${p.noShows} 次` : ''}
       </div>
-      {empty ? (
-        !deleted && (
-          <div className="muted">还没有填写水平、握拍、标签和备注，教练上课前会看到这些。</div>
-        )
-      ) : (
-        <>
-          {(traits.length > 0 || p.tags.length > 0) && (
-            <Space size={8} breakLine>
-              {traits.map((t) => (
-                <Tag key={t} theme="primary" variant="light">
-                  {t}
-                </Tag>
-              ))}
-              {p.tags.map((t) => (
-                <Tag key={t} variant="outline">
-                  {t}
-                </Tag>
-              ))}
-            </Space>
-          )}
-          {p.note && <div className="profile-note">{p.note}</div>}
-        </>
-      )}
     </div>
   )
 }
@@ -530,7 +525,7 @@ function ProfileDialog({
   onDone: () => void
 }) {
   const [form, setForm] = useState(loaded)
-  // Text typed in the tag box but not yet added with Enter is added on save.
+  // Text typed in the tag box but not yet added with Enter still counts as a tag.
   const [typing, setTyping] = useState('')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
@@ -568,7 +563,8 @@ function ProfileDialog({
       <div className="fields">
         <Field label="水平">
           <Radio.Group
-            variant="default-filled"
+            theme="button"
+            variant="outline"
             value={form.level ?? ''}
             options={[
               { label: '未填', value: '' },
@@ -579,7 +575,8 @@ function ProfileDialog({
         </Field>
         <Field label="握拍">
           <Radio.Group
-            variant="default-filled"
+            theme="button"
+            variant="outline"
             value={form.grip ?? ''}
             options={[
               { label: '未填', value: '' },
@@ -598,7 +595,13 @@ function ProfileDialog({
             max={PROFILE_MAX_TAGS}
             clearable
             placeholder="如 反手弱、备赛、青少年"
-            onInputChange={(v) => setTyping(String(v).slice(0, PROFILE_TAG_LENGTH))}
+            onInputChange={(v, ctx) => {
+              // The box drops unadded text on blur; keep it as a tag instead.
+              if (ctx?.trigger === 'blur') {
+                set({ tags })
+                setTyping('')
+              } else setTyping(String(v).slice(0, PROFILE_TAG_LENGTH))
+            }}
             onChange={(v) => {
               setTyping('')
               set({ tags: cleanTags((v as string[]).map(String)) })

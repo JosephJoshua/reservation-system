@@ -57,6 +57,17 @@ Run it once with DevTools in light mode and once in dark mode:
 pnpm --filter @rs/qa-miniprogram coach-profile
 ```
 
+## Student profiles
+
+Checks 学员档案 on the coach lesson page: empty, filled in by the venue (through the admin API),
+the longest profile the admin allows, lesson and no-show counts, and that the student's own lesson
+page carries none of it, saving screenshots to `qa/miniprogram/screenshots/student-profile/`. It
+uses the same seeded API, and `QA_DB` as for the coach flows:
+
+```sh
+QA_DB=../../apps/api/data/qa.db pnpm --filter @rs/qa-miniprogram student-profile
+```
+
 ## Forcing a theme
 
 The 外观 setting under 我的 is stored in the `rs:theme` storage key: `light`, `dark`, or absent to
