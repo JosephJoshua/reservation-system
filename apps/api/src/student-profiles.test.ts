@@ -366,6 +366,15 @@ describe('学员档案 kept by coaches', () => {
     expect(staffLate.json.error.code).toBe('edited_elsewhere')
   })
 
+  it('requires the version the coach loaded', async () => {
+    const h = setup()
+    const { coach, bookingId } = await booked(h)
+    const ct = await bindCoach(h, coach.id)
+    const res = await h.call('PUT', path(bookingId), profile(), ct)
+    expect(res.status).toBe(428)
+    expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
+  })
+
   it('refuses bad values like the admin does', async () => {
     const h = setup()
     const { coach, bookingId } = await booked(h)
@@ -375,9 +384,12 @@ describe('学员档案 kept by coaches', () => {
       path(bookingId),
       profile({ tags: Array.from({ length: 9 }, (_, i) => `标签${i}`) }),
       ct,
+      { 'If-Match': EMPTY },
     )
     expect(nine.json.error.message).toBe('最多 8 个标签')
-    const long = await h.call('PUT', path(bookingId), profile({ note: 'x'.repeat(501) }), ct)
+    const long = await h.call('PUT', path(bookingId), profile({ note: 'x'.repeat(501) }), ct, {
+      'If-Match': EMPTY,
+    })
     expect(long.status).toBe(400)
     expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
   })
@@ -388,7 +400,7 @@ describe('学员档案 kept by coaches', () => {
     const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
     h.db.insert(coachLessonTypes).values({ coachId: other.id, lessonTypeId: lesson.id }).run()
     const li = await bindCoach(h, other.id, 'coach2')
-    const notOwn = await h.call('PUT', path(bookingId), profile(), li)
+    const notOwn = await h.call('PUT', path(bookingId), profile(), li, { 'If-Match': EMPTY })
     expect(notOwn.status).toBe(404)
     expect(
       (await h.call('GET', `/coach/lessons/${bookingId}/student-feedback`, undefined, li)).status,
@@ -397,10 +409,14 @@ describe('学员档案 kept by coaches', () => {
     // Ends 10-25 11:00 at the venue; open until a week later.
     h.clock.now = new Date('2026-11-01T02:59:00Z')
     let ct = await bindCoach(h, coach.id)
-    expect((await h.call('PUT', path(bookingId), profile(), ct)).status).toBe(200)
+    expect(
+      (await h.call('PUT', path(bookingId), profile(), ct, { 'If-Match': EMPTY })).status,
+    ).toBe(200)
     h.clock.now = new Date('2026-11-01T03:01:00Z')
     ct = await bindCoach(h, coach.id)
-    const closed = await h.call('PUT', path(bookingId), profile({ note: '晚了' }), ct)
+    const closed = await h.call('PUT', path(bookingId), profile({ note: '晚了' }), ct, {
+      'If-Match': EMPTY,
+    })
     expect(closed.status).toBe(409)
     expect(closed.json.error.code).toBe('profile_closed')
     const list = await h.call('GET', `/coach/lessons/${bookingId}/student-feedback`, undefined, ct)
@@ -418,7 +434,9 @@ describe('学员档案 kept by coaches', () => {
     await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
     await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, {}, t)
     ct = await bindCoach(h, coach.id)
-    const cancelled = await h.call('PUT', path(res.json.bookingId), profile(), ct)
+    const cancelled = await h.call('PUT', path(res.json.bookingId), profile(), ct, {
+      'If-Match': EMPTY,
+    })
     expect(cancelled.json.error.code).toBe('profile_closed')
   })
 
@@ -436,9 +454,9 @@ describe('学员档案 kept by coaches', () => {
     const view = await h.call('GET', `/coach/lessons/${unpaid}`, undefined, ct)
     expect(view.json.status).toBe('pending_payment')
     expect(view.json.profile).toBeNull()
-    expect((await h.call('PUT', path(unpaid), profile(), ct)).json.error.code).toBe(
-      'profile_closed',
-    )
+    expect(
+      (await h.call('PUT', path(unpaid), profile(), ct, { 'If-Match': EMPTY })).json.error.code,
+    ).toBe('profile_closed')
     const list = await h.call('GET', `/coach/lessons/${unpaid}/student-feedback`, undefined, ct)
     expect(list.json.error.code).toBe('profile_closed')
   })
@@ -449,7 +467,7 @@ describe('学员档案 kept by coaches', () => {
     h.clock.now = new Date('2026-10-25T04:00:00Z')
     expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(204)
     const ct = await bindCoach(h, coach.id)
-    const res = await h.call('PUT', path(bookingId), profile(), ct)
+    const res = await h.call('PUT', path(bookingId), profile(), ct, { 'If-Match': EMPTY })
     expect(res.json.error.code).toBe('account_deleted')
     expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
   })

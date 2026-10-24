@@ -1,5 +1,5 @@
 import type { Attendance, BookingStatus, StudentProfileDto } from '../../lib/shared'
-import { dateTime } from '../../utils/format'
+import { fullDate, time } from '../../utils/format'
 
 export interface Tag {
   text: string
@@ -36,5 +36,5 @@ export function hhmm(minutes: number): string {
 /** Who saved the profile last: a coach by name, staff as 场馆 (the API names them so). */
 export function profileEdited(p: StudentProfileDto): string {
   if (!p.updatedBy || !p.updatedAt) return ''
-  return `${p.updatedBy.name} ${dateTime(p.updatedAt)} 修改`
+  return `${p.updatedBy.name} ${fullDate(p.updatedAt)} ${time(p.updatedAt)} 修改`
 }

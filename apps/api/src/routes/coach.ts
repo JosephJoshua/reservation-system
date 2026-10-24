@@ -132,8 +132,10 @@ export function coachRoutes(deps: Deps) {
   })
 
   // 学员档案 from the lesson page. A save made on top of another coach's or the venue's change is
-  // refused through If-Match, like the admin's; the same save again goes through.
+  // refused through If-Match, which is required here; the same save again goes through.
   app.put('/lessons/:id/profile', async (c) => {
+    // Several coaches and the venue keep it, so a save must say what it was made on top of.
+    if (!c.req.header('If-Match')) throw new ApiError(428, 'version_required', '请刷新后再改')
     const body = await parseBody(c, profileInput)
     return c.json(
       saveCoachProfile(deps, idParam(c), c.get('coachId'), body, (current) =>

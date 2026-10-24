@@ -20,6 +20,23 @@ import { isTop, navigateBackOnce } from '../../utils/nav'
 import { coachApi, profileClosed } from '../utils/coach-api'
 import { profileEdited } from '../utils/labels'
 
+const FIELD_NAMES = { level: '水平', grip: '握拍', tags: '标签', note: '备注' } as const
+
+/** What a refused save did to the form, after it took in what someone else saved first. */
+function conflictText(
+  both: (keyof StudentProfileEdit)[],
+  theirNote: string,
+  changed: boolean,
+): string {
+  const lead = '其他教练或场馆刚刚修改了这份档案。'
+  if (!changed) return `${lead}他们保存的内容已包含你的修改，无需再保存。`
+  if (!both.length) return `${lead}你改过的内容已保留，其余已更新为最新，请确认后再保存。`
+  const note = both.includes('note')
+    ? `\n对方的备注：${theirNote.length > 120 ? `${theirNote.slice(0, 120)}…` : theirNote || '（空）'}`
+    : ''
+  return `${lead}对方也改了${both.map((k) => FIELD_NAMES[k]).join('、')}，现在显示的是你的内容，保存会覆盖对方的修改。${note}`
+}
+
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
@@ -95,7 +112,9 @@ Page({
    * coach changed and taking theirs for the rest, so nothing typed is lost and nothing of theirs is
    * overwritten without a second look.
    */
-  async merge(): Promise<'merged' | 'closed' | 'failed'> {
+  async merge(): Promise<
+    { both: (keyof StudentProfileEdit)[]; theirNote: string } | 'closed' | 'failed'
+  > {
     const before = this.loaded
     const mine = this.form()
     try {
@@ -103,6 +122,12 @@ Page({
       if (!lesson.profile || !before) return 'closed'
       const theirs = profileEdit(lesson.profile)
       const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+      const keys = ['level', 'grip', 'tags', 'note'] as const
+      // Changed on both sides to different values: this coach's stays on screen, and is named.
+      const both = keys.filter(
+        (k) =>
+          !same(mine[k], before[k]) && !same(theirs[k], before[k]) && !same(mine[k], theirs[k]),
+      )
       const pick = <K extends keyof StudentProfileEdit>(k: K) =>
         same(mine[k], before[k]) ? theirs[k] : mine[k]
       this.loaded = theirs
@@ -113,7 +138,7 @@ Page({
         tags: pick('tags'),
         note: pick('note'),
       })
-      return 'merged'
+      return { both: [...both], theirNote: theirs.note }
     } catch (e) {
       if (profileClosed(e)) return 'closed'
       // The form stays as typed; the next save is refused again and tries once more.
@@ -238,22 +263,13 @@ Page({
     if (err instanceof ApiError && err.code === 'edited_elsewhere') {
       const merged = await this.merge()
       if (merged === 'failed') return
-      if (merged === 'merged' && !this.data.canSave) {
-        // What they saved is what this coach meant to save.
-        wx.disableAlertBeforeUnload()
+      if (merged !== 'closed') {
         this.getOpenerEventChannel().emit?.('stale')
-        if (isTop(this)) navigateBackOnce()
-        wx.showToast({ title: '已保存', icon: 'success' })
-        return
-      }
-      if (merged === 'merged') {
         await wx.showModal({
           title: '档案已被修改',
-          content:
-            '其他教练或场馆刚刚修改了这份档案。你改过的内容已保留，其余已更新为最新，请确认后再保存。',
+          content: conflictText(merged.both, merged.theirNote, this.data.canSave),
           showCancel: false,
         })
-        this.getOpenerEventChannel().emit?.('stale')
         return
       }
       err = new ApiError(409, 'profile_closed', '这节课已不能查看学员档案')

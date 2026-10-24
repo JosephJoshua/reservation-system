@@ -58,7 +58,7 @@ function profileStudent(deps: Deps, bookingId: number, coachId: number) {
     .where(eq(students.id, booking.studentId))
     .get()
   if (student?.deletedAt) throw accountDeleted()
-  if (!profileOpen(booking, null, deps.now())) {
+  if (!profileOpen(booking, student?.deletedAt ?? null, deps.now())) {
     throw new ApiError(409, 'profile_closed', '这节课已不能查看学员档案')
   }
   return booking.studentId
