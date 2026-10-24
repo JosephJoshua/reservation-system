@@ -59,7 +59,8 @@ Page({
       })
     } catch (e) {
       if (request !== this.request) return
-      const closed = e instanceof ApiError && e.status === 409
+      // Cancelled, over a week old, moved to another coach or the student left: retrying won't help.
+      const closed = e instanceof ApiError && (e.status === 409 || e.status === 404)
       // A list already on screen stays; only a first load, or a lesson now closed, shows the error.
       if (this.loaded && !closed) wx.showToast({ title: errorMessage(e), icon: 'none' })
       else this.setData({ state: 'error', canRetry: !closed, error: errorMessage(e) })

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable, LoadMore } from '../DataTable'
+import { FeedbackPhotos } from '../FeedbackPhotos'
 import { addDays, fmtDateTime, today } from '../format'
 import { attempt, useApi, usePagedApi } from '../hooks'
 import { StudentCell } from '../StudentCell'
@@ -99,21 +100,7 @@ export function Feedback() {
                 ) : (
                   <div className="feedback-text">{row.text}</div>
                 )}
-                {row.photos.length > 0 && (
-                  <div className="feedback-photos">
-                    {row.photos.map((url, i) => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`照片 ${i + 1}`}
-                      >
-                        <img src={url} alt={`照片 ${i + 1}`} loading="lazy" />
-                      </a>
-                    ))}
-                  </div>
-                )}
+                <FeedbackPhotos photos={row.photos} />
                 {!row.deleted && row.updatedAt !== row.createdAt && (
                   <div className="muted">修改于 {fmtDateTime(row.updatedAt)}</div>
                 )}

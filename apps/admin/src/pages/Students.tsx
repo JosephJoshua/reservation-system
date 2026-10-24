@@ -40,6 +40,7 @@ import { BookForStudent } from '../BookForStudent'
 import { DataTable, LoadMore } from '../DataTable'
 import { BindWechatDialog, NewStudentDialog } from '../DeskStudent'
 import { ExportButton } from '../ExportButton'
+import { FeedbackPhotos } from '../FeedbackPhotos'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
 import {
@@ -462,8 +463,8 @@ function StudentDrawer({
           </Card>
 
           {s.feedback.length > 0 && (
-            <Card title={`课后点评（${s.feedback.length}）`} bordered>
-              <FeedbackList items={s.feedback} />
+            <Card title={`课后点评（${s.profile.feedbackCount}）`} bordered>
+              <FeedbackList items={s.feedback} total={s.profile.feedbackCount} />
             </Card>
           )}
 
@@ -697,7 +698,7 @@ function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; dele
 }
 
 /** The 课后点评 the student sees, from every coach, newest first; the latest few until opened. */
-function FeedbackList({ items }: { items: FeedbackItemDto[] }) {
+function FeedbackList({ items, total }: { items: FeedbackItemDto[]; total: number }) {
   const [all, setAll] = useState(false)
   const shown = all ? items : items.slice(0, 3)
   return (
@@ -708,21 +709,16 @@ function FeedbackList({ items }: { items: FeedbackItemDto[] }) {
             {fmtDateTime(f.startsAt)} · {f.coachName} · {f.lessonTypeName}
           </div>
           <div className="feedback-text">{f.text}</div>
-          {f.photos.length > 0 && (
-            <div className="feedback-photos">
-              {f.photos.map((url, i) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" title={`照片 ${i + 1}`}>
-                  <img src={url} alt={`照片 ${i + 1}`} loading="lazy" />
-                </a>
-              ))}
-            </div>
-          )}
+          <FeedbackPhotos photos={f.photos} />
         </div>
       ))}
       {items.length > shown.length && (
         <Button variant="text" theme="primary" onClick={() => setAll(true)}>
-          显示全部 {items.length} 条
+          {items.length < total ? `显示最近 ${items.length} 条` : `显示全部 ${items.length} 条`}
         </Button>
+      )}
+      {all && items.length < total && (
+        <div className="muted">更早的点评可在课后点评页按日期查看</div>
       )}
     </div>
   )

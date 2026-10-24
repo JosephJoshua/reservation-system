@@ -69,23 +69,60 @@ Page({
         this.setData({ state: 'error', canRetry: false, error: '这节课已不能查看学员档案' })
         return
       }
-      const p = lesson.profile
-      this.loaded = profileEdit(p)
+      this.loaded = profileEdit(lesson.profile)
       this.setData({
         state: 'ready',
         student: lesson.student.name || '未填写姓名',
-        edited: profileEdited(p),
-        level: p.level,
-        grip: p.grip,
-        levelText: p.level ? studentLevelLabels[p.level] : '未填',
-        gripText: p.grip ? gripLabels[p.grip] : '未填',
-        tags: p.tags,
+        edited: profileEdited(lesson.profile),
         typing: '',
-        note: p.note,
       })
-      this.refresh()
+      this.fill(this.loaded)
     } catch (e) {
       this.setData({ state: 'error', canRetry: true, error: errorMessage(e) })
+    }
+  },
+
+  fill(p: StudentProfileEdit) {
+    this.setData({
+      level: p.level,
+      grip: p.grip,
+      levelText: p.level ? studentLevelLabels[p.level] : '未填',
+      gripText: p.grip ? gripLabels[p.grip] : '未填',
+      tags: p.tags,
+      note: p.note,
+    })
+    this.refresh()
+  },
+
+  /**
+   * Someone else saved first. Takes their profile as the one to save on top of, keeping what this
+   * coach changed and taking theirs for the rest, so nothing typed is lost and nothing of theirs is
+   * overwritten without a second look.
+   */
+  async merge(): Promise<'merged' | 'closed' | 'failed'> {
+    const before = this.loaded
+    const mine = this.form()
+    try {
+      const lesson = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
+      if (!lesson.profile || !before) return 'closed'
+      const theirs = profileEdit(lesson.profile)
+      const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+      const pick = <K extends keyof StudentProfileEdit>(k: K) =>
+        same(mine[k], before[k]) ? theirs[k] : mine[k]
+      this.loaded = theirs
+      this.setData({ edited: profileEdited(lesson.profile), typing: '' })
+      this.fill({
+        level: pick('level'),
+        grip: pick('grip'),
+        tags: pick('tags'),
+        note: pick('note'),
+      })
+      return 'merged'
+    } catch (e) {
+      if (changed(e)) return 'closed'
+      // The form stays as typed; the next save is refused again and tries once more.
+      showError(e)
+      return 'failed'
     }
   },
 
@@ -200,17 +237,22 @@ Page({
     }
   },
 
-  async failed(err: unknown) {
+  async failed(error: unknown) {
+    let err = error
     if (err instanceof ApiError && err.code === 'edited_elsewhere') {
-      // Another coach or the venue saved first: show theirs rather than overwrite it.
-      await wx.showModal({
-        title: '档案已被修改',
-        content: '其他教练或场馆刚刚修改了这份档案，已为你显示最新内容，请确认后再改。',
-        showCancel: false,
-      })
-      this.getOpenerEventChannel().emit?.('stale')
-      await this.load()
-      return
+      const merged = await this.merge()
+      if (merged === 'failed') return
+      if (merged === 'merged') {
+        await wx.showModal({
+          title: '档案已被修改',
+          content:
+            '其他教练或场馆刚刚修改了这份档案。你改过的内容已保留，其余已更新为最新，请确认后再保存。',
+          showCancel: false,
+        })
+        this.getOpenerEventChannel().emit?.('stale')
+        return
+      }
+      err = new ApiError(409, 'profile_closed', '这节课已不能查看学员档案')
     }
     if (!changed(err)) {
       showError(err)

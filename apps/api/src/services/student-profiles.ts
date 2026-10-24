@@ -42,13 +42,15 @@ export const profileInput = z.object({
 /** Who saves the profile: a coach from a lesson page, or staff in the admin. */
 export type ProfileEditor = { coachId: number } | { staffId: number }
 
+const EMPTY: StudentProfileEdit = { level: null, grip: null, tags: [], note: '' }
+
 function editOf(tx: Q, studentId: number): StudentProfileEdit {
   const row = tx
     .select()
     .from(studentProfiles)
     .where(eq(studentProfiles.studentId, studentId))
     .get()
-  return row ? profileEdit(row) : { level: null, grip: null, tags: [], note: '' }
+  return row ? profileEdit(row) : EMPTY
 }
 
 /** The profile with the student's lesson, no-show and feedback counts at the venue. */
@@ -81,7 +83,7 @@ export function studentProfile(tx: Q, studentId: number, now: Date): StudentProf
         ? { kind: 'staff' as const, name: row.staff }
         : null
   return {
-    ...(row ? profileEdit(row.profile) : { level: null, grip: null, tags: [], note: '' }),
+    ...(row ? profileEdit(row.profile) : EMPTY),
     lessons: counts?.lessons ?? 0,
     noShows: counts?.noShows ?? 0,
     feedbackCount: feedback?.n ?? 0,

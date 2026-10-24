@@ -268,33 +268,41 @@ try {
     await screenshot('saved-by-coach')
   })
 
-  await step('a save on top of the venue change is refused and shows theirs', async () => {
-    await invoke('editProfile')
-    page = await waitForPage('coach/profile/index', (d) => d.state === 'ready')
-    await invoke('onNote', { detail: { value: '教练这边的改动' } })
-    await call(
-      'PUT',
-      `/admin/students/${studentId}/profile`,
-      { level: 'elementary', grip: 'shakehand', tags: ['发球好'], note: '场馆先改了' },
-      admin,
-    )
-    await miniProgram.mockWxMethod('showModal', { confirm: true, errMsg: 'showModal:ok' })
-    try {
+  await step(
+    'a save on top of the venue change keeps the coach edit and takes theirs',
+    async () => {
+      await invoke('editProfile')
+      page = await waitForPage('coach/profile/index', (d) => d.state === 'ready')
+      await invoke('onNote', { detail: { value: '教练这边的改动' } })
+      await call(
+        'PUT',
+        `/admin/students/${studentId}/profile`,
+        { level: 'elementary', grip: 'shakehand', tags: ['发球好'], note: '场馆先改了' },
+        admin,
+      )
+      await miniProgram.mockWxMethod('showModal', { confirm: true, errMsg: 'showModal:ok' })
+      try {
+        await invoke('save')
+        page = await waitForPage(
+          'coach/profile/index',
+          (d) => d.state === 'ready' && d.levelText === '初级',
+        )
+      } finally {
+        await miniProgram.restoreWxMethod('showModal')
+      }
+      const data = await page.data()
+      check(data.note === '教练这边的改动', `the coach's note was lost: ${data.note}`)
+      check(data.gripText === '横拍' && JSON.stringify(data.tags) === '["发球好"]', 'not merged')
+      check(String(data.edited).startsWith('场馆'), `edited: ${data.edited}`)
+      check(data.canSave === true, 'the merged form should be saveable')
+      await screenshot('conflict-merged')
       await invoke('save')
       page = await waitForPage(
-        'coach/profile/index',
-        (d) => d.state === 'ready' && d.note === '场馆先改了',
+        'coach/lesson/index',
+        (d) => (d.profile as ProfileView)?.note === '教练这边的改动',
       )
-    } finally {
-      await miniProgram.restoreWxMethod('showModal')
-    }
-    const data = await page.data()
-    check(String(data.edited).startsWith('场馆'), `edited: ${data.edited}`)
-    check(data.canSave === false, 'nothing to save after reloading')
-    await screenshot('conflict-reloaded')
-    await miniProgram.navigateBack()
-    page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
-  })
+    },
+  )
 
   await step('the student 课后点评 from every coach are listed', async () => {
     const coachToken = (await call('POST', '/coach/login', { code: `dev:qa_sp_coach_${run}` }))

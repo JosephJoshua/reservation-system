@@ -65,7 +65,12 @@ export function saveCoachProfile(
   edit: StudentProfileEdit,
   check: (current: StudentProfileEdit) => void,
 ): CoachLessonDto {
-  saveStudentProfile(deps, profileStudent(deps, bookingId, coachId), edit, { coachId }, check)
+  const studentId = profileStudent(deps, bookingId, coachId)
+  saveStudentProfile(deps, studentId, edit, { coachId }, (current) => {
+    // Again inside the save's transaction, so a lesson cancelled or moved meanwhile refuses it.
+    if (profileStudent(deps, bookingId, coachId) !== studentId) throw notFound('课程')
+    check(current)
+  })
   return coachLesson(deps, bookingId, coachId)
 }
 
