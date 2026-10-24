@@ -1,7 +1,7 @@
 import { defaultSettings } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings, coaches, coachLessonTypes, lessonTypes, students } from './db/schema'
+import { bookings, coaches, coachLessonTypes, lessonTypes, slots, students } from './db/schema'
 import { countsForPay } from './services/coach-pay'
 import { type Harness, setup } from './test/harness'
 
@@ -335,7 +335,83 @@ describe('课时费 in the bookings export', () => {
     const rows = (await res.text())
       .trimEnd()
       .split('\r\n')
-      .map((l) => l.split(',').at(-1))
+      .map((l) => l.split(',').at(-2))
     expect(rows).toEqual(['课时费（元）', '80.50', '', '未设置', ''])
+  })
+})
+
+describe('coach pay for group sessions', () => {
+  it('counts a session once, however many students took a seat', async () => {
+    const h = setup({ now: '2026-10-28T12:00:00Z' })
+    const { wang } = venue(h)
+    const admin = await h.admin()
+    const kids = h.db
+      .insert(lessonTypes)
+      .values({ name: '少儿小班课', durationMinutes: 60, price: 8000, capacity: 4 })
+      .returning()
+      .get()
+    const cat = await category(h, admin, '主教练', [{ lessonTypeId: kids.id, rate: 10000 }])
+    h.db.update(coaches).set({ categoryId: cat.id }).where(eq(coaches.id, wang.id)).run()
+    const kid = (n: number) =>
+      h.db
+        .insert(students)
+        .values({ openid: `k${n}`, name: `学员${n}` })
+        .returning()
+        .get()
+    const seats = (
+      date: string,
+      list: Partial<typeof bookings.$inferInsert>[],
+      session: Partial<typeof slots.$inferInsert> = {},
+    ) => {
+      const slot = h.slot(wang.id, date, 9)
+      h.db
+        .update(slots)
+        .set({ lessonTypeId: kids.id, capacity: 4, ...session })
+        .where(eq(slots.id, slot.id))
+        .run()
+      list.forEach((fields, i) => {
+        h.db
+          .insert(bookings)
+          .values({
+            slotId: slot.id,
+            seat: i + 1,
+            studentId: kid(Number(`${date.slice(-2)}${i}`)).id,
+            lessonTypeId: kids.id,
+            startsAt: slot.startsAt,
+            endsAt: slot.endsAt,
+            status: 'confirmed',
+            paidWith: 'order',
+            price: 8000,
+            ...fields,
+          })
+          .run()
+      })
+    }
+    seats('2026-10-20', [
+      { attendance: 'attended' },
+      { attendance: 'attended' },
+      { attendance: 'no_show' },
+    ])
+    const off = { status: 'cancelled', cancelledBy: 'venue' } as const
+    seats('2026-10-21', [off, off], { cancelledAt: new Date('2026-10-20T00:00:00Z') })
+
+    const r = (await h.call('GET', '/admin/reports/monthly?month=2026-10', undefined, admin)).json
+    expect(r.coaches[0]).toMatchObject({
+      taught: 1,
+      minutes: 60,
+      attended: 2,
+      noShow: 1,
+      venueCancelled: 1,
+      pay: { amount: 10000, lessons: 1 },
+    })
+    const res = await h.app.request('/api/admin/exports/bookings?from=2026-10-01&to=2026-10-31', {
+      headers: { Authorization: `Bearer ${admin}` },
+    })
+    const pay = (await res.text())
+      .trimEnd()
+      .split('\r\n')
+      .slice(1)
+      .map((l) => l.split(',').at(-2))
+    expect(pay).toEqual(['100.00', '', '', '', ''])
   })
 })

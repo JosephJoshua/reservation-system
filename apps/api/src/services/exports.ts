@@ -228,6 +228,8 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
       bookedBy: staff.name,
       orderProvider: orders.provider,
       offlineMethod: orders.offlineMethod,
+      sessionId: slots.lessonTypeId,
+      capacity: slots.capacity,
     })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
@@ -254,6 +256,19 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
   )
   const payRules = getSettings(tx).pay
   const rateOf = payRateLookup(tx)
+  // A group session is paid once, on the first of its seats that counts.
+  const paidSessions = new Set<number>()
+  const payFor = (
+    b: (typeof rows)[number]['b'],
+    r: { coachId: number; sessionId: number | null },
+  ) => {
+    if (!countsForPay(b, payRules, now)) return ''
+    if (r.sessionId !== null) {
+      if (paidSessions.has(b.slotId)) return ''
+      paidSessions.add(b.slotId)
+    }
+    return payCell(rateOf(r.coachId, b.lessonTypeId))
+  }
   return {
     header: [
       '预约ID',
@@ -273,6 +288,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
       '取消方',
       '取消原因',
       '课时费（元）',
+      '小班课',
     ],
     rows: rows.map(({ b, ...r }) => {
       const shown = b.status === 'confirmed' && b.endsAt <= now ? 'completed' : b.status
@@ -300,7 +316,9 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
         venueTime(b.cancelledAt),
         b.cancelledBy === 'venue' ? '场馆' : b.cancelledBy === 'student' ? '学员' : '',
         b.cancelReason ?? '',
-        countsForPay(b, payRules, now) ? payCell(rateOf(r.coachId, b.lessonTypeId)) : '',
+        payFor(b, r),
+        // The session it is a seat in: its slot and size, so seats of one session group together.
+        r.sessionId === null ? '' : `#${b.slotId}（${r.capacity}人）`,
       ]
     }),
   }

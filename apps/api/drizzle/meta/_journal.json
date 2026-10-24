@@ -92,6 +92,13 @@
       "when": 1792836724297,
       "tag": "0012_student_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792840013403,
+      "tag": "0013_group_classes",
+      "breakpoints": true
     }
   ]
 }

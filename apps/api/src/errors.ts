@@ -62,6 +62,8 @@ const FIELD_LABELS: Record<string, string> = {
   trialLimitPerStudent: '每人体验课次数',
   studentMoves: '学员自助改约次数',
   durationMinutes: '时长',
+  capacity: '人数上限',
+  minStudents: '最低开班人数',
   price: '价格',
   rate: '课时费',
   salePrice: '限时价',

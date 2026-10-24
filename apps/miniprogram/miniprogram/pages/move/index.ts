@@ -30,6 +30,8 @@ interface SlotView {
   closed: boolean
   /** Refused for this lesson, say by a package that ends before it. */
   refused: boolean
+  /** Seats left in a group session; null for a private slot. */
+  seatsLeft: number | null
 }
 
 Page({
@@ -132,11 +134,14 @@ Page({
       const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
       const now = Date.now()
       const notice = (this.catalog?.booking.minNoticeMinutes ?? 0) * 60_000
+      // A group class moves to another session of the same class, a private lesson to a private slot.
+      const sessionOf = booking.capacity > 1 ? booking.lessonType.id : null
       const slots = rows
         .filter(
           (s) =>
             Date.parse(s.startsAt) > now &&
-            Date.parse(s.endsAt) - Date.parse(s.startsAt) === length,
+            Date.parse(s.endsAt) - Date.parse(s.startsAt) === length &&
+            s.lessonTypeId === sessionOf,
         )
         .map((s) => {
           const current = s.coachId === booking.coach.id && s.startsAt === booking.startsAt
@@ -150,6 +155,7 @@ Page({
             current,
             closed: !s.available && Date.parse(s.startsAt) - now < notice,
             refused: this.refused.has(s.id),
+            seatsLeft: sessionOf === null ? null : s.seatsLeft,
           }
         })
       this.setData({ slotsState: 'ready', slots })

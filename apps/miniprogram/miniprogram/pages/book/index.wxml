@@ -81,10 +81,13 @@
     {{error}}
   </view>
   <view wx:elif="{{!slots.length}}" class="slots-empty">
-    <t-empty icon="{{emptyIcon}}" description="这一天没有可预约的时段" />
+    <t-empty icon="{{emptyIcon}}" description="{{capacity > 1 ? '这一天没有排课' : '这一天没有可预约的时段'}}" />
   </view>
   <view wx:else>
-    <view class="section-title">
+    <view wx:if="{{capacity > 1}}" class="section-title">
+      {{availableCount ? '可报名 ' + availableCount + ' 节，每节 ' + duration + ' 分钟' : '这一天已无可报名的课'}}
+    </view>
+    <view wx:else class="section-title">
       {{availableCount ? '可预约 ' + availableCount + ' 个时段，每节 ' + duration + ' 分钟' : '这一天已无可约时段'}}
     </view>
     <view class="slot-grid">
@@ -97,7 +100,11 @@
         bind:tap="pickSlot"
       >
         <view class="slot-time">{{item.time}}</view>
-        <view class="slot-sub">{{item.available ? (coachId ? '可约' : item.coachName) : item.closed ? '已截止' : '已约满'}}</view>
+        <view wx:if="{{item.seatsLeft === null}}" class="slot-sub">{{item.available ? (coachId ? '可约' : item.coachName) : item.closed ? '已截止' : '已约满'}}</view>
+        <block wx:else>
+          <view wx:if="{{!coachId}}" class="slot-sub">{{item.coachName}}</view>
+          <view class="slot-sub">{{item.available ? '剩 ' + item.seatsLeft + ' 位' : item.closed ? '已截止' : '已满员'}}</view>
+        </block>
       </view>
     </view>
   </view>

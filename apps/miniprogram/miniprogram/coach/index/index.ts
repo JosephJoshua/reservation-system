@@ -19,7 +19,7 @@ interface DayView {
 
 interface SlotView {
   id: number
-  kind: 'lesson' | 'free' | 'closed' | 'past'
+  kind: 'lesson' | 'session' | 'free' | 'closed' | 'past'
   start: string
   end: string
   bookingId: number
@@ -41,6 +41,17 @@ function slotView(s: CoachSlotDto, now: number): SlotView {
     label: '',
     tag: '',
     tone: 'default',
+  }
+  if (s.group) {
+    const g = s.group
+    return {
+      ...base,
+      kind: 'session',
+      student: g.lessonTypeName,
+      lesson: `已报名 ${g.booked}/${g.capacity} 人`,
+      tag: g.cancelled ? '已取消' : '小班课',
+      tone: g.cancelled ? 'default' : 'primary',
+    }
   }
   if (s.lesson) {
     const tag = lessonTag(s.lesson, s.startsAt, now)
@@ -143,7 +154,8 @@ Page({
       this.schedule = rows
       const counts = new Map<string, number>()
       for (const s of rows) {
-        if (!s.lesson) continue
+        // A group session counts once it has students and is still on.
+        if (!s.lesson && !(s.group && s.group.booked > 0 && !s.group.cancelled)) continue
         const key = venueDateKey(new Date(s.startsAt))
         counts.set(key, (counts.get(key) ?? 0) + 1)
       }
@@ -164,7 +176,7 @@ Page({
     const slots = this.schedule
       .filter((s) => venueDateKey(new Date(s.startsAt)) === this.data.date)
       .map((s) => slotView(s, now))
-    const lessons = slots.filter((s) => s.kind === 'lesson').length
+    const lessons = slots.filter((s) => s.kind === 'lesson' || s.kind === 'session').length
     const free = slots.filter((s) => s.kind === 'free').length
     const parts = [lessons ? `${lessons} 节课` : '没有预约', free ? `${free} 个空闲时段` : '']
     const past = this.data.date < venueDateKey(new Date(now))
@@ -189,6 +201,10 @@ Page({
     askForNotices()
     if (slot.kind === 'lesson') {
       navigateOnce(`/coach/lesson/index?id=${slot.bookingId}`)
+      return
+    }
+    if (slot.kind === 'session') {
+      navigateOnce(`/coach/session/index?id=${slot.id}`)
       return
     }
     if (this.slotBusy) return

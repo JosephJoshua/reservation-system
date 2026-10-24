@@ -14,7 +14,7 @@ import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import { accountDeleted } from './account'
 import { describeBooking, logAction, yuan } from './action-log'
-import { checkBookable, usablePackage } from './bookings'
+import { checkBookable, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
 
 export interface FrontDeskBookingInput {
@@ -44,6 +44,7 @@ function check(
   const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
   if (!slot) throw notFound('时段')
   if (slot.startsAt <= now) throw new ApiError(409, 'started', '该时段已开始')
+  if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
   if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段已关闭，请先重新开放')
   const lessonType = tx
     .select()
@@ -51,9 +52,14 @@ function check(
     .where(eq(lessonTypes.id, input.lessonTypeId))
     .get()
   if (!lessonType?.active) throw notFound('课程')
-  const price = checkBookable(tx, now, { studentId: student.id, slot, lessonType }, '该学员')
+  const { price, seat } = checkBookable(
+    tx,
+    now,
+    { studentId: student.id, slot, lessonType },
+    '该学员',
+  )
   const pkg = lessonType.isTrial ? undefined : usablePackage(tx, student.id, lessonType.id, slot)
-  return { student, slot, lessonType, price, pkg }
+  return { student, slot, lessonType, price, seat, pkg }
 }
 
 /** What the booking would cost, for the front desk's confirm step. */
@@ -83,9 +89,10 @@ export function frontDeskQuote(
 export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBookingInput) {
   const now = deps.now()
   return immediate(deps.db, (tx) => {
-    const { slot, lessonType, price, pkg } = check(tx, now, input)
+    const { slot, lessonType, price, seat, pkg } = check(tx, now, input)
     const base = {
       slotId: slot.id,
+      seat,
       studentId: input.studentId,
       lessonTypeId: lessonType.id,
       startsAt: slot.startsAt,
@@ -165,7 +172,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
       })
       return { bookingId: booking.id }
     } catch (e) {
-      if (isUniqueViolation(e)) throw new ApiError(409, 'slot_taken', '该时段已被预约')
+      if (isUniqueViolation(e)) throw seatTaken(slot)
       throw e
     }
   })

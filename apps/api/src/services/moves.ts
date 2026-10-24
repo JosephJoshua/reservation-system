@@ -20,7 +20,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
-import { assertNoClash, assertSlotFree, slotTaken, windowMessages } from './bookings'
+import { assertNoClash, assertTeaches, seatTaken, takeSeat, windowMessages } from './bookings'
 import { priceFor } from './catalog'
 import { coachNowKnows } from './coach-notices'
 import { moveSummaries } from './move-history'
@@ -62,7 +62,12 @@ function coachError(
 /** The booking with its slot's coach and lesson type. */
 function bookingRow(tx: Q, bookingId: number) {
   return tx
-    .select({ booking: bookings, coachId: slots.coachId, lessonType: lessonTypes })
+    .select({
+      booking: bookings,
+      coachId: slots.coachId,
+      inSession: slots.lessonTypeId,
+      lessonType: lessonTypes,
+    })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
     .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
@@ -136,9 +141,10 @@ function checkStudentMove(
 }
 
 /**
- * Moves a confirmed lesson to another free slot of the same length. The old slot is freed and the
- * new one taken in one IMMEDIATE transaction, and the unique index on live bookings refuses a slot
- * someone else took meanwhile. The payment or package lesson stays with the booking. Moving to
+ * Moves a confirmed lesson to a free seat in another slot of the same length and kind: a private
+ * slot, or another session of the same group class. The old seat is freed and the new one taken
+ * in one IMMEDIATE transaction, and the unique index on live seats refuses a seat someone else
+ * took meanwhile. The payment or package lesson stays with the booking. Moving to
  * the slot it is already in is a no-op, so a repeated request does nothing more.
  */
 export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: Mover): boolean {
@@ -160,13 +166,19 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
       throw new ApiError(409, 'not_movable', '只有预约成功的课程可以改约')
     }
     if (booking.startsAt <= now) throw new ApiError(409, 'started', '课程已开始，无法改约')
+    // The venue runs its group sessions; a coach cannot move a student out of one.
+    if (coach !== null && row.inSession !== null) {
+      throw new ApiError(409, 'group_lesson', '小班课请联系场馆调整')
+    }
 
     const slot = tx.select().from(slots).where(eq(slots.id, slotId)).get()
     // Its own code, so a page can offer other times instead of treating the lesson as gone.
     if (!slot || (coach !== null && slot.coachId !== coach)) {
       throw new ApiError(404, 'slot_not_found', '时段不存在')
     }
-    if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段不可预约')
+    if (!slot.open || slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该时段不可预约')
+    // A group class moves to another session of the same class, a private lesson to a private slot.
+    assertTeaches(slot, lessonType)
     // Its own code: 'started' means the lesson itself can no longer move.
     if (slot.startsAt <= now) throw new ApiError(409, 'slot_started', '该时段已开始')
     const length = booking.endsAt.getTime() - booking.startsAt.getTime()
@@ -184,7 +196,7 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
       throw new ApiError(409, 'package_expires', '课时包在该时段前到期')
     }
 
-    assertSlotFree(tx, slot.id)
+    const seat = takeSeat(tx, slot)
     assertNoClash(
       tx,
       booking.studentId,
@@ -199,7 +211,13 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
     try {
       const moved = tx
         .update(bookings)
-        .set({ slotId: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt, ...coachKnows })
+        .set({
+          slotId: slot.id,
+          seat,
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          ...coachKnows,
+        })
         .where(
           and(
             eq(bookings.id, booking.id),
@@ -210,7 +228,7 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
         .run()
       if (moved.changes !== 1) throw new ApiError(409, 'not_movable', '预约已变化，请刷新')
     } catch (e) {
-      if (isUniqueViolation(e)) throw slotTaken()
+      if (isUniqueViolation(e)) throw seatTaken(slot)
       throw e
     }
     tx.insert(bookingMoves)

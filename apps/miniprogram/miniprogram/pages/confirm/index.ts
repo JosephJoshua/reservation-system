@@ -1,4 +1,10 @@
-import type { BookingQuoteDto, CreateBookingResponse, MeDto, StudentDto } from '../../lib/shared'
+import {
+  type BookingQuoteDto,
+  type CreateBookingResponse,
+  type MeDto,
+  minCheckHours,
+  type StudentDto,
+} from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
@@ -22,6 +28,8 @@ Page({
     isTrial: false,
     when: '',
     duration: 0,
+    /** For a group class: who it is for and when it is called off. */
+    groupNote: '',
     coachName: '',
     coachTitle: '',
     coachAvatar: '',
@@ -83,6 +91,14 @@ Page({
         lessonName: lessonType.name,
         isTrial: lessonType.isTrial,
         duration: lessonType.durationMinutes,
+        groupNote:
+          lessonType.capacity > 1
+            ? `小班课，多人同上${
+                lessonType.minStudents
+                  ? `；课前 ${minCheckHours(catalog.booking)} 小时报名不足 ${lessonType.minStudents} 人将自动取消，退款或退回课时`
+                  : ''
+              }`
+            : '',
         coachName: coach.name,
         coachTitle: coach.title,
         coachAvatar: coach.avatarUrl ? assetUrl(coach.avatarUrl) : '',

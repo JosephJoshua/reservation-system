@@ -24,7 +24,7 @@ export interface CoachSlotDto {
   startsAt: string
   endsAt: string
   open: boolean
-  /** The live booking in this slot. */
+  /** The live booking in a private slot; null in a group session. */
   lesson: {
     bookingId: number
     status: BookingStatus
@@ -33,6 +33,33 @@ export interface CoachSlotDto {
     lessonTypeName: string
     isTrial: boolean
   } | null
+  /** A group session and its students. */
+  group: {
+    lessonTypeName: string
+    capacity: number
+    /** Live bookings, held or confirmed. */
+    booked: number
+    cancelled: boolean
+  } | null
+}
+
+/** A group session with its roster, for the coach's session page. */
+export interface CoachSessionDto {
+  id: number
+  startsAt: string
+  endsAt: string
+  lessonTypeName: string
+  capacity: number
+  cancelled: boolean
+  cancelReason: string | null
+  students: {
+    bookingId: number
+    name: string
+    status: BookingStatus
+    attendance: Attendance | null
+    canMarkAttendance: boolean
+    hasFeedback: boolean
+  }[]
 }
 
 export interface CoachLessonDto {
@@ -41,6 +68,8 @@ export interface CoachLessonDto {
   startsAt: string
   endsAt: string
   lessonType: { id: number; name: string; isTrial: boolean }
+  /** The group session it is a seat in, or null for a private lesson. */
+  sessionId: number | null
   student: { id: number; name: string; phone: string }
   /**
    * The venue's 学员档案, read only. Null once the lesson is cancelled or ended over a week ago, or

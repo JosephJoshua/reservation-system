@@ -26,6 +26,8 @@ interface SlotView {
   endsAt: string
   available: boolean
   closed: boolean
+  /** Seats left in a group session; null for a private slot. */
+  seatsLeft: number | null
 }
 
 Page({
@@ -37,6 +39,8 @@ Page({
     lessonTypeId: 0,
     lessonName: '',
     duration: 0,
+    /** Students per session, more than 1 for a group class. */
+    capacity: 1,
     coaches: [] as CoachOption[],
     coachId: 0,
     /** The coach picked in the strip, for the line that links to their page. */
@@ -109,6 +113,7 @@ Page({
         state: 'ready',
         lessonName: lessonType.name,
         duration: lessonType.durationMinutes,
+        capacity: lessonType.capacity,
         coaches,
         coachId,
         picked: coaches.find((c) => c.id === coachId) ?? null,
@@ -153,6 +158,7 @@ Page({
           available: s.available,
           // Too close to start to book online, as opposed to booked by someone else.
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
+          seatsLeft: s.lessonTypeId === null ? null : s.seatsLeft,
         }))
       const availableCount = slots.filter((s) => s.available).length
       if (openDays && availableCount === 0) {

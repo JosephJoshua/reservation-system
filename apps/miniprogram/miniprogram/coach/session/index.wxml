@@ -1,0 +1,69 @@
+<theme-root>
+<view wx:if="{{state === 'loading'}}" class="centered">
+  <t-loading theme="circular" size="48rpx" />
+</view>
+
+<view wx:elif="{{state === 'error'}}" class="centered">
+  <view>
+    <t-empty icon="{{errorIcon}}" description="{{error}}" />
+    <view class="retry"><t-button theme="primary" variant="outline" bind:tap="retry">重新加载</t-button></view>
+  </view>
+</view>
+
+<view wx:else class="{{canMarkAll ? 'has-action-bar' : 'page-bottom'}}">
+  <view class="status">
+    <view class="status-text-block">
+      <view class="status-title">{{session.lessonTypeName}}</view>
+      <view class="status-text">{{when}}</view>
+    </view>
+    <t-tag size="large" theme="{{session.cancelled ? 'default' : 'primary'}}" variant="light">{{session.cancelled ? '已取消' : count + '/' + session.capacity + ' 人'}}</t-tag>
+  </view>
+
+  <view wx:if="{{session.cancelled}}" class="card cancelled">场馆已取消这节课：{{session.cancelReason}}</view>
+
+  <view class="section-title">学员名单</view>
+  <view wx:if="{{!students.length}}" class="card">
+    <view class="inline-empty"><t-empty icon="{{emptyIcon}}" description="{{session.cancelled ? '学员的预约已全部取消' : '还没有学员报名'}}" /></view>
+  </view>
+  <view wx:else class="card list">
+    <view
+      wx:for="{{students}}"
+      wx:key="bookingId"
+      class="row"
+      hover-class="row-hover"
+      data-index="{{index}}"
+      bind:tap="openStudent"
+    >
+      <view class="row-main">
+        <view class="row-title">{{item.name}}</view>
+        <view class="row-sub">{{item.sub}}</view>
+      </view>
+      <view wx:if="{{item.canMark}}" class="marks" catch:tap="noop">
+        <view
+          class="mark {{item.attendance === 'attended' ? 'mark-attended' : ''}}"
+          hover-class="mark-hover"
+          data-index="{{index}}"
+          data-value="attended"
+          catch:tap="mark"
+        >到课</view>
+        <view
+          class="mark {{item.attendance === 'no_show' ? 'mark-no-show' : ''}}"
+          hover-class="mark-hover"
+          data-index="{{index}}"
+          data-value="no_show"
+          catch:tap="mark"
+        >缺席</view>
+      </view>
+      <t-tag wx:else size="medium" theme="{{item.tone}}" variant="light">{{item.tag}}</t-tag>
+      <view class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+    </view>
+  </view>
+  <view wx:if="{{students.length}}" class="footnote">{{footnote}}</view>
+
+  <view wx:if="{{canMarkAll}}" class="action-bar">
+    <view class="grow">
+      <t-button block t-class="action-button" theme="primary" loading="{{markingAll}}" disabled="{{markingAll}}" bind:tap="markAll">未签到的全部记为到课</t-button>
+    </view>
+  </view>
+</view>
+</theme-root>

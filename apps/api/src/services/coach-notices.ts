@@ -41,6 +41,93 @@ export async function notifyCoaches(deps: Deps) {
   // Moves first: a lesson moved to another coach is then announced to them as new.
   await notifyMoves(deps)
   for (const kind of ['booked', 'cancelled'] as const) await notify(deps, kind)
+  await notifySessions(deps)
+}
+
+/**
+ * Tells a coach once that a group session of theirs has students, and once that a session they
+ * heard about was called off. Seats coming and going in between are not news to them.
+ */
+async function notifySessions(deps: Deps) {
+  const { db } = deps
+  const now = deps.now()
+  const session = {
+    id: slots.id,
+    startsAt: slots.startsAt,
+    endsAt: slots.endsAt,
+    reason: slots.cancelReason,
+    lesson: lessonTypes.name,
+    openid: coaches.openid,
+    coach: coaches.name,
+  }
+  const base = () =>
+    db
+      .select(session)
+      .from(slots)
+      .innerJoin(lessonTypes, eq(lessonTypes.id, slots.lessonTypeId))
+      .innerJoin(coaches, eq(coaches.id, slots.coachId))
+  const booked = base()
+    .where(
+      and(
+        isNull(slots.coachToldBookedAt),
+        isNull(slots.cancelledAt),
+        gt(slots.startsAt, now),
+        sql`exists (select 1 from ${bookings} where ${bookings.slotId} = ${slots.id} and ${bookings.status} = 'confirmed')`,
+      ),
+    )
+    .limit(BATCH)
+    .all()
+  for (const s of booked) {
+    const count = db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(and(eq(bookings.slotId, s.id), eq(bookings.status, 'confirmed')))
+      .all().length
+    const sent = await send(
+      deps,
+      'coach_booked',
+      { openid: s.openid, startsAt: s.startsAt },
+      `coach/session/index?id=${s.id}`,
+      {
+        student: `已有 ${count} 人报名`,
+        lesson: s.lesson,
+        time: lessonTime(s.startsAt, s.endsAt),
+        coach: s.coach,
+        reason: '',
+      },
+      s.id,
+    )
+    if (!sent) continue
+    db.update(slots).set({ coachToldBookedAt: now }).where(eq(slots.id, s.id)).run()
+  }
+  const cancelled = base()
+    .where(
+      and(
+        isNotNull(slots.cancelledAt),
+        isNotNull(slots.coachToldBookedAt),
+        isNull(slots.coachToldCancelledAt),
+      ),
+    )
+    .limit(BATCH)
+    .all()
+  for (const s of cancelled) {
+    const sent = await send(
+      deps,
+      'coach_cancelled',
+      { openid: s.openid, startsAt: s.startsAt },
+      `coach/session/index?id=${s.id}`,
+      {
+        student: '小班课',
+        lesson: s.lesson,
+        time: lessonTime(s.startsAt, s.endsAt),
+        coach: s.coach,
+        reason: s.reason ?? '',
+      },
+      s.id,
+    )
+    if (!sent) continue
+    db.update(slots).set({ coachToldCancelledAt: now }).where(eq(slots.id, s.id)).run()
+  }
 }
 
 /** Sends one message; false when WeChat could not be reached and it should be tried again. */
@@ -106,7 +193,12 @@ async function notify(deps: Deps, kind: 'booked' | 'cancelled') {
   const pending = lessons(deps, kind === 'booked' ? 'slot' : 'told')
     .where(
       kind === 'booked'
-        ? and(eq(bookings.status, 'confirmed'), isNull(bookings.coachToldBookedAt))
+        ? and(
+            eq(bookings.status, 'confirmed'),
+            isNull(bookings.coachToldBookedAt),
+            // Coaches hear about a group session as a whole (notifySessions).
+            isNull(slots.lessonTypeId),
+          )
         : and(
             eq(bookings.status, 'cancelled'),
             // Only lessons the coach heard about; a hold that never got paid is not news.

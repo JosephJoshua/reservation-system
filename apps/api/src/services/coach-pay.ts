@@ -26,6 +26,20 @@ export function countsForPay(l: PayableLesson, rules: PayRules, now: Date) {
   return false
 }
 
+/**
+ * A group session is one lesson for its coach, however many students took a seat. Keeps private
+ * lessons and the first seat of each session.
+ */
+export function onePerSession<T extends { slotId: number; sessionOf: number | null }>(rows: T[]) {
+  const seen = new Set<number>()
+  return rows.filter((r) => {
+    if (r.sessionOf === null) return true
+    if (seen.has(r.slotId)) return false
+    seen.add(r.slotId)
+    return true
+  })
+}
+
 /** Looks up a coach's pay rate for a lesson type, in fen, from the coach's current category. */
 export function payRateLookup(tx: Q) {
   const categoryOf = new Map(

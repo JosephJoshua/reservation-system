@@ -352,12 +352,17 @@ function MoveDialog({
   } = useApi<Slot[]>(coachId ? `/admin/slots?${params}` : null)
   const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
   // Checked against the coach and day shown, since a failed or slow load keeps the last list.
+  // A group class moves to another session of the same class with a free seat.
+  const sessionOf = booking.capacity > 1 ? booking.lessonType.id : null
   const free = (data ?? []).filter(
     (s) =>
       s.coachId === coachId &&
       venueDateKey(new Date(s.startsAt)) === date &&
       s.open &&
-      !s.booking &&
+      !s.cancelledAt &&
+      s.lessonTypeId === sessionOf &&
+      s.bookings.length < s.capacity &&
+      !(s.coachId === booking.coach.id && s.startsAt === booking.startsAt) &&
       Date.parse(s.startsAt) > Date.now() &&
       Date.parse(s.endsAt) - Date.parse(s.startsAt) === length,
   )
@@ -433,7 +438,7 @@ function MoveDialog({
             loading={loading}
             placeholder="选择空闲时段"
             options={free.map((s) => ({
-              label: `${fmtTime(s.startsAt)}-${fmtTime(s.endsAt)}`,
+              label: `${fmtTime(s.startsAt)}-${fmtTime(s.endsAt)}${sessionOf ? ` 剩 ${s.capacity - s.bookings.length} 位` : ''}`,
               value: s.id,
             }))}
             onChange={(v) => setSlotId(Number(v))}

@@ -4,6 +4,8 @@ import {
   type CancelledBy,
   cancellationOutcome,
   freeCancelDeadline,
+  freeSeat,
+  isGroup,
 } from '@rs/shared'
 import { and, asc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
@@ -29,15 +31,48 @@ import { getSettings } from './settings'
 export const LIVE = ['pending_payment', 'confirmed'] as const
 
 export const slotTaken = () => new ApiError(409, 'slot_taken', '该时段已被预约')
+/** Taken for a private slot, full for a group session. */
+export const seatTaken = (slot: Pick<SlotRow, 'lessonTypeId'>) =>
+  slot.lessonTypeId === null ? slotTaken() : new ApiError(409, 'slot_taken', '该课已满员')
 
-/** Refuses a slot someone holds or booked. The unique index backs this up on insert. */
-export function assertSlotFree(tx: Q, slotId: number) {
-  const taken = tx
-    .select({ id: bookings.id })
+type SlotRow = typeof slots.$inferSelect
+
+/** The seats live bookings hold in a slot. */
+export function takenSeats(tx: Q, slotId: number) {
+  return tx
+    .select({ seat: bookings.seat })
     .from(bookings)
     .where(and(eq(bookings.slotId, slotId), inArray(bookings.status, LIVE)))
-    .get()
-  if (taken) throw slotTaken()
+    .all()
+    .map((r) => r.seat)
+}
+
+/** A free seat in the slot, or null when it is full. */
+export function seatFor(tx: Q, slot: Pick<SlotRow, 'id' | 'capacity'>) {
+  return freeSeat(takenSeats(tx, slot.id), slot.capacity)
+}
+
+/**
+ * The seat a new booking in this slot takes; refuses a slot that is full. The unique index on
+ * live seats backs this up on insert, so concurrent requests never share a seat.
+ */
+export function takeSeat(tx: Q, slot: SlotRow) {
+  const seat = seatFor(tx, slot)
+  if (seat === null) throw seatTaken(slot)
+  return seat
+}
+
+/**
+ * Refuses a lesson type the slot does not teach: a group session teaches its own lesson type
+ * only, and a private slot takes private lessons only.
+ */
+export function assertTeaches(
+  slot: Pick<SlotRow, 'lessonTypeId'>,
+  lessonType: { id: number; capacity: number },
+) {
+  const fits =
+    slot.lessonTypeId === null ? !isGroup(lessonType) : slot.lessonTypeId === lessonType.id
+  if (!fits) throw new ApiError(409, 'lesson_type_mismatch', '该时段不能预约这门课')
 }
 
 /** Refuses a time the student already has another lesson at; `except` is the one being moved. */
@@ -124,6 +159,7 @@ export function quoteBooking(deps: Deps, studentId: number, slotId: number, less
   const slot = db.select().from(slots).where(eq(slots.id, slotId)).get()
   const lessonType = db.select().from(lessonTypes).where(eq(lessonTypes.id, lessonTypeId)).get()
   if (!student || !slot || !lessonType || !visibleTo(lessonType, student)) throw notFound('时段')
+  assertTeaches(slot, lessonType)
   const price = priceFor(db, slot.coachId, lessonType, deps.now())
   if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
   const pkg = lessonType.isTrial ? undefined : usablePackage(db, studentId, lessonType.id, slot)
@@ -136,8 +172,9 @@ export function quoteBooking(deps: Deps, studentId: number, slotId: number, less
 
 /**
  * The checks a booking passes whoever makes it: the lesson fits the slot, the coach teaches it,
- * the slot is free, the student has nothing else then, and a trial is still allowed. Returns the
- * price. `who` names the student in messages: the student themself, or the front desk's student.
+ * the slot has a free seat, the student has nothing else then, and a trial is still allowed.
+ * Returns the price and the seat. `who` names the student in messages: the student themself, or
+ * the front desk's student.
  */
 export function checkBookable(
   tx: Q,
@@ -150,13 +187,15 @@ export function checkBookable(
   who: '你' | '该学员',
 ) {
   const { studentId, slot, lessonType } = b
+  if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
+  assertTeaches(slot, lessonType)
   const minutes = (slot.endsAt.getTime() - slot.startsAt.getTime()) / 60_000
   if (minutes !== lessonType.durationMinutes) {
     throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
   }
   const price = priceFor(tx, slot.coachId, lessonType, now)
   if (!price) throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
-  assertSlotFree(tx, slot.id)
+  const seat = takeSeat(tx, slot)
   assertNoClash(tx, studentId, slot, `${who}在这个时间已有预约`)
   if (lessonType.isTrial) {
     const settings = getSettings(tx)
@@ -165,13 +204,13 @@ export function checkBookable(
       throw new ApiError(409, 'trial_used', `${who === '你' ? '' : who}体验课次数已用完`)
     }
   }
-  return price
+  return { price, seat }
 }
 
 /**
- * Books a slot. Everything that decides whether the booking is allowed runs in one IMMEDIATE
- * transaction, and a partial unique index allows one live booking per slot, so concurrent
- * requests for the same slot get exactly one winner. Paid bookings hold the slot as
+ * Books a seat in a slot. Everything that decides whether the booking is allowed runs in one
+ * IMMEDIATE transaction, and a partial unique index allows one live booking per seat, so
+ * concurrent requests for the last seat get exactly one winner. Paid bookings hold the slot as
  * pending_payment until the payment arrives or the order expires.
  */
 export async function createBooking(
@@ -223,7 +262,7 @@ export async function createBooking(
     if (!lessonType || !visibleTo(lessonType, student)) throw notFound('课程')
     const windowError = bookingWindowError(slot.startsAt, now, settings.booking)
     if (windowError) throw new ApiError(409, windowError, windowMessages[windowError])
-    const price = checkBookable(tx, now, { studentId, slot, lessonType }, '你')
+    const { price, seat } = checkBookable(tx, now, { studentId, slot, lessonType }, '你')
 
     const pkg =
       lessonType.isTrial || input.payWith === 'wechat'
@@ -239,6 +278,7 @@ export async function createBooking(
       lessonTypeId: lessonType.id,
       startsAt: slot.startsAt,
       endsAt: slot.endsAt,
+      seat,
     }
     try {
       if (pkg) {
@@ -320,8 +360,8 @@ export async function createBooking(
         .get()
       return { bookingId: booking.id, status: 'pending_payment' as const, orderId: order.id }
     } catch (e) {
-      // Another process won the slot between our check and insert.
-      if (isUniqueViolation(e)) throw slotTaken()
+      // Another process won the seat between our check and insert.
+      if (isUniqueViolation(e)) throw seatTaken(slot)
       throw e
     }
   })

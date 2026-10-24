@@ -6,6 +6,7 @@ import { removeStrayPhotos } from './services/feedback'
 import { expireOrders } from './services/orders'
 import { notifyPackages } from './services/package-notices'
 import { sweepRefunds } from './services/refunds'
+import { cancelUnderfilledSessions, finishCancelledSessions } from './services/sessions'
 import { notifyStudents } from './services/student-notices'
 
 const HOURLY_MS = 3_600_000
@@ -20,8 +21,8 @@ function hourly(deps: Deps, name: string, chore: () => void) {
 }
 
 /**
- * Closes expired orders, pushes refunds along and tells coaches and students about lessons and
- * students about packages running out. Runs
+ * Closes expired orders, pushes refunds along, calls off group sessions short of students,
+ * tells coaches and students about lessons and students about packages running out. Runs
  * every 30 seconds; slots from coaches' weekly hours roll forward and unused lesson photos are
  * removed once an hour.
  */
@@ -37,6 +38,12 @@ export async function sweep(deps: Deps) {
     await notifyCoaches(deps)
   } catch (e) {
     deps.log('coach sweep failed', (e as Error).message)
+  }
+  try {
+    await cancelUnderfilledSessions(deps)
+    await finishCancelledSessions(deps)
+  } catch (e) {
+    deps.log('session sweep failed', (e as Error).message)
   }
   try {
     await expireOrders(deps)

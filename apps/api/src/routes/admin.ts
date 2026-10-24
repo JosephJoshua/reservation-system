@@ -5,6 +5,9 @@ import {
   charLength,
   cleanTags,
   grips,
+  groupSettingsError,
+  isGroup,
+  MAX_CAPACITY,
   offlineMethodLabels,
   offlineMethods,
   PROFILE_MAX_TAGS,
@@ -52,7 +55,14 @@ import {
   requireAdmin,
 } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
-import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
+import {
+  hoursView,
+  newBindCode,
+  saveHours,
+  setDayOff,
+  syncSlots,
+  unbindCoach,
+} from '../services/coaches'
 import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
 import { adminFeedback, setFeedbackHidden } from '../services/feedback'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
@@ -78,6 +88,12 @@ import {
 import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
+import {
+  assertNoSessionOverlap,
+  cancelSession,
+  createSessions,
+  setSessionCapacity,
+} from '../services/sessions'
 import { getSettings, saveSettings } from '../services/settings'
 import {
   createStaff,
@@ -164,9 +180,15 @@ const lessonTypeBody = z
     saleStartsAt: nullableInstant.default(null),
     saleEndsAt: nullableInstant.default(null),
     sort: z.number().int().default(0),
+    capacity: z.number().int().min(1).max(MAX_CAPACITY).default(1),
+    minStudents: z.number().int().min(2).max(MAX_CAPACITY).nullable().default(null),
   })
   .refine((v) => saleDatesValid(v.salePercent, v.saleStartsAt, v.saleEndsAt), {
     message: '折扣需要设置开始和结束时间',
+  })
+  .superRefine((v, ctx) => {
+    const error = groupSettingsError(v)
+    if (error) ctx.addIssue({ code: 'custom', message: error, path: ['capacity'] })
   })
 
 const productBody = z
@@ -716,12 +738,28 @@ export function adminRoutes(deps: Deps) {
       .from(bookings)
       .where(eq(bookings.lessonTypeId, id))
       .get()
-    if (used && body.durationMinutes !== existing.durationMinutes) {
-      throw new ApiError(409, 'duration_locked', '已有预约的课程不能修改时长，请新建课程')
+    const scheduled = db
+      .select({ id: slots.id })
+      .from(slots)
+      .where(eq(slots.lessonTypeId, id))
+      .get()
+    // Sessions are scheduled at the class's length; a new length would leave them unbookable.
+    if ((used || scheduled) && body.durationMinutes !== existing.durationMinutes) {
+      throw new ApiError(409, 'duration_locked', '已有预约或排课的课程不能修改时长，请新建课程')
     }
     // Trial limits count past bookings by their lesson type, so the flag must not change under them.
     if (used && body.isTrial !== existing.isTrial) {
       throw new ApiError(409, 'trial_locked', '已有预约的课程不能更改是否为体验课，请新建课程')
+    }
+    // Sessions, bookings and slots are kept apart by whether the class is a group class.
+    if (isGroup(body) !== isGroup(existing)) {
+      if (used || scheduled) {
+        throw new ApiError(
+          409,
+          'capacity_locked',
+          '已有预约或排课的课程不能在一对一和小班课之间切换，请新建课程',
+        )
+      }
     }
     if (body.isTrial && !existing.isTrial) {
       const sold = db
@@ -776,6 +814,7 @@ export function adminRoutes(deps: Deps) {
             status: bookings.status,
             studentId: bookings.studentId,
             attendance: bookings.attendance,
+            seat: bookings.seat,
           })
           .from(bookings)
           .where(
@@ -804,21 +843,22 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
-    const bySlot = new Map(live.map((b) => [b.slotId, b]))
+    const bySlot = new Map<number, typeof live>()
+    for (const b of live) bySlot.set(b.slotId, [...(bySlot.get(b.slotId) ?? []), b])
     const now = deps.now()
     return c.json(
       rows.map((s) => {
-        const b = bySlot.get(s.id)
+        const seats = (bySlot.get(s.id) ?? []).map((b) => ({
+          id: b.id,
+          status: bookingStatus({ status: b.status, endsAt: s.endsAt }, now),
+          attendance: b.attendance,
+          student: byStudent.get(b.studentId) ?? null,
+        }))
+        // `booking` is the one lesson in a private slot; a group session lists `bookings`.
         return {
           ...s,
-          booking: b
-            ? {
-                id: b.id,
-                status: bookingStatus({ status: b.status, endsAt: s.endsAt }, now),
-                attendance: b.attendance,
-                student: byStudent.get(b.studentId) ?? null,
-              }
-            : null,
+          booking: s.lessonTypeId === null ? (seats[0] ?? null) : null,
+          bookings: seats,
         }
       }),
     )
@@ -884,13 +924,105 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.patch('/slots/:id', async (c) => {
-    const { open } = await parseBody(c, z.object({ open: z.boolean() }))
-    const changed = db
-      .update(slots)
-      .set({ open, closedBySync: false })
-      .where(eq(slots.id, idParam(c)))
-      .run()
-    if (changed.changes === 0) throw notFound('时段')
+    const body = await parseBody(
+      c,
+      z.object({
+        open: z.boolean().optional(),
+        capacity: z.number().int().min(2).max(MAX_CAPACITY).optional(),
+      }),
+    )
+    const id = idParam(c)
+    const changed = immediate(db, (tx) => {
+      const slot = tx.select().from(slots).where(eq(slots.id, id)).get()
+      if (!slot) throw notFound('时段')
+      if (body.open && slot.cancelledAt) {
+        throw new ApiError(409, 'session_cancelled', '已取消的小班课不能重新开放')
+      }
+      if (body.open && !slot.open) assertNoSessionOverlap(tx, slot)
+      const capacity =
+        body.capacity !== undefined && body.capacity !== slot.capacity
+          ? setSessionCapacity(tx, id, body.capacity)
+          : null
+      if (body.open !== undefined) {
+        tx.update(slots).set({ open: body.open, closedBySync: false }).where(eq(slots.id, id)).run()
+      }
+      return { slot, capacity }
+    })
+    if (changed.capacity) {
+      const { slot, before } = changed.capacity
+      log(c.get('staffId'), {
+        action: 'session.update',
+        summary: `${await sessionName(slot)}：人数 ${before} 改为 ${body.capacity}`,
+        target: { kind: 'slot', id },
+      })
+    }
+    return c.body(null, 204)
+  })
+
+  /** A session as the action log names it: time, coach and class. */
+  const sessionName = async (slot: {
+    startsAt: Date
+    coachId: number
+    lessonTypeId: number | null
+  }) => {
+    const coach = db
+      .select({ name: coaches.name })
+      .from(coaches)
+      .where(eq(coaches.id, slot.coachId))
+      .get()
+    const lessonType = slot.lessonTypeId
+      ? db
+          .select({ name: lessonTypes.name })
+          .from(lessonTypes)
+          .where(eq(lessonTypes.id, slot.lessonTypeId))
+          .get()
+      : undefined
+    return `${venueMoment(slot.startsAt)} ${coach?.name ?? ''} ${lessonType?.name ?? ''}`
+  }
+
+  // 小班课: sessions of a group class the venue schedules.
+  app.post('/sessions', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        lessonTypeId: z.number().int().positive(),
+        capacity: z.number().int().min(2).max(MAX_CAPACITY),
+        sessions: z
+          .array(
+            z.object({ coachId: z.number().int().positive(), startsAt: instant, endsAt: instant }),
+          )
+          .min(1)
+          .max(MAX_SLOTS_PER_REQUEST),
+      }),
+    )
+    const { ids, lessonType } = immediate(db, (tx) => createSessions(tx, deps.now(), body))
+    const first = body.sessions[0]
+    if (first) {
+      log(c.get('staffId'), {
+        action: 'session.create',
+        summary:
+          ids.length === 1
+            ? `${await sessionName({ ...first, lessonTypeId: lessonType.id })}，${body.capacity} 人`
+            : `${lessonType.name} ${ids.length} 节，每节 ${body.capacity} 人，首节 ${venueMoment(first.startsAt)}`,
+        target: { kind: 'slot', id: ids[0] ?? 0 },
+      })
+    }
+    return c.json({ ids }, 201)
+  })
+
+  app.post('/slots/:id/cancel', async (c) => {
+    const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
+    const id = idParam(c)
+    const before = db.select().from(slots).where(eq(slots.id, id)).get()
+    const cancelled = await cancelSession(deps, id, reason)
+    // A repeat of a cancel that went through logs nothing.
+    if (before && (!before.cancelledAt || cancelled.length)) {
+      log(c.get('staffId'), {
+        action: 'session.cancel',
+        summary: `${await sessionName(before)}，原因：${before.cancelReason ?? reason}，取消 ${cancelled.length} 人的预约`,
+        target: { kind: 'slot', id },
+      })
+    }
     return c.body(null, 204)
   })
 
@@ -916,8 +1048,11 @@ export function adminRoutes(deps: Deps) {
           '该时段来自教练的每周时间，请关闭时段或修改每周时间',
         )
       }
-      const changed = tx.delete(slots).where(eq(slots.id, id)).run()
-      if (changed.changes === 0) throw notFound('时段')
+      const slot = tx.select().from(slots).where(eq(slots.id, id)).get()
+      if (!slot) throw notFound('时段')
+      tx.delete(slots).where(eq(slots.id, id)).run()
+      // The coach's private slots it closed open again.
+      if (slot.lessonTypeId !== null) syncSlots(tx, slot.coachId, deps.now())
     })
     return c.body(null, 204)
   })

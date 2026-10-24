@@ -10,6 +10,10 @@ export interface LessonTypeDto {
   description: string
   durationMinutes: number
   isTrial: boolean
+  /** Students per session: 1 for a private lesson, more for a group class. */
+  capacity: number
+  /** A group session short of this many at the free-cancel deadline is called off. */
+  minStudents: number | null
   /** Lowest price across the coaches who teach it. */
   fromPrice: PriceTag | null
 }
@@ -83,6 +87,12 @@ export interface SlotDto {
   startsAt: string
   endsAt: string
   available: boolean
+  /** The class a group session teaches; null for a private slot. */
+  lessonTypeId: number | null
+  /** Seats in the slot: 1 for a private lesson, more for a group session. */
+  capacity: number
+  /** Seats nobody holds yet. */
+  seatsLeft: number
 }
 
 export type BookingStatus = 'pending_payment' | 'confirmed' | 'completed' | 'cancelled' | 'expired'
@@ -101,6 +111,8 @@ export interface BookingDto {
   endsAt: string
   coach: { id: number; name: string }
   lessonType: { id: number; name: string; isTrial: boolean }
+  /** Seats in its slot: more than 1 for a group class. */
+  capacity: number
   paidWith: 'order' | 'package'
   price: number
   /** Paid at the front desk, so any refund is handed back there. */

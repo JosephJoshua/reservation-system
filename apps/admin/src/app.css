@@ -152,6 +152,52 @@ body {
   border-style: dashed;
 }
 
+/* A group session: a bar on the left tells it apart from private slots. */
+.slot-chip.group {
+  border-left: 3px solid var(--td-warning-color);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.session-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.session-panel textarea {
+  width: 100%;
+}
+
+.session-panel .t-textarea {
+  width: 100%;
+}
+
+.roster {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.roster-name {
+  flex: 1;
+  min-width: 0;
+}
+
 .banner-thumb {
   width: 160px;
   height: 64px;

@@ -133,7 +133,11 @@ Page({
       tag: lessonTag(l, l.startsAt, Date.now()),
       when: lessonTime(l.startsAt, l.endsAt),
       movedFrom: l.movedFrom ? dateTime(l.movedFrom) : '',
-      lessonName: l.lessonType.isTrial ? `${l.lessonType.name}（体验课）` : l.lessonType.name,
+      lessonName: l.lessonType.isTrial
+        ? `${l.lessonType.name}（体验课）`
+        : l.sessionId
+          ? `${l.lessonType.name}（小班课）`
+          : l.lessonType.name,
       payment: paymentText(l),
       profile: profileView(l.profile),
       together: l.lessonsTogether ? `与你的第 ${l.lessonsTogether + 1} 节课` : '第一次上你的课',

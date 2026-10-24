@@ -129,7 +129,7 @@ const [wang, li, zhao] = db
   .all()
 if (!wang || !li || !zhao) throw new Error('coach insert failed')
 
-const [private1, trial] = db
+const [private1, trial, kids] = db
   .insert(lessonTypes)
   .values([
     {
@@ -147,10 +147,19 @@ const [private1, trial] = db
       isTrial: true,
       sort: 0,
     },
+    {
+      name: '少儿小班课',
+      description: '6-12 岁，基本功和步法，每班最多 6 人',
+      durationMinutes: 90,
+      price: 12000,
+      capacity: 6,
+      minStudents: 3,
+      sort: 2,
+    },
   ])
   .returning()
   .all()
-if (!private1 || !trial) throw new Error('lesson type insert failed')
+if (!private1 || !trial || !kids) throw new Error('lesson type insert failed')
 
 db.insert(categoryPrices)
   .values({ categoryId: head.id, lessonTypeId: private1.id, price: 36000 })
@@ -170,6 +179,7 @@ db.insert(coachLessonTypes)
     { coachId: li.id, lessonTypeId: private1.id },
     { coachId: zhao.id, lessonTypeId: private1.id },
     { coachId: li.id, lessonTypeId: trial.id },
+    { coachId: li.id, lessonTypeId: kids.id },
     { coachId: zhao.id, lessonTypeId: trial.id },
   ])
   .run()
@@ -201,6 +211,16 @@ const [tenPack] = db
       validityDays: 365,
       sort: 2,
     },
+    {
+      name: '少儿小班课 10 次卡',
+      description: '只用于少儿小班课',
+      lessonTypeId: kids.id,
+      coachIds: [],
+      lessonCount: 10,
+      price: 100000,
+      validityDays: 180,
+      sort: 3,
+    },
   ])
   .returning()
   .all()
@@ -213,9 +233,12 @@ const zhaoId = zhao.id
 const rows: (typeof slots.$inferInsert)[] = []
 for (let day = 0; day <= 14; day++) {
   const date = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + day * 86400000))
+  const weekend = [0, 6].includes(venueInstant(date, 12 * 60).getUTCDay())
   for (const coach of [wang, li, zhao]) {
     if (coach.id === zhaoId && day === 0) continue
     for (let hour = 9; hour < 21; hour++) {
+      // Li teaches the kids' group class 09:00-10:30 at weekends.
+      if (weekend && coach.id === li.id && hour < 11) continue
       // Leave each coach a couple of gaps so the grid looks like a real week.
       if ((hour + coach.id + day) % 5 === 0) continue
       const startsAt = venueInstant(date, hour * 60)
@@ -227,6 +250,19 @@ for (let day = 0; day <= 14; day++) {
       })
     }
   }
+}
+for (let day = 0; day <= 14; day++) {
+  const date = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + day * 86400000))
+  if (![0, 6].includes(venueInstant(date, 12 * 60).getUTCDay())) continue
+  const startsAt = venueInstant(date, 9 * 60)
+  if (startsAt <= now) continue
+  rows.push({
+    coachId: li.id,
+    startsAt,
+    endsAt: venueInstant(date, 10 * 60 + 30),
+    lessonTypeId: kids.id,
+    capacity: 6,
+  })
 }
 db.insert(slots).values(rows).run()
 
