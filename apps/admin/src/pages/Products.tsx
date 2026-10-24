@@ -21,6 +21,11 @@ import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
 import { packageStatusLabel } from '../labels'
+import {
+  EditorWithPreview,
+  PREVIEW_DIALOG_WIDTH,
+  PreviewDialog,
+} from '../preview/EditorWithPreview'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 
 type ProductForm = Omit<PackageProduct, 'id'>
@@ -37,6 +42,7 @@ export function Products() {
     // The product as listed when the edit began, so a save over someone else's change is refused.
     loaded?: PackageProduct
   } | null>(null)
+  const [preview, setPreview] = useState<PackageProduct | null>(null)
   const submitting = useSubmitting()
 
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
@@ -165,15 +171,20 @@ export function Products() {
             colKey: 'op',
             title: '操作',
             cell: ({ row }) => (
-              <Button
-                variant="text"
-                theme="primary"
-                onClick={() =>
-                  setEdit({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
-                }
-              >
-                编辑
-              </Button>
+              <Space size={0}>
+                <Button
+                  variant="text"
+                  theme="primary"
+                  onClick={() =>
+                    setEdit({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
+                  }
+                >
+                  编辑
+                </Button>
+                <Button variant="text" theme="primary" onClick={() => setPreview(row)}>
+                  预览
+                </Button>
+              </Space>
             ),
           },
         ]}
@@ -181,20 +192,30 @@ export function Products() {
       {edit && (
         <Dialog
           visible
-          width={600}
+          width={PREVIEW_DIALOG_WIDTH}
+          top={24}
           header={edit.id ? '编辑课时包' : '新建课时包'}
           confirmBtn={{ content: '保存', loading: submitting }}
           onConfirm={save}
           onClose={() => setEdit(null)}
         >
-          <ProductEditor
-            value={edit.form}
-            types={regular}
-            coaches={coaches.data ?? []}
-            categories={categories.data ?? []}
-            onChange={(form) => setEdit({ ...edit, form })}
-          />
+          <EditorWithPreview draft={{ kind: 'package', id: edit.id, form: edit.form }}>
+            <ProductEditor
+              value={edit.form}
+              types={regular}
+              coaches={coaches.data ?? []}
+              categories={categories.data ?? []}
+              onChange={(form) => setEdit({ ...edit, form })}
+            />
+          </EditorWithPreview>
         </Dialog>
+      )}
+      {preview && (
+        <PreviewDialog
+          title={`预览：${preview.name}`}
+          draft={{ kind: 'package', id: preview.id, form: preview }}
+          onClose={() => setPreview(null)}
+        />
       )}
     </Card>
   )

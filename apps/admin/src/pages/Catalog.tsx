@@ -20,6 +20,12 @@ import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
 import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import type { Draft } from '../preview/data'
+import {
+  EditorWithPreview,
+  PREVIEW_DIALOG_WIDTH,
+  PreviewDialog,
+} from '../preview/EditorWithPreview'
 import { RichText } from '../RichText'
 import type { AdminBooking, Coach, CoachCategory, LessonType } from '../types'
 import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
@@ -97,6 +103,7 @@ export function Catalog() {
   } | null>(null)
   const [binding, setBinding] = useState<Coach | null>(null)
   const [hoursOf, setHoursOf] = useState<Coach | null>(null)
+  const [preview, setPreview] = useState<{ title: string; draft: Draft } | null>(null)
   // The coach's lessons still to come, so turning 在职 off can say what happens to them.
   const upcoming = useApi<AdminBooking[]>(
     coach?.id ? `/admin/bookings?coachId=${coach.id}&status=confirmed` : null,
@@ -238,15 +245,29 @@ export function Catalog() {
               colKey: 'op',
               title: '操作',
               cell: ({ row }) => (
-                <Button
-                  variant="text"
-                  theme="primary"
-                  onClick={() =>
-                    setLesson({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
-                  }
-                >
-                  编辑
-                </Button>
+                <Space size={0}>
+                  <Button
+                    variant="text"
+                    theme="primary"
+                    onClick={() =>
+                      setLesson({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
+                    }
+                  >
+                    编辑
+                  </Button>
+                  <Button
+                    variant="text"
+                    theme="primary"
+                    onClick={() =>
+                      setPreview({
+                        title: row.name,
+                        draft: { kind: 'lessonType', id: row.id, form: row },
+                      })
+                    }
+                  >
+                    预览
+                  </Button>
+                </Space>
               ),
             },
           ]}
@@ -469,6 +490,18 @@ export function Catalog() {
                   <Button variant="text" theme="primary" onClick={() => setHoursOf(row)}>
                     可约时间
                   </Button>
+                  <Button
+                    variant="text"
+                    theme="primary"
+                    onClick={() =>
+                      setPreview({
+                        title: row.name,
+                        draft: { kind: 'coach', id: row.id, form: row },
+                      })
+                    }
+                  >
+                    预览
+                  </Button>
                 </Space>
               ),
             },
@@ -487,6 +520,14 @@ export function Catalog() {
       )}
 
       {hoursOf && <CoachHoursDialog coach={hoursOf} onClose={() => setHoursOf(null)} />}
+
+      {preview && (
+        <PreviewDialog
+          title={`预览：${preview.title}`}
+          draft={preview.draft}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       {category && (
         <Dialog
@@ -512,33 +553,38 @@ export function Catalog() {
       {lesson && (
         <Dialog
           visible
-          width={560}
+          width={PREVIEW_DIALOG_WIDTH}
+          top={24}
           header={lesson.id ? '编辑课程' : '新建课程'}
           confirmBtn={{ content: '保存', disabled: !lesson.form.name.trim(), loading: submitting }}
           onConfirm={saveLesson}
           onClose={() => setLesson(null)}
         >
-          <LessonEditor value={lesson.form} onChange={(form) => setLesson({ ...lesson, form })} />
+          <EditorWithPreview draft={{ kind: 'lessonType', id: lesson.id, form: lesson.form }}>
+            <LessonEditor value={lesson.form} onChange={(form) => setLesson({ ...lesson, form })} />
+          </EditorWithPreview>
         </Dialog>
       )}
 
       {coach && (
         <Dialog
           visible
-          width={760}
-          top={40}
+          width={PREVIEW_DIALOG_WIDTH}
+          top={24}
           header={coach.id ? '编辑教练' : '新建教练'}
           confirmBtn={{ content: '保存', disabled: !coach.form.name.trim(), loading: submitting }}
           onConfirm={saveCoach}
           onClose={() => setCoach(null)}
         >
-          <CoachEditor
-            value={coach.form}
-            types={types.data ?? []}
-            categories={categories.data ?? []}
-            upcomingLessons={coach.id ? (upcoming.data?.length ?? 0) : 0}
-            onChange={(patch) => setCoach((c) => c && { ...c, form: { ...c.form, ...patch } })}
-          />
+          <EditorWithPreview draft={{ kind: 'coach', id: coach.id, form: coach.form }}>
+            <CoachEditor
+              value={coach.form}
+              types={types.data ?? []}
+              categories={categories.data ?? []}
+              upcomingLessons={coach.id ? (upcoming.data?.length ?? 0) : 0}
+              onChange={(patch) => setCoach((c) => c && { ...c, form: { ...c.form, ...patch } })}
+            />
+          </EditorWithPreview>
         </Dialog>
       )}
     </Space>
