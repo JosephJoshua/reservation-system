@@ -103,6 +103,18 @@ describe('学员档案', () => {
     expect(h.db.select().from(studentProfiles).all()).toHaveLength(0)
   })
 
+  it('says what is wrong with the tags in product copy', async () => {
+    const h = setup()
+    const { studentId } = await booked(h)
+    const admin = await h.admin()
+    const put = (tags: string[]) =>
+      h.call('PUT', `/admin/students/${studentId}/profile`, profile({ tags }), admin)
+    const nine = await put(Array.from({ length: 9 }, (_, i) => `标签${i}`))
+    expect(nine.json.error.message).toBe('最多 8 个标签')
+    const long = await put(['正手拉球发力不足需要重点练习'])
+    expect(long.json.error.message).toBe('每个标签不超过 10 个字')
+  })
+
   it('counts characters as people do, and tags after repeats and blanks are dropped', async () => {
     const h = setup()
     const { studentId } = await booked(h)

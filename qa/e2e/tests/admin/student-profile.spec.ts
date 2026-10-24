@@ -29,7 +29,7 @@ test('fills in the profile, keeping a tag typed without Enter', async ({ page, r
   await page.goto(`./#/students?id=${studentId}`)
   const card = page.locator('.t-card').filter({ hasText: '学员档案' })
   await expect(card).toContainText('还没有填写水平、握拍、标签和备注')
-  await expect(card).toContainText('已上课 0 次')
+  await expect(card).toContainText('已在本馆上课 0 次')
 
   await card.getByRole('button', { name: '编辑' }).click()
   const d = dialog(page)
@@ -40,20 +40,22 @@ test('fills in the profile, keeping a tag typed without Enter', async ({ page, r
   await page.keyboard.press('Enter')
   await page.keyboard.type('反手弱')
   await page.keyboard.press('Enter')
+  // Too long: kept as typed and refused, not cut short.
   await page.keyboard.type('一二三四五六七八九十十一')
   await field(d, '备注').locator('textarea').fill('反手推挡偏慢\n多练步法')
+  await d.getByRole('button', { name: '保存' }).click()
+  await expect(page.getByText('每个标签不超过 10 个字')).toBeVisible()
+  await expect(d).toHaveCount(1)
+  await field(d, '标签').locator('.t-tag').last().locator('.t-tag__icon-close').click()
+  await field(d, '标签').locator('.t-tag-input').click()
+  await page.keyboard.type('比赛型')
   // A double click saves once.
   await d.getByRole('button', { name: '保存' }).dblclick()
   await expect(d).toHaveCount(0)
 
   await expect(card).toContainText('中级')
   await expect(card).toContainText('直拍')
-  await expect(card.locator('.t-tag')).toHaveText([
-    '中级',
-    '直拍',
-    '反手弱',
-    '一二三四五六七八九十',
-  ])
+  await expect(card.locator('.t-tag')).toHaveText(['中级', '直拍', '反手弱', '比赛型'])
   await expect(card.locator('.profile-note')).toHaveText('反手推挡偏慢\n多练步法')
 
   const log = await call<{ summary: string }[]>(
@@ -98,7 +100,7 @@ test('clears with the account and cannot be edited afterwards', async ({ page, r
   await page.goto(`./#/students?id=${studentId}`)
   await expect(page.getByText('姓名、手机号、学员档案和微信身份已删除')).toBeVisible()
   const card = page.locator('.t-card').filter({ hasText: '学员档案' })
-  await expect(card).toContainText('已上课 0 次')
+  await expect(card).toContainText('已在本馆上课 0 次')
   await expect(card.locator('.t-tag')).toHaveCount(0)
   await expect(card.getByRole('button', { name: '编辑' })).toHaveCount(0)
 })

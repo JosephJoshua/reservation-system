@@ -76,6 +76,7 @@ const FIELD_LABELS: Record<string, string> = {
   days: '天数',
   reason: '原因',
   note: '备注',
+  tags: '标签',
   startsAt: '开始时间',
   endsAt: '结束时间',
   imageUrl: '图片',

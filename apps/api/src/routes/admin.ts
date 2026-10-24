@@ -9,9 +9,9 @@ import {
   offlineMethods,
   PROFILE_MAX_TAGS,
   PROFILE_NOTE_LENGTH,
-  PROFILE_TAG_LENGTH,
   staffActions,
   studentLevels,
+  tagsError,
   venueParts,
   venueSettings,
 } from '@rs/shared'
@@ -1355,19 +1355,14 @@ export function adminRoutes(deps: Deps) {
         level: z.enum(studentLevels).nullable(),
         grip: z.enum(grips).nullable(),
         tags: z
-          .array(
-            z
-              .string()
-              .trim()
-              .refine(
-                (t) => charLength(t) <= PROFILE_TAG_LENGTH,
-                `标签不能超过 ${PROFILE_TAG_LENGTH} 个字`,
-              ),
-          )
-          // Only bounds the request: the limit below is counted after blanks and repeats go.
-          .max(PROFILE_MAX_TAGS * 4)
+          .array(z.string().max(100))
+          // Only bounds the request; the limits are counted after blanks and repeats go.
+          .max(PROFILE_MAX_TAGS * 4, `最多 ${PROFILE_MAX_TAGS} 个标签`)
           .transform(cleanTags)
-          .pipe(z.array(z.string()).max(PROFILE_MAX_TAGS, `最多 ${PROFILE_MAX_TAGS} 个标签`)),
+          .superRefine((tags, ctx) => {
+            const message = tagsError(tags)
+            if (message) ctx.addIssue({ code: 'custom', message })
+          }),
         note: z
           .string()
           .trim()

@@ -1,6 +1,7 @@
 import {
   type Attendance,
   type CoachLessonDto,
+  profileCounts,
   profileTraits,
   type StudentProfileDto,
 } from '../../lib/shared'
@@ -40,7 +41,7 @@ function profileView(p: StudentProfileDto | null): ProfileView | null {
     chips,
     note: p.note,
     empty: !chips.length && !p.note,
-    counts: `已在本馆上课 ${p.lessons} 次${p.noShows ? `，缺席 ${p.noShows} 次` : ''}`,
+    counts: profileCounts(p),
   }
 }
 

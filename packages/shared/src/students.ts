@@ -45,10 +45,23 @@ export function charLength(text: string): number {
   return Array.from(text).length
 }
 
-/** Tags trimmed, cut to the longest allowed, with empty ones and repeats dropped, in order. */
+/** Tags trimmed, with empty ones and repeats dropped, in order. Too long ones are left to refuse. */
 export function cleanTags(tags: string[]): string[] {
-  const cut = tags.map((t) => Array.from(t.trim()).slice(0, PROFILE_TAG_LENGTH).join('').trim())
-  return [...new Set(cut.filter(Boolean))]
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))]
+}
+
+/** Why the tags cannot be saved, or null when they can. */
+export function tagsError(tags: string[]): string | null {
+  if (tags.some((t) => charLength(t) > PROFILE_TAG_LENGTH)) {
+    return `每个标签不超过 ${PROFILE_TAG_LENGTH} 个字`
+  }
+  if (tags.length > PROFILE_MAX_TAGS) return `最多 ${PROFILE_MAX_TAGS} 个标签`
+  return null
+}
+
+/** Lessons taken and missed, as staff and coaches see them on the profile. */
+export function profileCounts(p: StudentProfileDto): string {
+  return `已在本馆上课 ${p.lessons} 次${p.noShows ? `，缺席 ${p.noShows} 次` : ''}`
 }
 
 /** Level and grip as labels, in that order, for the chips shown before the tags. */

@@ -6,12 +6,14 @@ import {
   PROFILE_NOTE_LENGTH,
   PROFILE_TAG_LENGTH,
   packagePrice,
+  profileCounts,
   profileEdit,
   profileTraits,
   type StudentProfileDto,
   type StudentProfileEdit,
   studentLevelLabels,
   studentLevels,
+  tagsError,
 } from '@rs/shared'
 import { useEffect, useState } from 'react'
 import {
@@ -507,9 +509,7 @@ function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; dele
       {!deleted && !traits.length && !p.tags.length && !p.note && (
         <div className="muted">还没有填写水平、握拍、标签和备注，教练上课前会看到这些。</div>
       )}
-      <div className="muted">
-        已上课 {p.lessons} 次{p.noShows ? `，缺席 ${p.noShows} 次` : ''}
-      </div>
+      <div className="muted">{profileCounts(p)}</div>
     </div>
   )
 }
@@ -535,8 +535,9 @@ function ProfileDialog({
   const tags = cleanTags([...form.tags, typing])
 
   const submit = async () => {
-    if (tags.length > PROFILE_MAX_TAGS) {
-      void MessagePlugin.warning(`最多 ${PROFILE_MAX_TAGS} 个标签`)
+    const error = tagsError(tags)
+    if (error) {
+      void MessagePlugin.warning(error)
       return
     }
     const ok = await attempt(
@@ -610,7 +611,7 @@ function ProfileDialog({
             }}
             onChange={(v) => {
               setTyping('')
-              set({ tags: cleanTags((v as string[]).map(String)).slice(0, PROFILE_MAX_TAGS) })
+              set({ tags: cleanTags((v as string[]).map(String)) })
             }}
           />
         </Field>
