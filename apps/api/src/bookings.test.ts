@@ -369,6 +369,7 @@ describe('cancelling a paid lesson', () => {
     const view = await h.call('GET', `/bookings/${bookingId}`, undefined, t)
     expect(view.json).toMatchObject({
       cancelledBy: 'venue',
+      cancelReason: '教练请假',
       refund: { amount: 20000, status: 'succeeded' },
     })
   })

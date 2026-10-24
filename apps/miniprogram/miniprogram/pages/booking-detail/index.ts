@@ -40,7 +40,9 @@ function subtitle(b: BookingDto, now: number): string {
       return b.attendance === 'no_show' ? '缺席，照常计课' : '课程已结束'
     case 'cancelled':
       return b.cancelledBy === 'venue'
-        ? '场馆已取消本节课'
+        ? b.cancelReason
+          ? `场馆已取消：${b.cancelReason}`
+          : '场馆已取消本节课'
         : b.late
           ? '已过免费取消时间'
           : '你已取消本节课'
@@ -166,15 +168,17 @@ Page({
       refund: b.refund
         ? `${yuan(b.refund.amount)} · ${refundStatus(b.refund.status, b.paidOffline)}`
         : '',
-      invoice: b.invoice
-        ? invoiceAction(b.invoice) === 'request'
-          ? b.invoice.state === 'rejected'
-            ? '未通过，重新申请'
-            : '申请开票'
-          : invoiceAction(b.invoice) === 'view'
-            ? '查看发票'
-            : INVOICE_STATE[b.invoice.state]
-        : '',
+      // A refunded lesson has nothing to invoice, and the 退款 row already says so.
+      invoice:
+        b.invoice && !(b.refund && b.invoice.state === 'refunded')
+          ? invoiceAction(b.invoice) === 'request'
+            ? b.invoice.state === 'rejected'
+              ? '未通过，重新申请'
+              : '申请开票'
+            : invoiceAction(b.invoice) === 'view'
+              ? '查看发票'
+              : INVOICE_STATE[b.invoice.state]
+          : '',
       invoiceTappable: !!invoiceAction(b.invoice),
       attendance: b.canCheckIn
         ? '扫码签到'

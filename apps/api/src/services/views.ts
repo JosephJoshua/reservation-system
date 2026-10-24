@@ -146,6 +146,7 @@ export function bookingViews(
       movesLeft: Math.max(0, rules.studentMoves - movesUsed),
       movedFrom: movedFromIso(moved, b.startsAt),
       cancelledBy: b.cancelledBy,
+      cancelReason: b.cancelledBy === 'venue' ? (b.cancelReason ?? '') : '',
       late: b.late,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
       attendance: b.attendance,

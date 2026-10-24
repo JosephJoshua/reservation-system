@@ -276,6 +276,8 @@ export async function createBooking(
         repeat: true,
       }
     }
+    // A cancelled class is closed too; say it was cancelled.
+    if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
     if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段不可预约')
     const lessonType = tx
       .select()
