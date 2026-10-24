@@ -14,6 +14,9 @@ interface CoachOption {
   original: string
 }
 
+/** Whether a load may move to another day, and whether it says so ('quiet' on first load). */
+type Seek = 'quiet' | 'tell'
+
 interface SlotView {
   id: number
   coachId: number
@@ -53,15 +56,8 @@ Page({
 
   catalog: null as CatalogDto | null,
   request: 0,
-  /**
-   * Set when the next load should move on if the selected day has nothing to book: to the next
-   * open day after it, or the first one in the window. Picking a day by hand clears it.
-   */
-  seeking: false,
-  /** Whether to say so when the page moves to another day: not on first load. */
-  seekTell: false,
-  /** Set while loading the day the page moved to, so the toast shows once it has loaded. */
-  moved: false,
+  /** Set by chooseCoach for the load onShow runs when the coach page goes back here. */
+  pendingSeek: undefined as Seek | undefined,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -73,7 +69,10 @@ Page({
 
   onShow() {
     // Coming back from a booking that lost the race should show the slot as taken.
-    if (this.data.state === 'ready') this.loadSlots()
+    if (this.data.state !== 'ready') return
+    const seek = this.pendingSeek
+    this.pendingSeek = undefined
+    this.loadSlots(seek)
   },
 
   async load() {
@@ -116,19 +115,27 @@ Page({
         days,
         date: days[0]?.key ?? '',
       })
-      this.seek(false)
-      this.loadSlots()
+      this.loadSlots('quiet')
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 
-  async loadSlots() {
+  /**
+   * Loads the selected day's slots. With `seek`, a day with nothing to book moves on to the next
+   * open day after it, or the first one in the window; 'tell' says so in a toast once `moved`
+   * loads.
+   */
+  async loadSlots(seek?: Seek, moved = false) {
     const request = ++this.request
     const { date, coachId, lessonTypeId, coaches } = this.data
     this.setData({ slotsState: 'loading' })
     try {
       const filter = `lessonTypeId=${lessonTypeId}${coachId ? `&coachId=${coachId}` : ''}`
+      // Asked for alongside the day, and only a hint: without it the page stays on the day.
+      const openDays = seek
+        ? api<string[]>('GET', `/slots/open-days?${filter}`).catch((): string[] => [])
+        : undefined
       const rows = await api<SlotDto[]>('GET', `/slots?date=${date}&${filter}`)
       if (request !== this.request) return
       const names = new Map(coaches.map((c) => [c.id, c.name]))
@@ -148,49 +155,35 @@ Page({
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
         }))
       const availableCount = slots.filter((s) => s.available).length
-      const seeking = this.seeking
-      this.seeking = false
-      if (seeking && availableCount === 0) {
-        const open = await api<string[]>('GET', `/slots/open-days?${filter}`)
+      if (openDays && availableCount === 0) {
+        const open = await openDays
         if (request !== this.request) return
         const keys = new Set(this.data.days.map((d) => d.key))
         const shown = open.filter((k) => keys.has(k))
         const next = shown.find((k) => k > date) ?? shown[0]
         if (next && next !== date) {
-          this.moved = this.seekTell
           this.setData({ date: next, dayAnchor: dayAnchor(this.data.days, next) })
-          this.loadSlots()
+          this.loadSlots(undefined, seek === 'tell')
           return
         }
       }
       this.setData({ slotsState: 'ready', slots, availableCount })
       const day = this.data.days.find((d) => d.key === date)
-      if (this.moved && day) {
+      if (moved && day && availableCount > 0) {
         wx.showToast({ title: `当天无可约时段，已跳到 ${day.date}`, icon: 'none' })
       }
-      this.moved = false
     } catch (e) {
       if (request !== this.request) return
-      this.seeking = false
-      this.moved = false
       this.setData({ slotsState: 'error', error: errorMessage(e) })
     }
-  },
-
-  /** Lets the next loadSlots move on from the selected day if it has nothing to book. */
-  seek(tell = true) {
-    this.seeking = true
-    this.seekTell = tell
-    this.moved = false
   },
 
   pickCoach(e: WechatMiniprogram.TouchEvent) {
     const coachId = Number(e.currentTarget.dataset.id)
     if (coachId === this.data.coachId) return
-    // Stay on the selected day if the coach has time then, else move to their next open day.
-    this.seek()
     this.setData({ coachId, picked: this.data.coaches.find((c) => c.id === coachId) ?? null })
-    this.loadSlots()
+    // Stay on the selected day if the coach has time then, else move to their next open day.
+    this.loadSlots('tell')
   },
 
   /**
@@ -202,7 +195,7 @@ Page({
     const coaches = this.data.coaches
     const index = coaches.findIndex((c) => c.id === coachId)
     if (index < 0) return
-    this.seek()
+    this.pendingSeek = 'tell'
     // Coaches on the first screen keep the strip at its start; later ones bring the coach before
     // into view, so the picked one is not flush with the screen edge.
     const before = coaches[index - 1]
@@ -230,8 +223,6 @@ Page({
   pickDate(e: WechatMiniprogram.TouchEvent) {
     const date = e.currentTarget.dataset.key as string
     if (date === this.data.date) return
-    this.seeking = false
-    this.moved = false
     this.setData({ date })
     this.loadSlots()
   },

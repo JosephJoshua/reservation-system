@@ -300,8 +300,12 @@ export function studentRoutes(deps: Deps) {
   })
 
   /** The slots a student sees from `from` to `to`: closed ones hidden, taken ones unavailable. */
-  function studentSlots(from: Date, to: Date, q: { coachId?: number; lessonTypeId?: number }) {
-    const now = deps.now()
+  function studentSlots(
+    now: Date,
+    from: Date,
+    to: Date,
+    q: { coachId?: number; lessonTypeId?: number },
+  ) {
     const settings = getSettings(db)
     const lessonType = q.lessonTypeId
       ? db.select().from(lessonTypes).where(eq(lessonTypes.id, q.lessonTypeId)).get()
@@ -394,7 +398,7 @@ export function studentRoutes(deps: Deps) {
     } catch {
       throw new ApiError(400, 'invalid_query', '日期无效')
     }
-    return c.json(studentSlots(from, venueInstant(q.date, 24 * 60), q))
+    return c.json(studentSlots(deps.now(), from, venueInstant(q.date, 24 * 60), q))
   })
 
   // The venue days in the booking window with a slot that can be booked now, so the booking page
@@ -405,6 +409,7 @@ export function studentRoutes(deps: Deps) {
     const days = getSettings(db).booking.advanceDays
     const last = venueDateKey(new Date(now.getTime() + days * 86_400_000))
     const open = studentSlots(
+      now,
       venueInstant(venueDateKey(now), 0),
       venueInstant(last, 24 * 60),
       q,
