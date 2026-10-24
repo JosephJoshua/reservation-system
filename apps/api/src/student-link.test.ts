@@ -250,7 +250,8 @@ describe('linking a front-desk student to their WeChat', () => {
     const res = await h.call(
       'POST',
       '/me/link',
-      { code: await bindCode(h, admin, id), merge: true },
+      // Refused before the student is asked to confirm the merge.
+      { code: await bindCode(h, admin, id) },
       token,
     )
     expect(res.status).toBe(409)

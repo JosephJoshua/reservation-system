@@ -167,6 +167,8 @@ export function linkDeskStudent(
     if (!desk) throw badCode()
     const own = tx.select().from(students).where(eq(students.id, studentId)).get()
     if (!own || own.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
+    // Checked before asking, so the student is not asked to confirm a join that cannot happen.
+    refuseClashingLessons(tx, own.id, desk.id, now)
     // One WeChat is one student. Records of its own mean someone already uses it, perhaps a
     // parent for themselves: joining the two must be what they want.
     if (!merge && hasRecords(tx, own.id)) {
@@ -176,7 +178,6 @@ export function linkDeskStudent(
         '这个微信已有课时包、预约或订单，同步后会和前台记录合并为同一位学员',
       )
     }
-    refuseClashingLessons(tx, own.id, desk.id, now)
 
     // Records move onto the desk student.
     for (const t of [bookings, packages, orders, invoices, actionLog] as const) {
