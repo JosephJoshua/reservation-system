@@ -5,6 +5,7 @@ import {
   type HomeDto,
 } from '../../lib/shared'
 import { api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
+import { addLessonToCalendar } from '../../utils/calendar'
 import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
@@ -71,6 +72,7 @@ Page({
     invoice: '',
     invoiceTappable: false,
     address: '',
+    canAddToCalendar: false,
     cancelRule: '',
     feedback: null as { title: string; text: string; photos: string[] } | null,
     busy: false,
@@ -151,6 +153,7 @@ Page({
         : '',
       invoiceTappable: !!invoiceAction(b.invoice),
       address: this.venue?.address ?? '',
+      canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > Date.now(),
       cancelRule: booking
         ? // Moved by the venue or coach after the usual deadline: free until it starts.
           (b.movedLate
@@ -281,6 +284,18 @@ Page({
       // The move was refused because the lesson changed: show it as it is now.
       stale: () => this.load(),
     })
+  },
+
+  addToCalendar() {
+    const b = this.data.booking
+    if (!b) return
+    // The page may have stayed open until the lesson began.
+    if (Date.parse(b.startsAt) <= Date.now()) {
+      this.setData({ canAddToCalendar: false })
+      wx.showToast({ title: '课程已开始', icon: 'none' })
+      return
+    }
+    addLessonToCalendar(b, this.venue)
   },
 
   previewPhoto(e: WechatMiniprogram.TouchEvent) {

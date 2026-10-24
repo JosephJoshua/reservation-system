@@ -48,9 +48,20 @@
     </view>
   </block>
 
-  <view wx:if="{{address}}" class="venue">
+  <view class="venue">
     <t-cell-group theme="card">
-      <t-cell title="{{address}}" left-icon="location" arrow hover bind:click="openMap" />
+      <t-cell wx:if="{{address}}" title="{{address}}" left-icon="location" arrow hover bind:click="openMap" />
+      <t-cell wx:if="{{canAddToCalendar}}" title="添加到日历" left-icon="calendar" arrow hover bind:click="addToCalendar" />
+      <button
+        class="cell-button"
+        hover-class="none"
+        open-type="contact"
+        show-message-card
+        send-message-title="{{booking.lessonType.name}} · {{when}}"
+        send-message-path="/pages/booking-detail/index?id={{booking.id}}"
+      >
+        <t-cell title="联系客服" left-icon="service" arrow hover />
+      </button>
     </t-cell-group>
   </view>
 

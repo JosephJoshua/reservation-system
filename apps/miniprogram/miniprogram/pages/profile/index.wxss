@@ -1,3 +1,5 @@
+@import '../../styles/common.wxss';
+
 .me {
   display: flex;
   align-items: center;

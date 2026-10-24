@@ -23,10 +23,13 @@
   </t-cell-group>
 </view>
 
-<view wx:if="{{venue && (venue.address || venue.phone)}}" class="group">
+<view class="group">
   <t-cell-group theme="card">
     <t-cell wx:if="{{venue.address}}" title="场馆地址" description="{{venue.address}}" left-icon="location" arrow hover bind:click="openMap" />
     <t-cell wx:if="{{venue.phone}}" title="联系场馆" note="{{venue.phone}}" left-icon="call" arrow hover bind:click="call" />
+    <button class="cell-button" hover-class="none" open-type="contact">
+      <t-cell title="联系客服" left-icon="service" arrow hover />
+    </button>
   </t-cell-group>
 </view>
 
