@@ -1,9 +1,8 @@
 import {
   type Attendance,
   type CoachLessonDto,
-  gripLabels,
+  profileTraits,
   type StudentProfileDto,
-  studentLevelLabels,
 } from '../../lib/shared'
 import { assetUrl, errorMessage, showError } from '../../utils/api'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
@@ -33,9 +32,8 @@ interface ProfileView {
 /** The venue's 学员档案: level and grip first, then the venue's tags. */
 function profileView(p: StudentProfileDto | null): ProfileView | null {
   if (!p) return null
-  const traits = [p.level && studentLevelLabels[p.level], p.grip && gripLabels[p.grip]]
   const chips = [
-    ...traits.flatMap((text) => (text ? [{ key: `trait:${text}`, text, trait: true }] : [])),
+    ...profileTraits(p).map((text) => ({ key: `trait:${text}`, text, trait: true })),
     ...p.tags.map((text) => ({ key: `tag:${text}`, text, trait: false })),
   ]
   return {

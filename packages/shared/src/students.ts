@@ -51,6 +51,13 @@ export function cleanTags(tags: string[]): string[] {
   return [...new Set(cut.filter(Boolean))]
 }
 
+/** Level and grip as labels, in that order, for the chips shown before the tags. */
+export function profileTraits(p: StudentProfileEdit): string[] {
+  return [p.level && studentLevelLabels[p.level], p.grip && gripLabels[p.grip]].filter(
+    (t): t is NonNullable<typeof t> => Boolean(t),
+  )
+}
+
 /** The editable fields in a fixed order, for `versionOf` on both sides. */
 export function profileEdit(p: StudentProfileEdit): StudentProfileEdit {
   return { level: p.level, grip: p.grip, tags: p.tags, note: p.note }

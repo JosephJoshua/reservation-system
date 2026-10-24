@@ -214,6 +214,22 @@ describe('学员档案', () => {
     }
   })
 
+  it('stays on a lesson for a week after it ends, then leaves it', async () => {
+    const h = setup()
+    const { coach, studentId, bookingId } = await booked(h)
+    await h.call('PUT', `/admin/students/${studentId}/profile`, profile(), await h.admin())
+    // The lesson ends 10-25 11:00 at the venue.
+    h.clock.now = new Date('2026-11-01T02:59:00Z')
+    let ct = await bindCoach(h, coach.id)
+    const week = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, ct)
+    expect(week.json.profile).toMatchObject({ note: NOTE, lessons: 1 })
+    h.clock.now = new Date('2026-11-01T03:01:00Z')
+    ct = await bindCoach(h, coach.id)
+    const later = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, ct)
+    expect(later.status).toBe(200)
+    expect(later.json.profile).toBeNull()
+  })
+
   it('goes with the account when the student deletes it', async () => {
     const h = setup()
     const { coach, t, studentId, bookingId } = await booked(h)

@@ -7,15 +7,13 @@ import type { Deps } from '../deps'
 import { notFound } from '../errors'
 import { accountDeleted } from './account'
 
-const EMPTY: StudentProfileEdit = { level: null, grip: null, tags: [], note: '' }
-
 function editOf(tx: Q, studentId: number): StudentProfileEdit {
   const row = tx
     .select()
     .from(studentProfiles)
     .where(eq(studentProfiles.studentId, studentId))
     .get()
-  return profileEdit(row ?? EMPTY)
+  return row ? profileEdit(row) : { level: null, grip: null, tags: [], note: '' }
 }
 
 /** The profile with the student's lesson and no-show counts at the venue. */
@@ -43,6 +41,7 @@ export function saveStudentProfile(
   check: (current: StudentProfileEdit) => void,
 ): string[] {
   const next = profileEdit(edit)
+  const now = deps.now()
   return immediate(deps.db, (tx) => {
     const student = tx
       .select({ deletedAt: students.deletedAt })
@@ -61,10 +60,10 @@ export function saveStudentProfile(
     if (!changed.length) return changed
     check(current)
     tx.insert(studentProfiles)
-      .values({ studentId, ...next, updatedAt: deps.now() })
+      .values({ studentId, ...next, updatedAt: now })
       .onConflictDoUpdate({
         target: studentProfiles.studentId,
-        set: { ...next, updatedAt: deps.now() },
+        set: { ...next, updatedAt: now },
       })
       .run()
     return changed

@@ -7,6 +7,7 @@ import {
   PROFILE_TAG_LENGTH,
   packagePrice,
   profileEdit,
+  profileTraits,
   type StudentProfileDto,
   type StudentProfileEdit,
   studentLevelLabels,
@@ -485,9 +486,7 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
 }
 
 function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; deleted: boolean }) {
-  const traits = [p.level && studentLevelLabels[p.level], p.grip && gripLabels[p.grip]].filter(
-    (t): t is NonNullable<typeof t> => Boolean(t),
-  )
+  const traits = profileTraits(p)
   return (
     <div className="profile">
       {(traits.length > 0 || p.tags.length > 0) && (
@@ -605,7 +604,8 @@ function ProfileDialog({
                 set({ tags })
                 setTyping('')
               } else if (ctx?.trigger !== 'blur') {
-                setTyping(Array.from(String(v)).slice(0, PROFILE_TAG_LENGTH).join(''))
+                // Cut to length when added, not while a pinyin input method is composing.
+                setTyping(String(v))
               }
             }}
             onChange={(v) => {

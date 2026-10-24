@@ -1364,8 +1364,8 @@ export function adminRoutes(deps: Deps) {
                 `标签不能超过 ${PROFILE_TAG_LENGTH} 个字`,
               ),
           )
-          .max(50)
-          // Counted after blanks and repeats are dropped.
+          // Only bounds the request: the limit below is counted after blanks and repeats go.
+          .max(PROFILE_MAX_TAGS * 4)
           .transform(cleanTags)
           .pipe(z.array(z.string()).max(PROFILE_MAX_TAGS, `最多 ${PROFILE_MAX_TAGS} 个标签`)),
         note: z
