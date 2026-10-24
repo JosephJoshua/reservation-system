@@ -2,9 +2,16 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  charLength,
+  cleanTags,
+  grips,
   offlineMethodLabels,
   offlineMethods,
+  PROFILE_MAX_TAGS,
+  PROFILE_NOTE_LENGTH,
   staffActions,
+  studentLevels,
+  tagsError,
   venueParts,
   venueSettings,
 } from '@rs/shared'
@@ -80,6 +87,7 @@ import {
   updateStaff,
   verifyPassword,
 } from '../services/staff'
+import { saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { weeklyHoursBody } from './coach'
 
@@ -1334,9 +1342,48 @@ export function adminRoutes(deps: Deps) {
       tester: student.tester,
       deletedAt: student.deletedAt,
       createdAt: student.createdAt,
+      profile: studentProfile(db, id, now),
       packages: packageViews(db, pkgRows, now),
       bookings: bookingViews(db, bookingRows, getSettings(db).booking, now),
     })
+  })
+
+  app.put('/students/:id/profile', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        level: z.enum(studentLevels).nullable(),
+        grip: z.enum(grips).nullable(),
+        tags: z
+          .array(z.string().max(100))
+          // Only bounds the request; the limits are counted after blanks and repeats go.
+          .max(PROFILE_MAX_TAGS * 4, `最多 ${PROFILE_MAX_TAGS} 个标签`)
+          .transform(cleanTags)
+          .superRefine((tags, ctx) => {
+            const message = tagsError(tags)
+            if (message) ctx.addIssue({ code: 'custom', message })
+          }),
+        note: z
+          .string()
+          .trim()
+          .refine(
+            (n) => charLength(n) <= PROFILE_NOTE_LENGTH,
+            `备注不能超过 ${PROFILE_NOTE_LENGTH} 字`,
+          ),
+      }),
+    )
+    const id = idParam(c)
+    const changed = saveStudentProfile(deps, id, body, (current) => checkVersion(c, current))
+    // Field names only: the log keeps no copy of what the venue wrote about the student.
+    if (changed.length) {
+      log(c.get('staffId'), {
+        action: 'student.update',
+        summary: `修改档案：${changed.join('、')}`,
+        studentId: id,
+        target: { kind: 'student', id },
+      })
+    }
+    return c.json(studentProfile(db, id, deps.now()))
   })
 
   app.patch('/students/:id', async (c) => {

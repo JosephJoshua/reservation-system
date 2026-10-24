@@ -85,6 +85,13 @@
       "when": 1792834073816,
       "tag": "0011_package_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792836724297,
+      "tag": "0012_student_profiles",
+      "breakpoints": true
     }
   ]
 }

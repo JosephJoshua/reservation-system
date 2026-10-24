@@ -1,6 +1,7 @@
 // Response shapes of the coach API. Instants are ISO strings; money is fen.
 import type { Attendance, WeeklyHours } from './availability'
 import type { BookingStatus, FeedbackDto } from './dto'
+import type { StudentProfileDto } from './students'
 
 export interface CoachMeDto {
   id: number
@@ -41,6 +42,11 @@ export interface CoachLessonDto {
   endsAt: string
   lessonType: { id: number; name: string; isTrial: boolean }
   student: { id: number; name: string; phone: string }
+  /**
+   * The venue's 学员档案, read only. Null once the lesson is cancelled or ended over a week ago, or
+   * the student deleted their account.
+   */
+  profile: StudentProfileDto | null
   paidWith: 'order' | 'package'
   price: number
   packageName: string | null

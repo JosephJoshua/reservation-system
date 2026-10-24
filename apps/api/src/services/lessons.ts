@@ -16,7 +16,11 @@ import { LIVE } from './bookings'
 import { feedbackOf, feedbackView, writeBlock } from './feedback'
 import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
+import { studentProfile } from './student-profiles'
 import { bookingStatus } from './views'
+
+/** How long after a lesson its coach still sees the student's 学员档案 on it. */
+const PROFILE_DAYS_AFTER = 7
 
 const attendanceMessages = {
   not_confirmed: '该课程未在进行，无法签到',
@@ -147,6 +151,15 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
       phone: student?.phone ?? '',
     },
+    // Only around a lesson the coach teaches: not once it was cancelled, and not for lessons that
+    // ended more than a week ago, so an old lesson does not show what the venue writes later.
+    profile:
+      student &&
+      !student.deletedAt &&
+      (LIVE as readonly string[]).includes(b.status) &&
+      b.endsAt.getTime() > now.getTime() - PROFILE_DAYS_AFTER * 86_400_000
+        ? studentProfile(db, student.id, now)
+        : null,
     paidWith: b.paidWith,
     price: b.price,
     packageName: pkg?.name ?? null,

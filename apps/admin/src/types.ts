@@ -1,4 +1,11 @@
-import type { Attendance, BookingDto, BookingStatus, PackageDto, RefundStatus } from '@rs/shared'
+import type {
+  Attendance,
+  BookingDto,
+  BookingStatus,
+  PackageDto,
+  RefundStatus,
+  StudentProfileDto,
+} from '@rs/shared'
 
 export interface CoachCategory {
   id: number
@@ -92,6 +99,7 @@ export interface StudentDetail extends Person {
   tester: boolean
   deletedAt: string | null
   createdAt: string
+  profile: StudentProfileDto
   packages: PackageDto[]
   bookings: BookingDto[]
 }

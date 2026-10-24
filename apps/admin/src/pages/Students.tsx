@@ -1,4 +1,20 @@
-import { packagePrice } from '@rs/shared'
+import {
+  cleanTags,
+  gripLabels,
+  grips,
+  PROFILE_MAX_TAGS,
+  PROFILE_NOTE_LENGTH,
+  PROFILE_TAG_LENGTH,
+  packagePrice,
+  profileCounts,
+  profileEdit,
+  profileTraits,
+  type StudentProfileDto,
+  type StudentProfileEdit,
+  studentLevelLabels,
+  studentLevels,
+  tagsError,
+} from '@rs/shared'
 import { useEffect, useState } from 'react'
 import {
   Button,
@@ -8,10 +24,13 @@ import {
   Input,
   InputNumber,
   Loading,
+  MessagePlugin,
+  Radio,
   Select,
   Space,
   Switch,
   Tag,
+  TagInput,
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
@@ -236,6 +255,8 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const [selling, setSelling] = useState(false)
   const [booking, setBooking] = useState(false)
+  // The profile as it was when the editor opened, which the save is checked against.
+  const [editingProfile, setEditingProfile] = useState<StudentProfileEdit | null>(null)
   const [action, setAction] = useState<{
     kind: 'grant' | 'extend' | 'ledger'
     packageId: number
@@ -257,7 +278,8 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           {s.deletedAt ? (
             <span className="muted">
-              {fmtDate(s.deletedAt)} 注销，姓名、手机号和微信身份已删除。订单和上课记录保留。
+              {fmtDate(s.deletedAt)}{' '}
+              注销，姓名、手机号、学员档案和微信身份已删除。订单和上课记录保留。
             </span>
           ) : (
             <Space align="center">
@@ -274,6 +296,20 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
               />
             </Space>
           )}
+
+          <Card
+            title="学员档案"
+            bordered
+            actions={
+              s.deletedAt ? null : (
+                <Button size="small" onClick={() => setEditingProfile(profileEdit(s.profile))}>
+                  编辑
+                </Button>
+              )
+            }
+          >
+            <ProfileView profile={s.profile} deleted={Boolean(s.deletedAt)} />
+          </Card>
 
           <Card
             title="课时包"
@@ -401,6 +437,17 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
         </Space>
       )}
 
+      {editingProfile && s && (
+        <ProfileDialog
+          studentId={s.id}
+          loaded={editingProfile}
+          onClose={() => setEditingProfile(null)}
+          onDone={() => {
+            setEditingProfile(null)
+            void detail.reload()
+          }}
+        />
+      )}
       {booking && s && (
         <BookForStudent
           student={s}
@@ -437,6 +484,148 @@ function StudentDrawer({ id, onClose }: { id: number; onClose: () => void }) {
         <Ledger packageId={action.packageId} onClose={() => setAction(null)} />
       )}
     </Drawer>
+  )
+}
+
+function ProfileView({ profile: p, deleted }: { profile: StudentProfileDto; deleted: boolean }) {
+  const traits = profileTraits(p)
+  return (
+    <div className="profile">
+      {(traits.length > 0 || p.tags.length > 0) && (
+        <Space size={8} breakLine>
+          {traits.map((t) => (
+            <Tag key={`trait:${t}`} theme="primary" variant="light">
+              {t}
+            </Tag>
+          ))}
+          {p.tags.map((t) => (
+            <Tag key={`tag:${t}`} variant="outline">
+              {t}
+            </Tag>
+          ))}
+        </Space>
+      )}
+      {p.note && <div className="profile-note">{p.note}</div>}
+      {!deleted && !traits.length && !p.tags.length && !p.note && (
+        <div className="muted">还没有填写水平、握拍、标签和备注，教练上课前会看到这些。</div>
+      )}
+      <div className="muted">{profileCounts(p)}</div>
+    </div>
+  )
+}
+
+/** Staff fill in the profile; coaches read it on the lesson page, students never see it. */
+function ProfileDialog({
+  studentId,
+  loaded,
+  onClose,
+  onDone,
+}: {
+  studentId: number
+  loaded: StudentProfileEdit
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [form, setForm] = useState(loaded)
+  // Text typed in the tag box but not yet added with Enter still counts as a tag.
+  const [typing, setTyping] = useState('')
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+  const set = (patch: Partial<StudentProfileEdit>) => setForm((f) => ({ ...f, ...patch }))
+  const tags = cleanTags([...form.tags, typing])
+
+  const submit = async () => {
+    const error = tagsError(tags)
+    if (error) {
+      void MessagePlugin.warning(error)
+      return
+    }
+    const ok = await attempt(
+      () =>
+        api(
+          'PUT',
+          `/admin/students/${studentId}/profile`,
+          { ...form, tags },
+          { key, ifMatch: loaded },
+        ),
+      '已保存',
+      // Someone else saved it, or the student deleted their account: show it as it is now.
+      { onStale: onDone, stale: ['edited_elsewhere', 'account_deleted'] },
+    )
+    if (ok) onDone()
+  }
+
+  return (
+    <Dialog
+      visible
+      width={560}
+      header="编辑学员档案"
+      confirmBtn={{ content: '保存', loading: submitting }}
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <div className="fields">
+        <Field label="水平">
+          <Radio.Group
+            theme="button"
+            variant="outline"
+            value={form.level ?? ''}
+            options={[
+              { label: '未填', value: '' },
+              ...studentLevels.map((l) => ({ label: studentLevelLabels[l], value: l })),
+            ]}
+            onChange={(v) => set({ level: (v || null) as StudentProfileEdit['level'] })}
+          />
+        </Field>
+        <Field label="握拍">
+          <Radio.Group
+            theme="button"
+            variant="outline"
+            value={form.grip ?? ''}
+            options={[
+              { label: '未填', value: '' },
+              ...grips.map((g) => ({ label: gripLabels[g], value: g })),
+            ]}
+            onChange={(v) => set({ grip: (v || null) as StudentProfileEdit['grip'] })}
+          />
+        </Field>
+        <Field
+          label="标签"
+          help={`最多 ${PROFILE_MAX_TAGS} 个，每个不超过 ${PROFILE_TAG_LENGTH} 字，回车添加`}
+        >
+          <TagInput
+            value={form.tags}
+            inputValue={typing}
+            max={PROFILE_MAX_TAGS}
+            clearable
+            placeholder="如 反手弱、备赛、青少年"
+            onInputChange={(v, ctx) => {
+              // The box drops unadded text on blur; keep it as a tag instead.
+              if (ctx?.trigger === 'blur' && tags.length <= PROFILE_MAX_TAGS) {
+                set({ tags })
+                setTyping('')
+              } else if (ctx?.trigger !== 'blur') {
+                setTyping(String(v))
+              }
+            }}
+            onChange={(v, ctx) => {
+              // Removing a tag keeps what is still being typed.
+              if (ctx.trigger !== 'tag-remove') setTyping('')
+              set({ tags: cleanTags((v as string[]).map(String)) })
+            }}
+          />
+        </Field>
+        <Field label="备注" help="仅场馆和教练可见，学员看不到。不要记录病史等健康信息。">
+          <Textarea
+            value={form.note}
+            maxlength={PROFILE_NOTE_LENGTH}
+            autosize={{ minRows: 4, maxRows: 10 }}
+            placeholder="如 打法特点、训练目标"
+            onChange={(v) => set({ note: String(v) })}
+          />
+        </Field>
+      </div>
+    </Dialog>
   )
 }
 

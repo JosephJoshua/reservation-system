@@ -511,3 +511,15 @@ a:hover {
   border-radius: 4px;
   background: var(--td-bg-color-secondarycontainer);
 }
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--td-text-color-primary);
+}
