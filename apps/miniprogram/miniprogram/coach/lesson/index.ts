@@ -40,7 +40,7 @@ function profileView(p: StudentProfileDto | null): ProfileView | null {
     chips,
     note: p.note,
     empty: !chips.length && !p.note,
-    counts: `在本馆上课 ${p.lessons} 次${p.noShows ? `，缺席 ${p.noShows} 次` : ''}`,
+    counts: `已在本馆上课 ${p.lessons} 次${p.noShows ? `，缺席 ${p.noShows} 次` : ''}`,
   }
 }
 

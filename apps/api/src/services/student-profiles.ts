@@ -30,9 +30,9 @@ export function studentProfile(tx: Q, studentId: number, now: Date): StudentProf
 }
 
 /**
- * Replaces the profile, its tags already cleaned. Returns the names of the fields that changed, empty when nothing did, so a
- * repeat of the same save succeeds and logs nothing. `check` sees the profile as it was, to refuse
- * a save made on top of someone else's change.
+ * Replaces the profile, its tags already cleaned. Returns the names of the fields that changed,
+ * empty when nothing did, so a repeat of the same save succeeds and logs nothing. `check` sees the
+ * profile as it was, to refuse a save made on top of someone else's change.
  */
 export function saveStudentProfile(
   deps: Deps,

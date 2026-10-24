@@ -209,7 +209,7 @@ try {
     page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
     const profile = await profileOf()
     check(profile?.empty, 'the profile should be empty')
-    check(profile.counts === '在本馆上课 1 次', `counts: ${profile.counts}`)
+    check(profile.counts === '已在本馆上课 1 次', `counts: ${profile.counts}`)
     check((await page.$('.profile-empty')) !== null, 'should say nothing is filled in')
     await screenshot('empty')
   })
@@ -252,7 +252,7 @@ try {
       (d) => (d.profile as ProfileView).chips.length === 10,
     )
     const profile = await profileOf()
-    check(profile?.counts === '在本馆上课 0 次，缺席 1 次', `counts: ${profile?.counts}`)
+    check(profile?.counts === '已在本馆上课 0 次，缺席 1 次', `counts: ${profile?.counts}`)
     await screenshot('long')
     await miniProgram.pageScrollTo(400)
     await screenshot('long-scrolled')
