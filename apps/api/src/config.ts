@@ -84,6 +84,8 @@ export const config = {
    * venue's 签到码, as `name.txt=content`.
    */
   wechatLinkCheck: linkCheck(env.WECHAT_LINK_CHECK),
+  /** 腾讯位置服务 key for the admin's map picker; without it admins paste links or coordinates. */
+  tencentMapKey: env.TENCENT_MAP_KEY || undefined,
   wechatPay: wechatPay(),
   notices: notices(),
 }

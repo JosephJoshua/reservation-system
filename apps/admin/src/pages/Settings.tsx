@@ -18,12 +18,7 @@ import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
 import { attempt, newKey, useApi } from '../hooks'
 import { PreviewDialog } from '../preview/EditorWithPreview'
-
-function coordValid(text: string, limit: number) {
-  if (text.trim() === '') return true
-  const n = Number(text)
-  return Number.isFinite(n) && Math.abs(n) <= limit
-}
+import { coordValid, VenueLocation } from '../VenueLocation'
 
 export function Settings() {
   const { data, error, reload } = useApi<VenueSettings>('/admin/settings')
@@ -53,13 +48,15 @@ export function Settings() {
   }
 
   const save = async () => {
-    if (!coordValid(coord.lat, 90) || !coordValid(coord.lng, 180) || !coord.lat !== !coord.lng) {
+    const lat = coord.lat.trim()
+    const lng = coord.lng.trim()
+    if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {
       void MessagePlugin.warning('请填写完整、有效的经纬度，或都留空')
       return
     }
     const body = structuredClone(s)
-    body.venue.latitude = coord.lat ? Number(coord.lat) : null
-    body.venue.longitude = coord.lng ? Number(coord.lng) : null
+    body.venue.latitude = lat ? Number(lat) : null
+    body.venue.longitude = lng ? Number(lng) : null
     setSaving(true)
     if (await attempt(() => api('PUT', '/admin/settings', body, { ifMatch: data, key }), '已保存'))
       await reload()
@@ -117,23 +114,11 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="地图坐标" help="用于学员一键导航，可在腾讯地图坐标拾取器获取">
-            <Space>
-              <Input
-                style={{ width: 160 }}
-                placeholder="纬度，如 39.9087"
-                value={coord.lat}
-                status={coordValid(coord.lat, 90) ? 'default' : 'error'}
-                onChange={(v) => setCoord({ ...coord, lat: String(v) })}
-              />
-              <Input
-                style={{ width: 160 }}
-                placeholder="经度，如 116.3975"
-                value={coord.lng}
-                status={coordValid(coord.lng, 180) ? 'default' : 'error'}
-                onChange={(v) => setCoord({ ...coord, lng: String(v) })}
-              />
-            </Space>
+          <Field
+            label="地图坐标"
+            help="在高德、腾讯或百度地图里打开场馆，点“分享”并复制链接，粘贴到上面即可。学员点场馆地址时，会按这个位置导航。"
+          >
+            <VenueLocation value={coord} onChange={setCoord} venueName={s.venue.name} />
           </Field>
         </div>
       </Card>

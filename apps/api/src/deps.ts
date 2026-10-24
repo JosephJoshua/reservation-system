@@ -15,4 +15,8 @@ export interface Deps {
   notifier?: Notifier
   /** Mini program codes for the front desk to show; left out when WeChat is not configured. */
   miniCode?: MiniCode
+  /** Opens map share links for the admin's 地图坐标; left out in tests that do not stub it. */
+  mapFetch?: typeof fetch
+  /** 腾讯位置服务 key for the admin's map picker. */
+  tencentMapKey?: string
 }

@@ -23,7 +23,9 @@ import { devLogin } from '../wx'
 export const ADMIN_PASSWORD = 'test-password'
 
 /** A fresh API on an in-memory database, with a fake gateway and a clock tests can move. */
-export function setup(options: { dbPath?: string; now?: string } = {}) {
+export function setup(
+  options: { dbPath?: string; now?: string } & Pick<Deps, 'mapFetch' | 'tencentMapKey'> = {},
+) {
   const db = openDb(options.dbPath ?? ':memory:')
   runMigrations(db)
   const gateway = new FakeGateway()
@@ -36,6 +38,8 @@ export function setup(options: { dbPath?: string; now?: string } = {}) {
     wxLogin: devLogin,
     uploadsDir: mkdtempSync(join(tmpdir(), 'rs-uploads-')),
     log: (message, detail) => logs.push({ message, detail }),
+    mapFetch: options.mapFetch,
+    tencentMapKey: options.tencentMapKey,
   }
   ensureFirstStaff(db, ADMIN_PASSWORD)
   const app = createApp(deps)
