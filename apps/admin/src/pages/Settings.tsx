@@ -362,7 +362,13 @@ export function Settings() {
       {previewing && (
         <PreviewDialog
           title="预览首页"
-          draft={{ kind: 'home', id: null, venue: s.venue, notice: s.notice }}
+          draft={{
+            kind: 'home',
+            id: null,
+            venue: s.venue,
+            notice: s.notice,
+            payment: s.payment,
+          }}
           onClose={() => setPreviewing(false)}
         />
       )}

@@ -128,7 +128,13 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
     }
   }, [source, draft, now])
 
-  let page: { title: string; tab?: boolean; styles: string; body: React.ReactNode } | null = null
+  let page: {
+    title: string
+    tab?: boolean
+    styles: string
+    body: React.ReactNode
+    note?: string
+  } | null = null
   if (view && source) {
     const { catalog, id, merged } = view
     const venue = merged.home.venue
@@ -161,6 +167,7 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
       page = {
         title: draft.form.name || '选择时间',
         styles: pageStyles.book,
+        note: '时段来自排课，预览只显示课程和教练',
         body: (
           <BookScreen
             catalog={catalog}
@@ -219,11 +226,13 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
             tab={page.tab}
             pageStyles={page.styles}
             zoom={zoom}
+            focusKey={`${screen}:${JSON.stringify(draft)}`}
           >
             {page.body}
           </PhoneFrame>
         )}
       </div>
+      {page?.note && <p className="mp-preview-note">{page.note}</p>}
     </div>
   )
 }

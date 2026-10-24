@@ -42,7 +42,7 @@ export function TIcon({
   const Svg = icons[name]
   return (
     <div
-      className={cls('t-icon', 't-class', className)}
+      className={cls('mp-t-icon', 'mp-t-class', className)}
       style={size ? { fontSize: size } : undefined}
       aria-hidden
     >
@@ -65,32 +65,32 @@ export function TTag({
   return (
     <div
       className={cls(
-        't-tag',
-        `t-tag--${theme}`,
-        `t-tag--${variant}`,
-        `t-tag--${size}`,
-        't-tag--square',
+        'mp-t-tag',
+        `mp-t-tag--${theme}`,
+        `mp-t-tag--${variant}`,
+        `mp-t-tag--${size}`,
+        'mp-t-tag--square',
       )}
     >
-      <div className="t-tag__icon" aria-hidden />
-      <div className="t-tag__text">{children}</div>
+      <div className="mp-t-tag__icon" aria-hidden />
+      <div className="mp-t-tag__text">{children}</div>
     </div>
   )
 }
 
 export function TAvatar({ image, size }: { image: string; size: string }) {
   return (
-    <div className="t-avatar__wrapper">
-      <div className="t-avatar t-avatar--circle" style={{ width: size, height: size }}>
+    <div className="mp-t-avatar__wrapper">
+      <div className="mp-t-avatar t-avatar--circle" style={{ width: size, height: size }}>
         {image ? (
           <img
-            className="t-image t-avatar__image"
+            className="mp-t-image t-avatar__image"
             src={image}
             alt=""
             style={{ objectFit: 'cover' }}
           />
         ) : (
-          <TIcon name="user" className="t-avatar__icon" />
+          <TIcon name="user" className="mp-t-avatar__icon" />
         )}
       </div>
     </div>
@@ -113,22 +113,22 @@ export function TButton({
   return (
     <div
       className={cls(
-        't-button',
-        't-button--base',
-        `t-button--${theme}`,
-        't-button--rectangle',
-        `t-button--size-${size}`,
-        block && 't-button--block',
+        'mp-t-button',
+        'mp-t-button--base',
+        `mp-t-button--${theme}`,
+        'mp-t-button--rectangle',
+        `mp-t-button--size-${size}`,
+        block && 'mp-t-button--block',
         className,
       )}
     >
-      <div className="t-button__content">{children}</div>
+      <div className="mp-t-button__content">{children}</div>
     </div>
   )
 }
 
 export function TCellGroup({ children }: { children: ReactNode }) {
-  return <div className="t-cell-group t-cell-group--card">{children}</div>
+  return <div className="mp-t-cell-group t-cell-group--card">{children}</div>
 }
 
 export function TCell({
@@ -148,19 +148,19 @@ export function TCell({
   last?: boolean
 }) {
   return (
-    <div className={cls('t-cell', !last && 't-cell--bordered')}>
-      <div className="t-cell__left">
-        {leftIcon && <TIcon name={leftIcon} className="t-cell__left-icon" />}
+    <div className={cls('mp-t-cell', !last && 'mp-t-cell--bordered')}>
+      <div className="mp-t-cell__left">
+        {leftIcon && <TIcon name={leftIcon} className="mp-t-cell__left-icon" />}
       </div>
-      <div className="t-cell__title">
-        <div className="t-cell__title-text">{title}</div>
-        <div className="t-cell__description">
-          {description && <div className="t-cell__description-text">{description}</div>}
+      <div className="mp-t-cell__title">
+        <div className="mp-t-cell__title-text">{title}</div>
+        <div className="mp-t-cell__description">
+          {description && <div className="mp-t-cell__description-text">{description}</div>}
         </div>
       </div>
-      <div className="t-cell__note">{note && <span>{note}</span>}</div>
-      <div className="t-cell__right">
-        {arrow && <TIcon name="chevron-right" className="t-cell__right-icon" />}
+      <div className="mp-t-cell__note">{note && <span>{note}</span>}</div>
+      <div className="mp-t-cell__right">
+        {arrow && <TIcon name="chevron-right" className="mp-t-cell__right-icon" />}
       </div>
     </div>
   )
@@ -168,15 +168,15 @@ export function TCell({
 
 export function TNoticeBar({ content, marquee }: { content: string; marquee: boolean }) {
   return (
-    <div className="t-notice-bar t-notice-bar--info">
-      <div className="t-notice-bar__prefix-icon">
+    <div className="mp-t-notice-bar t-notice-bar--info">
+      <div className="mp-t-notice-bar__prefix-icon">
         <TIcon name="sound" />
       </div>
-      <div className="t-notice-bar__content-wrap">
+      <div className="mp-t-notice-bar__content-wrap">
         <div
           className={cls(
-            't-notice-bar__content',
-            !marquee && 't-notice-bar__content-wrapable',
+            'mp-t-notice-bar__content',
+            !marquee && 'mp-t-notice-bar__content-wrapable',
             marquee && 'mp-marquee',
           )}
           // Roughly TDesign's 50px per second.
@@ -201,12 +201,12 @@ export function TEmpty({
   description: string
 }) {
   return (
-    <div className="t-empty">
-      <div className="t-empty__thumb" aria-hidden>
-        <TIcon name={icon} size={size} className="t-empty__icon" />
+    <div className="mp-t-empty">
+      <div className="mp-t-empty__thumb" aria-hidden>
+        <TIcon name={icon} size={size} className="mp-t-empty__icon" />
       </div>
-      <div className="t-empty__description">{description}</div>
-      <div className="t-empty__actions" />
+      <div className="mp-t-empty__description">{description}</div>
+      <div className="mp-t-empty__actions" />
     </div>
   )
 }

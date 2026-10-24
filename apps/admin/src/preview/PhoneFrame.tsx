@@ -32,6 +32,7 @@ export function PhoneFrame({
   tab,
   pageStyles,
   zoom = 1,
+  focusKey,
   children,
 }: {
   title: string
@@ -40,6 +41,8 @@ export function PhoneFrame({
   /** The page's own wxss, as CSS. */
   pageStyles: string
   zoom?: number
+  /** Changes when what is previewed changes, which brings the marked element back into view. */
+  focusKey: string
   children: ReactNode
 }) {
   const colors = nativeTheme[theme]
@@ -47,14 +50,15 @@ export function PhoneFrame({
   const viewport =
     SCREEN.height - SCREEN.status - SCREEN.nav - (tab ? SCREEN.tabBar + SCREEN.homeBar : 0)
 
-  // Each change brings the edited part back into view, as the form beside it changes.
+  // Each edit brings the edited part back into view; scrolling the phone otherwise stays put.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when focusKey changes
   useEffect(() => {
     const box = scroller.current
     const target = box?.querySelector<HTMLElement>('[data-preview-focus]')
     if (!box || !target) return
     const top = target.offsetTop - box.clientHeight / 2 + target.offsetHeight / 2
     box.scrollTo({ top: Math.max(0, top) })
-  })
+  }, [focusKey])
 
   return (
     <div

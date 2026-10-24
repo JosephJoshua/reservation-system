@@ -63,6 +63,13 @@
   margin: 0;
 }
 
+.mp-preview-note {
+  margin: 0;
+  font-size: 12px;
+  text-align: center;
+  color: var(--td-text-color-secondary);
+}
+
 .mp-preview-stage {
   display: flex;
   justify-content: center;
@@ -259,6 +266,12 @@
   background: #ffffff;
 }
 
+/* TDesign's font list names no generic family, so a computer without PingFang or YaHei would
+   fall back to a serif; the phone always has one of them. */
+.mp-screen .mp-page.mp-page {
+  --td-font-family: "PingFang SC", "Microsoft YaHei", -apple-system, "Noto Sans CJK SC", sans-serif;
+}
+
 /* Mini program elements without an HTML twin. */
 .mp-page {
   min-height: 100%;
@@ -289,6 +302,10 @@
   object-fit: cover;
 }
 
+.mp-page .mp-image-empty {
+  background: var(--td-bg-color-secondarycontainer);
+}
+
 .mp-page .mp-swiper-dots {
   position: absolute;
   left: 0;
@@ -310,7 +327,7 @@
   background: #ffffff;
 }
 
-.mp-page .t-icon {
+.mp-page .mp-t-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;

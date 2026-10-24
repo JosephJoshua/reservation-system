@@ -79,7 +79,11 @@ export function HomeScreen({
       {banner && (
         <div className="banners mp-swiper">
           <div className="mp-swiper-item" {...(bannerId !== undefined ? FOCUS : {})}>
-            <img className="banner-image mp-image-fill" src={banner.imageUrl} alt="" />
+            {banner.imageUrl ? (
+              <img className="banner-image mp-image-fill" src={banner.imageUrl} alt="" />
+            ) : (
+              <div className="banner-image mp-image-empty" />
+            )}
             {banner.title && <div className="banner-title">{banner.title}</div>}
           </div>
           {banners.length > 1 && (
@@ -419,7 +423,7 @@ export function BookScreen({
         <TEmpty
           icon="time"
           size="56px"
-          description={coaches.length ? '可约时段按排课显示' : '这一天没有可预约的时段'}
+          description={lessonType.capacity > 1 ? '这一天没有排课' : '这一天没有可预约的时段'}
         />
       </div>
     </div>

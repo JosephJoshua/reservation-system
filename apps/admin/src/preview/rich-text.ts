@@ -13,6 +13,8 @@ const CLASSES: Record<string, string> = {
   img: 'rt-img',
 }
 const ALLOWED = new Set([...Object.keys(CLASSES), 'br', 'strong', 'em', 'u', 's'])
+// sanitize-html drops these with their text.
+const DROPPED = new Set(['script', 'style', 'textarea', 'option', 'noscript'])
 const UPLOAD = /^\/api\/uploads\/[\w-]+\.(jpg|png|webp)$/
 
 function copy(from: Node, to: Node, doc: Document) {
@@ -23,6 +25,7 @@ function copy(from: Node, to: Node, doc: Document) {
     }
     if (!(node instanceof Element)) continue
     const tag = node.tagName.toLowerCase()
+    if (DROPPED.has(tag)) continue
     if (!ALLOWED.has(tag)) {
       // Unknown wrappers keep their text, as the API's sanitizer does.
       copy(node, to, doc)
@@ -43,9 +46,11 @@ export function profileHtml(html: string): string {
   const doc = document.implementation.createHTMLDocument('')
   const root = doc.createElement('div')
   copy(source.body, root, doc)
-  // The editor leaves empty paragraphs at the ends, which the API drops.
+  // The editor leaves empty paragraphs at the ends, which the API drops: <p></p> and <p><br></p>.
   const blank = (n: ChildNode | null) =>
-    n instanceof HTMLParagraphElement && !n.textContent?.trim() && !n.querySelector('img')
+    !!n &&
+    ((n.nodeType === Node.TEXT_NODE && !n.textContent?.trim()) ||
+      (n instanceof HTMLParagraphElement && /^\s*(<br>)?\s*$/.test(n.innerHTML)))
   while (blank(root.firstChild)) root.firstChild?.remove()
   while (blank(root.lastChild)) root.lastChild?.remove()
   const text = root.textContent?.trim()

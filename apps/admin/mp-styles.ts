@@ -3,6 +3,7 @@
 // every rule scoped to the preview's `.mp-page` element, so the real page styles render the
 // preview without touching the admin. Color scheme blocks apply under `.mp-light` / `.mp-dark`,
 // classes the preview sets beside `.mp-page`, at the same specificity so source order still wins.
+// TDesign's .t-* classes are renamed .mp-t-* (see scopeSelector).
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
@@ -87,9 +88,14 @@ function selectorParts(selector: string): string[] {
   return parts.map((p) => p.trim()).filter(Boolean)
 }
 
+/**
+ * TDesign Miniprogram's classes (.t-tag and so on) become .mp-t-*: the admin's TDesign React uses
+ * the same names, and its rules would otherwise style the preview's components too.
+ */
 function scopeSelector(selector: string, root: string): string {
   return selectorParts(selector)
-    .map((part) => {
+    .map((raw) => {
+      const part = raw.replace(/\.t-(?=[a-zA-Z])/g, '.mp-t-')
       const page = part.match(/^\.?page(?=$|[\s:.[>+~])/)
       return page ? `${root}${part.slice(page[0].length)}` : `${root} ${part}`
     })

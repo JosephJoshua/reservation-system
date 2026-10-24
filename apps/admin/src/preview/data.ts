@@ -32,6 +32,7 @@ export type Draft =
       id: null
       venue: HomeDto['venue']
       notice: { text: string; endsAt: string | null }
+      payment: { trialEnabled: boolean; packagesEnabled: boolean }
     }
 
 export interface PreviewSource {
@@ -48,12 +49,22 @@ export interface PreviewSource {
 /** The id a new record gets in the preview. */
 export const NEW_ID = -1
 
-/** The list with the draft in place of the saved record, or at the end when it is new. */
-function put<T extends { id: number }>(list: T[], id: number | null, form: Omit<T, 'id'>): T[] {
+/**
+ * The list with the draft in place of the saved record, or added when it is new, in the API's
+ * order: by 排序, then by id with a new record last.
+ */
+function put<T extends { id: number; sort?: number }>(
+  list: T[],
+  id: number | null,
+  form: Omit<T, 'id'>,
+): T[] {
   const row = { ...form, id: id ?? NEW_ID } as T
-  return id !== null && list.some((r) => r.id === id)
-    ? list.map((r) => (r.id === id ? row : r))
-    : [...list, row]
+  const rows =
+    id !== null && list.some((r) => r.id === id)
+      ? list.map((r) => (r.id === id ? row : r))
+      : [...list, row]
+  const order = (r: T) => (r.id === NEW_ID ? Number.MAX_SAFE_INTEGER : r.id)
+  return rows.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || order(a) - order(b))
 }
 
 export function withDraft(source: PreviewSource, draft: Draft): PreviewSource {
@@ -76,7 +87,11 @@ export function withDraft(source: PreviewSource, draft: Draft): PreviewSource {
       return { ...source, banners: put(source.banners, draft.id, draft.form) }
     case 'home':
       // Shown even when expired, so the admin sees it; hiddenReasons says it is not live.
-      return { ...source, home: { ...source.home, venue: draft.venue, notice: draft.notice.text } }
+      return {
+        ...source,
+        home: { ...source.home, venue: draft.venue, notice: draft.notice.text },
+        payment: draft.payment,
+      }
   }
 }
 
@@ -184,8 +199,8 @@ export function studentCatalog(
       price: productPrice(p, now),
     }))
   const banners = source.banners
-    // A new banner has no image until one is uploaded, and the swiper shows images only.
-    .filter((b) => b.imageUrl && (is('banner', b.id) || bannerShowing(b, now)))
+    // The previewed banner shows even before its image is uploaded, as an empty slide.
+    .filter((b) => is('banner', b.id) || (b.imageUrl && bannerShowing(b, now)))
     .map((b) => ({
       id: b.id,
       imageUrl: b.imageUrl,

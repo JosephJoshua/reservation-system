@@ -10,6 +10,12 @@ describe('wxssToCss', () => {
     )
   })
 
+  it('renames TDesign classes away from the admin TDesign React ones', () => {
+    expect(wxssToCss('.t-tag.t-tag--small .t-icon:not(.t-x) { --td-tag: 1 }')).toBe(
+      '.mp-page .mp-t-tag.mp-t-tag--small .mp-t-icon:not(.mp-t-x){ --td-tag: 1 }',
+    )
+  })
+
   it('maps page selectors to the preview root', () => {
     expect(wxssToCss('page, .page { --x: 1 } page .a { color: red }')).toBe(
       '.mp-page,.mp-page{ --x: 1 }\n.mp-page .a{ color: red }',
