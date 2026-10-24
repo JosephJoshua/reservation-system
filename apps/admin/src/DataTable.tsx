@@ -1,4 +1,11 @@
-import { Button, Table, type TableProps, type TableRowData } from 'tdesign-react'
+import {
+  Button,
+  type PrimaryTableCol,
+  Table,
+  type TableProps,
+  type TableRowData,
+} from 'tdesign-react'
+import { type Reorder, ReorderCell } from './Reorder'
 
 // Columns of row buttons. On a phone they become the card's footer instead of a labelled row.
 const ACTION_COLUMNS = new Set(['op', 'actions'])
@@ -8,9 +15,27 @@ const ACTION_COLUMNS = new Set(['op', 'actions'])
  * the others show their column title beside the value, and row buttons sit in a footer. Each
  * cell's content is wrapped in one element, so phone.css can line the label up with its first
  * line whatever the cell holds.
+ *
+ * With `reorder`, each row starts with a drag handle and 上移 / 下移 buttons.
  */
-export function DataTable<T extends TableRowData>(props: TableProps<T>) {
-  const columns = props.columns?.map((c) => {
+export function DataTable<T extends TableRowData>({
+  reorder,
+  ...props
+}: TableProps<T> & { reorder?: Reorder<T> }) {
+  const data = props.data ?? []
+  const all: PrimaryTableCol<T>[] | undefined = reorder
+    ? [
+        {
+          colKey: 'drag',
+          title: '',
+          width: 96,
+          attrs: { 'data-label': '', 'data-reorder': '' },
+          cell: ({ rowIndex }) => <ReorderCell rows={data} index={rowIndex} reorder={reorder} />,
+        },
+        ...(props.columns ?? []),
+      ]
+    : props.columns
+  const columns = all?.map((c) => {
     const cell = c.cell
     const wrapped =
       typeof cell === 'function'
@@ -31,6 +56,8 @@ export function DataTable<T extends TableRowData>(props: TableProps<T>) {
     <Table
       {...props}
       columns={columns}
+      dragSort={reorder && !reorder.disabled ? 'row-handler' : props.dragSort}
+      onDragSort={reorder ? ({ newData }) => reorder.move(newData) : props.onDragSort}
       className={props.className ? `card-table ${props.className}` : 'card-table'}
     />
   )

@@ -42,8 +42,8 @@ describe('validation messages', () => {
     expect(empty.json.error.message).toBe('请填写名称')
     const missing = await h.call('POST', '/admin/coaches', {}, admin)
     expect(missing.json.error.message).toBe('请填写名称')
-    const unlabelled = await h.call('POST', '/admin/coaches', { name: '王', sort: 'x' }, admin)
-    expect(unlabelled.json.error.message).toBe('排序格式不对')
+    const unlabelled = await h.call('POST', '/admin/coaches', { name: '王', tags: 'x' }, admin)
+    expect(unlabelled.json.error.message).toBe('标签格式不对')
     const internal = await h.call('POST', '/admin/coaches', { name: '王', active: 'x' }, admin)
     expect(internal.json.error.message).toBe('请求格式错误：active')
 
@@ -90,9 +90,9 @@ describe('edits from two tabs', () => {
     const path = `/admin/banners/${created.id}`
     const first = await h.call('PUT', path, { ...body, title: '双十二' }, admin, ifMatch)
     expect(first.status).toBe(200)
-    const stale = await h.call('PUT', path, { ...body, sort: 3 }, admin, ifMatch)
+    const stale = await h.call('PUT', path, { ...body, active: false }, admin, ifMatch)
     expect(stale.json.error.code).toBe('edited_elsewhere')
-    const again = await h.call('PUT', path, { ...body, sort: 3 }, admin, {
+    const again = await h.call('PUT', path, { ...body, active: false }, admin, {
       'If-Match': versionOf(first.json),
     })
     expect(again.status).toBe(200)
@@ -122,7 +122,12 @@ describe('edits from two tabs', () => {
       { list: '/admin/lesson-types', id: lessonTypeId, body: lesson, edit: { name: '一对一私教' } },
       { list: '/admin/coach-categories', id: categoryId, body: category, edit: { name: '银牌' } },
       { list: '/admin/coaches', id: coachId, body: coach, edit: { title: '国家二级' } },
-      { list: '/admin/package-products', id: productId, body: product, edit: { sort: 2 } },
+      {
+        list: '/admin/package-products',
+        id: productId,
+        body: product,
+        edit: { name: '十次卡（新）' },
+      },
     ]
     for (const { list, id, body, edit } of cases) {
       const loaded = async () =>
@@ -146,9 +151,9 @@ describe('edits from two tabs', () => {
       const tab = { 'If-Match': versionOf(await editable()) }
       const first = await h.call('PUT', `${list}/${id}`, { ...body, ...edit }, admin, tab)
       expect(first.status, list).toBe(200)
-      const stale = await h.call('PUT', `${list}/${id}`, { ...body, sort: 5 }, admin, tab)
+      const stale = await h.call('PUT', `${list}/${id}`, body, admin, tab)
       expect(stale.json?.error?.code, list).toBe('edited_elsewhere')
-      const fresh = await h.call('PUT', `${list}/${id}`, { ...body, ...edit, sort: 5 }, admin, {
+      const fresh = await h.call('PUT', `${list}/${id}`, body, admin, {
         'If-Match': versionOf(await editable()),
       })
       expect(fresh.status, list).toBe(200)

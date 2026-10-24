@@ -274,16 +274,16 @@ test('a settings save from a stale tab is refused and keeps what was typed', asy
   const other = await context.newPage()
   for (const p of [page, other]) {
     await p.goto('./#/settings')
-    await expect(p.getByRole('button', { name: '保存设置' })).toBeVisible()
+    await expect(p.locator('.t-card', { hasText: '首页公告' })).toBeVisible()
   }
   const notice = (p: Page) =>
     field(p.locator('.t-card', { hasText: '首页公告' }), '公告').locator('input')
   await notice(page).fill(`第一个标签页${run}`)
-  await page.getByRole('button', { name: '保存设置' }).click()
+  await page.locator('.save-bar').getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已保存')).toBeVisible()
 
   await notice(other).fill(`第二个标签页${run}`)
-  await other.getByRole('button', { name: '保存设置' }).click()
+  await other.locator('.save-bar').getByRole('button', { name: '保存' }).click()
   await expect(other.getByText('已被其他人修改，请刷新后再改')).toBeVisible()
   await expect(notice(other)).toHaveValue(`第二个标签页${run}`)
   await page.reload()

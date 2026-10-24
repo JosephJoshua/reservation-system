@@ -26,6 +26,7 @@ import {
   PREVIEW_DIALOG_WIDTH,
   PreviewDialog,
 } from '../preview/EditorWithPreview'
+import { useReorder } from '../Reorder'
 import { RichText } from '../RichText'
 import type { AdminBooking, Coach, CoachCategory, LessonType } from '../types'
 import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
@@ -109,6 +110,9 @@ export function Catalog() {
     coach?.id ? `/admin/bookings?coachId=${coach.id}&status=confirmed` : null,
   )
   const submitting = useSubmitting()
+  const moveTypes = useReorder('lesson-types', types.setData, types.reload)
+  const moveCategories = useReorder('coach-categories', categories.setData, categories.reload)
+  const moveCoaches = useReorder('coaches', coaches.setData, coaches.reload)
 
   const saveLesson = async () => {
     if (!lesson) return
@@ -193,6 +197,7 @@ export function Catalog() {
           rowKey="id"
           loading={types.loading}
           data={types.data ?? []}
+          reorder={{ move: moveTypes }}
           empty="还没有课程"
           columns={[
             {
@@ -295,6 +300,7 @@ export function Catalog() {
           rowKey="id"
           loading={categories.loading}
           data={categories.data ?? []}
+          reorder={{ move: moveCategories }}
           empty="还没有类别，所有教练都按课程的标准价收费"
           columns={[
             { colKey: 'name', title: '名称' },
@@ -401,6 +407,7 @@ export function Catalog() {
           rowKey="id"
           loading={coaches.loading}
           data={coaches.data ?? []}
+          reorder={{ move: moveCoaches }}
           empty="还没有教练"
           columns={[
             {
@@ -764,13 +771,6 @@ function LessonEditor({
       <Field label="启用">
         <Switch value={f.active} onChange={(v) => set({ active: v })} />
       </Field>
-      <Field label="排序" help="数字小的在前">
-        <InputNumber
-          theme="normal"
-          value={f.sort}
-          onChange={(v) => set({ sort: Number(v) || 0 })}
-        />
-      </Field>
     </div>
   )
 }
@@ -865,13 +865,6 @@ function CategoryEditor({
             </Space>
           ))}
         </Space>
-      </Field>
-      <Field label="排序" help="数字小的在前">
-        <InputNumber
-          theme="normal"
-          value={f.sort}
-          onChange={(v) => set({ sort: Number(v) || 0 })}
-        />
       </Field>
     </div>
   )
@@ -1007,13 +1000,6 @@ function CoachEditor({
             还有 {upcomingLessons} 节课未上。停用后这些课程会保留，但教练无法再登录小程序查看。
           </div>
         )}
-      </Field>
-      <Field label="排序">
-        <InputNumber
-          theme="normal"
-          value={f.sort}
-          onChange={(v) => set({ sort: Number(v) || 0 })}
-        />
       </Field>
     </div>
   )

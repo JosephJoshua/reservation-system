@@ -121,7 +121,7 @@ test('reads coordinates from 高德 share text, plain coordinates and a pasted s
   await expect(lat).toHaveValue('')
   await expect(row.getByRole('link', { name: '在高德地图中查看' })).toHaveCount(0)
   await lat.fill('39.9')
-  await page.getByRole('button', { name: '保存设置' }).click()
+  await page.locator('.save-bar').getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('请填写完整、有效的经纬度，或都留空')).toBeVisible()
 })
 
@@ -170,7 +170,7 @@ test('saves the point and shows it after a reload', async ({ page }) => {
   const row = await openSettings(page, null)
   await row.getByPlaceholder('粘贴地图分享链接或坐标').fill('39.908692,116.397477')
   await row.getByRole('button', { name: '识别' }).click()
-  await page.getByRole('button', { name: '保存设置' }).click()
+  await page.locator('.save-bar').getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已保存')).toBeVisible()
   await page.reload()
   await expect(row.getByPlaceholder('纬度，如：39.9087')).toHaveValue('39.908692')

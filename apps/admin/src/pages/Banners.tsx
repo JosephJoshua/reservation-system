@@ -5,7 +5,6 @@ import {
   DateRangePicker,
   Dialog,
   Input,
-  InputNumber,
   Popconfirm,
   Select,
   Space,
@@ -22,6 +21,7 @@ import {
   PREVIEW_DIALOG_WIDTH,
   PreviewDialog,
 } from '../preview/EditorWithPreview'
+import { useReorder } from '../Reorder'
 import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
@@ -40,6 +40,7 @@ export function Banners() {
   } | null>(null)
   const [preview, setPreview] = useState<Banner | null>(null)
   const submitting = useSubmitting()
+  const move = useReorder('banners', banners.setData, banners.reload)
 
   const save = async () => {
     if (!edit) return
@@ -105,6 +106,7 @@ export function Banners() {
         rowKey="id"
         loading={banners.loading}
         data={banners.data ?? []}
+        reorder={{ move }}
         empty={banners.error ?? '还没有轮播图'}
         columns={[
           {
@@ -305,13 +307,6 @@ function BannerEditor({
       </Field>
       <Field label="展示">
         <Switch value={f.active} onChange={(v) => set({ active: v })} />
-      </Field>
-      <Field label="排序">
-        <InputNumber
-          theme="normal"
-          value={f.sort}
-          onChange={(v) => set({ sort: Number(v) || 0 })}
-        />
       </Field>
     </div>
   )

@@ -72,7 +72,6 @@ const FIELD_LABELS: Record<string, string> = {
   saleEndsAt: '优惠结束时间',
   lessonCount: '课时数',
   validityDays: '有效期',
-  sort: '排序',
   amount: '金额',
   lessons: '课时数',
   days: '天数',

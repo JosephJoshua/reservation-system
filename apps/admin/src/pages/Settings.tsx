@@ -18,6 +18,7 @@ import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
 import { attempt, newKey, useApi } from '../hooks'
 import { PreviewDialog } from '../preview/EditorWithPreview'
+import { SaveBar } from '../SaveBar'
 import { coordValid, VenueLocation } from '../VenueLocation'
 
 export function Settings() {
@@ -29,17 +30,29 @@ export function Settings() {
   const [key, setKey] = useState(newKey)
   const [previewing, setPreviewing] = useState(false)
 
-  useEffect(() => {
+  const loadedCoord = {
+    lat: data?.venue.latitude?.toString() ?? '',
+    lng: data?.venue.longitude?.toString() ?? '',
+  }
+  const reset = () => {
     if (!data) return
     setS(structuredClone(data))
+    setCoord(loadedCoord)
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when new settings arrive
+  useEffect(() => {
+    if (!data) return
+    reset()
     setKey(newKey())
-    setCoord({
-      lat: data.venue.latitude?.toString() ?? '',
-      lng: data.venue.longitude?.toString() ?? '',
-    })
   }, [data])
 
   if (!s) return error ? <p className="muted">{error}</p> : <Loading size="small" />
+
+  const dirty =
+    JSON.stringify(s) !== JSON.stringify(data) ||
+    coord.lat !== loadedCoord.lat ||
+    coord.lng !== loadedCoord.lng
 
   const set = (fn: (draft: VenueSettings) => void) => {
     const next = structuredClone(s)
@@ -48,6 +61,7 @@ export function Settings() {
   }
 
   const save = async () => {
+    if (saving) return
     const lat = coord.lat.trim()
     const lng = coord.lng.trim()
     if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {
@@ -479,12 +493,7 @@ export function Settings() {
           </Field>
         </div>
       </Card>
-
-      <div>
-        <Button loading={saving} onClick={save}>
-          保存设置
-        </Button>
-      </div>
+      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} />
     </Space>
   )
 }
