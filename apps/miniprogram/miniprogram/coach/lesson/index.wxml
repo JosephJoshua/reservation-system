@@ -42,6 +42,30 @@
     <view wx:if="{{lesson.canMarkAttendance}}" class="footnote">缺席照常计课，不退费用和课时。再点一次已选的按钮可撤销。</view>
   </block>
 
+  <block wx:if="{{lesson.feedback || !lesson.feedbackBlocked || feedbackClosed}}">
+    <view class="section-title note-title">
+      <text>课后点评</text>
+      <text wx:if="{{lesson.feedback && !lesson.feedbackBlocked}}" class="note-save" bind:tap="writeFeedback">修改</text>
+      <text wx:elif="{{lesson.feedback}}" class="note-save feedback-delete" bind:tap="deleteFeedback">{{deletingFeedback ? '删除中' : '删除'}}</text>
+    </view>
+    <view wx:if="{{lesson.feedback}}" class="card feedback">
+      <view wx:if="{{feedbackNote}}" class="feedback-note">{{feedbackNote}}</view>
+      <view class="feedback-text">{{lesson.feedback.text}}</view>
+      <view wx:if="{{feedbackPhotos.length}}" class="photos feedback-photos">
+        <view wx:for="{{feedbackPhotos}}" wx:key="*this" class="photo" data-index="{{index}}" bind:tap="previewPhoto">
+          <image class="photo-image" src="{{item}}" mode="aspectFill" lazy-load />
+        </view>
+      </view>
+    </view>
+    <view wx:elif="{{feedbackClosed}}" class="card attendance-note">{{feedbackClosed}}</view>
+    <block wx:else>
+      <view class="feedback-write">
+        <t-button block t-class="action-button" theme="primary" variant="outline" icon="edit" bind:tap="writeFeedback">写课后点评</t-button>
+      </view>
+      <view class="footnote">学员会收到通知，在课程详情和学习记录里看到点评和照片。</view>
+    </block>
+  </block>
+
   <block wx:if="{{noteEditable}}">
   <view class="section-title note-title">
     <text>课堂备注</text>
@@ -88,4 +112,5 @@
     </view>
   </view>
 </view>
+<privacy-popup id="privacy-popup" />
 </theme-root>

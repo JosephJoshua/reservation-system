@@ -13,6 +13,8 @@ import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { DELETED_NAME } from './account'
 import { LIVE } from './bookings'
+import { feedbackOf, feedbackView, writeBlock } from './feedback'
+import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
 import { bookingStatus } from './views'
 
@@ -129,6 +131,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     .orderBy(desc(bookings.startsAt))
     .all()
   const status = bookingStatus(b, now)
+  const feedback = feedbackOf(db, b.id)
   return {
     id: b.id,
     status,
@@ -149,6 +152,15 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     packageName: pkg?.name ?? null,
     attendance: b.attendance,
     coachNote: b.coachNote,
+    feedback:
+      feedback && !feedback.deletedAt
+        ? {
+            ...feedbackView(feedback),
+            hidden: feedback.hiddenAt !== null,
+            visible: isVisible(feedback, b),
+          }
+        : null,
+    feedbackBlocked: writeBlock(b, student?.deletedAt ?? null, feedback, now),
     canMarkAttendance: attendanceError(b, now, 'coach') === null,
     canCancel: (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.startsAt,
     canMove: b.status === 'confirmed' && now < b.startsAt,
@@ -187,6 +199,8 @@ export function setAttendance(
     const now = deps.now()
     const error = attendanceError(row.booking, now, by === 'admin' ? 'admin' : 'coach')
     if (error) throw new ApiError(409, error, attendanceMessages[error])
+    // A repeat keeps the time of the first mark, which the feedback window counts from.
+    if (row.booking.attendance === attendance) return
     tx.update(bookings)
       .set({ attendance, attendanceAt: attendance ? now : null })
       .where(eq(bookings.id, bookingId))

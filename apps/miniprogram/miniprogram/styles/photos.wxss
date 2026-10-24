@@ -1,0 +1,40 @@
+/* Square photo thumbnails, three to a row, for 课后点评 on student and coach pages. */
+.photos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+}
+
+.photo {
+  position: relative;
+  /* Square without aspect-ratio, which older iOS WebViews lack. */
+  padding-top: 100%;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background-color: var(--td-bg-color-secondarycontainer);
+}
+
+.photo-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The 课后点评 card on the booking and coach lesson pages. */
+.feedback {
+  padding: 28rpx 32rpx;
+}
+
+.feedback-text {
+  font-size: 32rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.feedback-photos {
+  margin-top: 24rpx;
+}

@@ -1,5 +1,5 @@
 import type { CoachLoginResponse, CoachMeDto } from '../../lib/shared'
-import { ApiError, type Method, request, wxCode } from '../../utils/api'
+import { ApiError, type Method, request, upload, wxCode } from '../../utils/api'
 
 // Separate from the student token: one WeChat user can be both, with different sessions.
 const TOKEN_KEY = 'coachToken'
@@ -21,17 +21,27 @@ function login(): Promise<string> {
   return loggingIn
 }
 
-/** Calls the coach API. Fails with code `not_bound` when this WeChat user is not a coach yet. */
-export async function coachApi<T>(method: Method, path: string, data?: unknown): Promise<T> {
+/** Runs a call with the coach token, logging in again once when the saved one has expired. */
+async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
   const saved = wx.getStorageSync(TOKEN_KEY) as string
   const token = saved || (await login())
   try {
-    return await request<T>(method, `/coach${path}`, data, token)
+    return await call(token)
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e
     wx.removeStorageSync(TOKEN_KEY)
-    return request<T>(method, `/coach${path}`, data, await login())
+    return call(await login())
   }
+}
+
+/** Calls the coach API. Fails with code `not_bound` when this WeChat user is not a coach yet. */
+export function coachApi<T>(method: Method, path: string, data?: unknown): Promise<T> {
+  return withToken((token) => request<T>(method, `/coach${path}`, data, token))
+}
+
+/** Uploads a local file to the coach API, like coachApi. */
+export function coachUpload<T>(path: string, filePath: string): Promise<T> {
+  return withToken((token) => upload<T>(`/coach${path}`, filePath, token))
 }
 
 export async function bind(bindCode: string): Promise<CoachMeDto> {

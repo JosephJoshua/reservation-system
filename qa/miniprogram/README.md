@@ -84,3 +84,27 @@ It uses the same seeded API as the student flows and signs in to the admin API w
 pnpm --filter @rs/qa-miniprogram invoices
 QA_THEME=dark pnpm --filter @rs/qa-miniprogram invoices   # forces the 外观 setting instead
 ```
+
+## Lesson moves
+
+A student moves a paid lesson (with a double tap on 确认改约), sees a time they cannot take
+refused and runs out of moves, then the coach moves the lesson in coach mode, saving screenshots
+to `qa/miniprogram/screenshots/moves/`. It uses the same seeded API as the student flows and
+signs in to the admin API with `ADMIN_PASSWORD`. Run it once in light and once in dark mode:
+
+```sh
+pnpm --filter @rs/qa-miniprogram moves
+QA_THEME=dark pnpm --filter @rs/qa-miniprogram moves   # forces the 外观 setting instead
+```
+
+## Lesson feedback
+
+The student's empty 学习记录, a coach writing 课后点评 with photos (double taps on add, save and
+delete), the student seeing it on the lesson and in 学习记录, and the coach deleting it after the
+venue hid it, saving screenshots to `qa/miniprogram/screenshots/feedback/`. `QA_DB` must point
+at the API's database file, because feedback needs a lesson that has ended:
+
+```sh
+QA_DB=../../apps/api/data/qa.db pnpm --filter @rs/qa-miniprogram feedback
+QA_DB=../../apps/api/data/qa.db QA_THEME=dark pnpm --filter @rs/qa-miniprogram feedback
+```

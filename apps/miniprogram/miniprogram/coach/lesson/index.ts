@@ -1,9 +1,11 @@
 import type { Attendance, CoachLessonDto } from '../../lib/shared'
-import { errorMessage, showError } from '../../utils/api'
+import { assetUrl, errorMessage, showError } from '../../utils/api'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
+import { previewPhotos } from '../../utils/photos'
 import { modalDangerColor } from '../../utils/theme'
 import { askForNotices, coachApi } from '../utils/coach-api'
+import { confirmDeleteFeedback } from '../utils/feedback'
 import { ATTENDANCE, lessonTag, type Tag } from '../utils/labels'
 
 interface HistoryView {
@@ -19,6 +21,23 @@ function paymentText(l: CoachLessonDto): string {
   if (l.paidWith === 'package') return l.packageName ? `课时包 · ${l.packageName}` : '课时包'
   if (l.status === 'pending_payment') return `待支付 ${yuan(l.price)}`
   return l.price ? `单次 ${yuan(l.price)}` : '免费'
+}
+
+/** Why the student does not see the feedback, if they do not. */
+function feedbackNote(l: CoachLessonDto): string {
+  if (!l.feedback || l.feedback.visible) return ''
+  if (l.feedback.hidden) return '场馆已隐藏这条点评，学员看不到。'
+  if (l.status === 'cancelled') return '课程已取消，学员看不到这条点评。'
+  if (l.attendance === null) return '签到已撤销，学员看不到这条点评。'
+  return '签到不是到课，学员看不到这条点评。'
+}
+
+/** Why no feedback can be written, for a lesson that has started and has none. */
+function feedbackClosed(l: CoachLessonDto): string {
+  // A lesson that has ended comes as completed.
+  const started =
+    (l.status === 'confirmed' || l.status === 'completed') && Date.parse(l.startsAt) <= Date.now()
+  return started && !l.feedback ? (l.feedbackBlocked ?? '') : ''
 }
 
 function attendanceNote(l: CoachLessonDto): string {
@@ -42,16 +61,21 @@ Page({
     cancelReason: '',
     attendanceNote: '',
     history: [] as HistoryView[],
+    feedbackNote: '',
+    feedbackClosed: '',
+    feedbackPhotos: [] as string[],
     note: '',
     noteDirty: false,
     noteSize: { minHeight: 120, maxHeight: 400 },
     marking: false,
     savingNote: false,
     cancelling: false,
+    deletingFeedback: false,
   },
 
   id: 0,
   cancelAsking: false,
+  feedbackAsking: false,
   markedAt: 0,
 
   onLoad(query: Record<string, string | undefined>) {
@@ -86,6 +110,9 @@ Page({
       cancelReason: l.cancelReason || (l.cancelledBy === 'student' ? '学员取消' : '场馆取消'),
       attendanceNote: attendanceNote(l),
       noteEditable: l.status === 'confirmed' || l.status === 'pending_payment',
+      feedbackNote: feedbackNote(l),
+      feedbackClosed: feedbackClosed(l),
+      feedbackPhotos: l.feedback?.photos.map(assetUrl) ?? [],
       history: l.history.map((h) => ({
         id: h.id,
         date: fullDate(h.startsAt),
@@ -147,6 +174,39 @@ Page({
     } finally {
       this.setData({ savingNote: false })
     }
+  },
+
+  writeFeedback() {
+    askForNotices()
+    const lesson = this.data.lesson
+    if (!lesson || lesson.feedbackBlocked) return
+    navigateOnce(`/coach/feedback/index?id=${lesson.id}`, {
+      saved: (saved: CoachLessonDto) => this.show(saved),
+      // Refused because the lesson changed meanwhile: show it as it is now.
+      stale: () => this.load(),
+    })
+  },
+
+  /** Once the feedback can no longer be changed, the coach can still take it down. */
+  async deleteFeedback() {
+    askForNotices()
+    if (!this.data.lesson?.feedback || this.feedbackAsking) return
+    this.feedbackAsking = true
+    try {
+      if (!(await confirmDeleteFeedback())) return
+      this.setData({ deletingFeedback: true })
+      this.show(await coachApi<CoachLessonDto>('DELETE', `/lessons/${this.id}/feedback`))
+      wx.showToast({ title: '已删除', icon: 'success' })
+    } catch (err) {
+      showError(err)
+    } finally {
+      this.feedbackAsking = false
+      this.setData({ deletingFeedback: false })
+    }
+  },
+
+  previewPhoto(e: WechatMiniprogram.TouchEvent) {
+    previewPhotos(this.data.feedbackPhotos, e.currentTarget.dataset.index)
   },
 
   call() {

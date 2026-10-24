@@ -19,6 +19,8 @@ export const staffActionLabels = {
   'booking.cancel': '场馆取消',
   'booking.move': '场馆改约',
   'booking.attendance': '修改签到',
+  'feedback.hide': '隐藏点评',
+  'feedback.show': '恢复点评',
   'package.sell': '线下售课时包',
   'package.grant': '赠送课时',
   'package.extend': '延长有效期',

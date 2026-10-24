@@ -75,12 +75,16 @@ const LIMITS: [prefix: string, chars: number][] = [
   ['character_string', 32],
 ]
 
-/** Fits a value to the length limit of its field type. WeChat rejects empty values. */
+/**
+ * Fits a value to its field: one line, cut to the length limit of the field type. WeChat rejects
+ * empty values.
+ */
 export function fieldValue(field: string, value: string) {
   const limit = LIMITS.find(([prefix]) => field.startsWith(prefix))?.[1]
-  const chars = [...value]
+  const line = value.replace(/\s+/g, ' ').trim()
+  const chars = [...line]
   if (limit && chars.length > limit) return `${chars.slice(0, limit - 1).join('')}…`
-  return value || '-'
+  return line || '-'
 }
 
 export function wechatNotifier(options: {

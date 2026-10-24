@@ -20,6 +20,7 @@ import {
   refunds,
   slots,
 } from '../db/schema'
+import { visibleFeedback, withVisibleFeedback } from './feedback'
 import { orderInvoices } from './invoices'
 import { movedFromIso, moveSummaries } from './move-history'
 
@@ -57,6 +58,8 @@ export function bookingViews(
   rows: BookingRow[],
   rules: VenueSettings['booking'],
   now: Date,
+  /** Carries the feedback itself, for one booking's page; lists only say whether there is one. */
+  withFeedback = false,
 ): BookingDto[] {
   const ids = rows.map((r) => r.id)
   const slotCoach = new Map<number, { id: number; name: string }>()
@@ -101,6 +104,8 @@ export function bookingViews(
   const refundByBooking = latestRefunds(tx, 'bookingId', ids)
   const invoiceByOrder = orderInvoices(tx, [...orderByBooking.values()])
   const moves = moveSummaries(tx, ids)
+  const feedback = withFeedback ? visibleFeedback(tx, ids) : null
+  const hasFeedback = feedback ? new Set(feedback.keys()) : withVisibleFeedback(tx, ids)
   return rows.map((b) => {
     const status = bookingStatus(b, now)
     const order = orderByBooking.get(b.id)
@@ -132,6 +137,8 @@ export function bookingViews(
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
       attendance: b.attendance,
       invoice: order ? (invoiceByOrder.get(order.id) ?? null) : null,
+      hasFeedback: hasFeedback.has(b.id),
+      feedback: feedback?.get(b.id) ?? null,
     }
   })
 }

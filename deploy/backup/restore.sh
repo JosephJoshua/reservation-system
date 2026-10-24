@@ -3,7 +3,8 @@
 #   restore.sh list                     show the stored copies, oldest first
 #   restore.sh check latest | <name>    download a copy, check it and count what it holds
 #   restore.sh restore latest | <name>  put a copy in place of the live database
-#   restore.sh images                   copy back uploaded images missing from the volume
+#   restore.sh images [<YYYYMMDD>]      copy back uploaded images missing from the volume, with
+#                                       those removed from it since that UTC day
 # Restore only while the app container is stopped; rs.sh restore does that for you. Exit status 99
 # means the swap stopped halfway: the files in /data need a look before production starts.
 set -eu
@@ -11,14 +12,26 @@ set -eu
 . /app/api/backup/common.sh
 die() { echo "restore failed: $1" >&2; exit 1; }
 [ -n "${COS_BUCKET:-}" ] || die "COS_BUCKET is not set"
-usage() { echo "usage: restore.sh list | images | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
+usage() { echo "usage: restore.sh list | images [<YYYYMMDD>] | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
 
-# Images are only ever added, so copying back what is missing is enough. rclone exits with 3
-# when there is no uploads/ folder yet, which just means no images.
+# Copies back what is missing, and lesson photos removed on or after day $1 (YYYYMMDD), which a
+# database copied before then may still use; the app clears ones it does not use within a day.
+# Other removed files stay out: an invoice PDF removed with a deleted account must not come back,
+# and nothing would clear it again. rclone exits with 3 when there is no uploads/ folder yet,
+# which just means no images.
 copy_images() {
   status=0
   rclone copy "$REMOTE/uploads" "$UPLOADS" || status=$?
-  [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
+  [ "$status" -eq 0 ] || [ "$status" -eq 3 ] || return 1
+  [ -n "${1:-}" ] || return 0
+  days=$(remote_ls --dirs-only "$REMOTE/uploads-removed") || return 1
+  for day in $days; do
+    day=${day%/}
+    case $day in *[!0-9]*) continue ;; esac
+    if [ "$day" -ge "$1" ]; then
+      rclone copy "$REMOTE/uploads-removed/$day" "$UPLOADS" --include '/fb*' || return 1
+    fi
+  done
 }
 
 case ${1:-} in
@@ -27,7 +40,8 @@ case ${1:-} in
     exit 0
     ;;
   images)
-    copy_images || die "copying images failed"
+    case ${2:-} in '' | [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;; *) usage ;; esac
+    copy_images "${2:-}" || die "copying images failed"
     exit 0
     ;;
 esac
@@ -95,5 +109,6 @@ rm -f "$DB-wal" "$DB-shm" || halfway "could not remove the old WAL files"
 mv "$tmp/app.db" "$DB" || halfway "could not put db/$name in place"
 
 # The database is replaced from here on, so a failed image copy is a warning, not a failure.
-copy_images || echo "WARNING: some images were not copied back; run rs.sh restore-images" >&2
+day=$(echo "$name" | cut -c5-12)
+copy_images "$day" || echo "WARNING: some images were not copied back; run rs.sh restore-images $day" >&2
 echo "restored db/$name"

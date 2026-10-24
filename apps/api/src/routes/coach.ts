@@ -1,6 +1,7 @@
 // The coach mode of the mini program. PUT and DELETE only, since wx.request cannot send PATCH.
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { bookings } from '../db/schema'
 import type { Deps } from '../deps'
@@ -16,6 +17,13 @@ import {
   saveHours,
   setDayOff,
 } from '../services/coaches'
+import {
+  checkPhotoUpload,
+  deleteFeedback,
+  MAX_PHOTO_BYTES,
+  saveFeedback,
+  savePhoto,
+} from '../services/feedback'
 import {
   coachLesson,
   coachSchedule,
@@ -108,6 +116,45 @@ export function coachRoutes(deps: Deps) {
     setCoachNote(deps, idParam(c), coachId, note)
     return c.json(coachLesson(deps, idParam(c), coachId))
   })
+
+  app.put('/lessons/:id/feedback', async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        text: z.string().trim().min(1, '请填写点评').max(500),
+        photos: z.array(z.string().max(200)).max(20),
+      }),
+    )
+    const coachId = c.get('coachId')
+    saveFeedback(deps, idParam(c), coachId, body)
+    return c.json(coachLesson(deps, idParam(c), coachId))
+  })
+
+  app.delete('/lessons/:id/feedback', (c) => {
+    const coachId = c.get('coachId')
+    deleteFeedback(deps, idParam(c), coachId)
+    return c.json(coachLesson(deps, idParam(c), coachId))
+  })
+
+  app.post(
+    '/lessons/:id/photos',
+    // Refused while it streams in, before the whole body is held in memory.
+    bodyLimit({
+      maxSize: MAX_PHOTO_BYTES + 64 * 1024,
+      onError: () => {
+        throw new ApiError(413, 'too_large', '图片不能超过 5MB')
+      },
+    }),
+    async (c) => {
+      const id = idParam(c)
+      // Before the body is read, so a lesson that takes no photos costs no upload.
+      checkPhotoUpload(deps, id, c.get('coachId'))
+      const form = await c.req.formData().catch(() => null)
+      const file = form?.get('file')
+      if (!(file instanceof File)) throw new ApiError(400, 'no_file', '请选择图片')
+      return c.json({ url: await savePhoto(deps, id, c.get('coachId'), file) }, 201)
+    },
+  )
 
   app.post('/lessons/:id/cancel', async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))

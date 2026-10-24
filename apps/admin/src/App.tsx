@@ -7,6 +7,7 @@ import { ActionLog } from './pages/ActionLog'
 import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
 import { Catalog } from './pages/Catalog'
+import { Feedback } from './pages/Feedback'
 import { Invoices } from './pages/Invoices'
 import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
@@ -24,6 +25,7 @@ const pages = {
   schedule: ['排课', Schedule],
   bookings: ['预约', Bookings],
   students: ['学员', Students],
+  feedback: ['课后点评', Feedback],
   catalog: ['课程与教练', Catalog],
   products: ['课时包', Products],
   orders: ['订单', Orders],

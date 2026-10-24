@@ -129,6 +129,42 @@ export interface BookingDto {
   attendance: Attendance | null
   /** Invoicing of the lesson's paid order; null when nothing was paid. */
   invoice: OrderInvoiceDto | null
+  /** The coach wrote a 课后点评 the student can see. */
+  hasFeedback: boolean
+  /** That 课后点评, on a single booking only. */
+  feedback: FeedbackDto | null
+}
+
+/** Photos are paths on the API server, like other uploads. */
+export interface FeedbackDto {
+  text: string
+  photos: string[]
+  updatedAt: string
+}
+
+/** One lesson in the student's 学习记录. */
+export interface FeedbackItemDto extends FeedbackDto {
+  bookingId: number
+  startsAt: string
+  endsAt: string
+  coachName: string
+  lessonTypeName: string
+}
+
+/** Feedback as the admin's 课后点评 page lists it. */
+export interface AdminFeedbackDto extends FeedbackDto {
+  id: number
+  bookingId: number
+  startsAt: string
+  coach: { id: number; name: string }
+  lessonTypeName: string
+  student: { id: number; name: string; phone: string }
+  createdAt: string
+  hidden: boolean
+  /** Hidden by the venue, then deleted by the coach: kept empty so it cannot be written again. */
+  deleted: boolean
+  /** The student sees it: not hidden, and the lesson is still marked as attended. */
+  visible: boolean
 }
 
 export type PackageStatus = 'active' | 'expired' | 'used_up' | 'refund_requested' | 'refunded'

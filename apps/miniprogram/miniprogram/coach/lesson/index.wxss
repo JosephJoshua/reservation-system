@@ -1,4 +1,5 @@
 @import '../../styles/common.wxss';
+@import '../../styles/photos.wxss';
 
 .status {
   display: flex;
@@ -121,4 +122,18 @@
   display: flex;
   justify-content: center;
   margin-top: 32rpx;
+}
+
+.feedback-note {
+  margin-bottom: 16rpx;
+  font-size: 26rpx;
+  color: var(--rs-hint-color);
+}
+
+.feedback-write {
+  padding: 0 32rpx;
+}
+
+.feedback-delete {
+  color: var(--td-error-color);
 }

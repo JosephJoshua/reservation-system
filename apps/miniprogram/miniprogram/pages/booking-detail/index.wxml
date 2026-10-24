@@ -30,6 +30,24 @@
     <t-cell wx:if="{{booking.status === 'confirmed' || booking.status === 'pending_payment'}}" title="免费取消截止" note="{{deadline}}" />
   </t-cell-group>
 
+  <block wx:if="{{feedback}}">
+    <view class="section-title">{{feedback.title}}</view>
+    <view class="card feedback">
+      <view class="feedback-text">{{feedback.text}}</view>
+      <view wx:if="{{feedback.photos.length}}" class="photos feedback-photos">
+        <view
+          wx:for="{{feedback.photos}}"
+          wx:key="*this"
+          class="photo"
+          data-index="{{index}}"
+          bind:tap="previewPhoto"
+        >
+          <image class="photo-image" src="{{item}}" mode="aspectFill" lazy-load />
+        </view>
+      </view>
+    </view>
+  </block>
+
   <view wx:if="{{address}}" class="venue">
     <t-cell-group theme="card">
       <t-cell title="{{address}}" left-icon="location" arrow hover bind:click="openMap" />

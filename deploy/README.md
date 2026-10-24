@@ -138,8 +138,8 @@ staging build as the 体验版 to test on phones; upload a production build for 
 | `WECHAT_MINIPROGRAM_STATE` | Which build a tapped message opens: `formal` (production), `trial` (staging), `developer`. |
 | `NODE_ENV` | Set by the image to `production`, which requires WeChat sign-in and WeChat Pay to be configured. Staging uses `staging` until the merchant account exists; it then uses a fake payment gateway, where a signed-in user can mark their own staging orders paid. |
 | `WECHAT_NOTICE_COACH_BOOKED`, `WECHAT_NOTICE_COACH_CANCELLED`, `WECHAT_NOTICE_COACH_MOVED` | Coach subscription messages: new, cancelled and moved (改约) lessons. A lesson moved to another coach reaches the old coach as cancelled and the new one as new. Each template is the template ID from 订阅消息 (pick one-time templates, 一次性订阅消息), then each field and what goes in it, such as `AbC123 thing1=student time2=time thing3=lesson`. A template left empty is not sent. |
-| `WECHAT_NOTICE_STUDENT_BOOKED`, `WECHAT_NOTICE_STUDENT_CANCELLED`, `WECHAT_NOTICE_STUDENT_REMINDER` | Student messages: 预约成功, 课程取消 (by the coach or the venue) and 上课提醒 (2 hours before). Students are asked for all three when they tap the booking button; with none set, they are not asked. |
-| `WECHAT_NOTICE_STUDENT_MOVED`, `WECHAT_NOTICE_STUDENT_FEEDBACK` | Student messages for 改约 (sent whoever moved the lesson) and 课后点评, once that feature ships. |
+| `WECHAT_NOTICE_STUDENT_BOOKED`, `WECHAT_NOTICE_STUDENT_CANCELLED`, `WECHAT_NOTICE_STUDENT_REMINDER` | Student messages: 预约成功, 课程取消 (by the coach or the venue) and 上课提醒 (2 hours before). |
+| `WECHAT_NOTICE_STUDENT_MOVED`, `WECHAT_NOTICE_STUDENT_FEEDBACK` | Student messages for 改约 (sent whoever moved the lesson) and 课后点评 (sent once, when the coach first writes it). The booking button asks for 上课提醒, then 课程取消, 改约 and 课后点评, then 预约成功, three templates at most, so set one 课程变动 template as both CANCELLED and MOVED (see `status` below) to fit 课后点评 in. Kinds with no template are not asked for. |
 
 Template values: `student`, `lesson`, `time`, `oldTime` (moved lesson, student and coach), `status` (`已取消` or `已改约`, so one 课程变动 template with a status field can serve as both `WECHAT_NOTICE_STUDENT_CANCELLED` and `WECHAT_NOTICE_STUDENT_MOVED`; set the same template ID in both, each with its own field mapping, and the booking prompt asks for it once), `coach`, `place` (venue name), `reason` (cancelled), `refund` (cancelled, such as `¥200 原路退回` or `课时已退回课时包`), `note` (feedback). Without `WECHAT_APP_SECRET` (development), the API logs each message instead of sending it.
 
@@ -154,7 +154,8 @@ WeChat Pay variables go together: setting some but not all stops the API at star
 | `RCLONE_CONFIG_COS_ENDPOINT` | `cos.<region>.myqcloud.com`, the bucket's region. |
 | `RCLONE_CONFIG_COS_ACCESS_KEY_ID`, `..._SECRET_ACCESS_KEY` | SecretId and SecretKey of a CAM sub-user allowed only on this bucket. |
 | `BACKUP_AT` | Nightly run time, venue time, default `03:30`. |
-| `BACKUP_KEEP_DAYS` | Days to keep database copies, default 30. Images are kept for good. |
+| `BACKUP_KEEP_DAYS` | Days to keep database copies and removed images, default 30. |
+| `BACKUP_ALLOW_REMOVALS` | Leave unset. `rs.sh backup --allow-removals` sets it for one run, to mirror more than 300 removed images. |
 | `ALERT_WEBHOOK` | Optional WeCom group robot webhook that is told when a backup fails. |
 
 After changing a settings file, apply it with `docker compose -f compose.yml up -d <service>` in
@@ -170,13 +171,23 @@ After changing a settings file, apply it with `docker compose -f compose.yml up 
 ```
 
 A backup is an online SQLite copy (safe while the app writes), checked with `integrity_check`,
-gzipped and stored as `db/app-<UTC time>.db.gz`. Uploaded images are copied to `uploads/`.
+gzipped and stored as `db/app-<UTC time>.db.gz`. Uploaded images are mirrored to `uploads/`; an
+image deleted on the server (a lesson photo removed by its coach or with a deleted account) moves to
+`uploads-removed/<UTC date>/` and is purged after `BACKUP_KEEP_DAYS`, like the database backups.
+More than 300 images gone since the last backup stops it with an alert instead, as that usually
+means images were lost from the volume: copy them back with `rs.sh restore-images`. If they were
+removed on purpose, such as with a deleted account that had many lesson photos, run
+`rs.sh backup --allow-removals` once.
+Until then a lesson photo can come back: a restore copies back lesson photos removed since its
+copy was taken, as that database may still show them, and `rs.sh restore-images <YYYYMMDD>` does
+the same since that day. Lesson photos nothing uses are cleared again within a day. Other removed
+files, such as the invoice PDFs of deleted accounts, are not brought back.
 
 `restore` stops production and the backup schedule, downloads and checks the copy, keeps the
 current database (with its WAL files) next to it as `app.db.before-restore-<time>` in the volume,
 puts the copy in place, copies back any missing images and starts both again. Everything written
-after the copy was taken is lost. If the image copy fails, the database is still restored; run
-`rs.sh restore-images` to finish it. If a restore fails before the swap, production starts again
+after the copy was taken is lost. If the image copy fails, the database is still restored; run the
+`rs.sh restore-images <day>` it prints to finish it. If a restore fails before the swap, production starts again
 on the database it had. If it fails in the middle of the swap (it says so), production stays
 stopped: look at `/data` and rerun the restore with the commands the message prints. The replaced
 database and its WAL files are kept either way.

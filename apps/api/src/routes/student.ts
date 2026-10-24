@@ -43,6 +43,7 @@ import {
 import { type AuthVars, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
 import { coachViews, visibleTo } from '../services/catalog'
+import { studentFeedback } from '../services/feedback'
 import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
 import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder } from '../services/orders'
@@ -114,6 +115,7 @@ export function studentRoutes(deps: Deps) {
   app.use('/slots', requireStudent(deps))
   app.use('/bookings', requireStudent(deps))
   app.use('/bookings/*', requireStudent(deps))
+  app.use('/feedback', requireStudent(deps))
   app.use('/orders/*', requireStudent(deps))
   app.use('/packages', requireStudent(deps))
   app.use('/invoices', requireStudent(deps))
@@ -438,11 +440,14 @@ export function studentRoutes(deps: Deps) {
   const ownBookingView = (id: number, studentId: number) => {
     const row = db.select().from(bookings).where(eq(bookings.id, id)).get()
     if (!row || row.studentId !== studentId) throw notFound('预约')
-    const [view] = bookingViews(db, [row], getSettings(db).booking, deps.now())
+    const [view] = bookingViews(db, [row], getSettings(db).booking, deps.now(), true)
     return view
   }
 
   app.get('/bookings/:id', (c) => c.json(ownBookingView(idParam(c), c.get('studentId'))))
+
+  // 学习记录
+  app.get('/feedback', (c) => c.json(studentFeedback(db, c.get('studentId'))))
 
   app.post('/bookings/:id/cancel', async (c) => {
     const id = idParam(c)

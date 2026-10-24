@@ -767,6 +767,8 @@ describe('coach notices', () => {
       '一二三四五六七八九十一二三四五六七八九…',
     )
     expect(fieldValue('name2', '')).toBe('-')
+    expect(fieldValue('thing4', '今天练了：\n1. 反手  拧拉\n')).toBe('今天练了： 1. 反手 拧拉')
+    expect(fieldValue('thing4', ' \n ')).toBe('-')
     expect(fieldValue('time3', '2026年10月26日 10:00~11:00')).toBe('2026年10月26日 10:00~11:00')
   })
 })

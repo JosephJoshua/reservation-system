@@ -45,6 +45,7 @@ import {
 import { cancelBooking, LIVE } from '../services/bookings'
 import { hoursView, newBindCode, saveHours, setDayOff, unbindCoach } from '../services/coaches'
 import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
+import { adminFeedback, setFeedbackHidden } from '../services/feedback'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
 import {
   adminInvoice,
@@ -1068,6 +1069,39 @@ export function adminRoutes(deps: Deps) {
       })
     }
     return c.body(null, 204)
+  })
+
+  // 课后点评
+
+  app.get('/feedback', (c) => {
+    const q = parseQuery(
+      c,
+      z.object({
+        from: instant.optional(),
+        to: instant.optional(),
+        coachId: z.coerce.number().int().positive().optional(),
+      }),
+    )
+    return c.json(adminFeedback(db, q))
+  })
+
+  app.put('/feedback/:id/hidden', async (c) => {
+    const { hidden } = await parseBody(c, z.object({ hidden: z.boolean() }))
+    const id = idParam(c)
+    const changed = setFeedbackHidden(deps, id, c.get('staffId'), hidden)
+    const [item] = adminFeedback(db, { ids: [id] })
+    if (!item) throw notFound('点评')
+    // A repeat changed nothing and logs nothing.
+    if (changed) {
+      const { what, studentId } = describeBooking(db, item.bookingId)
+      log(c.get('staffId'), {
+        action: hidden ? 'feedback.hide' : 'feedback.show',
+        summary: `${what} 的课后点评`,
+        studentId,
+        target: { kind: 'booking', id: item.bookingId },
+      })
+    }
+    return c.json(item)
   })
 
   // Package products

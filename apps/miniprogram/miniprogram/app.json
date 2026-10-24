@@ -15,13 +15,21 @@
     "pages/account-delete/index",
     "pages/theme/index",
     "pages/invoices/index",
-    "pages/invoice-request/index"
+    "pages/invoice-request/index",
+    "pages/feedback/index"
   ],
   "subpackages": [
     {
       "root": "coach",
       "name": "coach",
-      "pages": ["index/index", "lesson/index", "move/index", "hours/index", "bind/index"]
+      "pages": [
+        "index/index",
+        "lesson/index",
+        "move/index",
+        "feedback/index",
+        "hours/index",
+        "bind/index"
+      ]
     }
   ],
   "usingComponents": {

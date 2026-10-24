@@ -1,0 +1,84 @@
+@import '../../styles/common.wxss';
+@import '../../styles/photos.wxss';
+
+.list {
+  padding: 24rpx 0 48rpx;
+}
+
+.item {
+  margin-bottom: 20rpx;
+  padding: 28rpx 32rpx;
+}
+
+.item-hover {
+  background-color: var(--td-bg-color-container-active);
+}
+
+.item-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+}
+
+.item-date {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.item-lesson {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-text {
+  margin-top: 16rpx;
+  font-size: 30rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.item-photos {
+  margin-top: 20rpx;
+}
+
+.photo-more {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #fff;
+  background-color: rgba(0, 0, 0, 0.45);
+}
+
+.end {
+  text-align: center;
+}
+
+.centered {
+  min-height: 60vh;
+  padding: 0 48rpx;
+}
+
+.retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 32rpx;
+}

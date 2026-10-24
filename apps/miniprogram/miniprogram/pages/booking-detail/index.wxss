@@ -1,4 +1,5 @@
 @import '../../styles/common.wxss';
+@import '../../styles/photos.wxss';
 
 .status {
   display: flex;

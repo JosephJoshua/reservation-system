@@ -16,6 +16,7 @@ const groups: { label: string; actions: StaffAction[] }[] = [
     label: '预约',
     actions: ['booking.create', 'booking.cancel', 'booking.move', 'booking.attendance'],
   },
+  { label: '点评', actions: ['feedback.hide', 'feedback.show'] },
   { label: '课时包', actions: ['package.sell', 'package.grant', 'package.extend'] },
   {
     label: '退款',

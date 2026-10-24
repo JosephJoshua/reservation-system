@@ -1,14 +1,17 @@
 // Drives 改约 end to end against a local API seeded with `pnpm --filter @rs/api db:seed`: a
 // student moves a paid lesson (with a double tap), sees a time they cannot take refused, and runs
 // out of moves; then the coach moves the lesson in coach mode. Saves a screenshot of each screen
-// to screenshots/moves/. Run it once with DevTools in light and once in dark.
+// to screenshots/moves/. Run it once with DevTools in light and once in dark, or force the theme
+// with QA_THEME.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { venueDateKey } from '@rs/shared'
 import automator from 'miniprogram-automator'
+import { qaTheme, resetTheme, startTheme } from './theme'
 
 const api = (process.env.API_BASE_URL ?? 'http://localhost:8787').replace(/\/+$/, '')
 const adminPassword = process.env.ADMIN_PASSWORD ?? 'admin'
+const forcedTheme = qaTheme()
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
 const outDir = fileURLToPath(new URL('../screenshots/moves', import.meta.url))
 mkdirSync(outDir, { recursive: true })
@@ -142,6 +145,7 @@ interface Booking {
 }
 
 try {
+  await startTheme(miniProgram)
   const run = Date.now().toString(36)
   const admin = (await call('POST', '/admin/login', { username: 'admin', password: adminPassword }))
     .token as string
@@ -337,5 +341,9 @@ try {
   for (const key of ['devLogin', 'token', 'coachToken']) {
     await miniProgram.callWxMethod('removeStorageSync', key).catch(() => {})
   }
-  await miniProgram.close()
+  try {
+    if (forcedTheme) await resetTheme(miniProgram)
+  } finally {
+    await miniProgram.close()
+  }
 }

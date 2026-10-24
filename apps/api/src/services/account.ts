@@ -6,6 +6,7 @@ import { immediate, type Q } from '../db/client'
 import { bookings, invoices, orders, packages, refunds, sessions, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
+import { deleteStudentFeedback, removePhotosOf } from './feedback'
 import { newToken } from './ids'
 import { invoicesDir } from './invoices'
 
@@ -116,13 +117,13 @@ export function deletionBlockers(tx: Q, studentId: number, now: Date): string[] 
 }
 
 /**
- * Deletes the student's account: their name, phone, WeChat identity and the coach's notes on
- * them go, while bookings, orders, refunds and invoices stay for the accounts, pointing at an
- * empty row.
+ * Deletes the student's account: their name, phone, WeChat identity, the coach's notes on them
+ * and their lesson feedback with its photos go, while bookings, orders, refunds and invoices stay
+ * for the accounts, pointing at an empty row.
  */
 export function deleteAccount(deps: Deps, studentId: number) {
   const now = deps.now()
-  const files = immediate(deps.db, (tx) => {
+  const { files, lessons } = immediate(deps.db, (tx) => {
     const student = tx.select().from(students).where(eq(students.id, studentId)).get()
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     const blockers = deletionBlockers(tx, studentId, now)
@@ -155,7 +156,18 @@ export function deleteAccount(deps: Deps, studentId: number) {
       .set({ title: '', pdfFile: null })
       .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
       .run()
-    return personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : []))
+    return {
+      files: personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : [])),
+      lessons: deleteStudentFeedback(tx, studentId),
+    }
   })
-  for (const file of files) rmSync(join(invoicesDir(deps), file), { force: true })
+  // The account is gone either way; a file left behind is logged rather than failing the request.
+  removePhotosOf(deps, lessons)
+  for (const file of files) {
+    try {
+      rmSync(join(invoicesDir(deps), file), { force: true })
+    } catch (e) {
+      deps.log('invoice file not removed', { file, error: String(e) })
+    }
+  }
 }

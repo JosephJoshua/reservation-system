@@ -1,10 +1,14 @@
 import type { VenueSettings } from './settings'
 
 /**
- * The date of the privacy policy and default user agreement below. Change it whenever either
- * text changes in substance: students who agreed to an older version are asked again.
+ * The version of the privacy policy and default user agreement below: their date, with `.2` and
+ * so on for a later change the same day. Change it whenever either text changes in substance:
+ * students who agreed to an older version are asked again.
  */
-export const POLICY_VERSION = '2026-10-24'
+export const POLICY_VERSION = '2026-10-24.2'
+
+/** The date the texts show. */
+const POLICY_DATE = POLICY_VERSION.slice(0, 10)
 
 /** Who runs the mini program and how to reach them, falling back to the venue's own details. */
 function operator(s: VenueSettings) {
@@ -20,14 +24,14 @@ function operator(s: VenueSettings) {
  */
 export function privacyPolicyText(s: VenueSettings): string {
   const op = operator(s)
-  return `更新日期：${POLICY_VERSION}
+  return `更新日期：${POLICY_DATE}
 
 ${op.name}（以下简称“我们”）运营本小程序，为你提供乒乓球课程的预约、支付和上课管理。本政策说明我们处理哪些个人信息、为什么处理以及你的权利。
 
 一、我们收集的信息
 1. 微信登录标识（openid）：打开小程序时自动获取，用于识别你的账号。我们不获取你的微信昵称、头像或好友信息。
 2. 姓名和手机号：首次预约时由你填写，用于上课签到、课程变动时联系你。
-3. 预约和上课记录：预约的课程、时间、教练、取消和到课情况，以及教练为上课所做的备注。
+3. 预约和上课记录：预约的课程、时间、教练、取消和到课情况，教练为上课所做的备注，以及教练写给你的课后点评和课堂照片。
 4. 订单和支付记录：金额、支付状态、微信支付交易单号和退款记录。我们无法获取你的银行卡或微信钱包信息。
 5. 订阅消息：你同意接收后，我们按你的选择发送预约和课程通知。
 6. 发票信息：申请发票时由你填写的抬头、税号和接收邮箱，用于开具和发送发票。
@@ -38,15 +42,16 @@ ${op.name}（以下简称“我们”）运营本小程序，为你提供乒乓�
 三、共享和委托处理
 1. 微信支付（财付通支付科技有限公司）：处理付款和退款。
 2. 腾讯云：存储小程序数据，服务器位于中国境内。
-3. 本场馆教练：可查看所授课程学员的姓名、手机号和上课记录。
+3. 本场馆教练：可查看所授课程学员的姓名、手机号和上课记录，并为到课的课程写课后点评、上传课堂照片。
 除以上情况和法律要求外，我们不会向他人提供你的个人信息。
 
 四、使用的系统功能
 1. 剪贴板：在你点击场馆地址时写入地址，便于粘贴到地图应用。我们不读取剪贴板。
 2. 地图：打开微信内置地图显示场馆位置。我们不获取你的位置。
+3. 相册和相机：教练写课后点评时，可从相册选择或拍摄照片上传。只上传教练选中的照片，我们不读取相册中的其他内容。
 
 五、保存期限
-账号存续期间保存你的信息。注销账号后，我们删除你的姓名、手机号、微信登录标识、教练备注、发票邮箱和个人抬头的发票；订单、支付和退款记录按会计和税务法规要求匿名保存，到期后删除。
+账号存续期间保存你的信息。注销账号后，我们删除你的姓名、手机号、微信登录标识、教练备注、课后点评和课堂照片、发票邮箱和个人抬头的发票；订单、支付和退款记录按会计和税务法规要求匿名保存，到期后删除。
 
 六、你的权利
 1. 查看和修改：在“我的 > 个人信息”中查看和修改姓名、手机号。
@@ -68,7 +73,7 @@ ${op.name}
 /** The user agreement shown when the venue has not written its own in settings. */
 export function defaultAgreementText(s: VenueSettings): string {
   const op = operator(s)
-  return `更新日期：${POLICY_VERSION}
+  return `更新日期：${POLICY_DATE}
 
 本协议是你与${op.name}（以下简称“场馆”）之间关于使用本小程序预约课程的约定。
 

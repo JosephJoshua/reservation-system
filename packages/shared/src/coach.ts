@@ -1,6 +1,6 @@
 // Response shapes of the coach API. Instants are ISO strings; money is fen.
 import type { Attendance, WeeklyHours } from './availability'
-import type { BookingStatus } from './dto'
+import type { BookingStatus, FeedbackDto } from './dto'
 
 export interface CoachMeDto {
   id: number
@@ -46,6 +46,16 @@ export interface CoachLessonDto {
   packageName: string | null
   attendance: Attendance | null
   coachNote: string
+  /**
+   * The 课后点评; `hidden` when the venue took it down, `visible` while the student sees it: not
+   * hidden, and the lesson is still on and marked attended.
+   */
+  feedback: (FeedbackDto & { hidden: boolean; visible: boolean }) | null
+  /**
+   * Why the coach cannot write or change the feedback now, such as 学员缺席，不能写点评; null when
+   * they can. Deleting it is always allowed.
+   */
+  feedbackBlocked: string | null
   canMarkAttendance: boolean
   canCancel: boolean
   /** The coach can move it to another of their slots. */
