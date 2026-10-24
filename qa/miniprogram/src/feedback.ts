@@ -202,9 +202,11 @@ async function mockEditor(result: 'ok' | 'cancel' | 'bad') {
   await miniProgram.mockWxMethod(
     'editImage',
     function (this: unknown, options: Record<string, unknown>, how: string) {
-      const fail = (o: Record<string, unknown>) =>
-        typeof o.fail === 'function' && o.fail({ errMsg: 'editImage:fail cancel' })
-      if (how === 'cancel') return fail(options)
+      // No named inner functions: the build wraps them in __name, which DevTools lacks.
+      if (how === 'cancel') {
+        if (typeof options.fail === 'function') options.fail({ errMsg: 'editImage:fail cancel' })
+        return
+      }
       const name = how === 'bad' ? 'qa-bad.png' : 'qa-photo.png'
       const res = { tempFilePath: `${wx.env.USER_DATA_PATH}/${name}`, errMsg: 'editImage:ok' }
       if (typeof options.success === 'function') options.success(res)
