@@ -65,7 +65,7 @@ for (const scheme of ['light', 'dark'] as const) {
   test(`前台 sees only the desk pages (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme })
     await login(page, desk.username, password)
-    await expect(menu(page)).toHaveText(['概览', '排课', '预约', '学员', '课后点评'])
+    await expect(menu(page)).toHaveText(['概览', '排课', '前台签到', '预约', '学员', '课后点评'])
     // No money on the home page.
     await expect(page.getByText('今日收款')).toHaveCount(0)
     await expect(page.getByText('待审核退款')).toHaveCount(0)

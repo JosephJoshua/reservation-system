@@ -1,35 +1,28 @@
 // A coach's view of their lessons, and the marks a coach or the venue puts on them.
 import {
-  type Attendance,
-  attendanceError,
   type CoachLessonDto,
   type CoachSessionDto,
   type CoachSlotDto,
   venueInstant,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne } from 'drizzle-orm'
-import { immediate } from '../db/client'
 import { bookings, lessonFeedback, lessonTypes, packages, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { DELETED_NAME } from './account'
+import { coachCanMark } from './attendance'
 import { LIVE } from './bookings'
 import { feedbackOf, feedbackView, writeBlock } from './feedback'
 import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
 import { assertNoSessionOverlap } from './sessions'
+import { getSettings } from './settings'
 import { studentProfile } from './student-profiles'
 import { slotsWithoutTable } from './tables'
 import { bookingStatus } from './views'
 
 /** How long after a lesson its coach still sees the student's 学员档案 on it. */
 const PROFILE_DAYS_AFTER = 7
-
-const attendanceMessages = {
-  not_confirmed: '该课程未在进行，无法签到',
-  not_started: '课程开始后才能签到',
-  too_late: '已超过签到期限，请联系场馆修改',
-} as const
 
 /** A coach's slots between two venue dates, inclusive, with the lesson booked in each. */
 export function coachSchedule(
@@ -180,6 +173,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     .all()
   const status = bookingStatus(b, now)
   const feedback = feedbackOf(db, b.id)
+  const { coachMarks } = getSettings(db).attendance
   return {
     id: b.id,
     status,
@@ -219,7 +213,8 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
           }
         : null,
     feedbackBlocked: writeBlock(b, student?.deletedAt ?? null, feedback, now),
-    canMarkAttendance: attendanceError(b, now, 'coach') === null,
+    canMarkAttendance: coachCanMark(b, now, coachMarks),
+    coachMarksOff: !coachMarks,
     canCancel:
       own && (b.status === 'confirmed' || b.status === 'pending_payment') && now < b.startsAt,
     canMove: own && b.status === 'confirmed' && now < b.startsAt,
@@ -235,36 +230,6 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       coachNote: h.coachNote,
     })),
   }
-}
-
-/**
- * Marks whether the student came. A no-show changes nothing else: package lessons were spent when
- * the lesson was booked and per-class payments stay paid. Null clears the mark.
- */
-export function setAttendance(
-  deps: Deps,
-  bookingId: number,
-  attendance: Attendance | null,
-  by: { coachId: number } | 'admin',
-) {
-  immediate(deps.db, (tx) => {
-    const row = tx
-      .select({ booking: bookings, coachId: slots.coachId })
-      .from(bookings)
-      .innerJoin(slots, eq(slots.id, bookings.slotId))
-      .where(eq(bookings.id, bookingId))
-      .get()
-    if (!row || (by !== 'admin' && row.coachId !== by.coachId)) throw notFound('课程')
-    const now = deps.now()
-    const error = attendanceError(row.booking, now, by === 'admin' ? 'admin' : 'coach')
-    if (error) throw new ApiError(409, error, attendanceMessages[error])
-    // A repeat keeps the time of the first mark, which the feedback window counts from.
-    if (row.booking.attendance === attendance) return
-    tx.update(bookings)
-      .set({ attendance, attendanceAt: attendance ? now : null })
-      .where(eq(bookings.id, bookingId))
-      .run()
-  })
 }
 
 export function setCoachNote(deps: Deps, bookingId: number, coachId: number, note: string) {
@@ -317,6 +282,7 @@ export function coachSession(deps: Deps, slotId: number, coachId: number): Coach
       : [],
   )
   const now = deps.now()
+  const { coachMarks } = getSettings(db).attendance
   return {
     id: slot.id,
     startsAt: slot.startsAt.toISOString(),
@@ -325,12 +291,13 @@ export function coachSession(deps: Deps, slotId: number, coachId: number): Coach
     capacity: slot.capacity,
     cancelled: slot.cancelledAt !== null,
     cancelReason: slot.cancelReason,
+    coachMarksOff: !coachMarks,
     students: rows.map(({ booking: b, name, deletedAt }) => ({
       bookingId: b.id,
       name: deletedAt ? DELETED_NAME : name,
       status: bookingStatus(b, now),
       attendance: b.attendance,
-      canMarkAttendance: attendanceError(b, now, 'coach') === null,
+      canMarkAttendance: coachCanMark(b, now, coachMarks),
       hasFeedback: written.has(b.id),
     })),
   }

@@ -1,0 +1,293 @@
+import { eq } from 'drizzle-orm'
+import { describe, expect, it } from 'vitest'
+import { bookings } from './db/schema'
+import { type Harness, setup } from './test/harness'
+
+const CODE = 'https://yuyue.example.com/checkin'
+
+/** A paid lesson on Monday 2026-10-26 at 10:00 venue time (02:00Z), and a bound coach. */
+async function lesson(h: Harness) {
+  const { coach, lesson } = h.seed()
+  const admin = await h.admin()
+  const { code } = (await h.call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)).json
+  const coachToken = (await h.call('POST', '/coach/bind', { code: 'dev:coach', bindCode: code }))
+    .json.token as string
+  const slot = h.slot(coach.id, '2026-10-26', 10)
+  const student = await h.student('a')
+  await h.call('PUT', '/me', { name: '小明', phone: '13800138000' }, student)
+  const res = await h.call(
+    'POST',
+    '/bookings',
+    { slotId: slot.id, lessonTypeId: lesson.id },
+    student,
+  )
+  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  return {
+    coach,
+    lesson,
+    admin,
+    coachToken,
+    student,
+    slot,
+    bookingId: res.json.bookingId as number,
+  }
+}
+
+const row = (h: Harness, id: number) =>
+  h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+
+describe('student check-in', () => {
+  it('opens 30 minutes before the lesson and lasts until it ends', async () => {
+    const h = setup()
+    const { student, bookingId } = await lesson(h)
+    const scan = () => h.call('POST', '/check-in', { code: CODE }, student)
+
+    h.clock.now = new Date('2026-10-25T10:00:00Z')
+    expect((await scan()).json.error.message).toBe(
+      '下节课10月26日 10:00 开始，课前 30 分钟起可签到',
+    )
+
+    h.clock.now = new Date('2026-10-26T01:29:00Z')
+    const early = await scan()
+    expect(early.status).toBe(409)
+    expect(early.json.error).toMatchObject({
+      code: 'nothing_to_check_in',
+      message: '下节课今天 10:00 开始，课前 30 分钟起可签到',
+    })
+    let detail = (await h.call('GET', `/bookings/${bookingId}`, undefined, student)).json
+    expect(detail.canCheckIn).toBe(false)
+
+    h.clock.now = new Date('2026-10-26T01:30:00Z')
+    detail = (await h.call('GET', `/bookings/${bookingId}`, undefined, student)).json
+    expect(detail.canCheckIn).toBe(true)
+    const first = await scan()
+    expect(first.status).toBe(200)
+    expect(first.json).toEqual([
+      {
+        bookingId,
+        startsAt: '2026-10-26T02:00:00.000Z',
+        endsAt: '2026-10-26T03:00:00.000Z',
+        coachName: '王教练',
+        lessonTypeName: '一对一私教',
+        already: false,
+      },
+    ])
+    expect(row(h, bookingId)).toMatchObject({
+      attendance: 'attended',
+      attendanceBy: 'student',
+      attendanceAt: new Date('2026-10-26T01:30:00Z'),
+    })
+
+    // A second scan is fine and keeps the first time.
+    h.clock.now = new Date('2026-10-26T01:40:00Z')
+    expect((await scan()).json[0].already).toBe(true)
+    expect(row(h, bookingId)?.attendanceAt).toEqual(new Date('2026-10-26T01:30:00Z'))
+    detail = (await h.call('GET', `/bookings/${bookingId}`, undefined, student)).json
+    expect(detail).toMatchObject({ attendance: 'attended', canCheckIn: false })
+
+    h.clock.now = new Date('2026-10-26T03:00:00Z')
+    expect((await scan()).json.error).toMatchObject({
+      code: 'nothing_to_check_in',
+      message: '没有待上的课程，如在前台预约请联系前台',
+    })
+  })
+
+  it('refuses other codes, a lesson marked absent and a venue that turned it off', async () => {
+    const h = setup()
+    const { student, bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T02:10:00Z')
+    // Staff sessions do not last the days the clock skips.
+    const admin = await h.admin()
+    for (const code of ['https://yuyue.example.com/other', 'checkin', 'https://x.com/checkin/a']) {
+      const res = await h.call('POST', '/check-in', { code }, student)
+      expect(res.json.error.code).toBe('not_check_in_code')
+    }
+    expect((await h.call('POST', '/check-in', { code: CODE })).status).toBe(401)
+
+    await h.call('PUT', `/admin/bookings/${bookingId}/attendance`, { attendance: 'no_show' }, admin)
+    const absent = await h.call('POST', '/check-in', { code: CODE }, student)
+    expect(absent.json.error).toMatchObject({
+      code: 'marked',
+      message: '该课程已记为缺席，请联系前台',
+    })
+    expect(row(h, bookingId)?.attendance).toBe('no_show')
+
+    await h.call('PUT', `/admin/bookings/${bookingId}/attendance`, { attendance: null }, admin)
+    h.settings((s) => {
+      s.attendance.selfCheckIn = false
+    })
+    const off = await h.call('POST', '/check-in', { code: CODE }, student)
+    expect(off.status).toBe(403)
+    expect(off.json.error.code).toBe('check_in_off')
+    const detail = (await h.call('GET', `/bookings/${bookingId}`, undefined, student)).json
+    expect(detail.canCheckIn).toBe(false)
+  })
+
+  it('checks in every seat open at once and skips cancelled lessons', async () => {
+    const h = setup()
+    const { coach, lesson: type, student, bookingId } = await lesson(h)
+    const next = h.slot(coach.id, '2026-10-26', 11)
+    const res = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: next.id, lessonTypeId: type.id },
+      student,
+    )
+    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    const cancelled = h.slot(coach.id, '2026-10-26', 9)
+    const c = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: cancelled.id, lessonTypeId: type.id },
+      student,
+    )
+    await h.call('POST', `/dev/fake-pay/${c.json.orderId}`)
+    await h.call('POST', `/bookings/${c.json.bookingId}/cancel`, { acceptLate: true }, student)
+
+    // 10:40: the 10:00 lesson is under way and the 11:00 one opens at 10:30.
+    h.clock.now = new Date('2026-10-26T02:40:00Z')
+    const scan = await h.call('POST', '/check-in', { code: CODE }, student)
+    expect(scan.json.map((l: { bookingId: number }) => l.bookingId)).toEqual([
+      bookingId,
+      res.json.bookingId,
+    ])
+    expect(row(h, c.json.bookingId)?.attendance).toBeNull()
+  })
+})
+
+describe('front desk 签到', () => {
+  it('lists the day with who marked each lesson', async () => {
+    const h = setup()
+    const { coachToken, student, bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T01:00:00Z')
+    const admin = await h.admin()
+    const list = async () => (await h.call('GET', '/admin/front-desk', undefined, admin)).json
+    expect(await list()).toEqual([
+      {
+        bookingId,
+        slotId: expect.any(Number),
+        startsAt: '2026-10-26T02:00:00.000Z',
+        endsAt: '2026-10-26T03:00:00.000Z',
+        coach: { id: expect.any(Number), name: '王教练' },
+        lessonTypeName: '一对一私教',
+        capacity: 1,
+        student: { id: expect.any(Number), name: '小明', phone: '13800138000' },
+        attendance: null,
+        attendanceAt: null,
+        markedBy: null,
+        canArrive: false,
+        canMarkAbsent: false,
+      },
+    ])
+    const other = await h.call('GET', '/admin/front-desk?date=2026-10-27', undefined, admin)
+    expect(other.json).toEqual([])
+    expect(
+      (await h.call('GET', '/admin/front-desk?date=2026-02-30', undefined, admin)).status,
+    ).toBe(400)
+
+    const mark = (attendance: string | null) =>
+      h.call('PUT', `/admin/bookings/${bookingId}/attendance`, { attendance }, admin)
+    expect((await mark('attended')).json.error.code).toBe('not_started')
+
+    // 09:35: the student walks in early.
+    h.clock.now = new Date('2026-10-26T01:35:00Z')
+    expect((await list())[0]).toMatchObject({ canArrive: true, canMarkAbsent: false })
+    expect((await mark('no_show')).json.error.code).toBe('not_started')
+    // A slip on the wrong row can be undone before the lesson starts.
+    expect((await mark('attended')).status).toBe(204)
+    expect((await mark(null)).status).toBe(204)
+    expect((await mark('attended')).status).toBe(204)
+    expect((await list())[0]).toMatchObject({
+      attendance: 'attended',
+      attendanceAt: '2026-10-26T01:35:00.000Z',
+      markedBy: { kind: 'staff', name: '管理员' },
+    })
+
+    // A student scan does not take over a staff mark, and nor does a repeat.
+    await h.call('POST', '/check-in', { code: CODE }, student)
+    expect((await mark('attended')).status).toBe(204)
+    expect((await list())[0].markedBy).toEqual({ kind: 'staff', name: '管理员' })
+
+    // The coach corrects it after the start.
+    h.clock.now = new Date('2026-10-26T02:05:00Z')
+    await h.call(
+      'PUT',
+      `/coach/lessons/${bookingId}/attendance`,
+      { attendance: 'no_show' },
+      coachToken,
+    )
+    expect((await list())[0]).toMatchObject({
+      attendance: 'no_show',
+      markedBy: { kind: 'coach', name: null },
+      canMarkAbsent: true,
+    })
+
+    expect((await mark(null)).status).toBe(204)
+    expect(row(h, bookingId)).toMatchObject({
+      attendance: null,
+      attendanceAt: null,
+      attendanceBy: null,
+      attendanceStaffId: null,
+    })
+  })
+
+  it('stops coach marks when the venue turns 教练点名 off', async () => {
+    const h = setup()
+    const { coachToken, bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T02:05:00Z')
+    h.settings((s) => {
+      s.attendance.coachMarks = false
+    })
+    const detail = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, coachToken)
+    expect(detail.json.canMarkAttendance).toBe(false)
+    const res = await h.call(
+      'PUT',
+      `/coach/lessons/${bookingId}/attendance`,
+      { attendance: 'attended' },
+      coachToken,
+    )
+    expect(res.status).toBe(403)
+    expect(res.json.error.code).toBe('coach_marks_off')
+  })
+})
+
+describe('who may use the 签到 list', () => {
+  it('lets 前台 mark attendance but not 财务', async () => {
+    const h = setup()
+    const { bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T01:40:00Z')
+    const admin = await h.admin()
+    for (const [username, roles] of [
+      ['desk', ['front_desk']],
+      ['money', ['finance']],
+    ] as const) {
+      const res = await h.call(
+        'POST',
+        '/admin/staff',
+        { name: username, username, password: 'staff-pass-1', roles },
+        admin,
+      )
+      expect(res.status).toBe(201)
+    }
+    const desk = await h.admin('desk', 'staff-pass-1')
+    const money = await h.admin('money', 'staff-pass-1')
+    expect((await h.call('GET', '/admin/front-desk', undefined, money)).status).toBe(403)
+    const refused = await h.call(
+      'PUT',
+      `/admin/bookings/${bookingId}/attendance`,
+      { attendance: 'attended' },
+      money,
+    )
+    expect(refused.status).toBe(403)
+    const marked = await h.call(
+      'PUT',
+      `/admin/bookings/${bookingId}/attendance`,
+      { attendance: 'attended' },
+      desk,
+    )
+    expect(marked.status).toBe(204)
+    const list = (await h.call('GET', '/admin/front-desk', undefined, desk)).json
+    expect(list[0].markedBy).toEqual({ kind: 'staff', name: 'desk' })
+    expect((await h.call('PUT', '/admin/settings', {}, desk)).status).toBe(403)
+  })
+})

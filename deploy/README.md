@@ -109,6 +109,12 @@ In the mini program console, under 开发管理 → 开发设置 → 服务器�
 `request`, `uploadFile` and `downloadFile` domains. Upload a
 staging build as the 体验版 to test on phones; upload a production build for review.
 
+Optional, for the front desk 签到码: under 开发管理 → 开发设置 → 扫普通链接二维码打开小程序, add
+the rule `https://app.example.cn/checkin` → page `pages/checkin/index`. WeChat then opens the
+mini program straight from its own scanner. WeChat first asks you to put a check file at the
+domain root: set `WECHAT_LINK_CHECK` to its name and content and redeploy. Without the rule,
+students scan from 课程 → 扫码签到.
+
 ## Settings
 
 `/srv/rs/.env` (compose and `rs.sh`):
@@ -127,6 +133,7 @@ staging build as the 体验版 to test on phones; upload a production build for 
 | --- | --- |
 | `ADMIN_PASSWORD` | Password of the first admin login, `admin`, created when the database has no staff yet. Use a long random one. After that, staff logins are managed on the admin 员工 page and changing this variable has no effect; the image still refuses to start without it. |
 | `WECHAT_APPID` | Mini program AppID (`wxb8dc89b45d422bf1`). |
+| `WECHAT_LINK_CHECK` | Optional. The check file for 扫普通链接二维码打开小程序, as `name.txt=content`; served at the domain root. |
 | `WECHAT_APP_SECRET` | AppSecret from 开发管理 → 开发设置. Enables real WeChat sign-in and subscription messages. Required on staging too: without it the API uses a development login that trusts any caller. |
 | `PUBLIC_BASE_URL` | `https://` address of this environment. WeChat Pay sends payment and refund results to it. |
 | `WECHAT_PAY_MCHID` | Merchant ID (商户号). |

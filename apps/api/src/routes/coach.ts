@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { bookings } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, idParam, parseBody, parseQuery } from '../errors'
+import { setAttendance } from '../services/attendance'
 import { type CoachVars, logout, requireCoach } from '../services/auth'
 import { cancelBooking } from '../services/bookings'
 import { noOtherCoachTold } from '../services/coach-notices'
@@ -29,14 +30,13 @@ import {
   coachSchedule,
   coachSession,
   ownBooking,
-  setAttendance,
   setCoachNote,
   setSlotOpen,
 } from '../services/lessons'
 import { moveBooking } from '../services/moves'
 
 // A real calendar date: Date.parse would quietly turn 2026-02-30 into March 2.
-const dateKey = z
+export const dateKey = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine((d) => {

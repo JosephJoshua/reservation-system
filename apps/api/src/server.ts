@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { CHECK_IN_PATH } from '@rs/shared'
 import { Hono } from 'hono'
 import { createApp } from './app'
 import { config } from './config'
@@ -73,6 +74,15 @@ if (config.adminDir) {
   })
   root.get('/', (c) => c.redirect('/admin/'))
 }
+// The venue's printed 签到码 links here. WeChat opens the mini program for it once the link is set
+// up under 扫普通链接二维码打开小程序; any other scanner lands on this note.
+root.get(CHECK_IN_PATH, (c) =>
+  c.html(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>签到</title><p style="font:17px/1.6 system-ui,sans-serif;text-align:center;margin-top:30vh;padding:0 16px">请打开微信小程序，在“课程”页点“扫码签到”</p>',
+  ),
+)
+const check = config.wechatLinkCheck
+if (check) root.get(`/${check.name}`, (c) => c.text(check.content))
 const api = createApp(deps)
 root.all('/api/*', (c) => api.fetch(c.req.raw, c.env))
 

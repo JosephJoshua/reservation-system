@@ -8,6 +8,7 @@ import {
   CardIcon,
   ChartBarIcon,
   ChatMessageIcon,
+  CheckCircleIcon,
   CourseIcon,
   DashboardIcon,
   FilePasteIcon,
@@ -27,6 +28,7 @@ import { ActionLog } from './pages/ActionLog'
 import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
 import { Catalog } from './pages/Catalog'
+import { CheckIn } from './pages/CheckIn'
 import { Feedback } from './pages/Feedback'
 import { Invoices } from './pages/Invoices'
 import { Login } from './pages/Login'
@@ -46,6 +48,7 @@ type Page = { label: string; icon: ComponentType; component: ComponentType }
 const pages = {
   overview: { label: '概览', icon: DashboardIcon, component: Overview },
   schedule: { label: '排课', icon: CalendarIcon, component: Schedule },
+  checkin: { label: '前台签到', icon: CheckCircleIcon, component: CheckIn },
   bookings: { label: '预约', icon: AssignmentIcon, component: Bookings },
   students: { label: '学员', icon: UsergroupIcon, component: Students },
   feedback: { label: '课后点评', icon: ChatMessageIcon, component: Feedback },
@@ -66,7 +69,7 @@ type PageKey = keyof typeof pages
 /** The sidebar: daily front-desk work first, then money, then setup. */
 const navGroups: { title?: string; keys: PageKey[] }[] = [
   { keys: ['overview'] },
-  { title: '日常', keys: ['schedule', 'bookings', 'students', 'feedback'] },
+  { title: '日常', keys: ['schedule', 'checkin', 'bookings', 'students', 'feedback'] },
   { title: '财务', keys: ['orders', 'refunds', 'invoices', 'reports'] },
   { title: '课程与内容', keys: ['catalog', 'products', 'banners'] },
   { title: '系统', keys: ['settings', 'staff', 'actions'] },

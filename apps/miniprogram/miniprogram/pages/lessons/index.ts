@@ -1,5 +1,6 @@
 import type { BookingDto } from '../../lib/shared'
 import { api, errorMessage } from '../../utils/api'
+import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { BOOKING_STATUS } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
@@ -15,7 +16,20 @@ interface LessonView {
   coach: string
   status: string
   feedback: boolean
-  tone: 'primary' | 'warning' | 'default'
+  tone: 'primary' | 'warning' | 'success' | 'danger' | 'default'
+}
+
+/** The status tag, with the attendance once it is marked. */
+function statusOf(b: BookingDto): Pick<LessonView, 'status' | 'tone'> {
+  if (b.attendance === 'attended') {
+    return { status: b.status === 'confirmed' ? '已签到' : '已到课', tone: 'success' }
+  }
+  if (b.attendance === 'no_show') return { status: '缺席', tone: 'danger' }
+  return {
+    status: BOOKING_STATUS[b.status],
+    tone:
+      b.status === 'pending_payment' ? 'warning' : b.status === 'confirmed' ? 'primary' : 'default',
+  }
 }
 
 function view(b: BookingDto): LessonView {
@@ -26,10 +40,8 @@ function view(b: BookingDto): LessonView {
     time: `${time(b.startsAt)}-${time(b.endsAt)}`,
     name: b.lessonType.name,
     coach: b.coach.name,
-    status: BOOKING_STATUS[b.status],
     feedback: b.hasFeedback,
-    tone:
-      b.status === 'pending_payment' ? 'warning' : b.status === 'confirmed' ? 'primary' : 'default',
+    ...statusOf(b),
   }
 }
 
@@ -39,14 +51,29 @@ Page({
     state: 'loading' as 'loading' | 'ready' | 'error',
     error: '',
     lessons: [] as LessonView[],
+    /** A lesson about to start or under way that the student can scan the 签到码 for. */
+    checkIn: null as LessonView | null,
     emptyIcon: { name: 'calendar', size: '112rpx' },
     errorIcon: { name: 'error-circle', size: '112rpx' },
   },
 
   request: 0,
+  timer: 0,
 
   onShow() {
     this.load()
+    // A lesson opens for check-in 30 minutes before it starts and closes when it ends.
+    this.timer = setInterval(() => {
+      if (this.data.scope === 'upcoming' && this.data.state === 'ready') this.load()
+    }, 60_000)
+  },
+
+  onHide() {
+    clearInterval(this.timer)
+  },
+
+  onUnload() {
+    clearInterval(this.timer)
   },
 
   onPullDownRefresh() {
@@ -59,7 +86,12 @@ Page({
     try {
       const rows = await api<BookingDto[]>('GET', `/bookings?scope=${this.data.scope}`)
       if (request !== this.request) return
-      this.setData({ state: 'ready', lessons: rows.map(view) })
+      const open = rows.find((b) => b.canCheckIn)
+      this.setData({
+        state: 'ready',
+        lessons: rows.map(view),
+        checkIn: this.data.scope === 'upcoming' && open ? view(open) : null,
+      })
     } catch (e) {
       if (request !== this.request) return
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -67,12 +99,16 @@ Page({
   },
 
   onScope(e: WechatMiniprogram.CustomEvent<{ value: Scope }>) {
-    this.setData({ scope: e.detail.value, lessons: [] })
+    this.setData({ scope: e.detail.value, lessons: [], checkIn: null })
     this.load()
   },
 
   open(e: WechatMiniprogram.TouchEvent) {
     navigateOnce(`/pages/booking-detail/index?id=${e.currentTarget.dataset.id}`)
+  },
+
+  async scan() {
+    if (await scanToCheckIn()) this.load()
   },
 
   book() {

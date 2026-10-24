@@ -1249,3 +1249,28 @@ a:hover {
     align-items: flex-start;
   }
 }
+
+.checkin-search {
+  width: 280px;
+}
+
+.checkin-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.checkin-qr {
+  width: 240px;
+  margin: 0 auto;
+  padding: 8px;
+  background: #fff;
+  border-radius: var(--td-radius-medium);
+}
+
+.checkin-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}

@@ -70,8 +70,12 @@ function feedbackClosed(l: CoachLessonDto): string {
 }
 
 function attendanceNote(l: CoachLessonDto): string {
-  if (l.attendance) return `${ATTENDANCE[l.attendance]}。签到已截止，如需修改请联系场馆。`
-  if (Date.parse(l.startsAt) > Date.now()) return '课程开始后可以签到。'
+  const mark = l.attendance ? `${ATTENDANCE[l.attendance]}。` : ''
+  if (l.coachMarksOff) return `${mark}签到由前台办理。`
+  if (Date.parse(l.startsAt) > Date.now()) {
+    return l.attendance ? `${mark}课程开始后可以修改。` : '课程开始后可以签到。'
+  }
+  if (l.attendance) return `${mark}签到已截止，如需修改请联系场馆。`
   return '签到已截止，如需补签请联系场馆。'
 }
 

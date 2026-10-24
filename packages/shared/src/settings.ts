@@ -54,6 +54,12 @@ export const venueSettings = z.object({
     noShows: z.boolean(),
     lateCancels: z.boolean(),
   }),
+  // Who can mark attendance besides the front desk, which always can.
+  attendance: z.object({
+    // Students scan the venue's 签到码 at the front desk.
+    selfCheckIn: z.boolean(),
+    coachMarks: z.boolean(),
+  }),
   // Who runs the mini program, as named in the privacy policy and the mini program console.
   legal: z.object({
     operator: z.string().max(60),
@@ -94,5 +100,6 @@ export const defaultSettings: VenueSettings = {
     agreement: '',
   },
   pay: { noShows: true, lateCancels: false },
+  attendance: { selfCheckIn: true, coachMarks: true },
   legal: { operator: '', contact: '' },
 }

@@ -64,6 +64,11 @@ function notices() {
   }
 }
 
+function linkCheck(value: string | undefined) {
+  const m = /^([\w-]+\.txt)=(\S+)$/.exec(value?.trim() ?? '')
+  return m ? { name: m[1] as string, content: m[2] as string } : null
+}
+
 export const config = {
   production,
   port: Number(env.PORT ?? 8787),
@@ -74,6 +79,11 @@ export const config = {
   adminPassword: adminPassword(),
   wechatAppId: env.WECHAT_APPID,
   wechatAppSecret: env.WECHAT_APP_SECRET,
+  /**
+   * The check file WeChat asks for before 扫普通链接二维码打开小程序 opens the mini program from the
+   * venue's 签到码, as `name.txt=content`.
+   */
+  wechatLinkCheck: linkCheck(env.WECHAT_LINK_CHECK),
   wechatPay: wechatPay(),
   notices: notices(),
 }

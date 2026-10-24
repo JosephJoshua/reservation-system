@@ -82,17 +82,54 @@ describe('attendanceError', () => {
     status: 'confirmed',
     startsAt: new Date('2026-10-25T02:00:00Z'),
     endsAt: new Date('2026-10-25T03:00:00Z'),
+    attendance: null,
   }
 
-  it('waits for the lesson to start', () => {
-    expect(attendanceError(booking, new Date('2026-10-25T01:59:00Z'), 'coach')).toBe('not_started')
-    expect(attendanceError(booking, new Date('2026-10-25T02:00:00Z'), 'coach')).toBeNull()
+  it('waits for the lesson to start, except for front desk arrivals 30 minutes early', () => {
+    const early = new Date('2026-10-25T01:30:00Z')
+    expect(attendanceError(booking, new Date('2026-10-25T01:29:00Z'), 'admin', 'attended')).toBe(
+      'not_started',
+    )
+    expect(attendanceError(booking, early, 'admin', 'attended')).toBeNull()
+    expect(attendanceError(booking, early, 'student', 'attended')).toBeNull()
+    expect(attendanceError(booking, early, 'admin', null)).toBeNull()
+    expect(attendanceError(booking, early, 'admin', 'no_show')).toBe('not_started')
+    expect(attendanceError(booking, early, 'coach', 'attended')).toBe('not_started')
+    expect(attendanceError(booking, early, 'coach', null)).toBe('not_started')
+    expect(
+      attendanceError(booking, new Date('2026-10-25T02:00:00Z'), 'coach', 'no_show'),
+    ).toBeNull()
   })
 
   it('gives the coach a week after the lesson, the admin forever', () => {
     const later = new Date('2026-11-02T03:00:00Z')
-    expect(attendanceError(booking, later, 'coach')).toBe('too_late')
-    expect(attendanceError(booking, later, 'admin')).toBeNull()
+    expect(attendanceError(booking, later, 'coach', 'attended')).toBe('too_late')
+    expect(attendanceError(booking, later, 'admin', 'attended')).toBeNull()
+  })
+
+  it('lets a student check in until the lesson ends, unless marked absent', () => {
+    expect(
+      attendanceError(booking, new Date('2026-10-25T02:59:00Z'), 'student', 'attended'),
+    ).toBeNull()
+    expect(attendanceError(booking, new Date('2026-10-25T03:00:00Z'), 'student', 'attended')).toBe(
+      'too_late',
+    )
+    expect(
+      attendanceError(
+        { ...booking, attendance: 'no_show' },
+        new Date('2026-10-25T02:30:00Z'),
+        'student',
+        'attended',
+      ),
+    ).toBe('marked')
+    expect(
+      attendanceError(
+        { ...booking, attendance: 'no_show' },
+        new Date('2026-10-25T02:30:00Z'),
+        'coach',
+        'attended',
+      ),
+    ).toBeNull()
   })
 
   it('only applies to confirmed bookings', () => {
@@ -101,6 +138,7 @@ describe('attendanceError', () => {
         { ...booking, status: 'cancelled' },
         new Date('2026-10-25T02:30:00Z'),
         'admin',
+        'attended',
       ),
     ).toBe('not_confirmed')
   })

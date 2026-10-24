@@ -20,9 +20,11 @@ import {
   refunds,
   slots,
 } from '../db/schema'
+import { studentCanCheckIn } from './attendance'
 import { visibleFeedback, withVisibleFeedback } from './feedback'
 import { orderInvoices } from './invoices'
 import { movedFromIso, moveSummaries } from './move-history'
+import { getSettings } from './settings'
 
 type BookingRow = typeof bookings.$inferSelect
 type PackageRow = typeof packages.$inferSelect
@@ -62,6 +64,7 @@ export function bookingViews(
   withFeedback = false,
 ): BookingDto[] {
   const ids = rows.map((r) => r.id)
+  const { selfCheckIn } = getSettings(tx).attendance
   const slotCoach = new Map<number, { id: number; name: string }>()
   const capacity = new Map<number, number>()
   if (ids.length) {
@@ -146,6 +149,7 @@ export function bookingViews(
       late: b.late,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
       attendance: b.attendance,
+      canCheckIn: studentCanCheckIn(b, now, selfCheckIn),
       invoice: order ? (invoiceByOrder.get(order.id) ?? null) : null,
       hasFeedback: hasFeedback.has(b.id),
       feedback: feedback?.get(b.id) ?? null,

@@ -5,6 +5,7 @@ import {
   type CoachDetailDto,
   defaultAgreementText,
   type HomeDto,
+  isCheckInCode,
   isGroup,
   type LessonTypeDto,
   type MeDto,
@@ -42,6 +43,7 @@ import {
   hasAgreedPolicies,
   requireConsent,
 } from '../services/account'
+import { studentCheckIn } from '../services/attendance'
 import { type AuthVars, bearer, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
 import { coachViews, visibleTo } from '../services/catalog'
@@ -122,6 +124,7 @@ export function studentRoutes(deps: Deps) {
   app.use('/bookings', requireStudent(deps))
   app.use('/bookings/*', requireStudent(deps))
   app.use('/feedback', requireStudent(deps))
+  app.use('/check-in', requireStudent(deps))
   app.use('/orders/*', requireStudent(deps))
   app.use('/packages', requireStudent(deps))
   app.use('/invoices', requireStudent(deps))
@@ -500,6 +503,13 @@ export function studentRoutes(deps: Deps) {
   app.get('/bookings/:id', async (c) => {
     await syncPendingOrders(deps, c.get('studentId'), { bookingId: idParam(c) })
     return c.json(ownBookingView(idParam(c), c.get('studentId')))
+  })
+
+  // The student scanned the venue's 签到码 at the front desk.
+  app.post('/check-in', async (c) => {
+    const { code } = await parseBody(c, z.object({ code: z.string().max(500) }))
+    if (!isCheckInCode(code)) throw new ApiError(400, 'not_check_in_code', '这不是场馆的签到码')
+    return c.json(studentCheckIn(deps, c.get('studentId')))
   })
 
   // 学习记录

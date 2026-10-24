@@ -1,0 +1,27 @@
+@import '../../styles/common.wxss';
+
+.result {
+  padding: 96rpx 48rpx 48rpx;
+  text-align: center;
+}
+
+.result-icon.tone-success {
+  color: var(--td-success-color);
+}
+
+.result-icon.tone-hint {
+  color: var(--td-warning-color);
+}
+
+.result-title {
+  margin-top: 24rpx;
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+
+.result-text {
+  margin-top: 12rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}

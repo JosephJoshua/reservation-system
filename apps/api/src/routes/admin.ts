@@ -20,6 +20,7 @@ import {
   staffRoles,
   studentLevels,
   tagsError,
+  venueDateKey,
   venueParts,
   venueSettings,
 } from '@rs/shared'
@@ -51,6 +52,7 @@ import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { accountDeleted, personColumns } from '../services/account'
 import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
+import { frontDeskLessons, setAttendance } from '../services/attendance'
 import {
   type AdminVars,
   bearer,
@@ -81,7 +83,6 @@ import {
   markRefundSeen,
   rejectInvoice,
 } from '../services/invoices'
-import { setAttendance } from '../services/lessons'
 import { moveBooking } from '../services/moves'
 import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
@@ -121,7 +122,7 @@ import {
 import { saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
-import { weeklyHoursBody } from './coach'
+import { dateKey, weeklyHoursBody } from './coach'
 
 const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
 const nullableInstant = instant.nullable()
@@ -1227,6 +1228,12 @@ export function adminRoutes(deps: Deps) {
     return c.json(bookForStudent(deps, c.get('staffId'), { ...body, listedPriceOnly }), 201)
   })
 
+  // The front desk's 签到 list: every student's lesson on one venue day.
+  app.get('/front-desk', need('attendance'), (c) => {
+    const q = parseQuery(c, z.object({ date: dateKey.optional() }))
+    return c.json(frontDeskLessons(deps, q.date ?? venueDateKey(deps.now())))
+  })
+
   app.put('/bookings/:id/attendance', need('attendance'), async (c) => {
     const { attendance } = await parseBody(
       c,
@@ -1238,7 +1245,7 @@ export function adminRoutes(deps: Deps) {
       .from(bookings)
       .where(eq(bookings.id, id))
       .get()
-    setAttendance(deps, id, attendance, 'admin')
+    setAttendance(deps, id, attendance, { staffId: c.get('staffId') })
     if (before && before.attendance !== attendance) {
       const { what, studentId } = describeBooking(db, id)
       const label = { attended: '到课', no_show: '缺席' }

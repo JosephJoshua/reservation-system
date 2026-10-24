@@ -116,6 +116,7 @@ export function can(roles: readonly StaffRole[], permission: StaffPermission) {
 export const pagePermissions = {
   overview: 'view',
   schedule: 'bookings',
+  checkin: 'attendance',
   bookings: 'view',
   students: 'view',
   feedback: 'bookings',

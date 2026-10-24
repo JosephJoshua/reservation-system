@@ -54,6 +54,8 @@ export interface CoachSessionDto {
   capacity: number
   cancelled: boolean
   cancelReason: string | null
+  /** The venue turned 教练点名 off: the front desk marks attendance. */
+  coachMarksOff: boolean
   students: {
     bookingId: number
     name: string
@@ -94,6 +96,8 @@ export interface CoachLessonDto {
    */
   feedbackBlocked: string | null
   canMarkAttendance: boolean
+  /** The venue turned 教练点名 off: the front desk marks attendance. */
+  coachMarksOff: boolean
   canCancel: boolean
   /** The coach can move it to another of their slots. */
   canMove: boolean
