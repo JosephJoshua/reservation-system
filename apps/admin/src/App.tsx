@@ -25,11 +25,11 @@ import { api, getToken, handleUnauthorized, setToken } from './api'
 import { useApi, useIsPhone } from './hooks'
 import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
-import { Banners } from './pages/Banners'
 import { Bookings } from './pages/Bookings'
 import { Catalog } from './pages/Catalog'
 import { CheckIn } from './pages/CheckIn'
 import { Feedback } from './pages/Feedback'
+import { HomeContent } from './pages/HomeContent'
 import { Invoices } from './pages/Invoices'
 import { Login } from './pages/Login'
 import { Orders } from './pages/Orders'
@@ -61,7 +61,7 @@ const pages = {
   reports: { label: '报表', icon: ChartBarIcon, component: Reports },
   catalog: { label: '课程与教练', icon: CourseIcon, component: Catalog },
   products: { label: '课时包', icon: CardIcon, component: Products },
-  banners: { label: '首页内容', icon: ImageIcon, component: Banners },
+  banners: { label: '首页内容', icon: ImageIcon, component: HomeContent },
   settings: { label: '设置', icon: SettingIcon, component: Settings },
   staff: { label: '员工', icon: UserCircleIcon, component: Staff },
   actions: { label: '操作记录', icon: HistoryIcon, component: ActionLog },

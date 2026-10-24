@@ -33,6 +33,10 @@ export type Draft =
       venue: HomeDto['venue']
       notice: { text: string; endsAt: string | null }
       payment: { trialEnabled: boolean; packagesEnabled: boolean }
+      /** The banners as the page shows them, so a change in order or a new one shows at once. */
+      banners?: Banner[]
+      /** The banner the carousel shows, kept in even when students would not see it. */
+      bannerId?: number
     }
 
 export interface PreviewSource {
@@ -91,6 +95,7 @@ export function withDraft(source: PreviewSource, draft: Draft): PreviewSource {
         ...source,
         home: { ...source.home, venue: draft.venue, notice: draft.notice.text },
         payment: draft.payment,
+        banners: draft.banners ?? source.banners,
       }
   }
 }
@@ -267,7 +272,14 @@ export function hiddenReasons(source: PreviewSource, draft: Draft, now: Date): s
     }
     case 'home': {
       const { text, endsAt } = draft.notice
-      return text && endsAt && new Date(endsAt) <= now ? ['公告已过结束时间，学员看不到'] : []
+      const reasons =
+        text && endsAt && new Date(endsAt) <= now ? ['公告已过结束时间，学员看不到'] : []
+      const banner = source.banners.find((b) => b.id === draft.bannerId)
+      if (banner) {
+        const form = { kind: 'banner', id: banner.id, form: banner } as const
+        reasons.push(...hiddenReasons(source, form, now).map((r) => `轮播图：${r}`))
+      }
+      return reasons
     }
     case 'banner': {
       const f = draft.form

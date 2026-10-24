@@ -407,4 +407,38 @@
   .card-table tbody td[data-reorder] + td::before {
     display: none;
   }
+
+  /* 设置: the section menu becomes a row of chips that stays under the header. */
+  .settings-layout.t-space {
+    padding-left: 0;
+  }
+
+  .settings-layout > .t-space-item:has(> .section-nav) {
+    position: sticky;
+    top: 56px;
+    z-index: 5;
+    width: auto;
+    margin: -12px -12px 0;
+    background: var(--td-bg-color-page);
+  }
+
+  .section-nav {
+    position: static;
+    flex-direction: row;
+    gap: 8px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .section-nav-item {
+    flex: none;
+    min-height: 36px;
+    border-radius: 18px;
+    background: var(--td-bg-color-container);
+  }
+
+  .settings-layout .t-card {
+    scroll-margin-top: 112px;
+  }
 }

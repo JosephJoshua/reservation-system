@@ -15,7 +15,7 @@ import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
-import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { type ApiData, attempt, newKey, useApi, useSubmitting } from '../hooks'
 import { BANNER_IMAGE, useImageUpload } from '../ImageCrop'
 import {
   EditorWithPreview,
@@ -27,8 +27,15 @@ import type { Banner, LessonType, PackageProduct } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
 
-export function Banners() {
-  const banners = useApi<Banner[]>('/admin/banners')
+/** The 首页轮播图 list of 首页内容, which loads the banners so its preview shows them too. */
+export function Banners({
+  banners,
+  onPreview,
+}: {
+  banners: ApiData<Banner[]>
+  /** Shows a banner in the page's own preview; without it 预览 opens a dialog. */
+  onPreview?: (banner: Banner) => void
+}) {
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [edit, setEdit] = useState<{
@@ -99,7 +106,7 @@ export function Banners() {
       }
     >
       <p className="muted" style={{ marginTop: 0 }}>
-        图片会按轮播图的比例裁剪。首页公告在“设置”里修改。
+        图片会按轮播图的比例裁剪。
       </p>
       <DataTable
         rowKey="id"
@@ -111,33 +118,28 @@ export function Banners() {
           {
             colKey: 'imageUrl',
             title: '图片',
+            width: 104,
             cell: ({ row }) => <img className="banner-thumb" src={row.imageUrl} alt={row.title} />,
           },
           { colKey: 'title', title: '标题' },
           { colKey: 'link', title: '点击跳转', cell: ({ row }) => linkLabel(row) },
           {
             colKey: 'time',
-            title: '展示时间',
+            title: '展示',
+            // One column for both, so the list fits beside the preview.
             cell: ({ row }) =>
-              row.startsAt || row.endsAt
-                ? `${row.startsAt ? fmtDate(row.startsAt) : '不限'} 至 ${row.endsAt ? fmtDate(row.endsAt) : '不限'}`
-                : '长期',
-          },
-          {
-            colKey: 'active',
-            title: '状态',
-            cell: ({ row }) =>
-              row.active ? (
-                <Tag theme="success" variant="light">
-                  展示
-                </Tag>
-              ) : (
+              !row.active ? (
                 <Tag variant="light">隐藏</Tag>
+              ) : row.startsAt || row.endsAt ? (
+                `${row.startsAt ? fmtDate(row.startsAt) : '不限'} 至 ${row.endsAt ? fmtDate(row.endsAt) : '不限'}`
+              ) : (
+                '长期'
               ),
           },
           {
             colKey: 'op',
             title: '操作',
+            width: 204,
             cell: ({ row }) => (
               <Space size={0}>
                 <Button
@@ -149,7 +151,11 @@ export function Banners() {
                 >
                   编辑
                 </Button>
-                <Button variant="text" theme="primary" onClick={() => setPreview(row)}>
+                <Button
+                  variant="text"
+                  theme="primary"
+                  onClick={() => (onPreview ? onPreview(row) : setPreview(row))}
+                >
                   预览
                 </Button>
                 <Popconfirm

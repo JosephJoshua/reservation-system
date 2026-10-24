@@ -1,9 +1,7 @@
 import { CHECK_IN_EARLY_MINUTES, type VenueSettings } from '@rs/shared'
 import { useEffect, useState } from 'react'
 import {
-  Button,
   Card,
-  DatePicker,
   Input,
   InputNumber,
   Loading,
@@ -13,52 +11,67 @@ import {
   Switch,
   Textarea,
 } from 'tdesign-react'
-import { api } from '../api'
 import { Field } from '../Field'
-import { isoToPicker, pickerToIso } from '../format'
-import { attempt, newKey, useApi } from '../hooks'
-import { PreviewDialog } from '../preview/EditorWithPreview'
 import { SaveBar } from '../SaveBar'
+import { SectionNav, useSections } from '../SectionNav'
+import { useSettingsDraft } from '../settingsDraft'
 import { coordValid, VenueLocation } from '../VenueLocation'
 
+/** The parts of 设置, in the order of the page, with the settings each one holds. */
+const sections = [
+  { key: 'venue', label: '场馆', pick: (v: VenueSettings) => v.venue },
+  { key: 'booking', label: '预约规则', pick: (v: VenueSettings) => v.booking },
+  { key: 'payment', label: '支付', pick: (v: VenueSettings) => v.payment },
+  { key: 'attendance', label: '签到', pick: (v: VenueSettings) => v.attendance },
+  { key: 'pay', label: '课时费', pick: (v: VenueSettings) => v.pay },
+  {
+    key: 'legal',
+    label: '协议与隐私',
+    pick: (v: VenueSettings) => [v.policies.agreement, v.legal],
+  },
+] as const
+
+type SettingsSection = (typeof sections)[number]['key']
+const sectionKeys = sections.map((x) => x.key)
+
 export function Settings() {
-  const { data, error, reload } = useApi<VenueSettings>('/admin/settings')
-  const [s, setS] = useState<VenueSettings | null>(null)
-  const [saving, setSaving] = useState(false)
+  const {
+    data,
+    error,
+    s,
+    set,
+    reset: resetDraft,
+    save: saveDraft,
+    saving,
+    changed,
+  } = useSettingsDraft()
   const [coord, setCoord] = useState({ lat: '', lng: '' })
-  // One per loaded version, so a retry after a lost response is not saved twice.
-  const [key, setKey] = useState(newKey)
-  const [previewing, setPreviewing] = useState(false)
+  const nav = useSections(sectionKeys, !!s)
 
   const loadedCoord = {
     lat: data?.venue.latitude?.toString() ?? '',
     lng: data?.venue.longitude?.toString() ?? '',
   }
   const reset = () => {
-    if (!data) return
-    setS(structuredClone(data))
+    resetDraft()
     setCoord(loadedCoord)
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when new settings arrive
   useEffect(() => {
-    if (!data) return
-    reset()
-    setKey(newKey())
+    if (data) setCoord(loadedCoord)
   }, [data])
 
   if (!s) return error ? <p className="muted">{error}</p> : <Loading size="small" />
 
-  const dirty =
-    JSON.stringify(s) !== JSON.stringify(data) ||
-    coord.lat !== loadedCoord.lat ||
-    coord.lng !== loadedCoord.lng
-
-  const set = (fn: (draft: VenueSettings) => void) => {
-    const next = structuredClone(s)
-    fn(next)
-    setS(next)
-  }
+  const coordChanged = coord.lat !== loadedCoord.lat || coord.lng !== loadedCoord.lng
+  // 首页内容 edits the rest of the settings; they are never changed here.
+  const dirtySections = new Set<SettingsSection>(
+    sections
+      .filter((x) => changed(x.pick) || (x.key === 'venue' && coordChanged))
+      .map((x) => x.key),
+  )
+  const dirty = dirtySections.size > 0
 
   const save = async () => {
     if (saving) return
@@ -66,22 +79,21 @@ export function Settings() {
     const lng = coord.lng.trim()
     if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {
       void MessagePlugin.warning('请填写完整、有效的经纬度，或都留空')
+      nav.scrollTo('venue')
       return
     }
     const body = structuredClone(s)
     body.venue.latitude = lat ? Number(lat) : null
     body.venue.longitude = lng ? Number(lng) : null
-    setSaving(true)
-    if (await attempt(() => api('PUT', '/admin/settings', body, { ifMatch: data, key }), '已保存'))
-      await reload()
-    setSaving(false)
+    await saveDraft(body)
   }
 
   const noneSelling = !s.payment.perClassEnabled && !s.payment.packagesEnabled
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Card title="场馆信息" bordered>
+    <Space direction="vertical" size={16} className="settings-layout" style={{ width: '100%' }}>
+      <SectionNav sections={sections} nav={nav} dirty={dirtySections} />
+      <Card title="场馆信息" bordered ref={nav.refs.venue}>
         <div className="fields form-narrow">
           <Field label="名称">
             <Input
@@ -137,7 +149,7 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card title="预约规则" bordered>
+      <Card title="预约规则" bordered ref={nav.refs.booking}>
         <div className="fields form-narrow">
           <Field label="可提前预约" help="学员可以预约今天起多少天内的课程">
             <InputNumber
@@ -252,7 +264,7 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card title="支付" bordered>
+      <Card title="支付" bordered ref={nav.refs.payment}>
         <div className="fields form-narrow">
           <Field label="单次付费">
             <Switch
@@ -322,86 +334,7 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card
-        title="首页公告"
-        bordered
-        actions={
-          <Button variant="outline" onClick={() => setPreviewing(true)}>
-            预览首页
-          </Button>
-        }
-      >
-        <div className="fields form-narrow">
-          <Field label="公告" help="一句话，留空则不显示">
-            <Input
-              value={s.notice.text}
-              maxlength={60}
-              onChange={(v) =>
-                set((d) => {
-                  d.notice.text = String(v)
-                })
-              }
-            />
-          </Field>
-          <Field label="结束时间">
-            <DatePicker
-              enableTimePicker
-              clearable
-              value={isoToPicker(s.notice.endsAt)}
-              onChange={(v) =>
-                set((d) => {
-                  d.notice.endsAt = pickerToIso(String(v || ''))
-                })
-              }
-            />
-          </Field>
-        </div>
-      </Card>
-
-      {previewing && (
-        <PreviewDialog
-          title="预览首页"
-          draft={{
-            kind: 'home',
-            id: null,
-            venue: s.venue,
-            notice: s.notice,
-            payment: s.payment,
-          }}
-          onClose={() => setPreviewing(false)}
-        />
-      )}
-
-      <Card title="说明文字" bordered>
-        <div className="fields form-narrow">
-          <Field label="预约须知">
-            <Textarea
-              value={s.policies.booking}
-              maxlength={2000}
-              autosize={{ minRows: 3 }}
-              onChange={(v) =>
-                set((d) => {
-                  d.policies.booking = String(v)
-                })
-              }
-            />
-          </Field>
-          <Field label="用户协议" help="留空则使用内置的协议。学员首次预约或购买前需要同意">
-            <Textarea
-              value={s.policies.agreement}
-              maxlength={5000}
-              autosize={{ minRows: 4 }}
-              onChange={(v) =>
-                set((d) => {
-                  d.policies.agreement = String(v)
-                })
-              }
-            />
-          </Field>
-        </div>
-      </Card>
-
-      <Card title="签到" bordered>
+      <Card title="签到" bordered ref={nav.refs.attendance}>
         <div className="fields form-narrow">
           <Field
             label="学员扫码签到"
@@ -434,7 +367,7 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card title="课时费" bordered>
+      <Card title="课时费" bordered ref={nav.refs.pay}>
         <div className="fields form-narrow">
           <Field label="学员缺席" help="课程结束时学员仍未到场，是否给教练计课时费">
             <Switch
@@ -464,8 +397,20 @@ export function Settings() {
         </div>
       </Card>
 
-      <Card title="运营主体" bordered>
+      <Card title="协议与隐私" bordered ref={nav.refs.legal}>
         <div className="fields form-narrow">
+          <Field label="用户协议" help="留空则使用内置的协议。学员首次预约或购买前需要同意">
+            <Textarea
+              value={s.policies.agreement}
+              maxlength={5000}
+              autosize={{ minRows: 4 }}
+              onChange={(v) =>
+                set((d) => {
+                  d.policies.agreement = String(v)
+                })
+              }
+            />
+          </Field>
           <Field
             label="主体名称"
             help="需要与小程序后台登记的主体一致，会写入隐私政策。留空则使用场馆名称"

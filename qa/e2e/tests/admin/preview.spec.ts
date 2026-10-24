@@ -181,26 +181,38 @@ test('a banner previews on the home tab with its title', async ({ page }) => {
   await login(page)
   await page.goto('./#/banners')
   const row = page.getByRole('row').filter({ hasText: bannerTitle })
+  // 首页内容 has its own preview beside the list, so 预览 turns its carousel to the banner.
   await row.getByRole('button', { name: '预览' }).click()
-  const d = dialog(page)
-  await expect(screen(d).locator('.banners img')).toBeVisible()
-  await expect(screen(d).locator('.banner-title')).toHaveText(bannerTitle)
-  await d.getByRole('button', { name: '关闭' }).click()
+  const side = page.locator('.editor-preview')
+  await expect(screen(side).locator('.banners img')).toBeVisible()
+  await expect(screen(side).locator('.banner-title')).toHaveText(bannerTitle)
+  await expect(dialog(page)).toHaveCount(0)
 
   await row.getByRole('button', { name: '编辑' }).click()
+  const d = dialog(page)
   await field(d, '标题').locator('input').fill(`预览标题${run}`)
   await expect(screen(d).locator('.banner-title')).toHaveText(`预览标题${run}`)
   await field(d, '展示').locator('.t-switch').click()
   await expect(d.locator('.mp-preview-alert')).toContainText('已设为隐藏')
 })
 
-test('the settings preview the home notice before it is saved', async ({ page }) => {
+test('首页内容 previews the home notice as it is typed', async ({ page }) => {
   await login(page)
-  await page.goto('./#/settings')
+  await page.goto('./#/banners')
   await field(page, '公告').locator('input').fill(`预览公告${run}`)
-  await page.getByRole('button', { name: '预览首页' }).click()
-  const d = dialog(page)
-  await expect(screen(d).locator('.notice')).toContainText(`预览公告${run}`)
+  await expect(screen(page.locator('.editor-preview')).locator('.notice')).toContainText(
+    `预览公告${run}`,
+  )
+  await page.locator('.save-bar').getByRole('button', { name: '撤销修改' }).click()
+})
+
+test('on a phone, 预览 on 首页内容 opens the banner in a dialog', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await login(page)
+  await page.goto('./#/banners')
+  const card = page.locator('tr').filter({ hasText: bannerTitle })
+  await card.getByRole('button', { name: '预览' }).click()
+  await expect(screen(dialog(page)).locator('.banner-title')).toHaveText(bannerTitle)
 })
 
 test('on a phone the form and the preview take turns', async ({ page }) => {

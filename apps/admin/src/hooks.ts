@@ -33,6 +33,9 @@ export function useApi<T>(path: string | null) {
   return { data, error, loading, reload, setData }
 }
 
+/** What `useApi` gives a page, for handing a loaded list to a part of it. */
+export type ApiData<T> = ReturnType<typeof useApi<T>>
+
 // Changes in flight, by key. A second click with the same key is dropped, so a double click
 // cannot record a sale or grant lessons twice. Dialogs share the default key: only one is open.
 const DIALOG = 'dialog'
