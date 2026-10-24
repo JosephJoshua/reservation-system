@@ -11,20 +11,33 @@ Page({
     lines: [] as { text: string; heading: boolean }[],
     error: '',
     emptyIcon: { name: 'file', size: '112rpx' },
+    errorIcon: { name: 'error-circle', size: '112rpx' },
   },
 
-  async onLoad(query: Record<string, string | undefined>) {
-    const kind = (['agreement', 'privacy'] as Kind[]).find((k) => k === query.kind) ?? 'booking'
-    wx.setNavigationBarTitle({ title: TITLES[kind] })
+  kind: 'booking' as Kind,
+
+  onLoad(query: Record<string, string | undefined>) {
+    this.kind = (['agreement', 'privacy'] as Kind[]).find((k) => k === query.kind) ?? 'booking'
+    wx.setNavigationBarTitle({ title: TITLES[this.kind] })
+    this.load()
+  },
+
+  async load() {
     try {
       // Public, so the policies can be read before logging in or agreeing to anything.
       const policies = await publicApi<CatalogDto['policies']>('GET', '/policies')
-      const lines = policies[kind]
+      const text = policies[this.kind]
+      const lines = text
         .split('\n')
-        .map((text) => ({ text, heading: /^[一二三四五六七八九十]+、/.test(text) }))
-      this.setData({ state: 'ready', lines: policies[kind].trim() ? lines : [] })
+        .map((line) => ({ text: line, heading: /^[一二三四五六七八九十]+、/.test(line) }))
+      this.setData({ state: 'ready', lines: text.trim() ? lines : [] })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }
+  },
+
+  retry() {
+    this.setData({ state: 'loading' })
+    this.load()
   },
 })

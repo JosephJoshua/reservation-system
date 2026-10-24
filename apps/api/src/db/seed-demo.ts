@@ -149,7 +149,7 @@ const [private1, trial, kids] = db
     },
     {
       name: '少儿小班课',
-      description: '6-12 岁，基本功和步法，每班最多 6 人',
+      description: '6-12 岁，基本功和步法',
       durationMinutes: 90,
       price: 12000,
       capacity: 6,

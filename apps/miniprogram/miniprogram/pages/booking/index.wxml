@@ -52,7 +52,7 @@
       </view>
       <view class="lesson-side">
         <view wx:if="{{item.price}}">
-          <text class="price">{{item.price}}</text><text class="muted lesson-from">起</text>
+          <text class="price">{{item.price}}</text><text wx:if="{{item.from}}" class="muted lesson-from">起</text>
         </view>
         <view wx:if="{{item.original}}" class="price-original">{{item.original}}</view>
       </view>
@@ -98,7 +98,7 @@
     <view class="section-title">场馆信息</view>
     <t-cell-group theme="card">
       <t-cell wx:if="{{venue.openingHours}}" title="营业时间" note="{{venue.openingHours}}" left-icon="time" />
-      <t-cell wx:if="{{venue.address}}" title="{{venue.address}}" left-icon="location" arrow hover bind:click="openMap" />
+      <t-cell wx:if="{{venue.address}}" title="{{venue.address}}" t-class-title="address" left-icon="location" arrow hover bind:click="openMap" />
       <t-cell wx:if="{{venue.phone}}" title="联系场馆" note="{{venue.phone}}" left-icon="call" arrow hover bind:click="call" />
     </t-cell-group>
   </block>
