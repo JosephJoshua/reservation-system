@@ -16,7 +16,7 @@ import {
   studentLevels,
   tagsError,
 } from '@rs/shared'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -31,6 +31,7 @@ import {
   Select,
   Space,
   Switch,
+  Tabs,
   Tag,
   TagInput,
   Textarea,
@@ -60,24 +61,59 @@ import {
 } from '../labels'
 import { useCan } from '../me'
 import type { LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
+import { Feedback } from './Feedback'
+import { Orders } from './Orders'
 
 function idFromHash() {
   const id = Number(hashParam('id'))
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
+/** The student of 学员详情, as in `#/students/12`, or null on the list. */
+function pageFromHash() {
+  const id = Number(window.location.hash.split('?')[0]?.split('/')[2])
+  return Number.isSafeInteger(id) && id > 0 ? id : null
+}
+
+type ListState = { q: string; filter: 'expiring' | 'desk' | null }
+const LIST_KEY = 'rs:students-list'
+
+// The list's search and filter, kept for the way back from 学员详情 after a refresh there. Only
+// read when the page opens on 学员详情, so the 学员 link in the menu opens a plain list.
+function savedList(): ListState {
+  try {
+    const saved = pageFromHash() && JSON.parse(sessionStorage.getItem(LIST_KEY) ?? 'null')
+    if (typeof saved?.q === 'string')
+      return {
+        q: saved.q,
+        filter: saved.filter === 'expiring' || saved.filter === 'desk' ? saved.filter : null,
+      }
+  } catch {}
+  return { q: '', filter: null }
+}
+
+function saveList(state: ListState) {
+  try {
+    sessionStorage.setItem(LIST_KEY, JSON.stringify(state))
+  } catch {}
+}
+
 export function Students() {
   const money = useCan('finance')
   const canAdd = useCan('students')
   // The header search links here with `q` to show all its results.
-  const [q, setQ] = useState(() => hashParam('q') ?? '')
+  const [saved] = useState(savedList)
+  const [q, setQ] = useState(() => hashParam('q') ?? saved.q)
   const [query, setQuery] = useState(q)
   const [openId, setOpenId] = useState<number | null>(idFromHash)
-  const [filter, setFilter] = useState<'expiring' | 'desk' | null>(null)
+  const [pageId, setPageId] = useState<number | null>(pageFromHash)
+  const [filter, setFilter] = useState(saved.filter)
+  useEffect(() => saveList({ q, filter }), [q, filter])
   const [creating, setCreating] = useState(false)
   const expiring = filter === 'expiring'
   const list = usePagedApi<StudentRow>(
-    `/admin/students?q=${encodeURIComponent(query)}${filter ? `&${filter}=1` : ''}`,
+    // Not loaded under 学员详情; it loads when the list is back.
+    pageId ? null : `/admin/students?q=${encodeURIComponent(query)}${filter ? `&${filter}=1` : ''}`,
     // The 即将到期 list is sorted by date, so it pages by position.
     expiring ? 'offset' : 'before',
   )
@@ -89,21 +125,29 @@ export function Students() {
   }, [q])
 
   const { reload } = list
+  // The drawer open before the address changed.
+  const wasOpen = useRef(openId)
   useEffect(() => {
     const onHash = () => {
       const id = idFromHash()
+      const closed = id === null && wasOpen.current !== null
+      wasOpen.current = id
       setOpenId(id)
+      setPageId(pageFromHash())
       const search = hashParam('q')
       if (search !== null) {
         setQ(search)
         setQuery(search.trim())
       }
-      // Closed with the back button: show what changed in the drawer.
-      if (id === null) void reload()
+      // Closed with the back button: show what changed in the drawer. Back from 学员详情 the
+      // list loads anyway.
+      if (closed && pageFromHash() === null) void reload()
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [reload])
+
+  if (pageId) return <StudentPage key={pageId} id={pageId} />
 
   return (
     <div>
@@ -171,7 +215,9 @@ export function Students() {
                 <span className="muted">已注销</span>
               ) : (
                 <span className="name-cell">
-                  {row.name || <span className="muted">未填写</span>}
+                  <a href={`#/students/${row.id}`}>
+                    {row.name || <span className="muted">未填写</span>}
+                  </a>
                   {!row.wechatBound && (
                     <Tag size="small" variant="light" theme="warning">
                       未绑定微信
@@ -331,16 +377,11 @@ function ExpiryCell({ expiresAt }: { expiresAt: string }) {
   )
 }
 
-function StudentDrawer({
-  id,
-  onChanged,
-  onClose,
-}: {
-  id: number
-  /** The student's row in the list changed, such as when they are deleted or linked. */
-  onChanged: () => void
-  onClose: () => void
-}) {
+/**
+ * One student's record and what can be done with it, shared by the 学员 drawer and 学员详情:
+ * the dialogs it opens are rendered by `dialogs`.
+ */
+function useStudent(id: number, onChanged: () => void) {
   const detail = useApi<StudentDetail>(`/admin/students/${id}`)
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const [selling, setSelling] = useState(false)
@@ -348,299 +389,51 @@ function StudentDrawer({
   const [binding, setBinding] = useState(false)
   // The profile as it was when the editor opened, which the save is checked against.
   const [editingProfile, setEditingProfile] = useState<StudentProfileEdit | null>(null)
-  const [action, setAction] = useState<{
-    kind: 'grant' | 'extend' | 'ledger'
-    packageId: number
-  } | null>(null)
+  const [action, setAction] = useState<PackageActionKind | null>(null)
   const s = detail.data
-  const phone = useIsPhone()
-  const canEdit = useCan('students')
-  const canBook = useCan('bookings')
-  const canManage = useCan('manage')
-  // Opened after mounting rather than mounted open, so the drawer takes focus and Esc closes it.
-  const [shown, setShown] = useState(false)
-  useEffect(() => setShown(true), [])
+  const reload = () => void detail.reload()
 
-  return (
-    <Drawer
-      visible={shown}
-      size={phone ? '100%' : '800px'}
-      header={s ? `${s.deletedAt ? '已注销的学员' : s.name || '学员'} · 编号 ${s.id}` : '学员'}
-      footer={false}
-      onClose={onClose}
-    >
-      {!s && detail.error && <p className="muted">{detail.error}</p>}
-      {!s && !detail.error && <Loading size="small" />}
-      {s && (
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {s.deletedAt ? (
-            <span className="muted">
-              {fmtDate(s.deletedAt)}{' '}
-              个人信息已删除：姓名、手机号、学员档案和微信身份都已清除，订单和上课记录仍会保留。
-            </span>
-          ) : (
-            <Space align="center" breakLine>
-              <span>{s.phone || '未填写手机号'}</span>
-              <span className="muted">
-                {s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
-              </span>
-              {canManage && (
-                <>
-                  <span className="muted">测试学员</span>
-                  <Switch
-                    size="small"
-                    value={s.tester}
-                    onChange={async (v) => {
-                      if (
-                        await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v }))
-                      )
-                        await detail.reload()
-                    }}
-                  />
-                </>
-              )}
-            </Space>
-          )}
-
-          {s.samePhone.length > 0 && (
-            <div className="desk-banner">
-              <span>
-                手机号与
-                {s.samePhone.map((o) => (
-                  <a key={o.id} href={`#/students?id=${o.id}`}>
-                    「{o.name || '未填写姓名'}」（编号 {o.id}）
-                  </a>
-                ))}
-                相同。到店时请学员打开小程序「我的」核对学员编号。
-              </span>
-            </div>
-          )}
-          {!s.deletedAt && !s.wechatBound && (canEdit || canManage) && (
-            <div className="desk-banner">
-              <span>
-                未绑定微信。学员可以直接来上课；绑定后，课时包、预约和订单会同步到学员的小程序。
-              </span>
-              <Space size={8} breakLine={false}>
-                {canEdit && (
-                  <Button size="small" theme="primary" onClick={() => setBinding(true)}>
-                    绑定微信
-                  </Button>
-                )}
-                {canManage && (
-                  <Popconfirm
-                    theme="warning"
-                    content="删除后，姓名、手机号和学员档案会被清除，订单和上课记录会匿名保留。仅在学员要求删除个人信息时使用。"
-                    confirmBtn={{ content: '删除', theme: 'danger' }}
-                    cancelBtn="返回"
-                    onConfirm={async () => {
-                      if (await attempt(() => api('DELETE', `/admin/students/${s.id}`), '已删除')) {
-                        onChanged()
-                        await detail.reload()
-                      }
-                    }}
-                  >
-                    <Button size="small" variant="outline" theme="danger">
-                      删除学员
-                    </Button>
-                  </Popconfirm>
-                )}
-              </Space>
-            </div>
-          )}
-
-          <Card
-            title="学员档案"
-            bordered
-            actions={
-              s.deletedAt || !canEdit ? null : (
-                <Button size="small" onClick={() => setEditingProfile(profileEdit(s.profile))}>
-                  编辑
-                </Button>
-              )
-            }
-          >
-            <ProfileView profile={s.profile} deleted={Boolean(s.deletedAt)} />
-          </Card>
-
-          {s.feedback.length > 0 && (
-            <Card title={`课后点评（${s.profile.feedbackCount}）`} bordered>
-              <FeedbackList key={s.id} items={s.feedback} total={s.profile.feedbackCount} />
-            </Card>
-          )}
-
-          <Card
-            title="课时包"
-            bordered
-            actions={
-              s.deletedAt || !canEdit ? null : (
-                <Button size="small" onClick={() => setSelling(true)}>
-                  前台售卖
-                </Button>
-              )
-            }
-          >
-            <DataTable
-              rowKey="id"
-              data={s.packages}
-              empty="没有课时包"
-              columns={[
-                { colKey: 'name', title: '名称' },
-                {
-                  colKey: 'left',
-                  title: '剩余',
-                  width: 80,
-                  cell: ({ row }) =>
-                    `${row.lessonsRemaining}/${row.lessonsPurchased + row.lessonsGranted}`,
-                },
-                {
-                  colKey: 'expiresAt',
-                  title: '有效期至',
-                  width: 120,
-                  cell: ({ row }) => lastDay(row.expiresAt),
-                },
-                {
-                  colKey: 'pricePaid',
-                  title: '实付',
-                  width: 90,
-                  cell: ({ row }) => yuan(row.pricePaid),
-                },
-                {
-                  colKey: 'status',
-                  title: '状态',
-                  width: 90,
-                  cell: ({ row }) => {
-                    const [label, theme] = packageStatusLabel[row.status]
-                    return (
-                      <Tag theme={theme} variant="light">
-                        {label}
-                      </Tag>
-                    )
-                  },
-                },
-                {
-                  colKey: 'op',
-                  title: '操作',
-                  width: 180,
-                  cell: ({ row }) => (
-                    <Space size={0} breakLine={false}>
-                      {!s.deletedAt &&
-                      canManage &&
-                      (row.status === 'active' ||
-                        row.status === 'used_up' ||
-                        row.status === 'expired') ? (
-                        <>
-                          <Button
-                            size="small"
-                            variant="text"
-                            theme="primary"
-                            onClick={() => setAction({ kind: 'grant', packageId: row.id })}
-                          >
-                            加课时
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="text"
-                            theme="primary"
-                            onClick={() => setAction({ kind: 'extend', packageId: row.id })}
-                          >
-                            延期
-                          </Button>
-                        </>
-                      ) : null}
-                      <Button
-                        size="small"
-                        variant="text"
-                        theme="primary"
-                        onClick={() => setAction({ kind: 'ledger', packageId: row.id })}
-                      >
-                        记录
-                      </Button>
-                    </Space>
-                  ),
-                },
-              ]}
-            />
-          </Card>
-
-          <Card
-            title="预约记录"
-            bordered
-            actions={
-              s.deletedAt || !canBook ? null : (
-                <Button size="small" onClick={() => setBooking(true)}>
-                  代约
-                </Button>
-              )
-            }
-          >
-            <DataTable
-              rowKey="id"
-              data={s.bookings}
-              empty="没有预约"
-              columns={[
-                { colKey: 'startsAt', title: '时间', cell: ({ row }) => fmtDateTime(row.startsAt) },
-                {
-                  colKey: 'lesson',
-                  title: '课程',
-                  cell: ({ row }) => `${row.lessonType.name} · ${row.coach.name}`,
-                },
-                {
-                  colKey: 'status',
-                  title: '状态',
-                  cell: ({ row }) => {
-                    const [label, theme] = bookingStatusLabel[row.status]
-                    return (
-                      <Tag theme={theme} variant="light">
-                        {label}
-                      </Tag>
-                    )
-                  },
-                },
-              ]}
-            />
-          </Card>
-        </Space>
-      )}
-
-      {editingProfile && s && (
+  const dialogs = s && (
+    <>
+      {editingProfile && (
         <ProfileDialog
           studentId={s.id}
           loaded={editingProfile}
           onClose={() => setEditingProfile(null)}
           onDone={() => {
             setEditingProfile(null)
-            void detail.reload()
+            reload()
           }}
         />
       )}
-      {binding && s && (
+      {binding && (
         <BindWechatDialog
           studentId={s.id}
           onClose={() => setBinding(false)}
           onBound={() => {
             onChanged()
-            void detail.reload()
+            reload()
           }}
         />
       )}
-      {booking && s && (
+      {booking && (
         <BookForStudent
           student={s}
           onClose={() => setBooking(false)}
           onDone={() => {
             setBooking(false)
-            void detail.reload()
+            reload()
           }}
         />
       )}
-      {selling && s && (
+      {selling && (
         <OfflineSale
           studentId={s.id}
           products={products.data ?? []}
           onClose={() => setSelling(false)}
           onDone={() => {
             setSelling(false)
-            void detail.reload()
+            reload()
           }}
         />
       )}
@@ -651,14 +444,489 @@ function StudentDrawer({
           onClose={() => setAction(null)}
           onDone={() => {
             setAction(null)
-            void detail.reload()
+            reload()
           }}
         />
       )}
       {action?.kind === 'ledger' && (
         <Ledger packageId={action.packageId} onClose={() => setAction(null)} />
       )}
+    </>
+  )
+
+  return {
+    detail,
+    s,
+    dialogs,
+    onChanged,
+    sell: () => setSelling(true),
+    book: () => setBooking(true),
+    bind: () => setBinding(true),
+    editProfile: () => s && setEditingProfile(profileEdit(s.profile)),
+    packageAction: setAction,
+  }
+}
+
+type PackageActionKind = { kind: 'grant' | 'extend' | 'ledger'; packageId: number }
+type Student = ReturnType<typeof useStudent>
+
+/** The student's phone, when they joined, the 测试学员 switch, or that they were deleted. */
+function StudentFacts({ student }: { student: Student }) {
+  const { s, detail } = student
+  const canManage = useCan('manage')
+  if (!s) return null
+  if (s.deletedAt) {
+    return (
+      <span className="muted">
+        {fmtDate(s.deletedAt)}{' '}
+        个人信息已删除：姓名、手机号、学员档案和微信身份都已清除，订单和上课记录仍会保留。
+      </span>
+    )
+  }
+  return (
+    <Space align="center" breakLine>
+      <span>{s.phone || '未填写手机号'}</span>
+      <span className="muted">
+        {s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
+      </span>
+      {canManage && (
+        <Space size={6} align="center">
+          <span className="muted">测试学员</span>
+          <Switch
+            size="small"
+            value={s.tester}
+            onChange={async (v) => {
+              if (await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v })))
+                await detail.reload()
+            }}
+          />
+        </Space>
+      )}
+    </Space>
+  )
+}
+
+/** Students sharing the phone, and the WeChat link with 删除学员 for one the desk added. */
+function StudentNotices({ student }: { student: Student }) {
+  const { s, detail, bind, onChanged } = student
+  const canEdit = useCan('students')
+  const canManage = useCan('manage')
+  if (!s) return null
+  return (
+    <>
+      {s.samePhone.length > 0 && (
+        <div className="desk-banner">
+          <span>
+            手机号与
+            {s.samePhone.map((o) => (
+              <a key={o.id} href={`#/students/${o.id}`}>
+                「{o.name || '未填写姓名'}」（编号 {o.id}）
+              </a>
+            ))}
+            相同。到店时请学员打开小程序「我的」核对学员编号。
+          </span>
+        </div>
+      )}
+      {!s.deletedAt && !s.wechatBound && (canEdit || canManage) && (
+        <div className="desk-banner">
+          <span>
+            未绑定微信。学员可以直接来上课；绑定后，课时包、预约和订单会同步到学员的小程序。
+          </span>
+          <Space size={8} breakLine={false}>
+            {canEdit && (
+              <Button size="small" theme="primary" onClick={bind}>
+                绑定微信
+              </Button>
+            )}
+            {canManage && (
+              <Popconfirm
+                theme="warning"
+                content="删除后，姓名、手机号和学员档案会被清除，订单和上课记录会匿名保留。仅在学员要求删除个人信息时使用。"
+                confirmBtn={{ content: '删除', theme: 'danger' }}
+                cancelBtn="返回"
+                onConfirm={async () => {
+                  if (await attempt(() => api('DELETE', `/admin/students/${s.id}`), '已删除')) {
+                    onChanged()
+                    await detail.reload()
+                  }
+                }}
+              >
+                <Button size="small" variant="outline" theme="danger">
+                  删除学员
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+        </div>
+      )}
+    </>
+  )
+}
+
+function ProfileCard({ student }: { student: Student }) {
+  const { s, editProfile } = student
+  const canEdit = useCan('students')
+  if (!s) return null
+  return (
+    <Card
+      title="学员档案"
+      bordered
+      actions={
+        s.deletedAt || !canEdit ? null : (
+          <Button size="small" onClick={editProfile}>
+            编辑
+          </Button>
+        )
+      }
+    >
+      <ProfileView profile={s.profile} deleted={Boolean(s.deletedAt)} />
+    </Card>
+  )
+}
+
+function FeedbackCard({ student }: { student: Student }) {
+  const { s } = student
+  if (!s?.feedback.length) return null
+  return (
+    <Card title={`课后点评（${s.profile.feedbackCount}）`} bordered>
+      <FeedbackList key={s.id} items={s.feedback} total={s.profile.feedbackCount} />
+    </Card>
+  )
+}
+
+function PackagesCard({ student }: { student: Student }) {
+  const { s, sell, packageAction } = student
+  const canEdit = useCan('students')
+  const canManage = useCan('manage')
+  if (!s) return null
+  return (
+    <Card
+      title="课时包"
+      bordered
+      actions={
+        s.deletedAt || !canEdit ? null : (
+          <Button size="small" onClick={sell}>
+            前台售卖
+          </Button>
+        )
+      }
+    >
+      <DataTable
+        rowKey="id"
+        data={s.packages}
+        empty="没有课时包"
+        columns={[
+          { colKey: 'name', title: '名称' },
+          {
+            colKey: 'left',
+            title: '剩余',
+            width: 80,
+            cell: ({ row }) =>
+              `${row.lessonsRemaining}/${row.lessonsPurchased + row.lessonsGranted}`,
+          },
+          {
+            colKey: 'expiresAt',
+            title: '有效期至',
+            width: 120,
+            cell: ({ row }) => lastDay(row.expiresAt),
+          },
+          {
+            colKey: 'pricePaid',
+            title: '实付',
+            width: 90,
+            cell: ({ row }) => yuan(row.pricePaid),
+          },
+          {
+            colKey: 'status',
+            title: '状态',
+            width: 90,
+            cell: ({ row }) => {
+              const [label, theme] = packageStatusLabel[row.status]
+              return (
+                <Tag theme={theme} variant="light">
+                  {label}
+                </Tag>
+              )
+            },
+          },
+          {
+            colKey: 'op',
+            title: '操作',
+            width: 180,
+            cell: ({ row }) => (
+              <Space size={0} breakLine={false}>
+                {!s.deletedAt &&
+                canManage &&
+                (row.status === 'active' ||
+                  row.status === 'used_up' ||
+                  row.status === 'expired') ? (
+                  <>
+                    <Button
+                      size="small"
+                      variant="text"
+                      theme="primary"
+                      onClick={() => packageAction({ kind: 'grant', packageId: row.id })}
+                    >
+                      加课时
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="text"
+                      theme="primary"
+                      onClick={() => packageAction({ kind: 'extend', packageId: row.id })}
+                    >
+                      延期
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  size="small"
+                  variant="text"
+                  theme="primary"
+                  onClick={() => packageAction({ kind: 'ledger', packageId: row.id })}
+                >
+                  记录
+                </Button>
+              </Space>
+            ),
+          },
+        ]}
+      />
+    </Card>
+  )
+}
+
+function BookingsCard({ student }: { student: Student }) {
+  const { s, book } = student
+  const canBook = useCan('bookings')
+  if (!s) return null
+  return (
+    <Card
+      title="预约记录"
+      bordered
+      actions={
+        s.deletedAt || !canBook ? null : (
+          <Button size="small" onClick={book}>
+            代约
+          </Button>
+        )
+      }
+    >
+      <DataTable
+        rowKey="id"
+        data={s.bookings}
+        empty="没有预约"
+        columns={[
+          { colKey: 'startsAt', title: '时间', cell: ({ row }) => fmtDateTime(row.startsAt) },
+          {
+            colKey: 'lesson',
+            title: '课程',
+            cell: ({ row }) => `${row.lessonType.name} · ${row.coach.name}`,
+          },
+          {
+            colKey: 'status',
+            title: '状态',
+            cell: ({ row }) => {
+              const [label, theme] = bookingStatusLabel[row.status]
+              return (
+                <Tag theme={theme} variant="light">
+                  {label}
+                </Tag>
+              )
+            },
+          },
+        ]}
+      />
+      {s.bookings.length >= STUDENT_BOOKINGS_SHOWN && (
+        <p className="muted">只显示最近 {STUDENT_BOOKINGS_SHOWN} 条预约</p>
+      )}
+    </Card>
+  )
+}
+
+// The API returns this many of a student's bookings, latest first.
+const STUDENT_BOOKINGS_SHOWN = 100
+
+/** A quick look at a student over the list, with everything on one scroll. */
+function StudentDrawer({
+  id,
+  onChanged,
+  onClose,
+}: {
+  id: number
+  /** The student's row in the list changed, such as when they are deleted or linked. */
+  onChanged: () => void
+  onClose: () => void
+}) {
+  const student = useStudent(id, onChanged)
+  const { s, detail } = student
+  const phone = useIsPhone()
+  // Opened after mounting rather than mounted open, so the drawer takes focus and Esc closes it.
+  const [shown, setShown] = useState(false)
+  useEffect(() => setShown(true), [])
+
+  return (
+    <Drawer
+      visible={shown}
+      size={phone ? '100%' : '800px'}
+      header={
+        <div className="drawer-head">
+          <span>{s ? `${studentName(s)} · 编号 ${s.id}` : '学员'}</span>
+          <Button size="small" variant="outline" href={`#/students/${id}`}>
+            打开详情
+          </Button>
+        </div>
+      }
+      footer={false}
+      onClose={onClose}
+    >
+      {!s && detail.error && <p className="muted">{detail.error}</p>}
+      {!s && !detail.error && <Loading size="small" />}
+      {s && (
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <StudentFacts student={student} />
+          <StudentNotices student={student} />
+          <ProfileCard student={student} />
+          <FeedbackCard student={student} />
+          <PackagesCard student={student} />
+          <BookingsCard student={student} />
+        </Space>
+      )}
+      {student.dialogs}
     </Drawer>
+  )
+}
+
+const studentName = (s: StudentDetail) => (s.deletedAt ? '已注销的学员' : s.name || '未填写姓名')
+
+const studentTabs = ['overview', 'packages', 'bookings', 'feedback', 'orders'] as const
+type StudentTab = (typeof studentTabs)[number]
+
+/**
+ * 学员详情: one student on a page of their own, with an address to link to, and tabs for their
+ * packages, bookings, 课后点评 and orders.
+ */
+function StudentPage({ id }: { id: number }) {
+  const student = useStudent(id, () => {})
+  const { s, detail, sell, book } = student
+  // Opened from the list or a link: starts at the top, as other pages do.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+  const canEdit = useCan('students')
+  const canBook = useCan('bookings')
+  const money = useCan('finance')
+  const [picked, setTab] = useState(() => hashParam('tab'))
+  // A tab this login can't open, such as 订单 from a link, shows 概况.
+  const allowed = (t: string | null): t is StudentTab =>
+    studentTabs.includes(t as StudentTab) &&
+    (t !== 'feedback' || canBook) &&
+    (t !== 'orders' || money)
+  const tab = allowed(picked) ? picked : 'overview'
+  const pick = (t: StudentTab) => {
+    setTab(t)
+    // In the address for a refresh or a copied link, without a step for the back button.
+    history.replaceState(
+      history.state,
+      '',
+      `#/students/${id}${t === 'overview' ? '' : `?tab=${t}`}`,
+    )
+  }
+  // Takes a tab that fell back to 概况 out of the address too.
+  const fellBack = picked !== null && picked !== tab
+  useEffect(() => {
+    if (fellBack) history.replaceState(history.state, '', `#/students/${id}`)
+  }, [fellBack, id])
+
+  const now = Date.now()
+  const active = s?.packages.filter((p) => p.status === 'active') ?? []
+  const next = s?.bookings
+    .filter((b) => b.status === 'confirmed' && Date.parse(b.startsAt) > now)
+    .at(-1)
+
+  return (
+    <div className="detail-page">
+      <nav className="breadcrumb" aria-label="位置">
+        <a href="#/students">学员</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{s ? studentName(s) : '学员详情'}</span>
+      </nav>
+      {!s && detail.error && <p className="muted">{detail.error}</p>}
+      {!s && !detail.error && <Loading size="small" />}
+      {s && (
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <div className="detail-head">
+            <div>
+              <h2 className="detail-title">
+                {studentName(s)}
+                <span className="muted detail-id">编号 {s.id}</span>
+              </h2>
+              <StudentFacts student={student} />
+            </div>
+            {!s.deletedAt && (
+              <Space size={8} breakLine>
+                {canBook && <Button onClick={book}>代约</Button>}
+                {canEdit && (
+                  <Button variant="outline" onClick={sell}>
+                    前台售卖
+                  </Button>
+                )}
+              </Space>
+            )}
+          </div>
+          <StudentNotices student={student} />
+          <Tabs value={tab} onChange={(v) => pick(v as StudentTab)} className="detail-tabs">
+            <Tabs.TabPanel value="overview" label="概况" destroyOnHide={false}>
+              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <div className="stat-grid kpi-grid">
+                  <Card bordered>
+                    <div className="muted">剩余课时</div>
+                    <div className="stat">
+                      {active.reduce((n, p) => n + p.lessonsRemaining, 0)} 节
+                    </div>
+                    <div className="stat-sub">{active.length} 个有效课时包</div>
+                  </Card>
+                  <Card bordered>
+                    <div className="muted">下次上课</div>
+                    <div className="stat">{next ? fmtDateTime(next.startsAt) : '暂无'}</div>
+                    <div className="stat-sub">
+                      {next ? `${next.lessonType.name} · ${next.coach.name}` : '没有待上的课'}
+                    </div>
+                  </Card>
+                  <Card bordered>
+                    <div className="muted">已上课</div>
+                    <div className="stat">{s.profile.lessons} 节</div>
+                    <div className="stat-sub">
+                      {s.profile.noShows ? `缺席 ${s.profile.noShows} 次` : '没有缺席'}
+                    </div>
+                  </Card>
+                </div>
+                <ProfileCard student={student} />
+                {/* Without the 课后点评 tab, the latest ones show here. */}
+                {!canBook && <FeedbackCard student={student} />}
+              </Space>
+            </Tabs.TabPanel>
+            <Tabs.TabPanel value="packages" label="课时包">
+              <PackagesCard student={student} />
+            </Tabs.TabPanel>
+            <Tabs.TabPanel value="bookings" label="预约">
+              <BookingsCard student={student} />
+            </Tabs.TabPanel>
+            {canBook && (
+              <Tabs.TabPanel value="feedback" label="课后点评">
+                <Feedback studentId={s.id} />
+              </Tabs.TabPanel>
+            )}
+            {money && (
+              <Tabs.TabPanel value="orders" label="订单">
+                <Orders studentId={s.id} />
+              </Tabs.TabPanel>
+            )}
+          </Tabs>
+        </Space>
+      )}
+      {student.dialogs}
+    </div>
   )
 }
 

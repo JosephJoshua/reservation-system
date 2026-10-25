@@ -295,7 +295,15 @@ export function studentFeedback(tx: Q, studentId: number): FeedbackItemDto[] {
 /** The admin's list, newest lesson first. */
 export function adminFeedback(
   tx: Q,
-  q: { from?: Date; to?: Date; coachId?: number; ids?: number[]; limit?: number; offset?: number },
+  q: {
+    from?: Date
+    to?: Date
+    coachId?: number
+    studentId?: number
+    ids?: number[]
+    limit?: number
+    offset?: number
+  },
 ): AdminFeedbackDto[] {
   return tx
     .select({
@@ -317,6 +325,7 @@ export function adminFeedback(
         q.from ? gte(bookings.startsAt, q.from) : undefined,
         q.to ? lt(bookings.startsAt, q.to) : undefined,
         q.coachId ? eq(slots.coachId, q.coachId) : undefined,
+        q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
         q.ids ? inArray(lessonFeedback.id, q.ids) : undefined,
       ),
     )

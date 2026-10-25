@@ -370,7 +370,7 @@ export function Settings() {
           </Field>
           <Field>
             <span className="muted">
-              前台随时可以在前台签到页签到和更正。签到不会影响扣课和收款，课时包的课时在预约时就已扣除。
+              前台随时可以在“今日”页签到和更正。签到不会影响扣课和收款，课时包的课时在预约时就已扣除。
             </span>
           </Field>
         </div>

@@ -484,7 +484,7 @@ describe('lesson feedback', () => {
     ).toBe('skipped')
   })
 
-  it('filters the admin list by coach and lesson date', async () => {
+  it('filters the admin list by coach, student and lesson date', async () => {
     const h = setup()
     const { ct, id, coach } = await taught(h)
     await write(h, ct, id, '好')
@@ -493,6 +493,9 @@ describe('lesson feedback', () => {
       h.call('GET', `/admin/feedback?${q}`, undefined, admin).then((r) => r.json)
     expect(await list(`coachId=${coach.id}`)).toHaveLength(1)
     expect(await list(`coachId=${coach.id + 1}`)).toHaveLength(0)
+    const [item] = await list('')
+    expect(await list(`studentId=${item.student.id}`)).toHaveLength(1)
+    expect(await list(`studentId=${item.student.id + 1}`)).toHaveLength(0)
     expect(await list('from=2026-10-25T00:00:00Z&to=2026-10-26T00:00:00Z')).toHaveLength(1)
     expect(await list('from=2026-10-26T00:00:00Z')).toHaveLength(0)
   })

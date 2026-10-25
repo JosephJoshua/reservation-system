@@ -1336,6 +1336,7 @@ export function adminRoutes(deps: Deps) {
         from: instant.optional(),
         to: instant.optional(),
         coachId: z.coerce.number().int().positive().optional(),
+        studentId: z.coerce.number().int().positive().optional(),
         limit: z.coerce.number().int().min(1).max(500).optional(),
         offset: z.coerce.number().int().min(0).optional(),
       }),

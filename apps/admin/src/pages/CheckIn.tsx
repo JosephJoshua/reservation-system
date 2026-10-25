@@ -9,9 +9,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Dialog, Input, Radio, Space, Tag } from 'tdesign-react'
 import { renderSVG } from 'uqr'
 import { api } from '../api'
+import { BookForStudent } from '../BookForStudent'
 import { DataTable } from '../DataTable'
+import { NewStudentDialog } from '../DeskStudent'
 import { fmtTime } from '../format'
 import { attempt, useApi } from '../hooks'
+import { useCan } from '../me'
 import { StudentCell } from '../StudentCell'
 
 type Filter = 'all' | 'unmarked' | 'marked'
@@ -112,7 +115,14 @@ function CodeDialog({ onClose }: { onClose: () => void }) {
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         {settings.data && !settings.data.attendance.selfCheckIn && (
-          <Alert theme="warning" message="学员扫码签到已关闭，可以在设置中开启" />
+          <Alert
+            theme="warning"
+            message={
+              <>
+                学员扫码签到已关闭，可以在<a href="#/settings?section=attendance">设置</a>中开启
+              </>
+            }
+          />
         )}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: uqr builds the SVG from our own URL */}
         <div className="checkin-qr" dangerouslySetInnerHTML={{ __html: svg }} />
@@ -125,11 +135,16 @@ function CodeDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** 今日: the front desk's day, one row per student, with 签到, 代约 and 前台建档. */
 export function CheckIn() {
   const { data, error, loading, reload } = useApi<FrontDeskLessonDto[]>('/admin/front-desk')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [showCode, setShowCode] = useState(false)
+  const [booking, setBooking] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const canBook = useCan('bookings')
+  const canAdd = useCan('students')
 
   // Student scans and coach marks come in while the page is open.
   useEffect(() => {
@@ -171,9 +186,21 @@ export function CheckIn() {
           <Radio.Button value="marked">已签到</Radio.Button>
         </Radio.Group>
         <span className="spacer" />
-        <Button variant="outline" onClick={() => setShowCode(true)}>
-          签到码
-        </Button>
+        <Space size={8} breakLine>
+          {canBook && (
+            <Button theme="primary" onClick={() => setBooking(true)}>
+              代约
+            </Button>
+          )}
+          {canAdd && (
+            <Button variant="outline" onClick={() => setAdding(true)}>
+              前台建档
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => setShowCode(true)}>
+            签到码
+          </Button>
+        </Space>
       </div>
 
       <Card bordered title={data ? `今日 ${rows.length} 人次，已到 ${arrived}` : '今日'}>
@@ -229,6 +256,25 @@ export function CheckIn() {
         )}
       </Card>
       {showCode && <CodeDialog onClose={() => setShowCode(false)} />}
+      {booking && (
+        <BookForStudent
+          onClose={() => setBooking(false)}
+          onDone={() => {
+            setBooking(false)
+            void reload()
+          }}
+        />
+      )}
+      {adding && (
+        <NewStudentDialog
+          initial={query.trim()}
+          onClose={() => setAdding(false)}
+          onDone={(student) => {
+            setAdding(false)
+            window.location.hash = `/students/${student.id}`
+          }}
+        />
+      )}
     </Space>
   )
 }
