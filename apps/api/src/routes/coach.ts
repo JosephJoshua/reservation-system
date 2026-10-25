@@ -1,5 +1,5 @@
 // The coach mode of the mini program. PUT and DELETE only, since wx.request cannot send PATCH.
-import { COACH_CANCEL_PREFIX } from '@rs/shared'
+import { COACH_CANCEL_PREFIX, venueDateKey, venueDates, venueInstant } from '@rs/shared'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -11,14 +11,7 @@ import { setAttendance } from '../services/attendance'
 import { type CoachVars, logout, requireCoach } from '../services/auth'
 import { cancelBooking } from '../services/bookings'
 import { noOtherCoachTold } from '../services/coach-notices'
-import {
-  bindCoach,
-  coachProfile,
-  hoursView,
-  loginCoach,
-  saveHours,
-  setDayOff,
-} from '../services/coaches'
+import { bindCoach, coachProfile, loginCoach } from '../services/coaches'
 import {
   checkPhotoUpload,
   deleteFeedback,
@@ -34,22 +27,23 @@ import {
   ownBooking,
   saveCoachProfile,
   setCoachNote,
-  setSlotOpen,
 } from '../services/lessons'
-import { moveBooking } from '../services/moves'
+import { coachMoveTimes, moveBooking } from '../services/moves'
+import {
+  addException,
+  assertCoachMayEdit,
+  removeException,
+  saveHours,
+  scheduleView,
+} from '../services/schedule'
 import { profileInput } from '../services/student-profiles'
+import { dateKey, oneTarget, targetFields, toTarget } from './target'
 
-// A real calendar date: Date.parse would quietly turn 2026-02-30 into March 2.
-export const dateKey = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((d) => {
-    const ms = Date.parse(`${d}T00:00:00Z`)
-    return !Number.isNaN(ms) && new Date(ms).toISOString().startsWith(d)
-  }, '日期无效')
 const code = z.string().min(1).max(200)
 
 export const weeklyHoursBody = z.object({
+  /** The venue date the hours apply from; today when left out. */
+  from: dateKey.optional(),
   hours: z
     .array(
       z.object({
@@ -64,10 +58,16 @@ export const weeklyHoursBody = z.object({
           .int()
           .min(0)
           .max(24 * 60),
-        lessonMinutes: z.number().int().min(15).max(480),
       }),
     )
     .max(50),
+})
+
+export const exceptionBody = z.object({
+  kind: z.enum(['off', 'extra']),
+  startsAt: z.iso.datetime({ offset: true }).transform((s) => new Date(s)),
+  endsAt: z.iso.datetime({ offset: true }).transform((s) => new Date(s)),
+  note: z.string().trim().max(40).default(''),
 })
 
 export function coachRoutes(deps: Deps) {
@@ -96,18 +96,30 @@ export function coachRoutes(deps: Deps) {
   })
 
   app.get('/schedule', (c) => {
-    const q = parseQuery(
-      c,
-      z.object({
-        from: dateKey,
-        to: dateKey,
-        moving: z.coerce.number().int().positive().optional(),
-      }),
-    )
+    const q = parseQuery(c, z.object({ from: dateKey, to: dateKey }))
     const days = (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000
     // A week back plus the longest booking window the settings allow.
     if (!(days >= 0 && days <= 100)) throw new ApiError(400, 'invalid_query', '日期范围无效')
-    return c.json(coachSchedule(deps, c.get('coachId'), q.from, q.to, q.moving))
+    return c.json(coachSchedule(deps, c.get('coachId'), q.from, q.to))
+  })
+
+  // Times the coach can move one of their private lessons to, from one date to another, in their
+  // own 排班.
+  app.get('/move-times', (c) => {
+    const q = parseQuery(
+      c,
+      z.object({ bookingId: z.coerce.number().int().positive(), from: dateKey, to: dateKey }),
+    )
+    const days = (Date.parse(q.to) - Date.parse(q.from)) / 86_400_000
+    if (!(days >= 0 && days <= 100)) throw new ApiError(400, 'invalid_query', '日期范围无效')
+    return c.json(
+      coachMoveTimes(
+        deps,
+        q.bookingId,
+        c.get('coachId'),
+        venueDates(venueInstant(q.from, 12 * 60), days),
+      ),
+    )
   })
 
   app.get('/lessons/:id', (c) => c.json(coachLesson(deps, idParam(c), c.get('coachId'))))
@@ -230,32 +242,36 @@ export function coachRoutes(deps: Deps) {
   })
 
   app.post('/lessons/:id/move', async (c) => {
-    const { slotId } = await parseBody(c, z.object({ slotId: z.number().int().positive() }))
+    const body = await parseBody(c, z.object(targetFields).refine(oneTarget, '请选择上课时间'))
     const coachId = c.get('coachId')
-    moveBooking(deps, idParam(c), slotId, { coachId })
+    moveBooking(deps, idParam(c), toTarget(body), { coachId })
     return c.json(coachLesson(deps, idParam(c), coachId))
   })
 
-  app.put('/slots/:id', async (c) => {
-    const { open } = await parseBody(c, z.object({ open: z.boolean() }))
-    setSlotOpen(deps, idParam(c), c.get('coachId'), open)
-    return c.body(null, 204)
-  })
-
-  app.get('/hours', (c) => c.json(hoursView(deps, c.get('coachId'))))
+  // 排班: the coach's weekly hours and 请假/加班, unless the venue keeps them to staff.
+  app.get('/hours', (c) => c.json(scheduleView(deps.db, deps.now(), c.get('coachId'))))
 
   app.put('/hours', async (c) => {
-    const { hours } = await parseBody(c, weeklyHoursBody)
-    return c.json(saveHours(deps, c.get('coachId'), hours))
+    const body = await parseBody(c, weeklyHoursBody)
+    assertCoachMayEdit(deps.db)
+    const conflicts = saveHours(deps, c.get('coachId'), {
+      from: body.from ?? venueDateKey(deps.now()),
+      hours: body.hours,
+    })
+    return c.json({ conflicts })
   })
 
-  app.put('/days-off/:date', (c) =>
-    c.json(setDayOff(deps, c.get('coachId'), c.req.param('date'), true)),
-  )
+  app.post('/exceptions', async (c) => {
+    const body = await parseBody(c, exceptionBody)
+    assertCoachMayEdit(deps.db)
+    return c.json(addException(deps, { ...body, coachId: c.get('coachId') }, null), 201)
+  })
 
-  app.delete('/days-off/:date', (c) =>
-    c.json(setDayOff(deps, c.get('coachId'), c.req.param('date'), false)),
-  )
+  app.delete('/exceptions/:id', (c) => {
+    assertCoachMayEdit(deps.db)
+    removeException(deps, idParam(c), c.get('coachId'))
+    return c.body(null, 204)
+  })
 
   return app
 }

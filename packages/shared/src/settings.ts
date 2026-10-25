@@ -57,6 +57,12 @@ export const venueSettings = z.object({
   booking: bookingRules.extend({
     // Lessons that can run at once, one per table. null is no limit.
     tables: z.number().int().min(1).max(99).nullable(),
+    // How far apart the start times students are offered are, in minutes from midnight.
+    startGrid: z.union([z.literal(15), z.literal(30), z.literal(60)]),
+    // Minutes kept free between two private lessons of one coach.
+    bufferMinutes: z.number().int().min(0).max(60).multipleOf(5),
+    // Coaches change their own weekly hours and 请假 in the mini program; off, only staff can.
+    coachEditsHours: z.boolean(),
   }),
   payment: z.object({
     trialEnabled: z.boolean(),
@@ -161,6 +167,9 @@ export const defaultSettings: VenueSettings = {
     lateCancel: { kind: 'forfeit' },
     studentMoves: 1,
     tables: null,
+    startGrid: 30,
+    bufferMinutes: 0,
+    coachEditsHours: true,
   },
   payment: {
     trialEnabled: true,

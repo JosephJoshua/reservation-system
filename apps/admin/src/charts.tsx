@@ -422,7 +422,7 @@ export function Heatmap({
                   className={`viz-heat-cell${v ? ` viz-heat-${level}` : ' viz-heat-none'}${
                     hover?.row === i && hover.column === j ? ' viz-hover' : ''
                   }`}
-                  aria-label={v ? `${r} ${c}：${v.text}` : `${r} ${c}：没有排课`}
+                  aria-label={v ? `${r} ${c}：${v.text}` : `${r} ${c}：没有排班`}
                   tabIndex={v ? 0 : -1}
                   onPointerEnter={show}
                   onFocus={show}

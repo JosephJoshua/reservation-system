@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { BookingDto, CreateBookingResponse } from '@rs/shared'
 import { venueDateKey, venueInstant } from '@rs/shared'
-import { ADMIN_PASSWORD, call, login, student } from './helpers'
+import { ADMIN_PASSWORD, addExtraTimes, call, login, student } from './helpers'
 
 // 前台签到: the front desk's list, marks with who made them, a student scan and the 签到码.
 
@@ -70,13 +70,11 @@ test('three students book lessons around now', async ({ request }) => {
     lessonTypeIds: [lesson.id],
   })
   const keys = Object.keys(names) as (keyof typeof names)[]
-  const slots = await call<{ ids: number[] }>(request, 'POST', '/admin/slots', admin, {
-    slots: keys.map((_, i) => ({
-      coachId: coach.id,
-      startsAt: venueInstant(day, (10 + i) * 60).toISOString(),
-      endsAt: venueInstant(day, (11 + i) * 60).toISOString(),
-    })),
-  })
+  const spans = keys.map((_, i) => ({
+    startsAt: venueInstant(day, (10 + i) * 60).toISOString(),
+    endsAt: venueInstant(day, (11 + i) * 60).toISOString(),
+  }))
+  await addExtraTimes(request, admin, coach.id, spans)
   for (const [i, key] of keys.entries()) {
     tokens[key] = await student(request, `attendance-${key}-${run}`)
     await call(request, 'PUT', '/me', tokens[key], {
@@ -84,7 +82,8 @@ test('three students book lessons around now', async ({ request }) => {
       phone: `1390000000${i}`,
     })
     const booked = await call<CreateBookingResponse>(request, 'POST', '/bookings', tokens[key], {
-      slotId: slots.ids[i],
+      coachId: coach.id,
+      startsAt: spans[i]?.startsAt,
       lessonTypeId: lesson.id,
     })
     await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)

@@ -1,19 +1,35 @@
 import {
-  type CoachHoursDto,
-  type SlotSyncDto,
+  exceptionError,
+  type HoursPeriod,
+  hoursOn,
+  type ScheduleConflictDto,
+  type ScheduleExceptionDto,
+  type ScheduleViewDto,
   venueDateKey,
+  venueInstant,
   type WeeklyHours,
   weeklyHoursError,
 } from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
-import { dateText } from '../../utils/format'
+import { dateText, time } from '../../utils/format'
+import { modalDangerColor } from '../../utils/theme'
 import { coachApi } from '../utils/coach-api'
-import { hhmm, WEEKDAYS } from '../utils/labels'
+import { hhmm, spanText, WEEKDAYS } from '../utils/labels'
 
 // Monday first, the way a coach plans a week.
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+const DAY = 86_400_000
 
-const toMinutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5))
+/** A picker's HH:MM as minutes; as an end time, 00:00 is the midnight that ends the day. */
+const toMinutes = (value: string, end = false) => {
+  const m = Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5))
+  return end && m === 0 ? 24 * 60 : m
+}
+
+/** A window's length in hours, to one decimal: 09:00-10:10 is 1.2. */
+const hoursOf = (h: WeeklyHours) => Math.round((h.endMinute - h.startMinute) / 6) / 10
+
+const dateLabel = (key: string) => dateText(`${key}T12:00:00+08:00`)
 
 function weekView(hours: WeeklyHours[]) {
   return WEEK_ORDER.map((weekday) => ({
@@ -25,7 +41,7 @@ function weekView(hours: WeeklyHours[]) {
             {
               index,
               time: `${hhmm(h.startMinute)}-${hhmm(h.endMinute)}`,
-              sub: `每节 ${h.lessonMinutes} 分钟 · ${Math.floor((h.endMinute - h.startMinute) / h.lessonMinutes)} 节`,
+              sub: `${hoursOf(h)} 小时`,
             },
           ]
         : [],
@@ -33,16 +49,50 @@ function weekView(hours: WeeklyHours[]) {
   }))
 }
 
+/** One line per day with hours, for a planned change. */
+/** Weekly hours as pieces that each stay on one line, separators included. */
+function hoursSummary(hours: WeeklyHours[]) {
+  const days = WEEK_ORDER.map((weekday) =>
+    hours
+      .filter((h) => h.weekday === weekday)
+      .map(
+        (h, i) => `${i ? '' : `${WEEKDAYS[weekday]} `}${hhmm(h.startMinute)}-${hhmm(h.endMinute)}`,
+      ),
+  ).filter((d) => d.length)
+  if (!days.length) return ['不接课']
+  return days.flatMap((windows, d) =>
+    windows.map((w, i) => w + (i < windows.length - 1 ? '、' : d < days.length - 1 ? '；' : '')),
+  )
+}
+
 function sortHours(hours: WeeklyHours[]) {
   return [...hours].sort((a, b) => a.weekday - b.weekday || a.startMinute - b.startMinute)
 }
 
-/** Tells the coach about lessons still booked on a day off. */
-function warnBooked(result: SlotSyncDto) {
-  if (!result.bookedOnDaysOff) return false
+function exceptionView(e: ScheduleExceptionDto, now: number) {
+  return {
+    id: e.id,
+    kind: e.kind,
+    closure: e.coachId === null,
+    label: e.coachId === null ? '闭馆' : e.kind === 'off' ? '请假' : '加班',
+    text: spanText(e.startsAt, e.endsAt),
+    // Kept whole when the line wraps, so 周五 never splits.
+    parts: spanText(e.startsAt, e.endsAt).split(' '),
+    note: [e.note, e.byStaff ? `${e.byStaff}添加` : ''].filter(Boolean).join(' · '),
+    underway: Date.parse(e.startsAt) <= now,
+  }
+}
+
+/** Tells the coach about booked lessons a change leaves outside their 排班 or in 请假. */
+function warnConflicts(conflicts: ScheduleConflictDto[], what: string) {
+  if (!conflicts.length) return false
+  const lines = conflicts
+    .slice(0, 3)
+    .map((c) => `${dateText(c.startsAt)} ${time(c.startsAt)} ${c.title}`)
+  if (conflicts.length > 3) lines.push(`等 ${conflicts.length} 节`)
   wx.showModal({
-    title: '休息日还有课',
-    content: `有 ${result.bookedOnDaysOff} 节课已被预约，请联系学员，或在课程详情里取消。`,
+    title: `有 ${conflicts.length} 节课${what}`,
+    content: `${lines.join('\n')}\n课程不会自动取消，请联系学员改约或取消，或请前台处理。`,
     showCancel: false,
     confirmText: '知道了',
   })
@@ -54,27 +104,49 @@ Page({
     state: 'loading' as 'loading' | 'ready' | 'error',
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
-    emptyIcon: { name: 'time', size: '112rpx' },
+    editable: true,
+    /** How many days ahead students can book the coach's lessons. */
+    advanceDays: 0,
     hours: [] as WeeklyHours[],
     week: [] as ReturnType<typeof weekView>,
-    daysOff: [] as { key: string; text: string }[],
-    lessonMinutes: [] as number[],
-    advanceDays: 14,
+    /** The date the edited hours apply from. */
+    from: '',
+    fromText: '',
+    planned: [] as { from: string; text: string; summary: string[] }[],
+    exceptions: [] as ReturnType<typeof exceptionView>[],
     today: '',
     lastDay: '',
     dirty: false,
     saving: false,
+    // Adding a window to the weekly hours.
     adding: false,
     addWeekday: 1,
     addName: '',
     addStart: '09:00',
     addEnd: '12:00',
-    addMinutes: 60,
     addHint: '',
     addInvalid: false,
+    // Adding 请假 or 加班.
+    excepting: false,
+    exKind: 'off' as 'off' | 'extra',
+    exWholeDay: true,
+    exDate: '',
+    exDateText: '',
+    exEndDate: '',
+    exEndDateText: '',
+    exStart: '09:00',
+    exEnd: '12:00',
+    exNote: '',
+    exHint: '',
+    exInvalid: false,
+    exSaving: false,
   },
 
-  dayOffBusy: false,
+  periods: [] as HoursPeriod[],
+  /** Weekdays changed since the hours were loaded, kept when 生效日期 moves. */
+  touched: new Set<number>(),
+  lessonMinutes: null as number | null,
+  removing: false,
 
   onLoad() {
     this.load()
@@ -82,21 +154,61 @@ Page({
 
   async load() {
     try {
-      const res = await coachApi<CoachHoursDto>('GET', '/hours')
+      const view = await coachApi<ScheduleViewDto>('GET', '/hours')
       const now = Date.now()
+      const today = venueDateKey(new Date(now))
+      this.periods = view.periods
+      this.lessonMinutes = view.lessonMinutes
       this.setData({
         state: 'ready',
-        lessonMinutes: res.lessonMinutes,
-        advanceDays: res.advanceDays,
-        today: venueDateKey(new Date(now)),
-        lastDay: venueDateKey(new Date(now + 365 * 86_400_000)),
-        addMinutes: res.lessonMinutes[0] ?? 60,
+        editable: view.coachEdits,
+        advanceDays: view.advanceDays,
+        today,
+        lastDay: venueDateKey(new Date(now + 365 * DAY)),
+        planned: view.periods
+          .filter((p) => p.from > today)
+          .map((p) => ({
+            from: p.from,
+            text: `${dateLabel(p.from)}起`,
+            summary: hoursSummary(p.hours),
+          })),
+        exceptions: [...view.exceptions, ...view.closures]
+          .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+          .map((e) => exceptionView(e, now)),
       })
-      this.setHours(res.hours, false)
-      this.setDaysOff(res.daysOff)
+      if (!this.data.dirty) {
+        // Hours that only start later read as 不接课 today; open on the first week with hours.
+        const next = view.periods.find((p) => p.hours.length)
+        this.setFrom(!hoursOn(view.periods, today).length && next ? next.from : today)
+      }
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }
+  },
+
+  /** Edits the hours in effect from a date, as they stand then. */
+  setFrom(from: string) {
+    this.setData({
+      from,
+      fromText: from === this.data.today ? '今天' : dateLabel(from),
+    })
+    this.touched = new Set()
+    this.setHours(hoursOn(this.periods, from), false)
+  },
+
+  onFrom(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    const from = e.detail.value
+    if (from === this.data.from) return
+    if (this.data.dirty) {
+      // Keep the days edited and take the others as they stand on the new date, so the whole
+      // week shown is what will apply from then.
+      const kept = this.data.hours.filter((h) => this.touched.has(h.weekday))
+      const rest = hoursOn(this.periods, from).filter((h) => !this.touched.has(h.weekday))
+      this.setData({ from, fromText: from === this.data.today ? '今天' : dateLabel(from) })
+      this.setHours([...rest, ...kept])
+      return
+    }
+    this.setFrom(from)
   },
 
   setHours(hours: WeeklyHours[], dirty = true) {
@@ -112,23 +224,18 @@ Page({
     else wx.disableAlertBeforeUnload()
   },
 
-  setDaysOff(keys: string[]) {
-    this.setData({
-      daysOff: keys.map((key) => ({ key, text: dateText(`${key}T12:00:00+08:00`) })),
-    })
-  },
-
   openAdd(e: WechatMiniprogram.TouchEvent) {
+    if (!this.data.editable) return
     const weekday = Number(e.currentTarget.dataset.weekday)
     // Start after the day's last window, so adding an afternoon is two taps.
     const last = this.data.hours.filter((h) => h.weekday === weekday).pop()
-    const start = last ? Math.min(last.endMinute + 60, 22 * 60) : 9 * 60
+    const start = last ? Math.min(last.endMinute + 60, 21 * 60) : 9 * 60
     this.setData({
       adding: true,
       addWeekday: weekday,
       addName: WEEKDAYS[weekday] ?? '',
       addStart: hhmm(start),
-      addEnd: hhmm(Math.min(start + 3 * 60, 23 * 60 + 59)),
+      addEnd: hhmm(Math.min(start + 3 * 60, 23 * 60)),
     })
     this.updateHint()
   },
@@ -147,26 +254,21 @@ Page({
     this.updateHint()
   },
 
-  onMinutes(e: WechatMiniprogram.TouchEvent) {
-    this.setData({ addMinutes: Number(e.currentTarget.dataset.minutes) })
-    this.updateHint()
-  },
-
   draft(): WeeklyHours {
     return {
       weekday: this.data.addWeekday,
       startMinute: toMinutes(this.data.addStart),
-      endMinute: toMinutes(this.data.addEnd),
-      lessonMinutes: this.data.addMinutes,
+      endMinute: toMinutes(this.data.addEnd, true),
     }
   },
 
   updateHint() {
     const d = this.draft()
-    const count = Math.floor((d.endMinute - d.startMinute) / d.lessonMinutes)
     const error = weeklyHoursError([...this.data.hours, d])
     this.setData({
-      addHint: error ?? `每${this.data.addName}生成 ${count} 节课`,
+      addHint:
+        error ??
+        `每${this.data.addName} ${hhmm(d.startMinute)}-${hhmm(d.endMinute)}，共 ${hoursOf(d)} 小时`,
       addInvalid: !!error,
     })
   },
@@ -178,30 +280,56 @@ Page({
       wx.showToast({ title: error, icon: 'none' })
       return
     }
+    this.touched.add(this.data.addWeekday)
     this.setHours(hours)
     this.setData({ adding: false })
   },
 
   remove(e: WechatMiniprogram.TouchEvent) {
+    if (!this.data.editable) return
     const index = Number(e.currentTarget.dataset.index)
+    const removed = this.data.hours[index]
+    if (removed) this.touched.add(removed.weekday)
     this.setHours(this.data.hours.filter((_, i) => i !== index))
   },
 
-  async save() {
+  /** Saving from a date replaces the changes planned after it, so that is confirmed first. */
+  save() {
     if (!this.data.dirty || this.data.saving) return
+    const later = this.periods.filter((p) => p.from > this.data.from)
+    if (!later.length) {
+      this.send()
+      return
+    }
+    this.setData({ saving: true })
+    wx.showModal({
+      title: '替换已安排的调整？',
+      content: `从${this.data.fromText}起按这份每周时间，${later.map((p) => dateLabel(p.from)).join('、')}起的安排会被替换。`,
+      confirmText: '保存',
+      cancelText: '再看看',
+      success: (res) => {
+        this.setData({ saving: false })
+        if (res.confirm) this.send()
+      },
+      fail: () => this.setData({ saving: false }),
+    })
+  },
+
+  async send() {
+    if (this.data.saving) return
     this.setData({ saving: true })
     try {
       const sent = this.data.hours
-      const result = await coachApi<SlotSyncDto>('PUT', '/hours', { hours: sent })
+      const res = await coachApi<{ conflicts: ScheduleConflictDto[] }>('PUT', '/hours', {
+        from: this.data.from,
+        hours: sent,
+      })
       // Changes made while saving are still unsaved.
       this.setDirty(this.data.hours !== sent)
-      if (!warnBooked(result)) {
-        const changes = [
-          result.created ? `新增 ${result.created} 个时段` : '',
-          result.removed ? `移除 ${result.removed} 个时段` : '',
-        ].filter(Boolean)
-        wx.showToast({ title: changes.length ? changes.join('，') : '已保存', icon: 'none' })
+      if (!warnConflicts(res.conflicts, '不在新的排班里')) {
+        wx.showToast({ title: '已保存', icon: 'success' })
       }
+      await this.load()
     } catch (e) {
       showError(e)
     } finally {
@@ -209,34 +337,173 @@ Page({
     }
   },
 
-  async addDayOff(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+  // 请假 and 加班
+
+  openException(e: WechatMiniprogram.TouchEvent) {
+    if (!this.data.editable) return
+    const kind = e.currentTarget.dataset.kind as 'off' | 'extra'
+    const { today } = this.data
+    this.setData({
+      excepting: true,
+      exKind: kind,
+      exWholeDay: kind === 'off',
+      exDate: today,
+      exDateText: dateLabel(today),
+      exEndDate: today,
+      exEndDateText: dateLabel(today),
+      exStart: kind === 'off' ? '09:00' : '18:00',
+      exEnd: kind === 'off' ? '12:00' : '20:00',
+      exNote: '',
+    })
+    this.updateExHint()
+  },
+
+  onExPopup(e: WechatMiniprogram.CustomEvent<{ visible: boolean }>) {
+    this.setData({ excepting: e.detail.visible })
+  },
+
+  onExWholeDay(e: WechatMiniprogram.CustomEvent<{ value: boolean }>) {
+    this.setData({ exWholeDay: e.detail.value })
+    this.updateExHint()
+  },
+
+  onExDate(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
     const date = e.detail.value
-    if (this.dayOffBusy || this.data.daysOff.some((d) => d.key === date)) return
-    this.dayOffBusy = true
-    try {
-      const result = await coachApi<SlotSyncDto>('PUT', `/days-off/${date}`)
-      this.setDaysOff([...this.data.daysOff.map((d) => d.key), date].sort())
-      if (!warnBooked(result)) wx.showToast({ title: '已设为休息日', icon: 'none' })
-    } catch (err) {
-      showError(err)
-    } finally {
-      this.dayOffBusy = false
+    const end = [date, this.data.exEndDate].sort()[1] ?? date
+    this.setData({
+      exDate: date,
+      exDateText: dateLabel(date),
+      exEndDate: end,
+      exEndDateText: dateLabel(end),
+    })
+    this.updateExHint()
+  },
+
+  onExEndDate(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    this.setData({ exEndDate: e.detail.value, exEndDateText: dateLabel(e.detail.value) })
+    this.updateExHint()
+  },
+
+  onExStart(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    this.setData({ exStart: e.detail.value })
+    this.updateExHint()
+  },
+
+  onExEnd(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    this.setData({ exEnd: e.detail.value })
+    this.updateExHint()
+  },
+
+  onExNote(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    this.setData({ exNote: e.detail.value })
+  },
+
+  exDraft() {
+    const d = this.data
+    if (d.exKind === 'off' && d.exWholeDay) {
+      return {
+        kind: d.exKind,
+        startsAt: venueInstant(d.exDate, 0),
+        endsAt: venueInstant(d.exEndDate, 24 * 60),
+      }
+    }
+    return {
+      kind: d.exKind,
+      startsAt: venueInstant(d.exDate, toMinutes(d.exStart)),
+      endsAt: venueInstant(d.exDate, toMinutes(d.exEnd, true)),
     }
   },
 
-  async removeDayOff(e: WechatMiniprogram.TouchEvent) {
-    const date = e.currentTarget.dataset.key as string
-    if (this.dayOffBusy) return
-    this.dayOffBusy = true
-    try {
-      await coachApi<SlotSyncDto>('DELETE', `/days-off/${date}`)
-      this.setDaysOff(this.data.daysOff.map((d) => d.key).filter((k) => k !== date))
-      wx.showToast({ title: '已恢复接课', icon: 'none' })
-    } catch (err) {
-      showError(err)
-    } finally {
-      this.dayOffBusy = false
+  updateExHint() {
+    const d = this.data
+    const draft = this.exDraft()
+    const timed = !(d.exKind === 'off' && d.exWholeDay)
+    // An end before the start on the same date means past midnight, which 加班 cannot do.
+    const overnight = timed && d.exEnd !== '00:00' && toMinutes(d.exEnd) <= toMinutes(d.exStart)
+    const error =
+      overnight && d.exKind === 'extra' ? '加班不能跨到第二天' : exceptionError(draft, new Date())
+    this.setData({ exHint: error ?? this.exEffect(draft), exInvalid: !!error })
+  },
+
+  /** What a valid 请假 or 加班 does, or why a 加班 adds nothing students can book. */
+  exEffect(draft: { startsAt: Date; endsAt: Date }) {
+    if (this.data.exKind === 'off') return '这段时间学员不能预约你的课'
+    const date = this.data.exDate
+    const weekday = new Date(`${date}T12:00:00+08:00`).getUTCDay()
+    const inHours = hoursOn(this.periods, date).some(
+      (h) =>
+        h.weekday === weekday &&
+        venueInstant(date, h.startMinute) <= draft.startsAt &&
+        venueInstant(date, h.endMinute) >= draft.endsAt,
+    )
+    if (inHours) return '已在每周时间内，不用加班'
+    const minutes = (draft.endsAt.getTime() - draft.startsAt.getTime()) / 60_000
+    if (this.lessonMinutes !== null && minutes < this.lessonMinutes) {
+      return '不足一节课，学员约不到'
     }
+    return '这段时间学员可以预约你的课'
+  },
+
+  async confirmException() {
+    if (this.data.exInvalid || this.data.exSaving) return
+    const draft = this.exDraft()
+    this.setData({ exSaving: true })
+    try {
+      const res = await coachApi<{ id: number; conflicts: ScheduleConflictDto[] }>(
+        'POST',
+        '/exceptions',
+        {
+          kind: draft.kind,
+          startsAt: draft.startsAt.toISOString(),
+          endsAt: draft.endsAt.toISOString(),
+          note: this.data.exNote.trim(),
+        },
+      )
+      this.setData({ excepting: false })
+      if (!warnConflicts(res.conflicts, '在请假时间里')) {
+        wx.showToast({ title: draft.kind === 'off' ? '已请假' : '已加班', icon: 'success' })
+      }
+      await this.load()
+    } catch (e) {
+      showError(e)
+    } finally {
+      this.setData({ exSaving: false })
+    }
+  },
+
+  removeException(e: WechatMiniprogram.TouchEvent) {
+    const item = this.data.exceptions[Number(e.currentTarget.dataset.index)]
+    if (!item || item.closure || !this.data.editable || this.removing) return
+    this.removing = true
+    const done = () => {
+      this.removing = false
+    }
+    const off = item.kind === 'off'
+    wx.showModal({
+      title: off ? '取消这次请假？' : '取消这次加班？',
+      content: off
+        ? `${item.text} 会重新开放预约。`
+        : `${item.text} 不再开放预约，已约的课不受影响。`,
+      confirmText: off ? '取消请假' : '取消加班',
+      confirmColor: modalDangerColor(),
+      cancelText: '保留',
+      success: async (res) => {
+        if (!res.confirm) {
+          done()
+          return
+        }
+        try {
+          await coachApi('DELETE', `/exceptions/${item.id}`)
+          wx.showToast({ title: '已取消', icon: 'success' })
+          await this.load()
+        } catch (err) {
+          showError(err)
+        } finally {
+          done()
+        }
+      },
+      fail: done,
+    })
   },
 
   retry() {

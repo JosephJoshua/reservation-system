@@ -9,7 +9,7 @@ import {
   venueInstant,
   versionOf,
 } from '@rs/shared'
-import { ADMIN_PASSWORD, API, call, login, student } from './helpers'
+import { ADMIN_PASSWORD, API, addExtraTimes, call, login, student } from './helpers'
 
 // 学员档案 kept by coaches, as the admin student page shows it: who saved it last, and the
 // student's 课后点评 from every coach.
@@ -71,13 +71,11 @@ test('a coach fills in the profile and writes feedback through the API', async (
     name: coachName,
     lessonTypeIds: [lesson.id],
   })
-  const { ids } = await call<{ ids: number[] }>(request, 'POST', '/admin/slots', admin, {
-    slots: [9, 11, 13, 15].map((hour) => ({
-      coachId: coach.id,
-      startsAt: venueInstant(day, hour * 60).toISOString(),
-      endsAt: venueInstant(day, (hour + 1) * 60).toISOString(),
-    })),
-  })
+  const spans = [9, 11, 13, 15].map((hour) => ({
+    startsAt: venueInstant(day, hour * 60).toISOString(),
+    endsAt: venueInstant(day, (hour + 1) * 60).toISOString(),
+  }))
+  await addExtraTimes(request, admin, coach.id, spans)
   const { code } = await call<{ code: string }>(
     request,
     'POST',
@@ -94,9 +92,10 @@ test('a coach fills in the profile and writes feedback through the API', async (
   const token = await student(request, `profile-coach-${run}`)
   await call(request, 'PUT', '/me', token, { name: studentName, phone: '13700137002' })
   studentId = (await call<{ id: number }>(request, 'GET', '/me', token)).id
-  for (const slotId of ids) {
+  for (const { startsAt } of spans) {
     const booked = await call<CreateBookingResponse>(request, 'POST', '/bookings', token, {
-      slotId,
+      coachId: coach.id,
+      startsAt,
       lessonTypeId: lesson.id,
     })
     await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)

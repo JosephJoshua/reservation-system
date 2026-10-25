@@ -1,4 +1,4 @@
-import { tablesFor, tablesFree } from '@rs/shared'
+import { peakOverlap, tablesFor, tablesFree, venueDateKey } from '@rs/shared'
 import { and, eq, gt, inArray, lt, ne } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import { bookings, lessonTypes, slots } from '../db/schema'
@@ -56,6 +56,41 @@ export function slotsWithoutTable(
   }
   return full
 }
+
+/**
+ * For each private lesson time not booked yet, whether no table would be free for it. `except` is
+ * a booking being moved, which gives up its place.
+ */
+export function spansWithoutTable(
+  tx: Q,
+  spans: readonly { startsAt: Date; endsAt: Date }[],
+  except?: number,
+): boolean[] {
+  const { tables } = getSettings(tx).booking
+  if (tables === null || spans.length === 0) return spans.map(() => false)
+  const from = new Date(Math.min(...spans.map((s) => s.startsAt.getTime())))
+  const to = new Date(Math.max(...spans.map((s) => s.endsAt.getTime())))
+  // Lessons never cross midnight, so each time is checked against its own day's lessons only.
+  const byDay = new Map<string, { startsAt: Date; endsAt: Date; tables: number }[]>()
+  for (const r of runningLessons(tx, { startsAt: from, endsAt: to }, except).values()) {
+    const day = venueDateKey(r.startsAt)
+    byDay.set(day, [...(byDay.get(day) ?? []), r])
+  }
+  return spans.map((s) => !tablesFree(s, byDay.get(venueDateKey(s.startsAt)) ?? [], tables, 1))
+}
+
+/** Tables in use at the busiest moment of each half hour of a span, for the half hours with any. */
+export function tablesInUse(tx: Q, span: { startsAt: Date; endsAt: Date }) {
+  const running = [...runningLessons(tx, span).values()]
+  const out: { startsAt: string; used: number }[] = []
+  for (let t = span.startsAt.getTime(); t < span.endsAt.getTime(); t += HALF_HOUR) {
+    const used = peakOverlap({ startsAt: new Date(t), endsAt: new Date(t + HALF_HOUR) }, running)
+    if (used > 0) out.push({ startsAt: new Date(t).toISOString(), used })
+  }
+  return out
+}
+
+const HALF_HOUR = 30 * 60_000
 
 /**
  * Each slot with a live booking during this time, apart from booking `except`, with how many

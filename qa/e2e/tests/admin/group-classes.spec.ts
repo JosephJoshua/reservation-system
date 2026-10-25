@@ -2,7 +2,16 @@
 import { expect, type Page, test } from '@playwright/test'
 import type { BookingDto, CreateBookingResponse, SlotDto } from '@rs/shared'
 import { venueDateKey } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login, student, typeNumber } from './helpers'
+import {
+  ADMIN_PASSWORD,
+  call,
+  dialog,
+  field,
+  login,
+  pickDate,
+  student,
+  typeNumber,
+} from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -50,12 +59,16 @@ async function firstSessionDay(request: Parameters<typeof call>[0], token: strin
   throw new Error('no sessions')
 }
 
+/** The 日程 board on tomorrow, the first day with sessions, showing the class's coach only. */
 async function openSchedule(page: Page) {
   await page.goto('./#/schedule')
-  await page.locator('.toolbar .t-select').click()
-  await page.locator('.t-select-option', { hasText: coachName }).click()
-  await page.getByRole('button', { name: '下一周' }).click()
+  await page.getByRole('button', { name: '后一天' }).click()
+  await page.getByPlaceholder('搜索教练').fill(coachName)
 }
+
+/** The class's session on the board, by its headcount such as 2/4 or 已取消. */
+const block = (page: Page, state: string) =>
+  page.locator('.board-block', { hasText: `${lessonName} ${state}` })
 
 test('creates a group class with a size and a minimum', async ({ page, request }) => {
   admin = (
@@ -103,7 +116,8 @@ test('schedules a week of sessions once on a double click and names an overlap',
   await openSchedule(page)
   await page.getByRole('button', { name: '排小班课' }).click()
   const form = dialog(page)
-  await expect(form.locator('.t-dialog__header')).toContainText(coachName)
+  await field(form, '教练').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: coachName }).click()
   await expect(field(form, '课程').locator('input')).toHaveValue(`${lessonName}（90 分钟）`)
   await expect(field(form, '每节人数').locator('input')).toHaveValue('4')
   await field(form, '开始时间').locator('input').fill('10:00, 9:3')
@@ -115,10 +129,12 @@ test('schedules a week of sessions once on a double click and names an overlap',
   )
   expect(creates).toBe(1)
   await expect(dialog(page)).toHaveCount(0)
-  await expect(page.locator('.slot-chip', { hasText: `${lessonName} · 0/4 人` })).toHaveCount(7)
-  await both(page, 'schedule-week')
+  await expect(block(page, '0/4')).toHaveCount(1)
+  await both(page, 'schedule-day')
 
   await page.getByRole('button', { name: '排小班课' }).click()
+  await field(dialog(page), '教练').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: coachName }).click()
   await dialog(page).getByRole('button', { name: '创建 7 节' }).click()
   await expect(page.getByText(/^\d+月\d+日 10:00 与该教练已有的小班课重叠$/)).toBeVisible()
 })
@@ -147,14 +163,8 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   }
 
   await login(page)
-  await page.goto('./#/schedule')
-  await page.locator('.toolbar .t-select').click()
-  await page.locator('.t-select-option', { hasText: coachName }).click()
-  const chip = page.locator('.slot-chip', { hasText: `${lessonName} · 2/4 人` })
-  if (!(await chip.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: '下一周' }).click()
-  }
-  await chip.click()
+  await openSchedule(page)
+  await block(page, '2/4').click()
   const session = dialog(page)
   await expect(session).toContainText('已报名 2/4 人')
   await expect(session.locator('.roster-row')).toHaveCount(2)
@@ -164,7 +174,7 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   // 代约 the third student into a seat.
   await session.getByRole('button', { name: '代约' }).click()
   const book = dialog(page).last()
-  await expect(field(book, '课程').locator('input')).toHaveValue(lessonName)
+  await expect(field(book, '课程')).toContainText(lessonName)
   const picker = field(book, '学员').locator('input')
   await picker.click()
   await picker.pressSequentially(`学员丙${run}`)
@@ -172,10 +182,10 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   await expect(book.getByText('线下收款（标价 ¥120）')).toBeVisible()
   await book.getByRole('button', { name: '确认代约' }).dblclick()
   await expect(page.getByText('已代约')).toBeVisible()
-  await expect(page.locator('.slot-chip', { hasText: `${lessonName} · 3/4 人` })).toBeVisible()
+  await expect(block(page, '3/4')).toBeVisible()
 
   // Seats never go below the students booked; raising them saves.
-  await page.locator('.slot-chip', { hasText: `${lessonName} · 3/4 人` }).click()
+  await block(page, '3/4').click()
   const seats = dialog(page).locator('.t-input-number input')
   await typeNumber(seats, '2')
   await expect(dialog(page).getByText('人数需在 3 到 30 之间')).toBeVisible()
@@ -184,10 +194,10 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   await seats.blur()
   await dialog(page).getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已修改人数')).toBeVisible()
-  await expect(page.locator('.slot-chip', { hasText: `${lessonName} · 3/6 人` })).toBeVisible()
+  await expect(block(page, '3/6')).toBeVisible()
 
   // Cancelling one seat refunds that student only.
-  await page.locator('.slot-chip', { hasText: `${lessonName} · 3/6 人` }).click()
+  await block(page, '3/6').click()
   await dialog(page)
     .locator('.roster-row', { hasText: `学员乙${run}` })
     .getByRole('button', { name: '取消' })
@@ -195,7 +205,7 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   await expect(dialog(page)).toContainText(`取消 学员乙${run} 的预约`)
   await dialog(page).locator('textarea').fill('学员请假')
   await dialog(page).getByRole('button', { name: '确认取消并退款' }).click()
-  await expect(page.locator('.slot-chip', { hasText: `${lessonName} · 2/6 人` })).toBeVisible()
+  await expect(block(page, '2/6')).toBeVisible()
   const mine = await call<BookingDto[]>(request, 'GET', '/bookings?scope=upcoming', b)
   expect(mine.find((x) => x.lessonType.id === lessonTypeId)).toBeUndefined()
 })
@@ -209,13 +219,10 @@ test('moves a seat to another session from the bookings page', async ({ page, re
   // Tomorrow's session of the same class, at 10:00.
   const { date } = await firstSessionDay(request, tokens[0] ?? '')
   const next = venueDateKey(new Date(Date.parse(`${date}T04:00:00Z`) + 86_400_000))
-  const input = field(move, '日期').locator('input')
-  await input.click()
-  await input.fill(next)
-  await page.locator('.t-date-picker__cell--active').click()
-  await field(move, '时间').locator('.t-select').click()
-  await expect(page.locator('.t-select-option')).toHaveText(['10:00-11:30 剩 4 位'])
-  await page.locator('.t-select-option').click()
+  const times = field(move, '新时间')
+  await pickDate(page, times.locator('.t-date-picker'), next)
+  await expect(times.locator('.slot-picks .t-button')).toHaveText(['10:00 剩 4 位'])
+  await times.locator('.slot-picks .t-button').click()
   await move.getByRole('button', { name: '确认改约' }).click()
   await expect(page.getByText('已改约')).toBeVisible()
   await expect(row).toContainText('原定')
@@ -224,11 +231,7 @@ test('moves a seat to another session from the bookings page', async ({ page, re
 test('calls off a whole session and refunds everyone', async ({ page, request }) => {
   await login(page)
   await openSchedule(page)
-  const chip = page.locator('.slot-chip', { hasText: `${lessonName} · 1/6 人` })
-  if (!(await chip.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: '上一周' }).click()
-  }
-  await chip.click()
+  await block(page, '1/6').click()
   await dialog(page).getByRole('button', { name: '取消整节' }).click()
   await expect(dialog(page)).toContainText('取消整节课后，1 位学员都会收到全额退款或退回课时')
   await expect(dialog(page).locator('.t-button', { hasText: '确认取消并退款' })).toHaveClass(
@@ -239,8 +242,8 @@ test('calls off a whole session and refunds everyone', async ({ page, request })
     dialog(page).getByRole('button', { name: '确认取消并退款' }).dblclick(),
   )
   expect(cancels).toBe(1)
-  await expect(page.locator('.slot-chip', { hasText: `${lessonName} · 已取消` })).toBeVisible()
-  await page.locator('.slot-chip', { hasText: `${lessonName} · 已取消` }).click()
+  await expect(block(page, '已取消')).toBeVisible()
+  await block(page, '已取消').click()
   await expect(dialog(page)).toContainText('已取消：场地维修')
   await expect(dialog(page).getByRole('button', { name: '开放报名' })).toHaveCount(0)
   await both(page, 'session-cancelled')

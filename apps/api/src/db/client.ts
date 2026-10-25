@@ -25,3 +25,20 @@ export type Q = Pick<Db, 'select' | 'insert' | 'update' | 'delete'>
 export function immediate<T>(db: Db, fn: (tx: Q) => T): T {
   return db.transaction((tx) => fn(tx), { behavior: 'immediate' })
 }
+
+class RolledBack<T> {
+  constructor(readonly value: T) {}
+}
+
+/** Runs `fn` in a transaction that is always rolled back, for checks that write on the way. */
+export function dryRun<T>(db: Db, fn: (tx: Q) => T): T {
+  try {
+    db.transaction((tx) => {
+      throw new RolledBack(fn(tx))
+    })
+  } catch (e) {
+    if (e instanceof RolledBack) return e.value as T
+    throw e
+  }
+  throw new Error('unreachable')
+}

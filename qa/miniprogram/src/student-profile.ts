@@ -190,20 +190,25 @@ try {
       `/slots?date=${venueDate(Date.now() + days * DAY)}&coachId=${coach.id}&lessonTypeId=${lesson.id}`,
       undefined,
       token,
-    )) as { id: number; available: boolean }[]
+    )) as { coachId: number; startsAt: string; available: boolean }[]
     const slot = slots.find((s) => s.available)
     if (!slot) continue
     const res = await call(
       'POST',
       '/bookings',
-      { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
+      {
+        coachId: slot.coachId,
+        startsAt: slot.startsAt,
+        lessonTypeId: lesson.id,
+        payWith: 'wechat',
+      },
       token,
     )
     if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
     booked.push(res.bookingId)
   }
   const [past, bookingId] = booked
-  check(past && bookingId, 'the coach needs two free slots in the next ten days')
+  check(past && bookingId, 'the coach needs two free times in the next ten days')
   moveIntoPast(past)
   await call('PUT', `/admin/bookings/${past}/attendance`, { attendance: 'attended' }, admin)
 

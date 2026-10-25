@@ -19,7 +19,7 @@ is not installed in the default location.
 
 ## Student flows
 
-Books, pays (through the fake gateway's 模拟支付 dialog), cancels, buys a package and loses a slot
+Books, pays (through the fake gateway's 模拟支付 dialog), cancels, buys a package and loses a time
 race against a second student, checking each screen and saving screenshots to
 `qa/miniprogram/screenshots/flows/`. It needs a local API with demo data and no WeChat Pay
 credentials:
@@ -35,7 +35,7 @@ The mini program calls `API_BASE_URL` (default `http://localhost:8787`), baked i
 ## Coach flows
 
 Binds a coach with a code from the admin API, marks attendance, writes a note, cancels a lesson,
-and sets weekly hours and a day off, saving screenshots to `qa/miniprogram/screenshots/coach/`.
+and sets weekly hours, a 请假 and a 加班, saving screenshots to `qa/miniprogram/screenshots/coach/`.
 It uses the same seeded API as the student flows, and `QA_DB` must point at that API's database
 file, because attendance needs a lesson that has started and the script moves one into the past:
 

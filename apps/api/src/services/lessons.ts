@@ -1,11 +1,17 @@
 // A coach's view of their lessons, and the marks a coach or the venue puts on them.
 import {
+  addVenueDays,
+  type CoachDaysDto,
   type CoachLessonDto,
   type CoachSessionDto,
   type CoachSlotDto,
+  SCHEDULE_STEP,
   type StudentProfileDto,
   type StudentProfileEdit,
+  subtractSpans,
+  venueDates,
   venueInstant,
+  withinSpans,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne } from 'drizzle-orm'
 import { bookings, lessonFeedback, lessonTypes, packages, slots, students } from '../db/schema'
@@ -17,10 +23,9 @@ import { LIVE } from './bookings'
 import { feedbackOf, feedbackView, studentFeedback, writeBlock } from './feedback'
 import { isVisible } from './feedback-visibility'
 import { movedFromIso, moveSummaries } from './move-history'
-import { assertNoSessionOverlap } from './sessions'
+import { busyTime, exceptionsFor, shortestLesson, workingTime } from './schedule'
 import { getSettings } from './settings'
 import { saveStudentProfile, studentProfile } from './student-profiles'
-import { slotsWithoutTable } from './tables'
 import { bookingStatus } from './views'
 
 /** How long after a lesson its coach still sees and keeps the student's 学员档案 on it. */
@@ -86,24 +91,24 @@ export function coachStudentFeedback(deps: Deps, bookingId: number, coachId: num
   return studentFeedback(deps.db, profileStudent(deps, bookingId, coachId))
 }
 
-/** A coach's slots between two venue dates, inclusive, with the lesson booked in each. */
-export function coachSchedule(
-  deps: Deps,
-  coachId: number,
-  from: string,
-  to: string,
-  /** The coach's lesson being moved, which gives up its table. */
-  moving?: number,
-) {
+const DAY = 24 * 60 * 60 * 1000
+
+/**
+ * A coach's days between two venue dates, inclusive: their lessons and group sessions, the working
+ * time still free for private lessons, and 请假 and 闭馆.
+ */
+export function coachSchedule(deps: Deps, coachId: number, from: string, to: string): CoachDaysDto {
   const { db } = deps
+  const now = deps.now()
+  const span = { startsAt: venueInstant(from, 0), endsAt: venueInstant(addVenueDays(to, 1), 0) }
   const rows = db
     .select()
     .from(slots)
     .where(
       and(
         eq(slots.coachId, coachId),
-        gte(slots.startsAt, venueInstant(from, 0)),
-        lt(slots.startsAt, venueInstant(to, 24 * 60)),
+        gte(slots.startsAt, span.startsAt),
+        lt(slots.startsAt, span.endsAt),
       ),
     )
     .orderBy(asc(slots.startsAt))
@@ -141,46 +146,78 @@ export function coachSchedule(
       .all()
       .map((t) => [t.id, t.name]),
   )
-  const own =
-    moving === undefined
-      ? undefined
-      : db
-          .select({ id: bookings.id })
-          .from(bookings)
-          .innerJoin(slots, eq(slots.id, bookings.slotId))
-          .where(and(eq(bookings.id, moving), eq(slots.coachId, coachId)))
-          .get()
-  const noTable = slotsWithoutTable(db, rows, own?.id)
-  const now = deps.now()
-  return rows.map((s): CoachSlotDto => {
-    const l = s.lessonTypeId === null ? bySlot.get(s.id) : undefined
-    return {
-      id: s.id,
-      startsAt: s.startsAt.toISOString(),
-      endsAt: s.endsAt.toISOString(),
-      open: s.open,
-      group:
-        s.lessonTypeId === null
-          ? null
-          : {
-              lessonTypeName: typeNames.get(s.lessonTypeId) ?? '',
-              capacity: s.capacity,
-              booked: booked.get(s.id) ?? 0,
-              cancelled: s.cancelledAt !== null,
-            },
-      tableFull: noTable.has(s.id),
-      lesson: l
-        ? {
-            bookingId: l.booking.id,
-            status: bookingStatus(l.booking, now),
-            attendance: l.booking.attendance,
-            studentName: l.studentDeletedAt ? DELETED_NAME : l.studentName,
-            lessonTypeName: l.lessonTypeName,
-            isTrial: l.isTrial,
-          }
-        : null,
-    }
-  })
+  const items = rows
+    // A private lesson row left over from a cancelled booking is not a lesson.
+    .filter((s) => s.lessonTypeId !== null || bySlot.has(s.id))
+    .map((s): CoachSlotDto => {
+      const l = s.lessonTypeId === null ? bySlot.get(s.id) : undefined
+      return {
+        id: s.id,
+        startsAt: s.startsAt.toISOString(),
+        endsAt: s.endsAt.toISOString(),
+        group:
+          s.lessonTypeId === null
+            ? null
+            : {
+                lessonTypeName: typeNames.get(s.lessonTypeId) ?? '',
+                capacity: s.capacity,
+                booked: booked.get(s.id) ?? 0,
+                cancelled: s.cancelledAt !== null,
+              },
+        lesson: l
+          ? {
+              bookingId: l.booking.id,
+              status: bookingStatus(l.booking, now),
+              attendance: l.booking.attendance,
+              studentName: l.studentDeletedAt ? DELETED_NAME : l.studentName,
+              lessonTypeName: l.lessonTypeName,
+              isTrial: l.isTrial,
+            }
+          : null,
+      }
+    })
+  const dates = venueDates(
+    span.startsAt,
+    (span.endsAt.getTime() - span.startsAt.getTime()) / DAY - 1,
+  )
+  const working = workingTime(db, [coachId], dates).get(coachId)
+  const busy = busyTime(db, [coachId], span).get(coachId) ?? []
+  // Only the part still ahead is free, from the next 5-minute mark so it reads as a time.
+  const step = SCHEDULE_STEP * 60_000
+  const ahead = new Date(Math.ceil(now.getTime() / step) * step)
+  const future = [{ startsAt: ahead, endsAt: span.endsAt }]
+  // Free means a student can book it: clear of the buffer around lessons, and long enough for the
+  // shortest private lesson the coach teaches.
+  const settings = getSettings(db)
+  const buffer = settings.booking.bufferMinutes * 60_000
+  const shortest = (shortestLesson(db, coachId) ?? Number.POSITIVE_INFINITY) * 60_000
+  const padded = busy.map((b) => ({
+    startsAt: new Date(b.startsAt.getTime() - buffer),
+    endsAt: new Date(b.endsAt.getTime() + buffer),
+  }))
+  const free = dates.flatMap((d) =>
+    subtractSpans(working?.get(d) ?? [], [
+      ...padded,
+      { startsAt: span.startsAt, endsAt: ahead },
+    ]).filter(
+      (f) => withinSpans(f, future) && f.endsAt.getTime() - f.startsAt.getTime() >= shortest,
+    ),
+  )
+  const off = (exceptionsFor(db, [coachId], span).get(coachId) ?? [])
+    .filter((e) => e.kind === 'off')
+    .map((e) => ({
+      id: e.id,
+      startsAt: e.startsAt.toISOString(),
+      endsAt: e.endsAt.toISOString(),
+      note: e.note,
+      closure: e.coachId === null,
+    }))
+  return {
+    lessons: items,
+    free: free.map((f) => ({ startsAt: f.startsAt.toISOString(), endsAt: f.endsAt.toISOString() })),
+    off,
+    coachEdits: settings.booking.coachEditsHours,
+  }
 }
 
 /**
@@ -356,23 +393,4 @@ export function coachSession(deps: Deps, slotId: number, coachId: number): Coach
       hasFeedback: written.has(b.id),
     })),
   }
-}
-
-/** Opens or closes one of the coach's own future slots. */
-export function setSlotOpen(deps: Deps, slotId: number, coachId: number, open: boolean) {
-  const slot = deps.db.select().from(slots).where(eq(slots.id, slotId)).get()
-  if (!slot || slot.coachId !== coachId) throw notFound('时段')
-  if (slot.lessonTypeId !== null) throw new ApiError(409, 'group_lesson', '小班课由场馆安排')
-  if (slot.startsAt <= deps.now()) throw new ApiError(409, 'slot_started', '时段已开始')
-  // The coach saw it free, but a student may have booked it since the list loaded.
-  const booked = deps.db
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(
-      and(eq(bookings.slotId, slotId), inArray(bookings.status, ['pending_payment', 'confirmed'])),
-    )
-    .get()
-  if (!open && booked) throw new ApiError(409, 'slot_booked', '这个时段刚被预约，请刷新')
-  if (open && !slot.open) assertNoSessionOverlap(deps.db, slot)
-  deps.db.update(slots).set({ open, closedBySync: false }).where(eq(slots.id, slotId)).run()
 }

@@ -10,8 +10,10 @@ import {
   categoryPrices,
   coachCategories,
   coaches,
+  coachHours,
   coachLessonTypes,
   lessonTypes,
+  scheduleExceptions,
   slots,
 } from '../db/schema'
 import type { Deps } from '../deps'
@@ -119,17 +121,38 @@ export function setup(
     return cat
   }
 
-  /** A 60-minute slot on a venue date at a venue hour. */
+  /**
+   * A 60-minute private lesson time on a venue date at a venue hour: the coach works then (加班),
+   * and the lesson row exists, so tests can book it by its id.
+   */
   function slot(coachId: number, date = '2026-10-25', hour = 10) {
+    const span = {
+      startsAt: venueInstant(date, hour * 60),
+      endsAt: venueInstant(date, hour * 60 + 60),
+    }
+    db.insert(scheduleExceptions)
+      .values({ coachId, kind: 'extra', ...span })
+      .run()
     return db
       .insert(slots)
-      .values({
-        coachId,
-        startsAt: venueInstant(date, hour * 60),
-        endsAt: venueInstant(date, hour * 60 + 60),
-      })
+      .values({ coachId, ...span })
       .returning()
       .get()
+  }
+
+  /** Weekly hours for a coach from the start of time, as 排班. */
+  function hours(coachId: number, weekly: { weekday: number; from: string; to: string }[]) {
+    const m = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3))
+    for (const w of weekly)
+      db.insert(coachHours)
+        .values({
+          coachId,
+          weekday: w.weekday,
+          startMinute: m(w.from),
+          endMinute: m(w.to),
+          fromDate: '2000-01-01',
+        })
+        .run()
   }
 
   return {
@@ -146,6 +169,7 @@ export function setup(
     seed,
     category,
     slot,
+    hours,
   }
 }
 

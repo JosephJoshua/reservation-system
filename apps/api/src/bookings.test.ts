@@ -1,14 +1,7 @@
+import { venueInstant } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import {
-  bookings,
-  coaches,
-  coachLessonTypes,
-  orders,
-  packageProducts,
-  refunds,
-  slots,
-} from './db/schema'
+import { bookings, coaches, coachLessonTypes, orders, packageProducts, refunds } from './db/schema'
 import { sweep } from './sweeper'
 import { type Harness, setup } from './test/harness'
 
@@ -290,17 +283,24 @@ describe('booking window', () => {
     expect((await book(h, a, past.id, lesson.id)).json.error.code).toBe('started')
   })
 
-  it('refuses closed slots and mismatched lesson lengths', async () => {
+  it('refuses times in 请假 and lessons longer than the working time', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const a = await h.student('a')
-    const closed = h.slot(coach.id)
-    h.db.update(slots).set({ open: false }).where(eq(slots.id, closed.id)).run()
-    expect((await book(h, a, closed.id, lesson.id)).json.error.code).toBe('slot_closed')
+    const admin = await h.admin()
+    const leave = h.slot(coach.id)
+    await h.call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      { kind: 'off', startsAt: leave.startsAt.toISOString(), endsAt: leave.endsAt.toISOString() },
+      admin,
+    )
+    expect((await book(h, a, leave.id, lesson.id)).json.error.code).toBe('time_unavailable')
     const { lessonTypes } = await import('./db/schema')
     h.db.update(lessonTypes).set({ durationMinutes: 90 }).where(eq(lessonTypes.id, lesson.id)).run()
+    // The coach works an hour then; a 90 minute lesson does not fit.
     const open = h.slot(coach.id, '2026-10-26')
-    expect((await book(h, a, open.id, lesson.id)).json.error.code).toBe('duration_mismatch')
+    expect((await book(h, a, open.id, lesson.id)).json.error.code).toBe('time_unavailable')
   })
 
   it('says why a slot whose coach, lesson or slot went away cannot be booked', async () => {
@@ -754,13 +754,19 @@ describe('packages', () => {
 })
 
 describe('slots', () => {
-  it('shows taken slots as unavailable and hides closed ones', async () => {
+  it('lists the times still free and hides ones taken or in 请假', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const s1 = h.slot(coach.id, '2026-10-25', 10)
     const s2 = h.slot(coach.id, '2026-10-25', 12)
     const s3 = h.slot(coach.id, '2026-10-25', 14)
-    h.db.update(slots).set({ open: false }).where(eq(slots.id, s3.id)).run()
+    const admin = await h.admin()
+    await h.call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      { kind: 'off', startsAt: s3.startsAt.toISOString(), endsAt: s3.endsAt.toISOString() },
+      admin,
+    )
     const a = await h.student('a')
     const b = await h.student('b')
     await book(h, a, s1.id, lesson.id)
@@ -770,9 +776,17 @@ describe('slots', () => {
       undefined,
       b,
     )
-    expect(res.json.map((s: { id: number; available: boolean }) => [s.id, s.available])).toEqual([
-      [s1.id, false],
-      [s2.id, true],
+    expect(res.json).toEqual([
+      {
+        id: null,
+        coachId: coach.id,
+        startsAt: s2.startsAt.toISOString(),
+        endsAt: s2.endsAt.toISOString(),
+        available: true,
+        lessonTypeId: null,
+        capacity: 1,
+        seatsLeft: 1,
+      },
     ])
   })
 
@@ -787,7 +801,12 @@ describe('slots', () => {
     h.slot(coach.id, '2026-10-26', 10)
     h.slot(coach.id, '2026-10-26', 15)
     const closed = h.slot(coach.id, '2026-10-27', 10)
-    h.db.update(slots).set({ open: false }).where(eq(slots.id, closed.id)).run()
+    await h.call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      { kind: 'off', startsAt: closed.startsAt.toISOString(), endsAt: closed.endsAt.toISOString() },
+      await h.admin(),
+    )
     h.slot(coach.id, '2026-11-06', 9) // last day of the window, 14 days ahead
     h.slot(coach.id, '2026-11-07', 9) // past it
     h.slot(other.id, '2026-10-25', 10)
@@ -808,57 +827,6 @@ describe('slots', () => {
     ])
     expect((await days('lessonTypeId=999')).status).toBe(404)
     expect((await h.call('GET', `/slots/open-days?lessonTypeId=${lesson.id}`)).status).toBe(401)
-  })
-
-  it('refuses overlapping slots for one coach when the admin creates them', async () => {
-    const h = setup()
-    const { coach } = h.seed()
-    const admin = await h.admin()
-    const res = await h.call(
-      'POST',
-      '/admin/slots',
-      {
-        slots: [
-          { coachId: coach.id, startsAt: '2026-10-25T02:00:00Z', endsAt: '2026-10-25T03:00:00Z' },
-          { coachId: coach.id, startsAt: '2026-10-25T02:30:00Z', endsAt: '2026-10-25T03:30:00Z' },
-        ],
-      },
-      admin,
-    )
-    expect(res.json.error.code).toBe('slot_overlap')
-    // Names the venue time, so the admin can find it in a batch of hundreds.
-    expect(res.json.error.message).toBe('10月25日 10:30 与该教练已有时段重叠')
-    expect(h.db.select().from(slots).all()).toHaveLength(0)
-  })
-
-  it('refuses slots in the past', async () => {
-    const h = setup()
-    const { coach } = h.seed()
-    const admin = await h.admin()
-    const res = await h.call(
-      'POST',
-      '/admin/slots',
-      {
-        slots: [
-          { coachId: coach.id, startsAt: '2026-10-23T01:00:00Z', endsAt: '2026-10-23T02:00:00Z' },
-        ],
-      },
-      admin,
-    )
-    expect(res.json.error.code).toBe('slot_in_past')
-  })
-
-  it('refuses slots that run past midnight at the venue', async () => {
-    const h = setup()
-    const { coach } = h.seed()
-    const admin = await h.admin()
-    const create = (startsAt: string, endsAt: string) =>
-      h.call('POST', '/admin/slots', { slots: [{ coachId: coach.id, startsAt, endsAt }] }, admin)
-    // 23:30 to 00:30 at the venue.
-    const late = await create('2026-10-25T15:30:00Z', '2026-10-25T16:30:00Z')
-    expect(late.json.error.code).toBe('crosses_midnight')
-    // 23:00 to 24:00 ends on the same day.
-    expect((await create('2026-10-25T15:00:00Z', '2026-10-25T16:00:00Z')).status).toBe(201)
   })
 })
 
@@ -1179,25 +1147,74 @@ describe('review round 2', () => {
     expect(refund).toMatchObject({ orderId: order.id, amount: 20000 })
   })
 
-  it('refunds a late payment for a slot the admin closed meanwhile', async () => {
+  it('refunds a late payment once the coach took 请假 or another lesson then', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const slot = h.slot(coach.id)
+    h.slot(coach.id, '2026-10-25', 11)
     const t = await h.student('a')
-    const res = await book(h, t, slot.id, lesson.id)
-    const order = await orderOf(h, res.json.orderId)
-    h.clock.now = new Date(h.clock.now.getTime() + 13 * 60_000)
-    await sweep(h.deps)
-    h.db.update(slots).set({ open: false }).where(eq(slots.id, slot.id)).run()
-    const { applyPayment } = await import('./services/orders')
-    applyPayment(h.deps, order.outTradeNo, {
-      state: 'paid',
-      transactionId: 'late',
-      paidAt: h.deps.now(),
-      amount: order.amount,
+    const late = async (change: () => Promise<unknown>) => {
+      const res = await book(h, t, slot.id, lesson.id)
+      const order = await orderOf(h, res.json.orderId)
+      h.clock.now = new Date(h.clock.now.getTime() + 13 * 60_000)
+      await sweep(h.deps)
+      await change()
+      const { applyPayment } = await import('./services/orders')
+      applyPayment(h.deps, order.outTradeNo, {
+        state: 'paid',
+        transactionId: `late-${order.id}`,
+        paidAt: h.deps.now(),
+        amount: order.amount,
+      })
+      return res.json.bookingId as number
+    }
+    const admin = await h.admin()
+    let leaveId = 0
+    const onLeave = await late(async () => {
+      leaveId = (
+        await h.call(
+          'POST',
+          `/admin/coaches/${coach.id}/exceptions`,
+          { kind: 'off', startsAt: slot.startsAt.toISOString(), endsAt: slot.endsAt.toISOString() },
+          admin,
+        )
+      ).json.id
     })
-    expect(h.db.select().from(bookings).get()?.status).toBe('expired')
-    expect(h.db.select().from(refunds).get()?.amount).toBe(20000)
+    expect(h.db.select().from(bookings).where(eq(bookings.id, onLeave)).get()?.status).toBe(
+      'expired',
+    )
+    expect(
+      (await h.call('DELETE', `/admin/coaches/${coach.id}/exceptions/${leaveId}`, undefined, admin))
+        .status,
+    ).toBe(204)
+    // Another student took 10:30 to 11:30 meanwhile, in a lesson row of its own.
+    h.settings((s) => {
+      s.booking.startGrid = 15
+    })
+    const other = await h.student('b')
+    const overlap = await late(async () => {
+      const res = await h.call(
+        'POST',
+        '/bookings',
+        {
+          coachId: coach.id,
+          startsAt: venueInstant('2026-10-25', 10 * 60 + 30).toISOString(),
+          lessonTypeId: lesson.id,
+        },
+        other,
+      )
+      expect(res.status).toBe(201)
+    })
+    expect(h.db.select().from(bookings).where(eq(bookings.id, overlap)).get()?.status).toBe(
+      'expired',
+    )
+    expect(
+      h.db
+        .select()
+        .from(refunds)
+        .all()
+        .map((r) => r.amount),
+    ).toEqual([20000, 20000])
   })
 
   it('still revives a booking paid in time when the slot is free', async () => {

@@ -40,15 +40,15 @@
   </view>
 
   <view wx:if="{{!slots.length}}" class="slots-empty">
-    <t-empty icon="{{emptyIcon}}" description="这一天没有空闲时段" />
+    <t-empty icon="{{emptyIcon}}" description="这一天排班里没有空闲时间" />
   </view>
   <view wx:else>
     <view class="section-title">选择新的时间</view>
     <view class="slot-grid">
       <view
         wx:for="{{slots}}"
-        wx:key="id"
-        class="slot {{item.refused || item.full ? 'slot-full' : ''}} {{picked.id === item.id ? 'slot-picked' : ''}}"
+        wx:key="key"
+        class="slot {{item.refused || item.full ? 'slot-full' : ''}} {{picked.key === item.key ? 'slot-picked' : ''}}"
         hover-class="{{item.refused || item.full ? 'none' : 'slot-hover'}}"
         data-index="{{index}}"
         bind:tap="pickSlot"
@@ -59,7 +59,7 @@
     </view>
   </view>
 
-  <view class="footnote">只能改到你自己的空闲时段。订阅了通知的学员会收到改约消息，也请同时电话告知学员。</view>
+  <view class="footnote">只能改到你自己排班里的空闲时间。订阅了通知的学员会收到改约消息，请同时电话告知。</view>
 
   <view class="action-bar">
     <view class="grow picked">

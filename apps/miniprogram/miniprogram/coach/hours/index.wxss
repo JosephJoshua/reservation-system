@@ -10,6 +10,7 @@
 }
 
 .day + .day::before,
+.from::before,
 .off + .off::before,
 .has-days .off-add::before {
   content: '';
@@ -97,14 +98,47 @@
   align-items: center;
   justify-content: space-between;
   min-height: 112rpx;
-  padding: 0 32rpx;
+  padding: 20rpx 32rpx;
+  box-sizing: border-box;
   font-size: 32rpx;
   color: var(--td-text-color-primary);
 }
 
+.off-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.off-part {
+  display: inline-block;
+  margin-right: 8rpx;
+  white-space: nowrap;
+}
+
+.off-kind {
+  margin-right: 16rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+}
+
+.off-kind-extra {
+  color: var(--td-text-color-brand);
+}
+
+.off-note {
+  margin-top: 4rpx;
+  font-size: 26rpx;
+  color: var(--td-text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A 44px tap target. */
 .off-remove {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   height: 88rpx;
   padding-left: 32rpx;
   font-size: 28rpx;
@@ -115,6 +149,77 @@
   justify-content: flex-start;
   gap: 12rpx;
   color: var(--td-text-color-brand);
+}
+
+.off-empty {
+  color: var(--td-text-color-secondary);
+}
+
+.from {
+  align-items: center;
+}
+
+.from-label {
+  flex: 1;
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+.from-value {
+  font-size: 32rpx;
+  color: var(--td-text-color-brand);
+}
+
+.plan {
+  position: relative;
+  padding: 24rpx 32rpx;
+}
+
+.plan + .plan::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 32rpx;
+  right: 0;
+  border-top: 1rpx solid var(--td-component-stroke);
+}
+
+.plan-date {
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
+}
+
+.plan-hours {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+}
+
+.plan-part,
+.keep {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.locked {
+  margin: 24rpx 32rpx 0;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  color: var(--td-text-color-secondary);
+  background-color: var(--td-bg-color-secondarycontainer);
+}
+
+.read-only {
+  padding-bottom: calc(48rpx + env(safe-area-inset-bottom));
+}
+
+.sheet-input {
+  flex: 1;
+  height: 112rpx;
+  font-size: 32rpx;
+  color: var(--td-text-color-primary);
 }
 
 .sheet {
@@ -144,29 +249,6 @@
 
 .sheet-value {
   color: var(--td-text-color-brand);
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 16rpx;
-}
-
-.chip {
-  display: flex;
-  align-items: center;
-  height: 72rpx;
-  padding: 0 28rpx;
-  border-radius: 36rpx;
-  font-size: 28rpx;
-  color: var(--td-text-color-secondary);
-  background-color: var(--td-bg-color-secondarycontainer);
-}
-
-.chip-active {
-  color: var(--td-text-color-brand);
-  background-color: var(--td-brand-color-light);
 }
 
 .sheet-hint {

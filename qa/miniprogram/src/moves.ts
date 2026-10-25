@@ -178,6 +178,11 @@ try {
   await call('POST', '/me/consent', { version }, token)
   await call('PUT', '/me', { name: '周一鸣', phone: '13900139001' }, token)
   const day = venueDate(Date.now() + 3 * DAY)
+  type Time = { coachId: number; startsAt: string; endsAt: string; available: boolean }
+  const same = (
+    a: { coachId: number; startsAt: string },
+    b: { coachId: number; startsAt: string },
+  ) => a.coachId === b.coachId && a.startsAt === b.startsAt
   const free = async (coachId: number) =>
     (
       (await call(
@@ -185,27 +190,29 @@ try {
         `/slots?date=${day}&coachId=${coachId}&lessonTypeId=${lesson.id}`,
         undefined,
         token,
-      )) as { id: number; startsAt: string; available: boolean }[]
+      )) as Time[]
     ).filter((s) => s.available)
   const mine = await free(coach.id)
-  check(mine.length >= 3, `coach needs three free slots on ${day}`)
-  const book = async (slotId: number) => {
+  check(mine.length >= 3, `coach needs three free times on ${day}`)
+  const book = async (t: Time) => {
     const res = await call(
       'POST',
       '/bookings',
-      { slotId, lessonTypeId: lesson.id, payWith: 'wechat' },
+      { coachId: t.coachId, startsAt: t.startsAt, lessonTypeId: lesson.id, payWith: 'wechat' },
       token,
     )
     if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
     return res.bookingId as number
   }
   const first = mine[0]
-  check(first, 'no free slot')
-  const bookingId = await book(first.id)
-  // A time when the other coach is free too: once the move page shows it, the student books the
-  // other coach then, so moving there is refused as a clash.
+  check(first, 'no free time')
+  const bookingId = await book(first)
+  // A time after the lesson when the other coach is free too: once the move page shows it, the
+  // student books the other coach then, so moving there is refused as a clash.
   const theirs = await free(other.id)
-  const clash = mine.slice(1).find((s) => theirs.some((t) => t.startsAt === s.startsAt))
+  const clash = mine.find(
+    (s) => s.startsAt >= first.endsAt && theirs.some((t) => t.startsAt === s.startsAt),
+  )
   const clashing = theirs.find((t) => t.startsAt === clash?.startsAt)
 
   await switchStudent(miniProgram, studentLogin)
@@ -240,37 +247,33 @@ try {
   if (clash && clashing) {
     await step('a time the student became busy at is refused and greyed out', async () => {
       const move = await waitForPage('pages/move/index', (d) => d.slotsState === 'ready')
-      const slots = (await move.data('slots')) as { id: number; available: boolean }[]
-      const index = slots.findIndex((s) => s.id === clash.id)
+      const slots = (await move.data('slots')) as Time[]
+      const index = slots.findIndex((s) => same(s, clash))
       check(slots[index]?.available, 'the clash time should still show as free')
       // Booked elsewhere, as from another phone, after the page loaded.
-      await book(clashing.id)
+      await book(clashing)
       await tap(move, '.slot', index)
       await sleep(300)
       check(
-        ((await move.data('picked')) as { id: number } | null)?.id === clash.id,
+        same(((await move.data('picked')) as Time | null) ?? { coachId: 0, startsAt: '' }, clash),
         'the clash time should be picked',
       )
       await invoke('submit')
       const after = await waitForPage('pages/move/index', (d) =>
-        (d.slots as { id: number; refused: boolean }[]).some((s) => s.refused),
+        (d.slots as { refused: boolean }[]).some((s) => s.refused),
       )
       // data('picked') reads a null as undefined.
       check((await after.data()).picked === null, 'the refused time should be unpicked')
       await screenshot('move-refused')
     })
   } else {
-    console.log('  (no overlapping slot with the second coach; skipped the clash step)')
+    console.log('  (no shared free time with the second coach; skipped the clash step)')
   }
 
   let movedTo = ''
   await step('a double tap on 确认改约 moves the lesson once', async () => {
     const move = await waitForPage('pages/move/index', (d) => d.slotsState === 'ready')
-    const slots = (await move.data('slots')) as {
-      id: number
-      startsAt: string
-      available: boolean
-    }[]
+    const slots = (await move.data('slots')) as Time[]
     const index = slots.findIndex((s) => s.available)
     const target = slots[index]
     check(target, 'no free time to move to')
@@ -322,15 +325,21 @@ try {
     await invoke('pickDate', { currentTarget: { dataset: { key: dayWithFree.key } } })
     await sleep(300)
     await screenshot('coach-move')
-    const slots = (await move.data('slots')) as { startsAt: string }[]
-    await tap(move, '.slot', 0)
+    const slots = (await move.data('slots')) as {
+      startsAt: string
+      refused?: boolean
+      full?: boolean
+    }[]
+    const free = slots.findIndex((s) => !s.refused && !s.full)
+    check(free >= 0, 'every time that day is refused or has no table')
+    await tap(move, '.slot', free)
     await screenshot('coach-move-picked')
     await invokeTwice('submit')
     const lesson = await waitForPage(
       'coach/lesson/index',
       (d) =>
         d.state === 'ready' &&
-        (d.lesson as { startsAt: string } | null)?.startsAt === slots[0]?.startsAt,
+        (d.lesson as { startsAt: string } | null)?.startsAt === slots[free]?.startsAt,
     )
     check(Boolean((await lesson.data()).movedFrom), 'the coach should see the old time too')
     await screenshot('coach-lesson-moved')

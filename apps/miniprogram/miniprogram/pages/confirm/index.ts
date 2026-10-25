@@ -21,6 +21,7 @@ type PayWith = 'package' | 'wechat'
  */
 const SLOT_GONE = [
   'slot_taken',
+  'time_unavailable',
   'tables_full',
   'slot_closed',
   'started',
@@ -28,6 +29,7 @@ const SLOT_GONE = [
   'too_far',
   'not_found',
   'coach_not_teaching',
+  'slot_not_found',
 ]
 
 Page({
@@ -35,9 +37,11 @@ Page({
     state: 'loading' as 'loading' | 'ready' | 'error',
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
+    /** A group session; 0 for a private lesson, which is booked by coach and start time. */
     slotId: 0,
     lessonTypeId: 0,
     coachId: 0,
+    startsAt: '',
     lessonName: '',
     isTrial: false,
     when: '',
@@ -72,9 +76,10 @@ Page({
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
-      slotId: Number(query.slotId),
+      slotId: Number(query.slotId ?? 0),
       lessonTypeId: Number(query.lessonTypeId),
       coachId: Number(query.coachId),
+      startsAt: decodeURIComponent(query.startsAt ?? ''),
       when: lessonTime(
         decodeURIComponent(query.startsAt ?? ''),
         decodeURIComponent(query.endsAt ?? ''),
@@ -83,16 +88,22 @@ Page({
     this.load()
   },
 
+  /** Where the booking goes: the session, or the coach and start time. */
+  target() {
+    const { slotId, coachId, startsAt } = this.data
+    return slotId ? { slotId } : { coachId, startsAt }
+  },
+
   async load() {
     try {
-      const { slotId, lessonTypeId } = this.data
+      const { lessonTypeId } = this.data
+      const target = Object.entries(this.target())
+        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+        .join('&')
       const [catalog, quote, me] = await Promise.all([
         getCatalog(),
         // The API says which package it will use and what it will charge.
-        api<BookingQuoteDto>(
-          'GET',
-          `/bookings/quote?slotId=${slotId}&lessonTypeId=${lessonTypeId}`,
-        ),
+        api<BookingQuoteDto>('GET', `/bookings/quote?${target}&lessonTypeId=${lessonTypeId}`),
         getMe(),
       ])
       const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
@@ -226,7 +237,7 @@ Page({
       }
       await this.saveProfile()
       const res = await api<CreateBookingResponse>('POST', '/bookings', {
-        slotId: this.data.slotId,
+        ...this.target(),
         lessonTypeId: this.data.lessonTypeId,
         payWith: this.data.payWith,
         // Refused if the price changed since the page loaded, rather than charging another one.

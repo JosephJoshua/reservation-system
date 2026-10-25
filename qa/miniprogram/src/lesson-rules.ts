@@ -198,7 +198,7 @@ try {
   })
 
   await step("确认预约 states the lesson's own cancel rule", async () => {
-    const q = `slotId=${first.id}&lessonTypeId=${lesson.id}&coachId=${coach.id}&startsAt=${encodeURIComponent(first.startsAt)}&endsAt=${encodeURIComponent(first.endsAt)}`
+    const q = `lessonTypeId=${lesson.id}&coachId=${coach.id}&startsAt=${encodeURIComponent(first.startsAt)}&endsAt=${encodeURIComponent(first.endsAt)}`
     await miniProgram.navigateTo(`/pages/confirm/index?${q}`)
     const page = await waitForPage('pages/confirm/index', (d) => d.state === 'ready')
     const rule = (await page.data('cancelRule')) as string
@@ -212,7 +212,12 @@ try {
   const booked = await call(
     'POST',
     '/bookings',
-    { slotId: first.id, lessonTypeId: lesson.id, payWith: 'wechat' },
+    {
+      coachId: first.coachId,
+      startsAt: first.startsAt,
+      lessonTypeId: lesson.id,
+      payWith: 'wechat',
+    },
     token,
   )
   if (booked.orderId) await call('POST', `/dev/fake-pay/${booked.orderId}`)
@@ -252,7 +257,12 @@ try {
     const again = await call(
       'POST',
       '/bookings',
-      { slotId: first.id, lessonTypeId: lesson.id, payWith: 'wechat' },
+      {
+        coachId: first.coachId,
+        startsAt: first.startsAt,
+        lessonTypeId: lesson.id,
+        payWith: 'wechat',
+      },
       token,
     ).catch(() => null)
     if (again?.orderId) await call('POST', `/dev/fake-pay/${again.orderId}`)

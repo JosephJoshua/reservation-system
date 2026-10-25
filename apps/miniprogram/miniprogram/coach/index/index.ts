@@ -1,13 +1,22 @@
-import { type CoachMeDto, type CoachSlotDto, venueDateKey } from '../../lib/shared'
+import {
+  type CoachDaysDto,
+  type CoachMeDto,
+  type CoachSlotDto,
+  venueDateKey,
+  venueInstant,
+} from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { isTop, navigateOnce } from '../../utils/nav'
+import { modalDangerColor } from '../../utils/theme'
 import { askForNotices, coachApi, isNotBound, remember } from '../utils/coach-api'
-import { lessonTag } from '../utils/labels'
+import { lessonTag, spanText } from '../utils/labels'
 
 const DAY = 24 * 60 * 60 * 1000
 /** Past days stay on the strip so the coach can still mark attendance. */
 const PAST_DAYS = 7
+/** Times in 排班 are whole multiples of 5 minutes. */
+const STEP = 5 * 60 * 1000
 
 interface DayView {
   key: string
@@ -17,30 +26,43 @@ interface DayView {
   lessons: number
 }
 
-interface SlotView {
+interface RowView {
+  key: string
+  /** A session's slot id, or a 请假's id. */
   id: number
-  kind: 'lesson' | 'session' | 'free' | 'closed' | 'past'
+  kind: 'lesson' | 'session' | 'free' | 'off'
+  startsAt: string
+  endsAt: string
   start: string
   end: string
   bookingId: number
+  /** A 请假's whole span, which may run over several days. */
+  whole: string
   student: string
   lesson: string
   label: string
   tag: string
   tone: string
+  /** Tapping does something. */
+  active: boolean
 }
 
-function slotView(s: CoachSlotDto, now: number): SlotView {
+function lessonRow(s: CoachSlotDto, now: number): RowView {
   const base = {
+    key: `l${s.id}`,
     id: s.id,
+    startsAt: s.startsAt,
+    endsAt: s.endsAt,
     start: time(s.startsAt),
     end: time(s.endsAt),
     bookingId: 0,
+    whole: '',
     student: '',
     lesson: '',
     label: '',
     tag: '',
     tone: 'default',
+    active: true,
   }
   if (s.group) {
     const g = s.group
@@ -53,22 +75,23 @@ function slotView(s: CoachSlotDto, now: number): SlotView {
       tone: g.cancelled ? 'default' : 'primary',
     }
   }
-  if (s.lesson) {
-    const tag = lessonTag(s.lesson, s.startsAt, now)
-    return {
-      ...base,
-      kind: 'lesson',
-      bookingId: s.lesson.bookingId,
-      student: s.lesson.studentName || '未填写姓名',
-      lesson: s.lesson.isTrial ? `${s.lesson.lessonTypeName} · 体验` : s.lesson.lessonTypeName,
-      tag: tag.text,
-      tone: tag.tone,
-    }
+  const l = s.lesson
+  const tag = l ? lessonTag(l, s.startsAt, now) : { text: '', tone: 'default' }
+  return {
+    ...base,
+    kind: 'lesson',
+    bookingId: l?.bookingId ?? 0,
+    whole: '',
+    student: l?.studentName || '未填写姓名',
+    lesson: l ? (l.isTrial ? `${l.lessonTypeName} · 体验` : l.lessonTypeName) : '',
+    tag: tag.text,
+    tone: tag.tone,
   }
-  if (Date.parse(s.startsAt) <= now) return { ...base, kind: 'past', label: '未预约' }
-  return s.open
-    ? { ...base, kind: 'free', label: s.tableFull ? '球台已满' : '空闲' }
-    : { ...base, kind: 'closed', label: '已关闭' }
+}
+
+/** A time on the day, or 24:00 for the midnight that ends it. */
+function clock(iso: string, dayEnd: number) {
+  return Date.parse(iso) >= dayEnd ? '24:00' : time(iso)
 }
 
 Page({
@@ -81,15 +104,17 @@ Page({
     date: '',
     dayAnchor: '',
     slotsState: 'ready' as 'ready' | 'error',
-    slots: [] as SlotView[],
+    rows: [] as RowView[],
     summary: '',
     dayEmpty: '',
+    footnote: '',
   },
 
   me: null as CoachMeDto | null,
-  schedule: [] as CoachSlotDto[],
+  schedule: null as CoachDaysDto | null,
   request: 0,
-  slotBusy: false,
+  /** Held from the action sheet until a 请假 change is saved, so a double tap acts once. */
+  rowBusy: false,
 
   onLoad() {
     this.load()
@@ -149,11 +174,11 @@ Page({
     if (!first || !last) return
     const request = ++this.request
     try {
-      const rows = await coachApi<CoachSlotDto[]>('GET', `/schedule?from=${first}&to=${last}`)
+      const schedule = await coachApi<CoachDaysDto>('GET', `/schedule?from=${first}&to=${last}`)
       if (request !== this.request) return
-      this.schedule = rows
+      this.schedule = schedule
       const counts = new Map<string, number>()
-      for (const s of rows) {
+      for (const s of schedule.lessons) {
         // A group session counts once it has students and is still on.
         if (!s.lesson && !(s.group && s.group.booked > 0 && !s.group.cancelled)) continue
         const key = venueDateKey(new Date(s.startsAt))
@@ -172,18 +197,79 @@ Page({
   },
 
   showDay() {
+    const schedule = this.schedule
+    if (!schedule) return
     const now = Date.now()
-    const slots = this.schedule
-      .filter((s) => venueDateKey(new Date(s.startsAt)) === this.data.date)
-      .map((s) => slotView(s, now))
-    const lessons = slots.filter((s) => s.kind === 'lesson' || s.kind === 'session').length
-    const free = slots.filter((s) => s.kind === 'free').length
-    const parts = [lessons ? `${lessons} 节课` : '没有预约', free ? `${free} 个空闲时段` : '']
-    const past = this.data.date < venueDateKey(new Date(now))
+    const { date } = this.data
+    const dayStart = venueInstant(date, 0).getTime()
+    const dayEnd = dayStart + DAY
+    const onDay = (r: { startsAt: string; endsAt: string }) =>
+      Date.parse(r.startsAt) < dayEnd && Date.parse(r.endsAt) > dayStart
+    const clip = (r: { startsAt: string; endsAt: string }) => ({
+      startsAt: new Date(Math.max(Date.parse(r.startsAt), dayStart)).toISOString(),
+      endsAt: new Date(Math.min(Date.parse(r.endsAt), dayEnd)).toISOString(),
+    })
+    const edits = schedule.coachEdits
+    const lessons = schedule.lessons
+      .filter((s) => venueDateKey(new Date(s.startsAt)) === date)
+      .map((s) => lessonRow(s, now))
+    const free = schedule.free.filter(onDay).map((f, i): RowView => {
+      const span = clip(f)
+      return {
+        key: `f${i}`,
+        id: 0,
+        kind: 'free',
+        ...span,
+        start: time(span.startsAt),
+        end: clock(span.endsAt, dayEnd),
+        bookingId: 0,
+        whole: '',
+        student: '',
+        lesson: '',
+        label: '空闲，可预约',
+        tag: '',
+        tone: 'default',
+        active: edits,
+      }
+    })
+    const off = schedule.off.filter(onDay).map((o): RowView => {
+      const span = clip(o)
+      return {
+        key: `o${o.id}`,
+        id: o.id,
+        kind: 'off',
+        ...span,
+        start: time(span.startsAt),
+        end: clock(span.endsAt, dayEnd),
+        bookingId: 0,
+        whole: spanText(o.startsAt, o.endsAt),
+        student: o.closure ? '闭馆' : '请假',
+        lesson: o.note,
+        label: '',
+        tag: '',
+        tone: 'default',
+        active: edits && !o.closure && Date.parse(o.endsAt) > now,
+      }
+    })
+    const rows = [...off, ...lessons, ...free].sort(
+      (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt),
+    )
+    const lessonCount = lessons.filter((r) => r.tag !== '已取消').length
+    const freeMinutes = free.reduce(
+      (sum, r) => sum + (Date.parse(r.endsAt) - Date.parse(r.startsAt)) / 60_000,
+      0,
+    )
+    const hours = Math.round((freeMinutes / 60) * 10) / 10
+    const past = date < venueDateKey(new Date(now))
     this.setData({
-      slots,
-      summary: parts.filter(Boolean).join(' · '),
-      dayEmpty: past ? '这天没有课程' : '这天没有排课，可以在可约时间里设置',
+      rows,
+      summary: [lessonCount ? `${lessonCount} 节课` : '没有课程', hours ? `空闲 ${hours} 小时` : '']
+        .filter(Boolean)
+        .join(' · '),
+      dayEmpty: past ? '这天没有课程' : '这天不在排班里',
+      footnote: edits
+        ? '点空闲时间可请假，点请假可取消；已预约的课程点开可签到、写备注或取消，小班课点开可按名单签到。'
+        : '已预约的课程点开可签到、写备注或取消。排班由场馆设置，需要请假请联系前台。',
     })
   },
 
@@ -195,39 +281,71 @@ Page({
     this.showDay()
   },
 
-  openSlot(e: WechatMiniprogram.TouchEvent) {
-    const slot = this.data.slots[e.currentTarget.dataset.index as number]
-    if (!slot || slot.kind === 'past') return
+  openRow(e: WechatMiniprogram.TouchEvent) {
+    const row = this.data.rows[e.currentTarget.dataset.index as number]
+    if (row?.kind === 'free' && !this.schedule?.coachEdits) {
+      wx.showToast({ title: '排班由场馆设置，请假请联系前台', icon: 'none' })
+      return
+    }
+    if (!row?.active) return
     askForNotices()
-    if (slot.kind === 'lesson') {
-      navigateOnce(`/coach/lesson/index?id=${slot.bookingId}`)
+    if (row.kind === 'lesson') {
+      navigateOnce(`/coach/lesson/index?id=${row.bookingId}`)
       return
     }
-    if (slot.kind === 'session') {
-      navigateOnce(`/coach/session/index?id=${slot.id}`)
+    if (row.kind === 'session') {
+      navigateOnce(`/coach/session/index?id=${row.id}`)
       return
     }
-    if (this.slotBusy) return
-    // Held from the sheet until the change is saved, so a double tap acts once.
-    this.slotBusy = true
-    const open = slot.kind === 'closed'
-    wx.showActionSheet({
-      itemList: [open ? '开放此时段' : '关闭此时段'],
-      success: async () => {
-        try {
-          await coachApi('PUT', `/slots/${slot.id}`, { open })
-          wx.showToast({ title: open ? '已开放' : '已关闭', icon: 'success' })
-        } catch (err) {
-          showError(err)
-        } finally {
-          this.slotBusy = false
-        }
-        await this.loadSchedule()
+    if (this.rowBusy) return
+    this.rowBusy = true
+    const span = `${row.start}-${row.end}`
+    const done = () => {
+      this.rowBusy = false
+    }
+    if (row.kind === 'free') {
+      wx.showActionSheet({
+        itemList: [`${span} 请假`],
+        success: () => this.addLeave(row).finally(done),
+        fail: done,
+      })
+      return
+    }
+    wx.showModal({
+      title: '取消这段请假？',
+      content: `${row.whole} 会重新开放预约。`,
+      confirmText: '取消请假',
+      confirmColor: modalDangerColor(),
+      cancelText: '保留',
+      success: (res) => {
+        if (res.confirm) this.removeLeave(row.id).finally(done)
+        else done()
       },
-      fail: () => {
-        this.slotBusy = false
-      },
+      fail: done,
     })
+  },
+
+  /** Takes a free stretch out of the coach's 排班 as 请假. */
+  async addLeave(row: RowView) {
+    try {
+      // Free time that started earlier begins at the next 5-minute mark already.
+      const startsAt = new Date(Math.floor(Date.parse(row.startsAt) / STEP) * STEP).toISOString()
+      await coachApi('POST', '/exceptions', { kind: 'off', startsAt, endsAt: row.endsAt })
+      wx.showToast({ title: '已请假', icon: 'success' })
+    } catch (err) {
+      showError(err)
+    }
+    await this.loadSchedule()
+  },
+
+  async removeLeave(id: number) {
+    try {
+      await coachApi('DELETE', `/exceptions/${id}`)
+      wx.showToast({ title: '已取消请假', icon: 'success' })
+    } catch (err) {
+      showError(err)
+    }
+    await this.loadSchedule()
   },
 
   openHours() {

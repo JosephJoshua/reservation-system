@@ -202,7 +202,12 @@ try {
     )
     const slot = slots.json.find((s: { available: boolean }) => s.available)
     check(slot, 'no trial slot to try')
-    const res = await call('POST', '/bookings', { slotId: slot.id, lessonTypeId: trial.id }, token)
+    const res = await call(
+      'POST',
+      '/bookings',
+      { coachId: slot.coachId, startsAt: slot.startsAt, lessonTypeId: trial.id },
+      token,
+    )
     check(res.json?.error?.code === 'trial_used', `expected trial_used, got ${res.status}`)
   })
 
@@ -294,7 +299,8 @@ try {
     await miniProgram.pageScrollTo(10000)
     await screenshot('book-all-coaches-bottom')
     await miniProgram.pageScrollTo(0)
-    const slots = (await book.data('slots')) as { id: number; available: boolean }[]
+    type Time = { coachId: number; startsAt: string; available: boolean }
+    const slots = (await book.data('slots')) as Time[]
     const index = slots.findIndex((s) => s.available)
     const slot = slots[index]
     check(slot, 'no slot to race for')
@@ -306,15 +312,23 @@ try {
     const taken = await call(
       'POST',
       '/bookings',
-      { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
+      {
+        coachId: slot.coachId,
+        startsAt: slot.startsAt,
+        lessonTypeId: lesson.id,
+        payWith: 'wechat',
+      },
       rival.json.token,
     )
     check(taken.status === 201, `rival booking failed: ${JSON.stringify(taken.json)}`)
     await invoke('submit')
-    // The page explains the slot is gone and goes back to the time picker, now showing it full.
+    // The page explains the time is gone and goes back to the time picker, which no longer offers it.
     const back = await waitForPage('pages/book/index', (d) => d.slotsState === 'ready')
-    const after = (await back.data('slots')) as { id: number; available: boolean }[]
-    check(after.find((s) => s.id === slot.id)?.available === false, 'taken slot should show full')
+    const after = (await back.data('slots')) as Time[]
+    check(
+      !after.some((s) => s.coachId === slot.coachId && s.startsAt === slot.startsAt && s.available),
+      'the taken time should not be offered',
+    )
     await screenshot('slot-taken')
     await call('POST', `/bookings/${taken.json.bookingId}/cancel`, undefined, rival.json.token)
   })

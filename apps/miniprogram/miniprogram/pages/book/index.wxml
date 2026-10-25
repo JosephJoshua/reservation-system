@@ -93,7 +93,7 @@
     <view class="slot-grid">
       <view
         wx:for="{{slots}}"
-        wx:key="id"
+        wx:key="key"
         class="slot {{item.available ? '' : 'slot-full'}}"
         hover-class="{{item.available ? 'slot-hover' : 'none'}}"
         data-index="{{index}}"

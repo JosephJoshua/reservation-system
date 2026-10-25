@@ -3,12 +3,17 @@ import {
   DORMANT_DAYS,
   type DormantStudent,
   daysBetween,
+  mergeSpans,
+  type Span,
   STATS_MAX_DAYS,
   type StatsReport,
+  spanMinutes,
   statsBuckets,
   statsGrain,
+  subtractSpans,
   UNMARKED_DAYS,
   venueDateKey,
+  venueDates,
   venueInstant,
   venueParts,
 } from '@rs/shared'
@@ -24,7 +29,6 @@ import {
   lt,
   lte,
   notExists,
-  or,
   sql,
 } from 'drizzle-orm'
 import { alias, type SQLiteColumn } from 'drizzle-orm/sqlite-core'
@@ -43,6 +47,7 @@ import {
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
 import { onePerSession } from './coach-pay'
+import { workingTime } from './schedule'
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
@@ -52,7 +57,6 @@ const VENUE_OFFSET_MS = -venueInstant('1970-01-01', 0).getTime()
 // below fractional instead of whole days and hours.
 const OFFSET_SQL = sql.raw(String(VENUE_OFFSET_MS))
 const DAY_SQL = sql.raw(String(DAY))
-const HOUR_SQL = sql.raw(String(HOUR))
 
 /** The venue day an instant column falls on, as days since 1970-01-01. */
 const venueDay = (column: SQLiteColumn) => sql<number>`(${column} + ${OFFSET_SQL}) / ${DAY_SQL}`
@@ -66,6 +70,8 @@ export const RENEW_DAYS = 30
 function add(series: number[], i: number, value: number) {
   if (i >= 0) series[i] = (series[i] ?? 0) + value
 }
+
+const round1 = (n: number) => Math.round(n * 10) / 10
 
 /** Payments less the refunds that went through, in fen, from `from` up to `to`. */
 function netRevenue(deps: Deps, from: Date, to: Date) {
@@ -340,6 +346,7 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
     .select({
       id: bookings.id,
       slotId: bookings.slotId,
+      coachId: slots.coachId,
       sessionOf: slots.lessonTypeId,
       studentId: bookings.studentId,
       status: bookings.status,
@@ -442,91 +449,105 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
   const rangeIds = new Set(taken.map((l) => l.studentId))
   const totalNew = [...rangeIds].filter((id) => isNew(id, start, end)).length
 
-  // Coach hours and the busy times, from lessons on offer that have ended. Counted in SQL by
-  // coach, venue weekday and hour, as a year holds too many lessons to bring over one by one.
-  const seatsTaken = db
-    .select({ slotId: bookings.slotId, n: sql<number>`count(*)`.as('n') })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.status, 'confirmed'),
-        gte(bookings.startsAt, start),
-        lt(bookings.startsAt, end),
-        lte(bookings.endsAt, now),
-      ),
-    )
-    .groupBy(bookings.slotId)
-    .as('seats_taken')
-  const local = sql`(${slots.startsAt} + ${OFFSET_SQL})`
-  const slotGroups = db
-    .select({
-      coachId: slots.coachId,
-      lessonTypeId: slots.lessonTypeId,
-      // 0 is Monday: 1970-01-01, day 0, was a Thursday.
-      weekday: sql<number>`(${local} / ${DAY_SQL} + 3) % 7`,
-      hour: sql<number>`(${local} / ${HOUR_SQL}) % 24`,
-      booked: sql<number>`${seatsTaken.n} is not null`,
-      lessons: sql<number>`count(*)`,
-      minutes: sql<number>`sum((${slots.endsAt} - ${slots.startsAt}) / 60000.0)`,
-      seats: sql<number>`sum(${slots.capacity})`,
-      taken: sql<number>`coalesce(sum(${seatsTaken.n}), 0)`,
-    })
-    .from(slots)
-    .leftJoin(seatsTaken, eq(seatsTaken.slotId, slots.id))
-    .where(
-      and(
-        gte(slots.startsAt, start),
-        lt(slots.startsAt, end),
-        lte(slots.endsAt, now),
-        isNull(slots.cancelledAt),
-        // A closed lesson with no one in it was not on offer.
-        or(eq(slots.open, true), isNotNull(seatsTaken.n)),
-      ),
-    )
-    .groupBy(sql`1, 2, 3, 4, 5`)
-    .all()
-    .map((g) => ({
-      ...g,
-      weekday: Number(g.weekday),
-      hour: Number(g.hour),
-      booked: !!g.booked,
-      lessons: Number(g.lessons),
-      minutes: Number(g.minutes),
-      seats: Number(g.seats),
-      taken: Number(g.taken),
-    }))
-
+  // Coach hours and the busy times: the time coaches were open for lessons (排班 and group
+  // sessions) and the part of it taken by lessons, up to now.
   const coachRows = db
     .select({ id: coaches.id, name: coaches.name, active: coaches.active })
     .from(coaches)
     .orderBy(coaches.sort, coaches.id)
     .all()
-  const coachStats = coachRows
-    .map((c) => {
-      const mine = slotGroups.filter((g) => g.coachId === c.id)
-      return {
-        id: c.id,
-        name: c.name,
-        active: c.active,
-        offeredMinutes: mine.reduce((sum, g) => sum + g.minutes, 0),
-        bookedMinutes: mine.filter((g) => g.booked).reduce((sum, g) => sum + g.minutes, 0),
-      }
+  const coachIds = coachRows.map((c) => c.id)
+  const lastDay = venueDateKey(new Date(Math.min(end.getTime(), now.getTime()) - 1))
+  const days =
+    start < now ? venueDates(start, Math.max(0, daysBetween(venueDateKey(start), lastDay) - 1)) : []
+  const working = workingTime(db, coachIds, days)
+  const sessionRows = db
+    .select({
+      id: slots.id,
+      coachId: slots.coachId,
+      startsAt: slots.startsAt,
+      endsAt: slots.endsAt,
+      open: slots.open,
+      lessonTypeId: slots.lessonTypeId,
+      capacity: slots.capacity,
     })
-    .filter((c) => c.active || c.offeredMinutes > 0)
+    .from(slots)
+    .where(
+      and(
+        isNotNull(slots.lessonTypeId),
+        isNull(slots.cancelledAt),
+        gte(slots.startsAt, start),
+        lt(slots.startsAt, end),
+      ),
+    )
+    .all()
+  // A session counts once however many students it had.
+  const takenSpans = onePerSession(taken).map((l) => ({
+    coachId: l.coachId,
+    startsAt: l.startsAt,
+    endsAt: l.endsAt,
+  }))
+  const past = { startsAt: start, endsAt: new Date(Math.min(end.getTime(), now.getTime())) }
+  const sessionsWithLessons = new Set(taken.map((l) => l.slotId))
+  const inactive = new Set(coachRows.filter((c) => !c.active).map((c) => c.id))
+  const offeredBy = new Map<number, Span[]>()
+  const bookedBy = new Map<number, Span[]>()
+  for (const id of coachIds) {
+    const mine = takenSpans.filter((l) => l.coachId === id)
+    // Students cannot book an inactive coach, so their 排班 is not on offer; a closed session
+    // with no one in it was not either. A lesson the desk booked outside 排班 was.
+    const open = [
+      ...(inactive.has(id) ? [] : days.flatMap((d) => working.get(id)?.get(d) ?? [])),
+      ...sessionRows.filter((s) => s.coachId === id && (s.open || sessionsWithLessons.has(s.id))),
+      ...mine,
+    ]
+    const clip = (spans: Span[]) =>
+      subtractSpans(spans, [
+        { startsAt: new Date(0), endsAt: past.startsAt },
+        { startsAt: past.endsAt, endsAt: new Date(8.64e15) },
+      ])
+    offeredBy.set(id, clip(open))
+    bookedBy.set(id, clip(mine))
+  }
+  const coachStats = coachRows
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      active: c.active,
+      offeredMinutes: spanMinutes(offeredBy.get(c.id) ?? []),
+      bookedMinutes: spanMinutes(bookedBy.get(c.id) ?? []),
+    }))
+    .filter((c) => c.active || c.offeredMinutes > 0 || c.bookedMinutes > 0)
     .map(({ active: _, ...c }) => c)
 
+  // Coach-hours open and booked in each weekday and venue hour.
   const cells = new Map<string, StatsReport['heatmap'][number]>()
-  for (const g of slotGroups) {
-    const key = `${g.weekday}:${g.hour}`
-    let cell = cells.get(key)
-    if (!cell) {
-      cell = { weekday: g.weekday, hour: g.hour, offered: 0, booked: 0 }
-      cells.set(key, cell)
+  const spread = (spans: Span[], field: 'offered' | 'booked') => {
+    for (const s of mergeSpans(spans)) {
+      for (let t = s.startsAt.getTime(); t < s.endsAt.getTime(); ) {
+        const p = venueParts(new Date(t))
+        const hourEnd = t + (60 - p.minutes) * 60_000
+        const minutes = (Math.min(hourEnd, s.endsAt.getTime()) - t) / 60_000
+        const weekday = (p.weekday + 6) % 7
+        const key = `${weekday}:${p.hours}`
+        let cell = cells.get(key)
+        if (!cell) {
+          cell = { weekday, hour: p.hours, offered: 0, booked: 0 }
+          cells.set(key, cell)
+        }
+        cell[field] += minutes / 60
+        t = hourEnd
+      }
     }
-    cell.offered += g.lessons
-    if (g.booked) cell.booked += g.lessons
   }
-  const heatmap = [...cells.values()].sort((a, b) => a.weekday - b.weekday || a.hour - b.hour)
+  for (const id of coachIds) {
+    spread(offeredBy.get(id) ?? [], 'offered')
+    spread(bookedBy.get(id) ?? [], 'booked')
+  }
+  const heatmap = [...cells.values()]
+    .filter((c) => c.offered > 0)
+    .map((c) => ({ ...c, offered: round1(c.offered), booked: round1(c.booked) }))
+    .sort((a, b) => a.weekday - b.weekday || a.hour - b.hour)
 
   // Group classes: seats on offer and seats taken, per lesson type.
   const typeNames = new Map(
@@ -537,8 +558,14 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
       .all()
       .map((t) => [t.id, t.name]),
   )
+  const seatsTaken = new Map<number, number>()
+  for (const l of taken) seatsTaken.set(l.slotId, (seatsTaken.get(l.slotId) ?? 0) + 1)
+  // A closed session with no one in it was not on offer.
+  const sessionsHeld = sessionRows.filter(
+    (s) => s.endsAt <= now && (s.open || seatsTaken.has(s.id)),
+  )
   const groupStats = new Map<number, StatsReport['groups'][number]>()
-  for (const s of slotGroups) {
+  for (const s of sessionsHeld) {
     if (s.lessonTypeId === null) continue
     let g = groupStats.get(s.lessonTypeId)
     if (!g) {
@@ -551,9 +578,9 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
       }
       groupStats.set(s.lessonTypeId, g)
     }
-    g.sessions += s.lessons
-    g.seats += s.seats
-    g.booked += s.taken
+    g.sessions++
+    g.seats += s.capacity
+    g.booked += seatsTaken.get(s.id) ?? 0
   }
   const typeOrder = [...typeNames.keys()]
   const groups = [...groupStats.values()].sort(

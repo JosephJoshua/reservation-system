@@ -353,8 +353,10 @@ body {
 
 .week-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+  max-width: 100%;
 }
 
 .login {
@@ -395,61 +397,6 @@ body {
   font-size: 28px;
   font-weight: 600;
   margin-top: 8px;
-}
-
-.week-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(120px, 1fr));
-  gap: 8px;
-}
-
-.week-day {
-  background: var(--td-bg-color-container);
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 6px;
-  padding: 8px;
-  min-height: 160px;
-}
-
-.week-day h4 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.slot-chip {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  text-align: left;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 4px;
-  padding: 4px 6px;
-  margin-bottom: 6px;
-  font-size: 12px;
-  line-height: 1.5;
-  background: var(--td-bg-color-container);
-  color: var(--td-text-color-primary);
-  cursor: pointer;
-}
-
-.slot-chip.booked {
-  border-color: var(--td-brand-color);
-  background: var(--td-brand-color-light);
-}
-
-.slot-chip.full {
-  color: var(--td-text-color-secondary);
-}
-
-.slot-chip.closed {
-  color: var(--td-text-color-disabled);
-  border-style: dashed;
-}
-
-/* A group session: a bar on the left tells it apart from private slots. */
-.slot-chip.group {
-  border-left: 3px solid var(--td-warning-color);
 }
 
 .stack {
@@ -756,10 +703,6 @@ a:hover {
   white-space: nowrap;
 }
 
-.week-scroll {
-  overflow-x: auto;
-}
-
 .admin-title {
   display: flex;
   align-items: center;
@@ -783,36 +726,6 @@ a:hover {
 
 .admin-menu-drawer .nav-item {
   height: 44px;
-}
-
-.day-strip {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.day-tab {
-  min-height: 44px;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 6px;
-  background: var(--td-bg-color-container);
-  color: var(--td-text-color-primary);
-  font-size: 12px;
-  line-height: 1.4;
-  cursor: pointer;
-}
-
-.day-tab.active {
-  border-color: var(--td-brand-color);
-  background: var(--td-brand-color-light);
-  color: var(--td-brand-color);
-  font-weight: 600;
-}
-
-.day-grid .slot-chip {
-  min-height: 44px;
-  font-size: 14px;
 }
 
 .pick-tag {
@@ -894,7 +807,7 @@ a:hover {
 
 .slot-picks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
   gap: 8px;
 }
 
@@ -1742,4 +1655,258 @@ a:hover {
 .rule-own .t-button {
   padding-left: 0;
   padding-right: 0;
+}
+
+.week-nav .t-date-picker {
+  flex: 1 1 110px;
+  min-width: 110px;
+}
+
+/* 日程 board: a row per coach, time running left to right. */
+.board-alert {
+  margin-bottom: 12px;
+}
+
+.board-date {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.board-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 6px;
+  background: var(--td-bg-color-container);
+  margin-bottom: 8px;
+}
+
+.board {
+  position: relative;
+}
+
+.board-row {
+  display: flex;
+  min-height: 48px;
+  border-bottom: 1px solid var(--td-component-stroke);
+}
+
+.board-row:last-child {
+  border-bottom: 0;
+}
+
+.board-name {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 120px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 12px;
+  background: var(--td-bg-color-container);
+  border-right: 1px solid var(--td-component-stroke);
+  font-size: 13px;
+  text-align: left;
+}
+
+.board-coach {
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.board-coach:hover {
+  color: var(--td-brand-color);
+}
+
+.board-track {
+  position: relative;
+  flex: none;
+  background-image: linear-gradient(to right, var(--td-component-stroke) 1px, transparent 1px);
+  background-size: 72px 100%;
+}
+
+.board-track.bookable {
+  cursor: copy;
+}
+
+.board-head {
+  min-height: 28px;
+}
+
+.board-hour {
+  position: absolute;
+  top: 6px;
+  padding-left: 4px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+
+.board-tables {
+  min-height: 28px;
+}
+
+.board-table {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--td-bg-color-container);
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+  color: var(--td-text-color-secondary);
+}
+
+.board-table.some {
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+}
+
+.board-table.full {
+  background: var(--td-error-color-1);
+  color: var(--td-error-color);
+  font-weight: 600;
+}
+
+.board-work {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--td-success-color-1);
+}
+
+.board-off {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 2px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--td-text-color-secondary);
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--td-bg-color-secondarycontainer),
+    var(--td-bg-color-secondarycontainer) 4px,
+    var(--td-bg-color-component) 4px,
+    var(--td-bg-color-component) 8px
+  );
+}
+
+.board-block {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  z-index: 1;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 2px 6px;
+  border: 1px solid var(--td-brand-color);
+  border-radius: 4px;
+  background: var(--td-brand-color-light);
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.board-block-time {
+  display: block;
+  color: var(--td-brand-color);
+  font-weight: 600;
+}
+
+.board-block.group {
+  border-color: var(--td-warning-color);
+  background: var(--td-warning-color-1);
+}
+
+.board-block.group .board-block-time {
+  color: var(--td-warning-color);
+}
+
+.board-block.pending {
+  border-style: dashed;
+}
+
+.board-block.conflict {
+  border-width: 2px;
+  border-color: var(--td-error-color);
+}
+
+.board-block.cancelled {
+  border-color: var(--td-component-border);
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-placeholder);
+}
+
+.board-block.cancelled .board-block-time {
+  color: var(--td-text-color-placeholder);
+}
+
+.board-empty {
+  padding: 12px;
+}
+
+/* 请假, 加班 and 闭馆 in the 排班 dialog and the settings. */
+.exception-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.exception-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.exception-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.week-hours {
+  border-top: 1px solid var(--td-component-stroke);
+}
+
+.week-day {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--td-component-stroke);
+}
+
+.week-day-name {
+  flex-shrink: 0;
+  width: 40px;
+  line-height: 32px;
+}
+
+.week-day-windows {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-width: 0;
+  line-height: 32px;
 }

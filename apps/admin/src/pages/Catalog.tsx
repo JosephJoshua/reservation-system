@@ -33,7 +33,7 @@ import {
 import { useReorder } from '../Reorder'
 import { RichText } from '../RichText'
 import type { AdminBooking, Coach, CoachCategory, LessonType } from '../types'
-import { CoachBindingDialog, CoachHoursDialog } from './CoachDialogs'
+import { CoachBindingDialog, CoachScheduleDialog } from './CoachDialogs'
 
 type LessonForm = Omit<LessonType, 'id'>
 
@@ -518,7 +518,7 @@ export function Catalog() {
                     编辑
                   </Button>
                   <Button variant="text" theme="primary" onClick={() => setHoursOf(row)}>
-                    可约时间
+                    排班
                   </Button>
                   <Button
                     variant="text"
@@ -549,7 +549,7 @@ export function Catalog() {
         />
       )}
 
-      {hoursOf && <CoachHoursDialog coach={hoursOf} onClose={() => setHoursOf(null)} />}
+      {hoursOf && <CoachScheduleDialog coach={hoursOf} onClose={() => setHoursOf(null)} />}
 
       {preview && (
         <PreviewDialog
@@ -669,7 +669,7 @@ function LessonEditor({
           onChange={(v) => set({ durationMinutes: Number(v) || 60 })}
         />
       </Field>
-      <Field label="上课人数" help="多于 1 人即为小班课，需要在排课页按节安排">
+      <Field label="上课人数" help="多于 1 人为小班课，在日程页按节安排">
         <div className="stack">
           <InputNumber
             theme="normal"

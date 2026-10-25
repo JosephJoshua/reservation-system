@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ADMIN_PASSWORD, call, dialog, field, login, student } from './helpers'
+import { ADMIN_PASSWORD, addExtraTimes, call, dialog, field, login, student } from './helpers'
 
 // How front-desk payments, student cancels and coach changes show up for the desk.
 test.describe.configure({ mode: 'serial' })
@@ -14,9 +14,9 @@ let admin = ''
 let token = ''
 let studentId = 0
 let lessonTypeId = 0
-const slotIds: number[] = []
+const times: { coachId: number; startsAt: string }[] = []
 
-test('sets up a coach with two slots and a student', async ({ request }) => {
+test('sets up a coach with two lesson times and a student', async ({ request }) => {
   admin = (
     await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
       username: 'admin',
@@ -36,14 +36,12 @@ test('sets up a coach with two slots and a student', async ({ request }) => {
       lessonTypeIds: [lessonTypeId],
     })
   ).id
-  const { ids } = await call<{ ids: number[] }>(request, 'POST', '/admin/slots', admin, {
-    slots: [10, 11].map((h) => ({
-      coachId,
-      startsAt: `${venueDate}T${h}:00:00+08:00`,
-      endsAt: `${venueDate}T${h + 1}:00:00+08:00`,
-    })),
-  })
-  slotIds.push(...ids)
+  const spans = [10, 11].map((h) => ({
+    startsAt: `${venueDate}T${h}:00:00+08:00`,
+    endsAt: `${venueDate}T${h + 1}:00:00+08:00`,
+  }))
+  await addExtraTimes(request, admin, coachId, spans)
+  times.push(...spans.map((s) => ({ coachId, startsAt: s.startsAt })))
   token = await student(request, studentName)
   await call(request, 'PUT', '/me', token, { name: studentName, phone: '13600136000' })
   studentId = (await call<{ id: number }>(request, 'GET', '/me', token)).id
@@ -60,7 +58,7 @@ test('a cash 代约 the student cancels shows on the overview as owed and clears
     admin,
     {
       studentId,
-      slotId: slotIds[0],
+      ...times[0],
       lessonTypeId,
       payWith: 'offline',
       amount: 20000,
@@ -95,7 +93,7 @@ test('turning a coach with booked lessons off says what happens to them', async 
 }) => {
   await call(request, 'POST', '/admin/bookings', admin, {
     studentId,
-    slotId: slotIds[1],
+    ...times[1],
     lessonTypeId,
     payWith: 'offline',
     amount: 0,

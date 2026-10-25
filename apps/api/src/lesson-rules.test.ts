@@ -321,7 +321,9 @@ describe('booking rules per lesson type', () => {
     const listed = (
       await h.call('GET', `/slots?date=2026-11-12&coachId=${coach.id}&moving=${id}`, undefined, t)
     ).json
-    expect(listed).toEqual([expect.objectContaining({ id: far.id, available: true })])
+    expect(listed).toEqual([
+      expect.objectContaining({ startsAt: far.startsAt.toISOString(), available: true }),
+    ])
   })
 
   it("tells the move page the lesson type's window, even when students cannot book it now", async () => {

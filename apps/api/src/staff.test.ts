@@ -12,7 +12,6 @@ import {
   packages,
   refunds,
   sessions,
-  slots,
 } from './db/schema'
 import { updateStaff } from './services/staff'
 import { type Harness, setup } from './test/harness'
@@ -738,16 +737,22 @@ describe('front-desk booking', () => {
     expect(entries[0].student).toEqual({ id: 1, name: '已注销学员', phone: '' })
   })
 
-  it('refuses closed, taken and clashing slots, wrong durations and missing packages', async () => {
+  it('refuses taken, clashing and off-排班 times unless told, and missing packages', async () => {
     const h = setup()
     const { coach, lesson, trial, admin, student, slot } = await ready(h)
     const base = { studentId: 1, lessonTypeId: lesson.id, payWith: 'offline', amount: 0 }
     const code = async (body: object) =>
       (await h.call('POST', '/admin/bookings', { ...base, ...body }, admin)).json.error?.code
 
-    const closed = h.slot(coach.id, '2026-10-26')
-    h.db.update(slots).set({ open: false }).where(eq(slots.id, closed.id)).run()
-    expect(await code({ slotId: closed.id })).toBe('slot_closed')
+    // Outside the coach's 排班: refused, unless the desk says the coach agreed.
+    const outside = {
+      coachId: coach.id,
+      startsAt: venueInstant('2026-10-26', 15 * 60).toISOString(),
+    }
+    expect(await code(outside)).toBe('time_unavailable')
+    // Neither a slot id and a time together, nor half a time.
+    expect(await code({ ...outside, slotId: slot.id })).toBe('invalid_body')
+    expect(await code({ coachId: coach.id })).toBe('invalid_body')
 
     await h.call('POST', '/bookings', { slotId: slot.id, lessonTypeId: lesson.id }, student)
     await h.student('b')
@@ -759,16 +764,24 @@ describe('front-desk booking', () => {
     const other = h.slot(otherCoach.id)
     expect(await code({ slotId: other.id })).toBe('student_clash')
 
-    const long = h.db
-      .insert(slots)
-      .values({
+    // Even outside 排班, never over another lesson of the coach.
+    expect(await code({ slotId: slot.id, studentId: 2, anyTime: true })).toBe('coach_busy')
+    expect(
+      await code({
         coachId: coach.id,
-        startsAt: venueInstant('2026-10-27', 600),
-        endsAt: venueInstant('2026-10-27', 690),
-      })
-      .returning()
-      .get()
-    expect(await code({ slotId: long.id })).toBe('duration_mismatch')
+        startsAt: venueInstant('2026-10-25', 10 * 60 + 30).toISOString(),
+        studentId: 2,
+        anyTime: true,
+      }),
+    ).toBe('coach_busy')
+    // An off-step time is refused even then.
+    expect(
+      await code({
+        coachId: coach.id,
+        startsAt: venueInstant('2026-10-26', 15 * 60 + 3).toISOString(),
+        anyTime: true,
+      }),
+    ).toBe('invalid_time')
 
     const later = h.slot(coach.id, '2026-10-28')
     expect(await code({ slotId: later.id, payWith: 'package' })).toBe('no_package')
@@ -801,7 +814,8 @@ describe('front-desk booking', () => {
     const next = h.slot(coach.id, '2026-10-29')
     expect(await code({ slotId: next.id, lessonTypeId: trial.id })).toBe('trial_used')
 
-    expect(log(h).filter((e) => e.action === 'booking.create')).toHaveLength(1)
+    expect(await code({ ...outside, anyTime: true })).toBeUndefined()
+    expect(log(h).filter((e) => e.action === 'booking.create')).toHaveLength(2)
   })
 
   it('gives one slot to exactly one of the desk and a student', async () => {

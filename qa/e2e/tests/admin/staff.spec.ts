@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ADMIN_PASSWORD, call, dialog, field, login, student } from './helpers'
+import { ADMIN_PASSWORD, addExtraTimes, call, dialog, field, login, student } from './helpers'
 
 // Named staff logins, front-desk booking (代约) and the action log, driven through the admin app.
 test.describe.configure({ mode: 'serial' })
@@ -37,15 +37,9 @@ test('sets up a coach with a free slot and a named student', async ({ request })
       lessonTypeIds: [lessonTypeId],
     })
   ).id
-  await call(request, 'POST', '/admin/slots', admin, {
-    slots: [
-      {
-        coachId,
-        startsAt: `${venueDate}T10:00:00+08:00`,
-        endsAt: `${venueDate}T11:00:00+08:00`,
-      },
-    ],
-  })
+  await addExtraTimes(request, admin, coachId, [
+    { startsAt: `${venueDate}T10:00:00+08:00`, endsAt: `${venueDate}T11:00:00+08:00` },
+  ])
   const token = await student(request, studentName)
   await call(request, 'PUT', '/me', token, { name: studentName, phone: '13700137000' })
 })
@@ -72,20 +66,14 @@ test('adds a staff login that can sign in', async ({ page, browser }) => {
 test('books a lesson for a student from the schedule', async ({ page }) => {
   await login(page, username, password)
   await page.goto('./#/schedule')
-  await page.locator('.t-select').first().click()
-  await page.locator('.t-select-option', { hasText: coachName }).click()
-  // Tomorrow may be in next week.
-  const chip = page.locator('.slot-chip', { hasText: '可预约' })
-  if (
-    !(await chip
-      .first()
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.getByRole('button', { name: '下一周' }).click()
-  }
-  await chip.first().click()
-  await dialog(page).getByRole('button', { name: '代约' }).click()
+  await page.getByRole('button', { name: '后一天' }).click()
+  await page.getByPlaceholder('搜索教练').fill(coachName)
+  // The coach's 加班 at 10:00 tomorrow, clicked on the board.
+  const hour = await page.locator('.board-hour', { hasText: /^10:00$/ }).boundingBox()
+  const track = page.locator('.board-row', { hasText: coachName }).locator('.board-track')
+  const row = await track.boundingBox()
+  if (!hour || !row) throw new Error('board not shown')
+  await page.mouse.click(hour.x + 10, row.y + row.height / 2)
   const book = dialog(page).last()
   const picker = field(book, '学员').locator('input')
   await picker.click()
@@ -94,7 +82,7 @@ test('books a lesson for a student from the schedule', async ({ page }) => {
   await expect(book.getByText('线下收款（标价 ¥200）')).toBeVisible()
   await book.getByRole('button', { name: '确认代约' }).dblclick()
   await expect(page.getByText('已代约')).toBeVisible()
-  await expect(page.locator('.slot-chip', { hasText: studentName })).toBeVisible()
+  await expect(page.locator('.board-block', { hasText: studentName })).toBeVisible()
 
   await page.goto('./#/bookings')
   await expect(

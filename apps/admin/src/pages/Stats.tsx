@@ -117,7 +117,7 @@ function BusyTimes({ cells, empty }: { cells: StatsReport['heatmap']; empty: str
         return {
           value: c.booked,
           max,
-          text: `已约 ${c.booked} 节 / 开放 ${c.offered} 节`,
+          text: `已约 ${c.booked} / 开放 ${c.offered} 小时`,
         }
       }}
       legend="点击格子可以查看数字。"
@@ -353,12 +353,9 @@ export function Stats() {
         </div>
 
         <div className="chart-grid">
-          <ChartCard
-            title="教练排课占用"
-            note="已结束的排课中被预约的小时数，教练关闭的空闲时段不计入。"
-          >
+          <ChartCard title="教练排班占用" note="已过去的排班时间里被约的小时数，请假和闭馆不计。">
             <MeterList
-              empty={none('这段时间没有排课')}
+              empty={none('这段时间没有排班')}
               rows={(r?.coaches ?? []).map((c) => ({
                 key: c.id,
                 label: c.name,
@@ -368,8 +365,8 @@ export function Stats() {
               }))}
             />
           </ChartCard>
-          <ChartCard title="热门时段" note="按开课时间统计已结束的排课。">
-            <BusyTimes cells={r?.heatmap ?? []} empty={none('这段时间没有排课')} />
+          <ChartCard title="热门时段" note="已过去的排班时间里，各时段被约的比例。">
+            <BusyTimes cells={r?.heatmap ?? []} empty={none('这段时间没有排班')} />
           </ChartCard>
         </div>
 

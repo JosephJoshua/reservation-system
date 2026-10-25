@@ -31,41 +31,41 @@
   </view>
 
   <view wx:if="{{slotsState === 'error'}}" class="slots-status muted">{{error}}</view>
-  <view wx:elif="{{!slots.length}}" class="slots-empty">
+  <view wx:elif="{{!rows.length}}" class="slots-empty">
     <t-empty icon="{{emptyIcon}}" description="{{dayEmpty}}" />
   </view>
   <view wx:else>
     <view class="section-title">{{summary}}</view>
     <view class="card list">
       <view
-        wx:for="{{slots}}"
-        wx:key="id"
+        wx:for="{{rows}}"
+        wx:key="key"
         class="row row-{{item.kind}}"
-        hover-class="{{item.kind === 'past' ? 'none' : 'row-hover'}}"
+        hover-class="{{item.active ? 'row-hover' : 'none'}}"
         data-index="{{index}}"
-        bind:tap="openSlot"
+        bind:tap="openRow"
       >
         <view class="row-time">
           <view class="row-start">{{item.start}}</view>
           <view class="row-end">{{item.end}}</view>
         </view>
-        <view wx:if="{{item.kind === 'lesson' || item.kind === 'session'}}" class="row-main">
-          <view class="row-title">{{item.student}}</view>
-          <view class="row-sub">{{item.lesson}}</view>
-        </view>
-        <view wx:else class="row-main">
+        <view wx:if="{{item.kind === 'free'}}" class="row-main">
           <view class="row-title row-free">{{item.label}}</view>
         </view>
+        <view wx:else class="row-main">
+          <view class="row-title">{{item.student}}</view>
+          <view wx:if="{{item.lesson}}" class="row-sub">{{item.lesson}}</view>
+        </view>
         <t-tag wx:if="{{item.tag}}" size="medium" theme="{{item.tone}}" variant="light">{{item.tag}}</t-tag>
-        <view wx:if="{{item.kind !== 'past'}}" class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
+        <view wx:if="{{item.active}}" class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
       </view>
     </view>
-    <view class="footnote">点空闲时段可以关闭或重新开放；点开已预约的课可以签到、写备注或取消；点开小班课可以按名单签到。</view>
+    <view class="footnote">{{footnote}}</view>
   </view>
 
   <view class="action-bar">
     <view class="grow">
-      <t-button block t-class="action-button" theme="primary" bind:tap="openHours">设置可约时间</t-button>
+      <t-button block t-class="action-button" theme="primary" bind:tap="openHours">我的排班</t-button>
     </view>
   </view>
 </view>

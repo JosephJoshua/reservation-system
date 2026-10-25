@@ -1,6 +1,9 @@
 import {
-  type CoachHoursDto,
-  type SlotSyncDto,
+  type HoursPeriod,
+  hoursOn,
+  type ScheduleConflictDto,
+  type ScheduleExceptionDto,
+  type ScheduleViewDto,
   type WeeklyHours,
   weeklyHoursError,
 } from '@rs/shared'
@@ -8,19 +11,19 @@ import { useEffect, useState } from 'react'
 import {
   Alert,
   Button,
+  Checkbox,
   DatePicker,
   Dialog,
-  MessagePlugin,
+  Input,
   Popconfirm,
-  Select,
+  Radio,
   Space,
   Tag,
   TimePicker,
 } from 'tdesign-react'
 import { api } from '../api'
-import { DataTable } from '../DataTable'
-import { fmtDateTime, today } from '../format'
-import { attempt, useApi } from '../hooks'
+import { addDays, fmtDate, fmtDateTime, fmtTime, fmtWeekday, today, venueIso } from '../format'
+import { attempt, useApi, useIsPhone } from '../hooks'
 import type { Coach } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -28,18 +31,67 @@ const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
 
 const hhmm = (m: number) =>
   `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-const minutes = (v: string) => Number(v.slice(0, 2)) * 60 + Number(v.slice(3, 5))
+/** A picker's HH:mm as minutes; as an end time, 00:00 is the midnight that ends the day. */
+const minutes = (v: string, end = false) => {
+  const m = Number(v.slice(0, 2)) * 60 + Number(v.slice(3, 5))
+  return end && m === 0 ? 24 * 60 : m
+}
 
-/** One line on what a save did to the coach's slots. */
-function syncMessage(r: SlotSyncDto, done: string) {
-  const parts = [
-    r.created ? `新增 ${r.created} 个时段` : '',
-    r.removed ? `移除 ${r.removed} 个时段` : '',
-    r.bookedOnDaysOff
-      ? `休息日还有 ${r.bookedOnDaysOff} 节已被预约的课，请联系学员或取消这些课`
-      : '',
-  ].filter(Boolean)
-  return [done, ...parts].join('，')
+/** One line per weekday with hours. */
+export function hoursSummary(hours: WeeklyHours[]) {
+  const days = WEEK_ORDER.flatMap((d) => {
+    const windows = hours
+      .filter((h) => h.weekday === d)
+      .sort((a, b) => a.startMinute - b.startMinute)
+      .map((h) => `${hhmm(h.startMinute)}-${hhmm(h.endMinute)}`)
+    return windows.length ? [`${WEEKDAYS[d]} ${windows.join('、')}`] : []
+  })
+  return days.length ? days.join('；') : '不接课'
+}
+
+/** 10-25 周日 09:00-12:00, or a span over several days. */
+export function spanText(startsAt: string, endsAt: string) {
+  const last = new Date(Date.parse(endsAt) - 1)
+  const end = fmtTime(endsAt) === '00:00' ? '24:00' : fmtTime(endsAt)
+  const day = (iso: string | Date) => `${fmtDate(iso).slice(5)} ${fmtWeekday(iso)}`
+  if (fmtDate(startsAt) === fmtDate(last)) {
+    return fmtTime(startsAt) === '00:00' && end === '24:00'
+      ? `${day(startsAt)} 全天`
+      : `${day(startsAt)} ${fmtTime(startsAt)}-${end}`
+  }
+  return fmtTime(startsAt) === '00:00' && end === '24:00'
+    ? `${day(startsAt)} 至 ${day(last)}`
+    : `${day(startsAt)} ${fmtTime(startsAt)} 至 ${day(endsAt)} ${fmtTime(endsAt)}`
+}
+
+/** Lessons a 排班 change left outside it or in 请假, for the desk to move or cancel. */
+export function ConflictList({
+  conflicts,
+  what,
+}: {
+  conflicts: ScheduleConflictDto[]
+  what: string
+}) {
+  if (!conflicts.length) return null
+  return (
+    <Alert
+      theme="warning"
+      message={
+        <div>
+          <div>
+            有 {conflicts.length} 节课{what}，课程不会自动取消，请改约或取消：
+          </div>
+          {conflicts.slice(0, 8).map((c) => (
+            <div key={`${c.slotId}-${c.bookingId}`}>
+              {spanText(c.startsAt, c.endsAt)} {c.coachName} {c.title}
+              {c.group && '（小班课）'}
+            </div>
+          ))}
+          {conflicts.length > 8 && <div>等 {conflicts.length} 节</div>}
+        </div>
+      }
+    />
+  )
 }
 
 /** Shows the coach's WeChat binding and hands out bind codes. */
@@ -115,196 +167,439 @@ export function CoachBindingDialog({ coach, onClose }: { coach: Coach; onClose: 
   )
 }
 
-/** Edits a coach's weekly hours and days off, the same ones the coach sets in the mini program. */
-export function CoachHoursDialog({ coach, onClose }: { coach: Coach; onClose: () => void }) {
-  const { data, error, reload } = useApi<CoachHoursDto>(`/admin/coaches/${coach.id}/hours`)
+/**
+ * A coach's 排班, the same one the coach keeps in the mini program: weekly hours from a date on,
+ * and 请假 and 加班 on given days. 闭馆 is shown here and kept in the settings.
+ */
+export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose: () => void }) {
+  const { data, error, reload } = useApi<ScheduleViewDto>(`/admin/coaches/${coach.id}/hours`)
+  const [from, setFrom] = useState(today)
   const [hours, setHours] = useState<WeeklyHours[] | null>(null)
-  const [dayOff, setDayOff] = useState('')
+  const [dirty, setDirty] = useState(false)
+  // Weekdays edited since the hours were loaded, kept when 生效日期 moves.
+  const [touched, setTouched] = useState<Set<number>>(() => new Set())
+  const touch = (...weekdays: number[]) => {
+    setTouched(new Set([...touched, ...weekdays]))
+    setDirty(true)
+  }
+  const timeWidth = useIsPhone() ? 88 : 104
+  const [conflicts, setConflicts] = useState<{ list: ScheduleConflictDto[]; what: string } | null>(
+    null,
+  )
 
+  // Hours that only start later read as 不接课 today: open on the first week with hours.
+  const [opened, setOpened] = useState(false)
   useEffect(() => {
-    if (data && hours === null) setHours(data.hours)
-  }, [data, hours])
+    if (!data || opened) return
+    setOpened(true)
+    const next = data.periods.find((p) => p.hours.length)
+    if (!hoursOn(data.periods, today()).length && next) setFrom(next.from)
+  }, [data, opened])
+
+  // The hours as they stand from the chosen date, until edited.
+  useEffect(() => {
+    if (data && !dirty) {
+      setHours(hoursOn(data.periods, from))
+      setTouched(new Set())
+    }
+  }, [data, from, dirty])
+
+  /** Moves 生效日期, keeping the days edited and taking the rest as they stand then. */
+  const changeFrom = (next: string) => {
+    if (dirty && data) {
+      setHours([
+        ...hoursOn(data.periods, next).filter((h) => !touched.has(h.weekday)),
+        ...(hours ?? []).filter((h) => touched.has(h.weekday)),
+      ])
+    }
+    setFrom(next)
+  }
 
   const rows = (hours ?? []).map((h, i) => ({ ...h, key: i }))
-  const lengths = data?.lessonMinutes ?? []
   const invalid = hours ? weeklyHoursError(hours) : null
-  const update = (i: number, patch: Partial<WeeklyHours>) =>
+  const update = (i: number, patch: Partial<WeeklyHours>) => {
     setHours((hours ?? []).map((h, j) => (j === i ? { ...h, ...patch } : h)))
+    touch((hours ?? [])[i]?.weekday ?? 0)
+  }
+  const planned = (data?.periods ?? []).filter((p: HoursPeriod) => p.from > today())
+  // Saving from a date replaces the changes planned after it.
+  const replaced = (data?.periods ?? []).filter((p: HoursPeriod) => p.from > from)
+  /** A new time on a weekday: an hour after its last one, or 09:00-12:00 on a free day. */
+  const addWindow = (weekday: number) => {
+    const last = Math.max(0, ...rows.filter((r) => r.weekday === weekday).map((r) => r.endMinute))
+    // An hour after the day's last window, or right after it late in the evening.
+    const start = !last ? 9 * 60 : last <= 20 * 60 ? last + 60 : Math.min(last, 23 * 60)
+    setHours([
+      ...(hours ?? []),
+      { weekday, startMinute: start, endMinute: Math.min(start + 3 * 60, 24 * 60) },
+    ])
+    touch(weekday)
+  }
 
   const save = async () => {
     if (!hours || invalid) return
-    let result: SlotSyncDto | undefined
+    let result: { conflicts: ScheduleConflictDto[] } | undefined
     const ok = await attempt(async () => {
-      result = await api<SlotSyncDto>('PUT', `/admin/coaches/${coach.id}/hours`, { hours })
-    })
+      result = await api('PUT', `/admin/coaches/${coach.id}/hours`, { from, hours })
+    }, '已保存每周时间')
     if (ok && result) {
-      void MessagePlugin.success(syncMessage(result, '已保存'))
-      onClose()
+      setDirty(false)
+      setConflicts({ list: result.conflicts, what: '不在新的排班里' })
+      await reload()
     }
   }
 
-  const toggleDayOff = async (date: string, off: boolean) => {
-    let result: SlotSyncDto | undefined
-    const ok = await attempt(async () => {
-      result = await api<SlotSyncDto>(
-        off ? 'PUT' : 'DELETE',
-        `/admin/coaches/${coach.id}/days-off/${date}`,
+  const remove = async (e: ScheduleExceptionDto) => {
+    if (
+      await attempt(
+        () => api('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`),
+        e.kind === 'off' ? '已取消请假' : '已取消加班',
       )
-    })
-    if (ok && result) {
-      void MessagePlugin.info(syncMessage(result, off ? `${date} 设为休息日` : `${date} 恢复接课`))
-      setDayOff('')
+    )
       await reload()
-    }
   }
 
   return (
     <Dialog
       visible
-      width={760}
-      header={`${coach.name} 的可约时间`}
-      confirmBtn={{ content: '保存每周时间', disabled: !!invalid || !hours }}
+      width={800}
+      header={`${coach.name} 的排班`}
+      confirmBtn={{ content: '保存每周时间', disabled: !!invalid || !hours || !dirty }}
+      cancelBtn="关闭"
       onConfirm={save}
       onClose={onClose}
     >
       {error && <Alert theme="error" message={error} />}
-      {data && lengths.length === 0 && (
-        <Alert
-          theme="warning"
-          message="这位教练还没有启用中的课程，请先在教练设置里勾选所教课程。"
-        />
-      )}
-      {data && lengths.length > 0 && (
+      {data && (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          <DataTable
-            rowKey="key"
-            size="small"
-            data={rows}
-            empty="还没有每周时间"
-            columns={[
-              {
-                colKey: 'weekday',
-                title: '星期',
-                width: 120,
-                cell: ({ row }) => (
-                  <Select
-                    value={row.weekday}
-                    options={WEEK_ORDER.map((d) => ({ label: WEEKDAYS[d], value: d }))}
-                    onChange={(v) => update(row.key, { weekday: Number(v) })}
-                  />
-                ),
-              },
-              {
-                colKey: 'time',
-                title: '时间',
-                width: 280,
-                cell: ({ row }) => (
-                  <Space align="center" size={4}>
-                    <TimePicker
-                      style={{ width: 112 }}
-                      format="HH:mm"
-                      steps={[1, 5]}
-                      clearable={false}
-                      value={hhmm(row.startMinute)}
-                      onChange={(v) => update(row.key, { startMinute: minutes(String(v)) })}
-                    />
-                    至
-                    <TimePicker
-                      style={{ width: 112 }}
-                      format="HH:mm"
-                      steps={[1, 5]}
-                      clearable={false}
-                      value={hhmm(row.endMinute)}
-                      onChange={(v) => update(row.key, { endMinute: minutes(String(v)) })}
-                    />
-                  </Space>
-                ),
-              },
-              {
-                colKey: 'lessonMinutes',
-                title: '每节',
-                width: 130,
-                cell: ({ row }) => (
-                  <Select
-                    value={row.lessonMinutes}
-                    options={lengths.map((m) => ({ label: `${m} 分钟`, value: m }))}
-                    onChange={(v) => update(row.key, { lessonMinutes: Number(v) })}
-                  />
-                ),
-              },
-              {
-                colKey: 'count',
-                title: '节数',
-                width: 64,
-                cell: ({ row }) =>
-                  Math.max(0, Math.floor((row.endMinute - row.startMinute) / row.lessonMinutes)),
-              },
-              {
-                colKey: 'op',
-                title: '',
-                width: 64,
-                cell: ({ row }) => (
-                  <Button
-                    variant="text"
-                    theme="danger"
-                    onClick={() => setHours((hours ?? []).filter((_, j) => j !== row.key))}
-                  >
-                    删除
-                  </Button>
-                ),
-              },
-            ]}
-          />
-          <Space align="center">
-            <Button
-              variant="outline"
-              onClick={() =>
-                setHours([
-                  ...(hours ?? []),
-                  {
-                    weekday: 1,
-                    startMinute: 9 * 60,
-                    endMinute: 12 * 60,
-                    lessonMinutes: lengths[0] ?? 60,
-                  },
-                ])
-              }
-            >
-              添加时间段
-            </Button>
-            {invalid && <span className="danger-text">{invalid}</span>}
-          </Space>
-          <div className="muted">
-            保存后会自动生成未来 {data.advanceDays}{' '}
-            天的时段，并每小时滚动补齐。已被预约的课不受影响。
-          </div>
-
+          {conflicts && <ConflictList conflicts={conflicts.list} what={conflicts.what} />}
           <div>
-            <div className="subhead">休息日</div>
-            <Space align="center" breakLine>
-              {data.daysOff.map((d) => (
-                <Tag key={d} closable onClose={() => toggleDayOff(d, false)}>
-                  {d}
-                </Tag>
-              ))}
+            <div className="subhead">每周时间</div>
+            <div className="week-hours">
+              {WEEK_ORDER.map((d) => {
+                const windows = rows.filter((r) => r.weekday === d)
+                return (
+                  <div key={d} className="week-day">
+                    <span className="week-day-name">{WEEKDAYS[d]}</span>
+                    <div className="week-day-windows">
+                      {windows.length === 0 && <span className="muted">不接课</span>}
+                      {windows.map((row) => (
+                        <Space key={row.key} align="center" size={4}>
+                          <TimePicker
+                            style={{ width: timeWidth }}
+                            format="HH:mm"
+                            allowInput
+                            steps={[1, 5]}
+                            clearable={false}
+                            value={hhmm(row.startMinute)}
+                            onChange={(v) => update(row.key, { startMinute: minutes(String(v)) })}
+                          />
+                          至
+                          <TimePicker
+                            style={{ width: timeWidth }}
+                            format="HH:mm"
+                            allowInput
+                            steps={[1, 5]}
+                            clearable={false}
+                            value={hhmm(row.endMinute % (24 * 60))}
+                            onChange={(v) =>
+                              update(row.key, { endMinute: minutes(String(v), true) })
+                            }
+                          />
+                          <Button
+                            variant="text"
+                            theme="danger"
+                            onClick={() => {
+                              setHours((hours ?? []).filter((_, j) => j !== row.key))
+                              touch(row.weekday)
+                            }}
+                          >
+                            删除
+                          </Button>
+                        </Space>
+                      ))}
+                      <Button variant="text" theme="primary" onClick={() => addWindow(d)}>
+                        添加
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <Space align="center" breakLine style={{ marginTop: 12 }}>
+              <span>生效日期</span>
               <DatePicker
-                value={dayOff}
-                placeholder="添加休息日"
-                allowInput
-                disableDate={{ before: today() }}
-                onChange={(v) => {
-                  const date = String(v ?? '')
-                  setDayOff(date)
-                  if (date) void toggleDayOff(date, true)
-                }}
+                value={from}
+                clearable={false}
+                disableDate={{ before: today(), after: addDays(today(), 366) }}
+                onChange={(v) => changeFrom(String(v || today()))}
               />
+              {invalid && <span className="danger-text">{invalid}</span>}
+              {dirty && replaced.length > 0 && (
+                <span className="warning-text">
+                  保存后，{replaced.map((p) => p.from.slice(5)).join('、')} 起已安排的调整会被替换
+                </span>
+              )}
             </Space>
             <div className="muted" style={{ marginTop: 8 }}>
-              休息日立即生效：当天的空闲时段会关闭，已预约的课需要单独取消。
+              学员可在这些时间里按课程时长预约，结束时间 00:00 为当天 24
+              点。改动从生效日期起算，已约的课不受影响。
             </div>
+          </div>
+
+          {planned.length > 0 && (
+            <div>
+              <div className="subhead">已安排的调整</div>
+              {planned.map((p) => (
+                <div key={p.from}>
+                  {p.from} 起：{hoursSummary(p.hours)}
+                </div>
+              ))}
+              <div className="muted">从更早的日期保存每周时间，会替换之后已安排的调整。</div>
+            </div>
+          )}
+
+          <div>
+            <div className="subhead">请假和加班</div>
+            {data.exceptions.length + data.closures.length === 0 ? (
+              <div className="muted">没有请假和加班</div>
+            ) : (
+              <div className="exception-list">
+                {[...data.exceptions, ...data.closures]
+                  .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+                  .map((e) => (
+                    <div key={e.id} className="exception-row">
+                      <Tag
+                        variant="light"
+                        theme={
+                          e.coachId === null ? 'default' : e.kind === 'off' ? 'warning' : 'primary'
+                        }
+                      >
+                        {e.coachId === null ? '闭馆' : e.kind === 'off' ? '请假' : '加班'}
+                      </Tag>
+                      <span>{spanText(e.startsAt, e.endsAt)}</span>
+                      <span className="muted">
+                        {[e.note, e.byStaff === null ? '教练添加' : e.byStaff]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                      {e.coachId === null ? (
+                        <span className="muted">在设置里管理</span>
+                      ) : (
+                        <Popconfirm
+                          theme="warning"
+                          content={
+                            e.kind === 'off'
+                              ? '取消后这段时间重新开放预约'
+                              : '取消后这段时间不再开放预约，已约的课不受影响'
+                          }
+                          confirmBtn={{ content: '取消', theme: 'danger' }}
+                          cancelBtn="保留"
+                          onConfirm={() => remove(e)}
+                        >
+                          <Button variant="text" theme="danger" size="small">
+                            {Date.parse(e.startsAt) <= Date.now() ? '提前结束' : '取消'}
+                          </Button>
+                        </Popconfirm>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
+            <ExceptionForm
+              path={`/admin/coaches/${coach.id}/exceptions`}
+              onAdded={async (list) => {
+                setConflicts(list.length ? { list, what: '在请假时间里' } : null)
+                await reload()
+              }}
+            />
           </div>
         </Space>
       )}
     </Dialog>
+  )
+}
+
+/**
+ * Adds a 请假 or 加班 for a coach, or 闭馆 for the venue (`closure`): whole days, or a time on one
+ * day.
+ */
+export function ExceptionForm({
+  path,
+  closure = false,
+  onAdded,
+}: {
+  path: string
+  closure?: boolean
+  onAdded: (conflicts: ScheduleConflictDto[], kind: 'off' | 'extra') => void | Promise<void>
+}) {
+  const [kind, setKind] = useState<'off' | 'extra'>('off')
+  const [wholeDays, setWholeDays] = useState(true)
+  const [range, setRange] = useState<[string, string]>([today(), today()])
+  const [start, setStart] = useState('09:00')
+  const [end, setEnd] = useState('12:00')
+  const [note, setNote] = useState('')
+  const whole = kind === 'off' && wholeDays
+  // An end at or before the start on one date means past midnight.
+  const timeError =
+    whole || end === '00:00' || end > start
+      ? null
+      : kind === 'extra' && !closure
+        ? '加班不能跨到第二天'
+        : '结束时间需晚于开始时间'
+
+  const add = async () => {
+    if (timeError) return
+    const [first, last] = range
+    const body = whole
+      ? {
+          startsAt: venueIso(first, '00:00'),
+          endsAt: venueIso(addDays(last, 1), '00:00'),
+        }
+      : {
+          startsAt: venueIso(first, start),
+          endsAt: end === '00:00' ? venueIso(addDays(first, 1), '00:00') : venueIso(first, end),
+        }
+    let result: { conflicts: ScheduleConflictDto[] } | undefined
+    const ok = await attempt(
+      async () => {
+        result = await api('POST', path, { ...(closure ? {} : { kind }), ...body, note })
+      },
+      closure ? '已添加闭馆' : kind === 'off' ? '已添加请假' : '已添加加班',
+    )
+    if (ok && result) {
+      setNote('')
+      await onAdded(result.conflicts, kind)
+    }
+  }
+
+  return (
+    <div className="exception-form">
+      {!closure && (
+        <Radio.Group
+          variant="default-filled"
+          value={kind}
+          onChange={(v) => setKind(v as 'off' | 'extra')}
+        >
+          <Radio.Button value="off">请假</Radio.Button>
+          <Radio.Button value="extra">加班</Radio.Button>
+        </Radio.Group>
+      )}
+      {kind === 'off' && (
+        <Checkbox checked={wholeDays} onChange={(v) => setWholeDays(Boolean(v))}>
+          全天
+        </Checkbox>
+      )}
+      {whole ? (
+        <Space align="center" breakLine size={8}>
+          <DatePicker
+            value={range[0]}
+            clearable={false}
+            disableDate={{ before: today() }}
+            onChange={(v) => {
+              const d = String(v || today())
+              setRange([d, [d, range[1]].sort()[1] ?? d])
+            }}
+          />
+          <span>至</span>
+          <DatePicker
+            value={range[1]}
+            clearable={false}
+            disableDate={{ before: range[0] }}
+            onChange={(v) => setRange([range[0], String(v || range[0])])}
+          />
+        </Space>
+      ) : (
+        <Space align="center" breakLine size={8}>
+          <DatePicker
+            value={range[0]}
+            clearable={false}
+            disableDate={{ before: today() }}
+            onChange={(v) => {
+              const d = String(v || today())
+              setRange([d, d])
+            }}
+          />
+          <TimePicker
+            style={{ width: 100 }}
+            format="HH:mm"
+            steps={[1, 5]}
+            clearable={false}
+            value={start}
+            onChange={(v) => setStart(String(v))}
+          />
+          <span>至</span>
+          <TimePicker
+            style={{ width: 100 }}
+            format="HH:mm"
+            steps={[1, 5]}
+            clearable={false}
+            value={end}
+            onChange={(v) => setEnd(String(v))}
+          />
+        </Space>
+      )}
+      <Input
+        style={{ maxWidth: 240 }}
+        placeholder="备注（选填）"
+        maxlength={40}
+        value={note}
+        onChange={(v) => setNote(String(v))}
+      />
+      <Button variant="outline" disabled={!!timeError} onClick={add}>
+        添加{closure ? '闭馆' : kind === 'off' ? '请假' : '加班'}
+      </Button>
+      {timeError && <span className="danger-text">{timeError}</span>}
+    </div>
+  )
+}
+
+/** Venue-wide 闭馆, for the settings page. */
+export function Closures() {
+  const { data, error, reload } = useApi<ScheduleExceptionDto[]>('/admin/closures')
+  const [conflicts, setConflicts] = useState<ScheduleConflictDto[]>([])
+  const remove = async (id: number) => {
+    if (await attempt(() => api('DELETE', `/admin/closures/${id}`), '已删除闭馆')) await reload()
+  }
+  return (
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      {conflicts.length > 0 && <ConflictList conflicts={conflicts} what="在闭馆时间里" />}
+      {error ? (
+        <span className="danger-text">{error}</span>
+      ) : !data?.length ? (
+        <span className="muted">没有安排闭馆</span>
+      ) : (
+        <div className="exception-list">
+          {data.map((e) => (
+            <div key={e.id} className="exception-row">
+              <span>{spanText(e.startsAt, e.endsAt)}</span>
+              <span className="muted">{[e.note, e.byStaff].filter(Boolean).join(' · ')}</span>
+              <Popconfirm
+                theme="warning"
+                content="删除后这段时间按各教练排班开放预约"
+                confirmBtn={{ content: '删除', theme: 'danger' }}
+                cancelBtn="保留"
+                onConfirm={() => remove(e.id)}
+              >
+                <Button variant="text" theme="danger" size="small">
+                  {Date.parse(e.startsAt) <= Date.now() ? '提前结束' : '删除'}
+                </Button>
+              </Popconfirm>
+            </div>
+          ))}
+        </div>
+      )}
+      <ExceptionForm
+        path="/admin/closures"
+        closure
+        onAdded={async (list) => {
+          setConflicts(list)
+          await reload()
+        }}
+      />
+      <div className="muted">
+        闭馆期间所有教练都不开放预约，小班课也不能排。已约的课不会自动取消。
+      </div>
+    </Space>
   )
 }

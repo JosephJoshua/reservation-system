@@ -81,8 +81,10 @@ export interface HomeDto {
   banners: BannerDto[]
 }
 
+/** A group session, or a private lesson time (id null) a coach's 排班 offers. */
 export interface SlotDto {
-  id: number
+  /** The session's id; null for a private lesson time, booked by coach and start instead. */
+  id: number | null
   coachId: number
   startsAt: string
   endsAt: string

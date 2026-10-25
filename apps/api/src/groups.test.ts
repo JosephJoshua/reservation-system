@@ -1,7 +1,6 @@
 import { venueInstant } from '@rs/shared'
 import { and, eq, inArray } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { immediate } from './db/client'
 import {
   bookings,
   coaches,
@@ -14,7 +13,6 @@ import {
   slots,
 } from './db/schema'
 import { notifyCoaches } from './services/coach-notices'
-import { syncSlots } from './services/coaches'
 import { applyPayment } from './services/orders'
 import { cancelUnderfilledSessions, UNDERFILLED_REASON } from './services/sessions'
 import { type Harness, setup } from './test/harness'
@@ -179,47 +177,71 @@ describe('group class lesson types', () => {
 })
 
 describe('scheduling sessions', () => {
-  it('closes the free private slots it overlaps and keeps them closed', async () => {
+  it('keeps private lessons off its time, and gives the time back once it is deleted', async () => {
     const h = setup()
-    const { coach, kids } = seedGroup(h)
+    const { coach, lesson, kids } = seedGroup(h)
     const admin = await h.admin()
     const privateSlot = h.slot(coach.id, '2026-10-26', 10)
     const id = await session(h, admin, kids.id, coach.id)
-    expect(h.db.select().from(slots).where(eq(slots.id, privateSlot.id)).get()?.open).toBe(false)
     expect(h.db.select().from(slots).where(eq(slots.id, id)).get()).toMatchObject({
       lessonTypeId: kids.id,
       capacity: 4,
       open: true,
     })
-    // Neither the admin nor the coach can reopen it while the session is on.
+    const t = await h.student('a')
+    const times = async () =>
+      (await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${lesson.id}`, undefined, t)).json
+    expect(await times()).toEqual([])
+    expect((await book(h, t, privateSlot.id, lesson.id)).json.error.code).toBe('slot_taken')
+    // A private lesson's time is not the venue's to open or delete; 排班 decides.
     const reopen = await h.call('PATCH', `/admin/slots/${privateSlot.id}`, { open: true }, admin)
-    expect(reopen.status).toBe(409)
-    expect(reopen.json.error.code).toBe('session_overlap')
+    expect(reopen.json.error.code).toBe('not_group')
+    // Calling the session off frees the coach as well.
+    expect((await h.call('DELETE', `/admin/slots/${id}`, undefined, admin)).status).toBe(204)
+    expect(await times()).toEqual([expect.objectContaining({ id: null, available: true })])
   })
 
-  it('opens the private slots again once the session is deleted, and the sync never opens them under one', async () => {
+  it('refuses a session in 请假 or 闭馆, outside weekly hours is fine', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h)
     const admin = await h.admin()
-    const open = h.slot(coach.id, '2026-10-26', 10)
-    // Closed by the sync on a day off that has since been lifted.
-    const synced = h.slot(coach.id, '2026-10-27', 10)
-    h.db.update(slots).set({ open: false, closedBySync: true }).where(eq(slots.id, synced.id)).run()
-    const first = await session(h, admin, kids.id, coach.id)
-    const second = (
-      await schedule(h, admin, { lessonTypeId: kids.id, coachId: coach.id, date: '2026-10-27' })
-    ).json.ids[0]
-    const isOpen = (id: number) => h.db.select().from(slots).where(eq(slots.id, id)).get()?.open
-    immediate(h.db, (tx) => syncSlots(tx, coach.id, h.clock.now))
-    expect([isOpen(open.id), isOpen(synced.id), isOpen(first), isOpen(second)]).toEqual([
-      false,
-      false,
-      true,
-      true,
-    ])
-    expect((await h.call('DELETE', `/admin/slots/${first}`, undefined, admin)).status).toBe(204)
-    expect((await h.call('DELETE', `/admin/slots/${second}`, undefined, admin)).status).toBe(204)
-    expect([isOpen(open.id), isOpen(synced.id)]).toEqual([true, true])
+    await h.call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      {
+        kind: 'off',
+        startsAt: venueInstant('2026-10-26', 9 * 60).toISOString(),
+        endsAt: venueInstant('2026-10-26', 11 * 60).toISOString(),
+      },
+      admin,
+    )
+    const leave = await schedule(h, admin, { lessonTypeId: kids.id, coachId: coach.id })
+    expect(leave.json.error).toMatchObject({
+      code: 'coach_off',
+      message: '10月26日 10:00 王教练请假',
+    })
+    await h.call(
+      'POST',
+      '/admin/closures',
+      {
+        startsAt: venueInstant('2026-10-27', 0).toISOString(),
+        endsAt: venueInstant('2026-10-28', 0).toISOString(),
+        note: '设备检修',
+      },
+      admin,
+    )
+    const closed = await schedule(h, admin, {
+      lessonTypeId: kids.id,
+      coachId: coach.id,
+      date: '2026-10-27',
+    })
+    expect(closed.json.error.message).toBe('10月27日 10:00 场馆闭馆')
+    const fine = await schedule(h, admin, {
+      lessonTypeId: kids.id,
+      coachId: coach.id,
+      date: '2026-10-28',
+    })
+    expect(fine.status).toBe(201)
   })
 
   it('refuses fewer seats than the class needs to go ahead', async () => {
@@ -315,14 +337,6 @@ describe('scheduling sessions', () => {
     expect(mixed.status).toBe(409)
     expect(h.db.select().from(slots).all()).toHaveLength(before)
   })
-
-  it('leaves group lengths out of the weekly hours a coach can set', async () => {
-    const h = setup()
-    const { coach } = seedGroup(h, { durationMinutes: 90 })
-    const admin = await h.admin()
-    const hours = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)).json
-    expect(hours.lessonMinutes).toEqual([60])
-  })
 })
 
 describe('booking seats', () => {
@@ -344,8 +358,26 @@ describe('booking seats', () => {
       await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${lesson.id}`, undefined, t)
     ).json
     expect(solo).toEqual([
-      expect.objectContaining({ id: privateSlot.id, capacity: 1, seatsLeft: 1 }),
+      expect.objectContaining({
+        id: null,
+        startsAt: privateSlot.startsAt.toISOString(),
+        capacity: 1,
+        seatsLeft: 1,
+      }),
     ])
+  })
+
+  it('hides sessions of a length the class no longer has', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    await session(h, admin, kids.id, coach.id, 10)
+    // The class now runs 90 minutes; the 60-minute session cannot be booked for it.
+    h.db.update(lessonTypes).set({ durationMinutes: 90 }).where(eq(lessonTypes.id, kids.id)).run()
+    const t = await h.student('a')
+    expect(
+      (await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${kids.id}`, undefined, t)).json,
+    ).toEqual([])
   })
 
   it('gives exactly the seats there are to students racing for them', async () => {
@@ -641,7 +673,7 @@ describe('the coach and group sessions', () => {
     const schedule = (
       await h.call('GET', '/coach/schedule?from=2026-10-26&to=2026-10-26', undefined, token)
     ).json
-    expect(schedule).toEqual([
+    expect(schedule.lessons).toEqual([
       expect.objectContaining({
         id,
         lesson: null,
@@ -673,8 +705,6 @@ describe('the coach and group sessions', () => {
     h.clock.now = venueInstant('2026-10-25', 10 * 60)
     const cancel = await h.call('POST', `/coach/lessons/${first}/cancel`, { reason: '有事' }, token)
     expect(cancel.json.error.code).toBe('group_lesson')
-    const close = await h.call('PUT', `/coach/slots/${id}`, { open: false }, token)
-    expect(close.json.error.code).toBe('group_lesson')
   })
 
   it('tells the coach once that a session has students and once that it is off', async () => {

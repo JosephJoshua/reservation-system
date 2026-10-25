@@ -1,9 +1,11 @@
 import {
   type AccountDeletionDto,
+  addVenueDays,
   bookingTermsSchema,
   bookingWindowError,
   type CatalogDto,
   type CoachDetailDto,
+  daysBetween,
   defaultAgreementText,
   type HomeDto,
   isCheckInCode,
@@ -20,9 +22,10 @@ import {
   studentNoticeKinds,
   type VenueSettings,
   venueDateKey,
+  venueDates,
   venueInstant,
 } from '@rs/shared'
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
@@ -55,14 +58,17 @@ import { liveLink } from '../services/links'
 import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
+import { openTimes } from '../services/schedule'
 import { liveCounts } from '../services/sessions'
 import { getSettings, ruleBook } from '../services/settings'
 import { linkDeskStudent } from '../services/student-link'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
+import { dateKey, oneTarget, targetFields, toTarget } from './target'
 
-const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const positiveId = z.coerce.number().int().positive()
+
+const lengthOf = (b: { startsAt: Date; endsAt: Date }) => b.endsAt.getTime() - b.startsAt.getTime()
 
 function policies(settings: VenueSettings): CatalogDto['policies'] {
   return {
@@ -318,26 +324,28 @@ export function studentRoutes(deps: Deps) {
   })
 
   /**
-   * The slots a student sees from `from` to `to`: closed ones hidden, taken ones and ones without a
-   * free table unavailable. `moving` is the student's own booking being moved, which gives up its
-   * table.
+   * What a student can book from `from` to `to`: group sessions, and for a private lesson type the
+   * start times the coaches' 排班 offers. Closed sessions and times beyond the booking window are
+   * hidden; full ones, ones without a free table and ones too soon show as unavailable. `moving` is
+   * the student's own booking being moved: its length and lesson type apply, and it gives up its
+   * time and table.
    */
   function studentSlots(
     now: Date,
-    from: Date,
-    to: Date,
+    from: string,
+    to: string,
     q: { coachId?: number; lessonTypeId?: number },
-    moving?: { id: number; lessonTypeId: number },
+    moving?: typeof bookings.$inferSelect,
     rules = ruleBook(db),
   ) {
-    const lessonType = q.lessonTypeId
-      ? db.select().from(lessonTypes).where(eq(lessonTypes.id, q.lessonTypeId)).get()
+    const lessonTypeId = q.lessonTypeId ?? moving?.lessonTypeId
+    const lessonType = lessonTypeId
+      ? db.select().from(lessonTypes).where(eq(lessonTypes.id, lessonTypeId)).get()
       : undefined
-    if (q.lessonTypeId && !lessonType) throw notFound('课程')
-    // A private slot has no lesson type of its own: it follows the window of the lesson being
-    // booked or moved.
-    const windowOf = (s: { lessonTypeId: number | null }) =>
-      rules.of(s.lessonTypeId ?? lessonType?.id ?? moving?.lessonTypeId)
+    if (lessonTypeId && !lessonType) throw notFound('课程')
+    // A computed private time has no lesson type of its own: it follows the window of the lesson
+    // being booked or moved.
+    const windowOf = (lessonTypeId: number | null) => rules.of(lessonTypeId ?? lessonType?.id)
     const teaching = lessonType
       ? new Set(
           db
@@ -348,21 +356,27 @@ export function studentRoutes(deps: Deps) {
             .map((r) => r.coachId),
         )
       : undefined
-    const activeCoaches = new Set(
-      db
-        .select({ id: coaches.id })
-        .from(coaches)
-        .where(eq(coaches.active, true))
-        .all()
-        .map((r) => r.id),
-    )
-    const rows = db
+    const activeCoaches = db
+      .select({ id: coaches.id })
+      .from(coaches)
+      .where(eq(coaches.active, true))
+      .all()
+      .map((r) => r.id)
+      .filter((id) => (!teaching || teaching.has(id)) && (!q.coachId || q.coachId === id))
+    const active = new Set(activeCoaches)
+    const shown = (startsAt: Date, typeId: number | null) =>
+      bookingWindowError(startsAt, now, windowOf(typeId)) !== 'too_far'
+    const open = (startsAt: Date, typeId: number | null) =>
+      bookingWindowError(startsAt, now, windowOf(typeId)) === null
+
+    const sessions = db
       .select()
       .from(slots)
       .where(
         and(
-          gte(slots.startsAt, from),
-          lt(slots.startsAt, to),
+          isNotNull(slots.lessonTypeId),
+          gte(slots.startsAt, venueInstant(from, 0)),
+          lt(slots.startsAt, venueInstant(addVenueDays(to, 1), 0)),
           q.coachId ? eq(slots.coachId, q.coachId) : undefined,
         ),
       )
@@ -370,39 +384,58 @@ export function studentRoutes(deps: Deps) {
       .all()
       .filter(
         (s) =>
-          activeCoaches.has(s.coachId) &&
-          (!teaching || teaching.has(s.coachId)) &&
-          // A group class is booked in its own sessions, a private lesson in private slots.
-          (lessonType ? s.lessonTypeId === (isGroup(lessonType) ? lessonType.id : null) : true) &&
-          (!lessonType ||
-            s.endsAt.getTime() - s.startsAt.getTime() === lessonType.durationMinutes * 60_000),
+          active.has(s.coachId) &&
+          s.open &&
+          shown(s.startsAt, s.lessonTypeId) &&
+          (!lessonType || s.lessonTypeId === lessonType.id) &&
+          // A moved lesson keeps its length; a new booking takes the lesson type's.
+          (moving
+            ? lengthOf(s) === lengthOf(moving)
+            : !lessonType || lengthOf(s) === lessonType.durationMinutes * 60_000),
       )
     const taken = liveCounts(
       db,
-      rows.map((r) => r.id),
+      sessions.map((r) => r.id),
     )
-    const noTable = slotsWithoutTable(db, rows, moving?.id)
-    return (
-      rows
-        // Closed slots and slots outside the window are hidden; full ones and ones without a free
-        // table show as full.
-        .filter((s) => s.open && bookingWindowError(s.startsAt, now, windowOf(s)) !== 'too_far')
-        .map((s): SlotDto => {
-          const seatsLeft = Math.max(0, s.capacity - (taken.get(s.id) ?? 0))
-          return {
-            id: s.id,
-            coachId: s.coachId,
-            startsAt: s.startsAt.toISOString(),
-            endsAt: s.endsAt.toISOString(),
-            available:
-              seatsLeft > 0 &&
-              !noTable.has(s.id) &&
-              bookingWindowError(s.startsAt, now, windowOf(s)) === null,
-            lessonTypeId: s.lessonTypeId,
-            capacity: s.capacity,
-            seatsLeft,
-          }
+    const noTable = slotsWithoutTable(db, sessions, moving?.id)
+    const out: SlotDto[] = sessions.map((s) => {
+      const seatsLeft = Math.max(0, s.capacity - (taken.get(s.id) ?? 0))
+      return {
+        id: s.id,
+        coachId: s.coachId,
+        startsAt: s.startsAt.toISOString(),
+        endsAt: s.endsAt.toISOString(),
+        available: seatsLeft > 0 && !noTable.has(s.id) && open(s.startsAt, s.lessonTypeId),
+        lessonTypeId: s.lessonTypeId,
+        capacity: s.capacity,
+        seatsLeft,
+      }
+    })
+
+    if (lessonType && !isGroup(lessonType)) {
+      const times = openTimes(db, {
+        coachIds: activeCoaches,
+        dates: venueDates(venueInstant(from, 12 * 60), daysBetween(from, to) - 1),
+        minutes: moving ? lengthOf(moving) / 60_000 : lessonType.durationMinutes,
+        notBefore: now,
+        except: moving?.id,
+      })
+      for (const t of times) {
+        if (!shown(t.startsAt, null)) continue
+        out.push({
+          id: null,
+          coachId: t.coachId,
+          startsAt: t.startsAt.toISOString(),
+          endsAt: t.endsAt.toISOString(),
+          available: !t.tableFull && open(t.startsAt, null),
+          lessonTypeId: null,
+          capacity: 1,
+          seatsLeft: t.tableFull ? 0 : 1,
         })
+      }
+    }
+    return out.sort(
+      (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.coachId - b.coachId,
     )
   }
 
@@ -414,27 +447,26 @@ export function studentRoutes(deps: Deps) {
   app.get('/slots', (c) => {
     const q = parseQuery(
       c,
-      // `moving`: the student's booking being moved, which gives up its table.
+      // `moving`: the student's booking being moved, which gives up its time and table.
       z.object({ date: dateKey, ...slotFilter, moving: positiveId.optional() }),
     )
-    let from: Date
     try {
-      from = venueInstant(q.date, 0)
+      venueInstant(q.date, 0)
     } catch {
       throw new ApiError(400, 'invalid_query', '日期无效')
     }
     const moving = q.moving
       ? db
-          .select({ id: bookings.id, lessonTypeId: bookings.lessonTypeId })
+          .select()
           .from(bookings)
           .where(and(eq(bookings.id, q.moving), eq(bookings.studentId, c.get('studentId'))))
           .get()
       : undefined
-    return c.json(studentSlots(deps.now(), from, venueInstant(q.date, 24 * 60), q, moving))
+    return c.json(studentSlots(deps.now(), q.date, q.date, q, moving))
   })
 
-  // The venue days in the booking window with a slot that can be booked now, so the booking page
-  // can go straight to a coach's next open day.
+  // The venue days in the booking window with something that can be booked now, so the booking
+  // page can go straight to a coach's next open day.
   app.get('/slots/open-days', (c) => {
     const q = parseQuery(c, z.object(slotFilter))
     const now = deps.now()
@@ -442,39 +474,49 @@ export function studentRoutes(deps: Deps) {
     const rules = ruleBook(db)
     const days = typeId ? rules.of(typeId).advanceDays : rules.longestAdvanceDays()
     const last = venueDateKey(new Date(now.getTime() + days * 86_400_000))
-    const open = studentSlots(
-      now,
-      venueInstant(venueDateKey(now), 0),
-      venueInstant(last, 24 * 60),
-      q,
-      undefined,
-      rules,
-    ).filter((s) => s.available)
+    const open = studentSlots(now, venueDateKey(now), last, q, undefined, rules).filter(
+      (s) => s.available,
+    )
     return c.json([...new Set(open.map((s) => venueDateKey(new Date(s.startsAt))))])
   })
 
   app.post('/bookings', async (c) => {
     const body = await parseBody(
       c,
-      z.object({
-        slotId: z.number().int().positive(),
-        lessonTypeId: z.number().int().positive(),
-        payWith: z.enum(['package', 'wechat']).optional(),
-        /** The price the student was shown, in fen. */
-        expectedPrice: z.number().int().nonnegative().optional(),
-        /** The package the student was shown, when paying with one. */
-        expectedPackageId: z.number().int().positive().optional(),
-        /** The cancel and move rules the student was shown. */
-        expectedTerms: bookingTermsSchema.optional(),
-      }),
+      z
+        .object({
+          ...targetFields,
+          lessonTypeId: z.number().int().positive(),
+          payWith: z.enum(['package', 'wechat']).optional(),
+          /** The price the student was shown, in fen. */
+          expectedPrice: z.number().int().nonnegative().optional(),
+          /** The package the student was shown, when paying with one. */
+          expectedPackageId: z.number().int().positive().optional(),
+          /** The cancel and move rules the student was shown. */
+          expectedTerms: bookingTermsSchema.optional(),
+        })
+        .refine(oneTarget, '请选择上课时间'),
     )
     requireConsent(db, c.get('studentId'))
-    return c.json(await createBooking(deps, c.get('studentId'), body), 201)
+    return c.json(
+      await createBooking(deps, c.get('studentId'), {
+        target: toTarget(body),
+        lessonTypeId: body.lessonTypeId,
+        payWith: body.payWith,
+        expectedPrice: body.expectedPrice,
+        expectedPackageId: body.expectedPackageId,
+        expectedTerms: body.expectedTerms,
+      }),
+      201,
+    )
   })
 
   app.get('/bookings/quote', (c) => {
-    const q = parseQuery(c, z.object({ slotId: positiveId, lessonTypeId: positiveId }))
-    return c.json(quoteBooking(deps, c.get('studentId'), q.slotId, q.lessonTypeId))
+    const q = parseQuery(
+      c,
+      z.object({ ...targetFields, lessonTypeId: positiveId }).refine(oneTarget),
+    )
+    return c.json(quoteBooking(deps, c.get('studentId'), toTarget(q), q.lessonTypeId))
   })
 
   app.get('/bookings', async (c) => {
@@ -542,8 +584,8 @@ export function studentRoutes(deps: Deps) {
 
   app.post('/bookings/:id/move', async (c) => {
     const id = idParam(c)
-    const { slotId } = await parseBody(c, z.object({ slotId: z.number().int().positive() }))
-    moveBooking(deps, id, slotId, { studentId: c.get('studentId') })
+    const body = await parseBody(c, z.object(targetFields).refine(oneTarget, '请选择上课时间'))
+    moveBooking(deps, id, toTarget(body), { studentId: c.get('studentId') })
     return c.json(ownBookingView(id, c.get('studentId')))
   })
 
