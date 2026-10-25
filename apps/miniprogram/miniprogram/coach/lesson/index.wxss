@@ -200,3 +200,9 @@
   font-size: 28rpx;
   color: var(--td-text-color-brand);
 }
+
+/* A long note wraps instead of squeezing the row label. */
+.label {
+  flex: none;
+  white-space: nowrap;
+}

@@ -10,8 +10,7 @@ import {
 import { api, assetUrl, errorMessage } from '../../utils/api'
 import { askForNotices, getCatalog, getMe } from '../../utils/data'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
-import { submitMove } from '../../utils/move'
-import { navigateBackOnce } from '../../utils/nav'
+import { leaveMove, submitMove } from '../../utils/move'
 
 /** Why a lesson the student opened 改约 for can no longer move. */
 function whyFixed(b: BookingDto): string {
@@ -223,15 +222,21 @@ Page({
     const slot = this.data.picked
     if (!slot || this.data.submitting) return
     this.setData({ submitting: true })
-    const result = await submitMove(this, async () => {
-      // Asked inside the tap, before any await, or WeChat does not show the prompt.
-      await askForNotices(this.templates, ['moved', 'reminder', 'cancelled'])
-      return api<BookingDto>(
-        'POST',
-        `/bookings/${this.id}/move`,
-        slot.id === null ? { coachId: slot.coachId, startsAt: slot.startsAt } : { slotId: slot.id },
-      )
-    })
+    const result = await submitMove(
+      this,
+      async () => {
+        // Asked inside the tap, before any await, or WeChat does not show the prompt.
+        await askForNotices(this.templates, ['moved', 'reminder', 'cancelled'])
+        return api<BookingDto>(
+          'POST',
+          `/bookings/${this.id}/move`,
+          slot.id === null
+            ? { coachId: slot.coachId, startsAt: slot.startsAt }
+            : { slotId: slot.id },
+        )
+      },
+      `/pages/booking-detail/index?id=${this.id}`,
+    )
     if (result === 'moved' || result === 'fixed') return
     this.setData({ submitting: false })
     if (result === 'refused') this.refuse(slot.key)
@@ -257,6 +262,6 @@ Page({
   },
 
   leave() {
-    navigateBackOnce()
+    leaveMove(`/pages/booking-detail/index?id=${this.id}`)
   },
 })

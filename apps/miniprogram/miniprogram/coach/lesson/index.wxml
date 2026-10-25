@@ -20,11 +20,11 @@
   </view>
 
   <t-cell-group theme="card">
-    <t-cell title="课程" note="{{lessonName}}" />
-    <t-cell wx:if="{{movedFrom}}" title="原定时间" note="{{movedFrom}}" />
-    <t-cell wx:if="{{lesson.student.phone}}" title="电话" note="{{lesson.student.phone}}" arrow hover bind:click="call" />
-    <t-cell title="支付" note="{{payment}}" />
-    <t-cell title="上课次数" note="{{together}}" />
+    <t-cell t-class-title="label" title="课程" note="{{lessonName}}" />
+    <t-cell t-class-title="label" wx:if="{{movedFrom}}" title="原定时间" note="{{movedFrom}}" />
+    <t-cell t-class-title="label" wx:if="{{lesson.student.phone}}" title="电话" note="{{lesson.student.phone}}" arrow hover bind:click="call" />
+    <t-cell t-class-title="label" title="支付" note="{{payment}}" />
+    <t-cell t-class-title="label" title="上课次数" note="{{together}}" />
     <t-cell wx:if="{{lesson.status === 'cancelled'}}" title="取消原因" description="{{cancelReason}}" />
   </t-cell-group>
 

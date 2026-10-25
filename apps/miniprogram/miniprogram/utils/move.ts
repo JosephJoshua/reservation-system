@@ -25,6 +25,12 @@ const TIME_REFUSED = [
  */
 export type MoveResult = 'moved' | 'fixed' | 'refused' | 'gone' | 'failed'
 
+/** Leaves the move page for the lesson's page: back to it, or onto it when nothing is beneath. */
+export function leaveMove(detail: string): void {
+  if (getCurrentPages().length > 1) navigateBackOnce()
+  else wx.redirectTo({ url: detail })
+}
+
 /**
  * Sends the move and tells the page that opened the move page what became of the lesson:
  * 'moved' with the result, or 'stale' when it can no longer move and needs reloading.
@@ -33,12 +39,15 @@ export type MoveResult = 'moved' | 'fixed' | 'refused' | 'gone' | 'failed'
 export async function submitMove(
   page: WechatMiniprogram.Page.Instance<WechatMiniprogram.IAnyObject, WechatMiniprogram.IAnyObject>,
   request: () => Promise<unknown>,
+  detail: string,
 ): Promise<MoveResult> {
   const opener = page.getOpenerEventChannel()
   try {
-    opener.emit?.('moved', await request())
+    // Awaited first: in `emit?.(…, await request())` no opener would skip the request too.
+    const moved = await request()
+    opener.emit?.('moved', moved)
     wx.showToast({ title: '已改约', icon: 'success' })
-    setTimeout(() => isTop(page) && navigateBackOnce(), 600)
+    setTimeout(() => isTop(page) && leaveMove(detail), 600)
     return 'moved'
   } catch (e) {
     if (!(e instanceof ApiError)) {
@@ -48,7 +57,7 @@ export async function submitMove(
     if (LESSON_FIXED.includes(e.code)) {
       opener.emit?.('stale')
       await wx.showModal({ title: e.message, showCancel: false })
-      if (isTop(page)) navigateBackOnce()
+      if (isTop(page)) leaveMove(detail)
       return 'fixed'
     }
     if (TIME_REFUSED.includes(e.code) || e.status === 409 || e.status === 404) {
