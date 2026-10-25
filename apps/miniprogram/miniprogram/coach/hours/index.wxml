@@ -56,7 +56,7 @@
     <view class="card">
       <view wx:for="{{planned}}" wx:key="from" class="plan">
         <view class="plan-date">{{item.text}}</view>
-        <view class="plan-hours">{{item.summary}}</view>
+        <view class="plan-hours"><text wx:for="{{item.summary}}" wx:for-item="part" wx:key="index" class="plan-part">{{part}}</text></view>
       </view>
     </view>
     <view class="footnote">从更早的日期保存每周时间，会替换之后已安排的调整。</view>
@@ -88,7 +88,10 @@
     </block>
     <view wx:elif="{{!exceptions.length}}" class="off off-empty">没有请假和加班</view>
   </view>
-  <view class="footnote">请假立即生效，期间已约的课需要联系学员改约或取消。加班是每周时间之外临时开放的时间。</view>
+  <view class="footnote">
+    <view>请假立即生效，期间已约的课需要联系学员改约或取消。</view>
+    <view>加班是<text class="keep">每周时间</text>之外临时开放的时间。</view>
+  </view>
 
   <view wx:if="{{editable}}" class="action-bar">
     <view class="grow">

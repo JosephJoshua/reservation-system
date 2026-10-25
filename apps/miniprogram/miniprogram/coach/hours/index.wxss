@@ -196,6 +196,12 @@
   color: var(--td-text-color-secondary);
 }
 
+.plan-part,
+.keep {
+  display: inline-block;
+  white-space: nowrap;
+}
+
 .locked {
   margin: 24rpx 32rpx 0;
   padding: 20rpx 24rpx;

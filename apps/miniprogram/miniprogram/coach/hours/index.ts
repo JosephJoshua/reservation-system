@@ -50,14 +50,19 @@ function weekView(hours: WeeklyHours[]) {
 }
 
 /** One line per day with hours, for a planned change. */
+/** Weekly hours as pieces that each stay on one line, separators included. */
 function hoursSummary(hours: WeeklyHours[]) {
-  const days = WEEK_ORDER.flatMap((weekday) => {
-    const windows = hours
+  const days = WEEK_ORDER.map((weekday) =>
+    hours
       .filter((h) => h.weekday === weekday)
-      .map((h) => `${hhmm(h.startMinute)}-${hhmm(h.endMinute)}`)
-    return windows.length ? [`${WEEKDAYS[weekday]} ${windows.join('、')}`] : []
-  })
-  return days.length ? days.join('；') : '不接课'
+      .map(
+        (h, i) => `${i ? '' : `${WEEKDAYS[weekday]} `}${hhmm(h.startMinute)}-${hhmm(h.endMinute)}`,
+      ),
+  ).filter((d) => d.length)
+  if (!days.length) return ['不接课']
+  return days.flatMap((windows, d) =>
+    windows.map((w, i) => w + (i < windows.length - 1 ? '、' : d < days.length - 1 ? '；' : '')),
+  )
 }
 
 function sortHours(hours: WeeklyHours[]) {
@@ -107,7 +112,7 @@ Page({
     /** The date the edited hours apply from. */
     from: '',
     fromText: '',
-    planned: [] as { from: string; text: string; summary: string }[],
+    planned: [] as { from: string; text: string; summary: string[] }[],
     exceptions: [] as ReturnType<typeof exceptionView>[],
     today: '',
     lastDay: '',
