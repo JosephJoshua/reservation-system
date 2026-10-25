@@ -1,7 +1,7 @@
 import { venueInstant } from '@rs/shared'
 import { and, eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings, coaches, packageProducts, refunds, slots } from './db/schema'
+import { bookings, coaches, lessonTypes, packageProducts, refunds, slots } from './db/schema'
 import { notifyCoaches } from './services/coach-notices'
 import { syncAllSlots } from './services/coaches'
 import { type Harness, setup } from './test/harness'
@@ -179,6 +179,47 @@ describe('weekly hours', () => {
       lessonMinutes: [60],
       advanceDays: 14,
     })
+  })
+
+  it("reach as far as the coach's lesson with the longest booking window", async () => {
+    const h = setup()
+    const { coach, lesson, token } = await withCoach(h)
+    h.db
+      .update(lessonTypes)
+      .set({ rules: { advanceDays: 24 } })
+      .where(eq(lessonTypes.id, lesson.id))
+      .run()
+    const res = await h.call(
+      'PUT',
+      '/coach/hours',
+      { hours: [hours(MON, '14:00', '15:00')] },
+      token,
+    )
+    // 24 days from Friday 10-23 runs to Monday 11-16: four Mondays, not the venue's two.
+    expect(res.json).toMatchObject({ created: 4 })
+    expect(coachSlots(h, coach.id).at(-1)?.startsAt.toISOString()).toBe(at('2026-11-16', '14:00'))
+    expect((await h.call('GET', '/coach/hours', undefined, token)).json.advanceDays).toBe(24)
+  })
+
+  it('reach a longer window as soon as the admin sets it', async () => {
+    const h = setup()
+    const { coach, lesson, admin, token } = await withCoach(h)
+    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
+    expect(coachSlots(h, coach.id)).toHaveLength(2)
+    const row = (await h.call('GET', '/admin/lesson-types', undefined, admin)).json.find(
+      (t: { id: number }) => t.id === lesson.id,
+    )
+    const { id: _id, createdAt: _c, sort: _s, ...edit } = row
+    await h.call(
+      'PUT',
+      `/admin/lesson-types/${lesson.id}`,
+      { ...edit, rules: { advanceDays: 24 } },
+      admin,
+    )
+    expect(coachSlots(h, coach.id)).toHaveLength(4)
+    // Shortened again, the slots nobody booked go.
+    await h.call('PUT', `/admin/lesson-types/${lesson.id}`, { ...edit, rules: {} }, admin)
+    expect(coachSlots(h, coach.id)).toHaveLength(2)
   })
 
   it('rejects lengths the coach does not teach and overlapping windows', async () => {

@@ -13,7 +13,8 @@
     "feedback": "pnpm --filter @rs/miniprogram build && tsx src/feedback.ts",
     "student-profile": "pnpm --filter @rs/miniprogram build && tsx src/student-profile.ts",
     "tables": "pnpm --filter @rs/miniprogram build && tsx src/tables.ts",
-    "desk-link": "pnpm --filter @rs/miniprogram build && tsx src/desk-link.ts"
+    "desk-link": "pnpm --filter @rs/miniprogram build && tsx src/desk-link.ts",
+    "lesson-rules": "pnpm --filter @rs/miniprogram build && tsx src/lesson-rules.ts"
   },
   "devDependencies": {
     "@rs/shared": "workspace:*",

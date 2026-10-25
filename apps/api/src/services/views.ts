@@ -6,7 +6,6 @@ import {
   type PackageDto,
   type PackageStatus,
   studentMoveError,
-  type VenueSettings,
 } from '@rs/shared'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { Q } from '../db/client'
@@ -24,7 +23,7 @@ import { studentCanCheckIn } from './attendance'
 import { visibleFeedback, withVisibleFeedback } from './feedback'
 import { orderInvoices } from './invoices'
 import { movedFromIso, moveSummaries } from './move-history'
-import { getSettings } from './settings'
+import { getSettings, ruleBook } from './settings'
 
 type BookingRow = typeof bookings.$inferSelect
 type PackageRow = typeof packages.$inferSelect
@@ -58,13 +57,13 @@ function latestRefunds<K extends 'bookingId' | 'packageId'>(tx: Q, key: K, ids: 
 export function bookingViews(
   tx: Q,
   rows: BookingRow[],
-  rules: VenueSettings['booking'],
   now: Date,
   /** Carries the feedback itself, for one booking's page; lists only say whether there is one. */
   withFeedback = false,
 ): BookingDto[] {
   const ids = rows.map((r) => r.id)
   const { selfCheckIn } = getSettings(tx).attendance
+  const rulesBook = ruleBook(tx)
   const slotCoach = new Map<number, { id: number; name: string }>()
   const capacity = new Map<number, number>()
   if (ids.length) {
@@ -124,6 +123,8 @@ export function bookingViews(
     const refund = refundByBooking.get(b.id)
     const moved = moves.get(b.id)
     const movesUsed = moved?.studentMoves ?? 0
+    const rules = rulesBook.termsOf(b)
+    const type = rulesBook.of(b.lessonTypeId)
     const deadline = freeCancelDeadline(b.startsAt, rules, moved?.lastMove)
     return {
       id: b.id,
@@ -144,6 +145,8 @@ export function bookingViews(
       canCancel: (status === 'confirmed' || status === 'pending_payment') && b.startsAt > now,
       canMove: studentMoveError({ status: b.status, deadline, now, movesUsed, rules }) === null,
       movesLeft: Math.max(0, rules.studentMoves - movesUsed),
+      terms: rules,
+      window: { advanceDays: type.advanceDays, minNoticeMinutes: type.minNoticeMinutes },
       movedFrom: movedFromIso(moved, b.startsAt),
       cancelledBy: b.cancelledBy,
       cancelReason: b.cancelledBy === 'venue' ? (b.cancelReason ?? '') : '',

@@ -1,3 +1,4 @@
+import { type BookingRules, ownRuleLabels, type VenueSettings } from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
@@ -14,8 +15,10 @@ import {
   Tag,
   TagInput,
   Textarea,
+  Tooltip,
 } from 'tdesign-react'
 import { api } from '../api'
+import { RuleOverrideFields } from '../BookingRules'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
@@ -49,6 +52,7 @@ const emptyLesson: LessonForm = {
   saleStartsAt: null,
   saleEndsAt: null,
   sort: 0,
+  rules: {},
 }
 
 type CoachForm = Omit<Coach, 'id' | 'bound' | 'bindCode' | 'bindCodeExpiresAt'>
@@ -103,6 +107,8 @@ export function Catalog() {
     form: CoachForm
     loaded?: CoachForm
   } | null>(null)
+  // The venue's 默认预约规则, which a lesson type follows where it sets none of its own.
+  const venue = useApi<VenueSettings>(lesson ? '/admin/settings' : null)
   const [binding, setBinding] = useState<Coach | null>(null)
   const [hoursOf, setHoursOf] = useState<Coach | null>(null)
   const [preview, setPreview] = useState<{ title: string; draft: Draft } | null>(null)
@@ -234,6 +240,22 @@ export function Catalog() {
                 row.salePercent
                   ? `${row.salePercent / 10} 折，${isoToPicker(row.saleStartsAt).slice(0, 10)} 至 ${isoToPicker(row.saleEndsAt).slice(0, 10)}`
                   : '-',
+            },
+            {
+              colKey: 'rules',
+              title: '预约规则',
+              cell: ({ row }) => {
+                const own = ownRuleLabels(row.rules)
+                return own.length ? (
+                  <Tooltip content={`单独设置：${own.join('、')}`}>
+                    <Tag theme="primary" variant="light">
+                      单独设置 {own.length} 项
+                    </Tag>
+                  </Tooltip>
+                ) : (
+                  <span className="muted-strong">默认</span>
+                )
+              },
             },
             {
               colKey: 'active',
@@ -569,7 +591,13 @@ export function Catalog() {
           onClose={() => setLesson(null)}
         >
           <EditorWithPreview draft={{ kind: 'lessonType', id: lesson.id, form: lesson.form }}>
-            <LessonEditor value={lesson.form} onChange={(form) => setLesson({ ...lesson, form })} />
+            <LessonEditor
+              value={lesson.form}
+              ruleDefaults={venue.data?.booking ?? null}
+              ruleDefaultsError={venue.error}
+              onRetryDefaults={venue.reload}
+              onChange={(form) => setLesson({ ...lesson, form })}
+            />
           </EditorWithPreview>
         </Dialog>
       )}
@@ -601,9 +629,15 @@ export function Catalog() {
 
 function LessonEditor({
   value: f,
+  ruleDefaults,
+  ruleDefaultsError,
+  onRetryDefaults,
   onChange,
 }: {
   value: LessonForm
+  ruleDefaults: BookingRules | null
+  ruleDefaultsError: string | null
+  onRetryDefaults: () => void
   onChange: (v: LessonForm) => void
 }) {
   const set = (patch: Partial<LessonForm>) => onChange({ ...f, ...patch })
@@ -772,6 +806,25 @@ function LessonEditor({
       <Field label="启用">
         <Switch value={f.active} onChange={(v) => set({ active: v })} />
       </Field>
+      <div className="form-section">
+        <div className="form-section-title">预约规则</div>
+        <div className="muted">
+          没有单独设置的规则，都按设置页的默认预约规则，默认改了也会跟着变。
+        </div>
+        {!ruleDefaults && ruleDefaultsError && (
+          <div className="field-error">
+            默认规则没有加载出来，暂时不能单独设置。
+            <Button variant="text" theme="primary" size="small" onClick={onRetryDefaults}>
+              重试
+            </Button>
+          </div>
+        )}
+      </div>
+      <RuleOverrideFields
+        value={f.rules}
+        defaults={ruleDefaults}
+        onChange={(rules) => set({ rules })}
+      />
     </div>
   )
 }

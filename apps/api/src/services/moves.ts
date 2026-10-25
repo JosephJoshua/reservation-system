@@ -1,11 +1,11 @@
 // Moving a lesson to another slot (改约). The booking keeps its payment or package lesson.
 import {
+  type BookingRules,
   bookingWindowError,
   freeCancelDeadline,
   type MoveOptionsDto,
   type PriceTag,
   studentMoveError,
-  type VenueSettings,
 } from '@rs/shared'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
@@ -24,7 +24,7 @@ import { assertNoClash, assertTeaches, seatTaken, takeSeat, windowMessages } fro
 import { priceFor } from './catalog'
 import { coachNowKnows } from './coach-notices'
 import { moveSummaries } from './move-history'
-import { getSettings } from './settings'
+import { ruleBook } from './settings'
 import { queueStudentNotice } from './student-notices'
 import { assertTableFree } from './tables'
 
@@ -112,7 +112,7 @@ function checkStudentMove(
   row: NonNullable<ReturnType<typeof bookingRow>>,
   slot: typeof slots.$inferSelect,
   pkg: PackageRow | undefined,
-  rules: VenueSettings['booking'],
+  rules: BookingRules,
   now: Date,
 ) {
   const { booking, lessonType } = row
@@ -187,8 +187,12 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
       throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
     }
     const pkg = bookingPackage(tx, booking)
-    if (student !== null) checkStudentMove(tx, row, slot, pkg, getSettings(tx).booking, now)
-    else if (!priceFor(tx, slot.coachId, lessonType, now)) {
+    if (student !== null) {
+      // The window is the lesson type's now; the deadline and allowance are what it was booked under.
+      const book = ruleBook(tx)
+      const rules = { ...book.of(lessonType.id), ...book.termsOf(booking) }
+      checkStudentMove(tx, row, slot, pkg, rules, now)
+    } else if (!priceFor(tx, slot.coachId, lessonType, now)) {
       throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
     }
     // A package lesson is taught while the package is valid. Only the venue may decide otherwise,

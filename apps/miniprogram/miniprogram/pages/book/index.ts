@@ -1,4 +1,4 @@
-import type { CatalogDto, SlotDto } from '../../lib/shared'
+import type { SlotDto } from '../../lib/shared'
 import { api, assetUrl, errorMessage } from '../../utils/api'
 import { catalogFetchedAt, getCatalog } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
@@ -58,7 +58,8 @@ Page({
     availableCount: 0,
   },
 
-  catalog: null as CatalogDto | null,
+  /** The lesson type's notice: a time closer than this to now cannot be booked. */
+  noticeMs: 0,
   /** When the catalog this page shows was fetched. */
   catalogAt: 0,
   request: 0,
@@ -87,13 +88,13 @@ Page({
   async load(seek?: Seek) {
     try {
       const catalog = await getCatalog()
-      this.catalog = catalog
       this.catalogAt = catalogFetchedAt()
       const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
       if (!lessonType) {
         this.setData({ state: 'error', error: '这门课程已下架' })
         return
       }
+      this.noticeMs = lessonType.rules.minNoticeMinutes * 60_000
       wx.setNavigationBarTitle({ title: lessonType.name })
       const coaches = catalog.coaches.flatMap((c): CoachOption[] => {
         const lesson = c.lessons.find((l) => l.lessonTypeId === lessonType.id)
@@ -109,7 +110,7 @@ Page({
           },
         ]
       })
-      const days = bookableDays(catalog.booking.advanceDays)
+      const days = bookableDays(lessonType.rules.advanceDays)
       const coachId = coaches.some((c) => c.id === this.data.coachId)
         ? this.data.coachId
         : coaches.length === 1
@@ -152,7 +153,7 @@ Page({
       if (request !== this.request) return
       const names = new Map(coaches.map((c) => [c.id, c.name]))
       const now = Date.now()
-      const notice = (this.catalog?.booking.minNoticeMinutes ?? 0) * 60_000
+      const notice = this.noticeMs
       const slots = rows
         .filter((s) => names.has(s.coachId) && Date.parse(s.startsAt) > now)
         .map((s) => ({

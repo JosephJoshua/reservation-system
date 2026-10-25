@@ -1,8 +1,10 @@
 // Run `pnpm db:generate` after changing tables. Money is integer fen; instants are UTC ms.
 import {
+  type BookingTerms,
   type Grip,
   type InvoiceTitle,
   LINK_KINDS,
+  type RuleOverrides,
   type StaffRole,
   type StudentLevel,
   studentNoticeKinds,
@@ -193,6 +195,8 @@ export const lessonTypes = sqliteTable('lesson_types', {
   saleStartsAt: instant('sale_starts_at'),
   saleEndsAt: instant('sale_ends_at'),
   sort: integer('sort').notNull().default(0),
+  // Its own booking rules; a rule left out follows the venue's.
+  rules: text('rules', { mode: 'json' }).$type<RuleOverrides>().notNull().default({}),
   createdAt: createdAt(),
 })
 
@@ -272,6 +276,8 @@ export const bookings = sqliteTable(
     cancelledBy: text('cancelled_by', { enum: ['student', 'venue'] }),
     cancelReason: text('cancel_reason'),
     late: integer('late', { mode: 'boolean' }).notNull().default(false),
+    // The cancel and move rules it was booked under; null for bookings made before they were kept.
+    terms: text('terms', { mode: 'json' }).$type<BookingTerms>(),
     attendance: text('attendance', { enum: ['attended', 'no_show'] }),
     attendanceAt: instant('attendance_at'),
     attendanceBy: text('attendance_by', { enum: ['student', 'coach', 'staff'] }),

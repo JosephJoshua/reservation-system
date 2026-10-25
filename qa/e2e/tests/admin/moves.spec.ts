@@ -110,9 +110,9 @@ test('sets how often students may move a lesson', async ({ page, request }) => {
   await typeNumber(field(page, '学员改约').locator('input'), '2')
   await page.getByRole('button', { name: '保存' }).first().click()
   await expect(page.getByText('已保存')).toBeVisible()
-  // The lesson was moved once by the venue, which does not count against the student.
+  // The lesson keeps the allowance it was booked with; the venue's move does not count against it.
   const booking = await call<BookingDto>(request, 'GET', `/bookings/${bookingId}`, token)
-  expect(booking.movesLeft).toBe(2)
+  expect(booking.movesLeft).toBe(1)
   await typeNumber(field(page, '学员改约').locator('input'), '1')
   await page.getByRole('button', { name: '保存' }).first().click()
 })

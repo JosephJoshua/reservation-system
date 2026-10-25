@@ -1,4 +1,4 @@
-import type { HomeDto, VenueSettings } from '@rs/shared'
+import { defaultSettings, type HomeDto, rulesFor, type VenueSettings } from '@rs/shared'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { MoonIcon, SunnyIcon } from 'tdesign-icons-react'
 import { Alert, Button, Loading, RadioGroup, Tooltip } from 'tdesign-react'
@@ -16,11 +16,9 @@ import { FRAME, PhoneFrame, type PreviewTheme } from './PhoneFrame'
 import { BookScreen, CoachScreen, HomeScreen, PackagesScreen } from './screens'
 import { pageStyles } from './styles'
 
-type Loaded = PreviewSource & { advanceDays: number }
-
 /** Everything a student's pages are built from. Lists this login can't read come back empty. */
 function usePreviewSource() {
-  const [source, setSource] = useState<Loaded | null>(null)
+  const [source, setSource] = useState<PreviewSource | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let live = true
@@ -47,7 +45,7 @@ function usePreviewSource() {
             trialEnabled: settings.payment.trialEnabled,
             packagesEnabled: settings.payment.packagesEnabled,
           },
-          advanceDays: settings?.booking.advanceDays ?? 7,
+          rules: rulesFor(settings?.booking ?? defaultSettings.booking, null),
         })
       })
       .catch((e: Error) => live && setError(e.message))
@@ -176,14 +174,7 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
         title: draft.form.name || '选择时间',
         styles: pageStyles.book,
         note: '时段来自排课，预览只显示课程和教练',
-        body: (
-          <BookScreen
-            catalog={catalog}
-            lessonTypeId={id}
-            advanceDays={source.advanceDays}
-            now={now}
-          />
-        ),
+        body: <BookScreen catalog={catalog} lessonTypeId={id} now={now} />,
       }
     } else if (screen === 'packages') {
       page = {

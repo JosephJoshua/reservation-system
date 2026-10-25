@@ -148,6 +148,13 @@
       "when": 1792877617368,
       "tag": "0020_profile_editors",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1792883223418,
+      "tag": "0021_lesson_type_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -1,11 +1,14 @@
 import {
   type BookingQuoteDto,
+  type BookingTerms,
+  bookingTerms,
   bookingWindowError,
   type CancelledBy,
   cancellationOutcome,
   freeCancelDeadline,
   freeSeat,
   isGroup,
+  sameTerms,
 } from '@rs/shared'
 import { and, asc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
@@ -27,7 +30,7 @@ import { newOutTradeNo } from './ids'
 import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
 import { createRefund, submitRefund } from './refunds'
-import { getSettings } from './settings'
+import { getSettings, ruleBook } from './settings'
 import { assertTableFree } from './tables'
 
 export const LIVE = ['pending_payment', 'confirmed'] as const
@@ -118,6 +121,8 @@ export interface CreateBookingInput {
   expectedPrice?: number
   /** The package the student was shown; another one now refuses the booking. */
   expectedPackageId?: number
+  /** The cancel and move rules the student was shown; others now refuse the booking. */
+  expectedTerms?: BookingTerms
 }
 
 export interface CancelOptions {
@@ -287,7 +292,8 @@ export async function createBooking(
     if (!lessonType || !visibleTo(lessonType, student)) {
       throw new ApiError(404, 'not_found', '该课程暂不可预约')
     }
-    const windowError = bookingWindowError(slot.startsAt, now, settings.booking)
+    const rules = ruleBook(tx, settings).of(lessonType.id)
+    const windowError = bookingWindowError(slot.startsAt, now, rules)
     if (windowError) throw new ApiError(409, windowError, windowMessages[windowError])
     const { price, seat } = checkBookable(tx, now, { studentId, slot, lessonType }, '你')
 
@@ -306,6 +312,10 @@ export async function createBooking(
     if (!pkg && input.expectedPrice !== undefined && input.expectedPrice !== price.price) {
       throw new ApiError(409, 'price_changed', '价格已变动')
     }
+    // Changed by the venue since the page loaded: the student agrees to the terms they will keep.
+    if (input.expectedTerms && !sameTerms(input.expectedTerms, rules)) {
+      throw new ApiError(409, 'terms_changed', '预约规则已变动')
+    }
 
     const base = {
       slotId: slot.id,
@@ -314,6 +324,7 @@ export async function createBooking(
       startsAt: slot.startsAt,
       endsAt: slot.endsAt,
       seat,
+      terms: bookingTerms(rules),
     }
     try {
       if (pkg) {
@@ -463,7 +474,7 @@ export async function cancelBooking(
         ? tx.select().from(orders).where(eq(orders.bookingId, booking.id)).get()
         : undefined
     const amountPaid = order?.status === 'paid' ? order.amount : 0
-    const settings = getSettings(tx).booking
+    const terms = booking.terms ?? ruleBook(tx).termsOf(booking)
     const rules = cancellationOutcome({
       startsAt: booking.startsAt,
       endsAt: booking.endsAt,
@@ -471,10 +482,10 @@ export async function cancelBooking(
       cancelledBy: by,
       paidWith: booking.paidWith,
       amountPaid,
-      rules: settings,
+      rules: terms,
       deadline: freeCancelDeadline(
         booking.startsAt,
-        settings,
+        terms,
         moveSummaries(tx, [booking.id]).get(booking.id)?.lastMove,
       ),
     })

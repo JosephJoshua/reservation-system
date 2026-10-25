@@ -1,17 +1,44 @@
 import type { Fen } from './pricing'
-import type { VenueSettings } from './settings'
+import { type BookingRules, type RuleOverrides, ruleNames } from './settings'
 import { venueDateKey, venueInstant } from './time'
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
+/** A lesson type's rules: its own where it sets one, the venue's otherwise. */
+export function rulesFor(venue: BookingRules, own: RuleOverrides | null | undefined): BookingRules {
+  return Object.fromEntries(ruleNames.map((k) => [k, own?.[k] ?? venue[k]])) as BookingRules
+}
+
+/** The rules a booking keeps from when it was made, so later edits leave it alone. */
+export type BookingTerms = Pick<BookingRules, 'cancelDeadlineHours' | 'lateCancel' | 'studentMoves'>
+
+export function bookingTerms(rules: BookingTerms): BookingTerms {
+  return {
+    cancelDeadlineHours: rules.cancelDeadlineHours,
+    lateCancel: rules.lateCancel,
+    studentMoves: rules.studentMoves,
+  }
+}
+
+/** Whether two sets of terms say the same, as a student shown one would be booked under the other. */
+export function sameTerms(a: BookingTerms, b: BookingTerms): boolean {
+  const late = (r: BookingTerms) =>
+    r.lateCancel.kind === 'partial' ? r.lateCancel.percent : r.lateCancel.kind
+  return (
+    a.cancelDeadlineHours === b.cancelDeadlineHours &&
+    a.studentMoves === b.studentMoves &&
+    late(a) === late(b)
+  )
+}
+
 export type BookingWindowError = 'started' | 'too_soon' | 'too_far'
 
-/** Whether a lesson starting at `startsAt` can be booked now under the venue's rules. */
+/** Whether a lesson starting at `startsAt` can be booked now under its lesson type's rules. */
 export function bookingWindowError(
   startsAt: Date,
   now: Date,
-  rules: VenueSettings['booking'],
+  rules: Pick<BookingRules, 'advanceDays' | 'minNoticeMinutes'>,
 ): BookingWindowError | null {
   if (startsAt <= now) return 'started'
   if (startsAt.getTime() - now.getTime() < rules.minNoticeMinutes * 60_000) return 'too_soon'
@@ -47,7 +74,7 @@ export function cancellationOutcome(input: {
   cancelledBy: CancelledBy
   paidWith: 'order' | 'package'
   amountPaid: Fen
-  rules: Pick<VenueSettings['booking'], 'cancelDeadlineHours' | 'lateCancel'>
+  rules: Pick<BookingRules, 'cancelDeadlineHours' | 'lateCancel'>
   deadline?: Date
 }): CancellationOutcome | CancellationError {
   const { startsAt, endsAt, now, cancelledBy, paidWith, amountPaid, rules } = input
@@ -82,7 +109,7 @@ export function studentMoveError(input: {
   deadline: Date
   now: Date
   movesUsed: number
-  rules: VenueSettings['booking']
+  rules: Pick<BookingRules, 'studentMoves'>
 }): StudentMoveError | null {
   const { status, deadline, now, movesUsed, rules } = input
   if (status !== 'confirmed') return 'not_confirmed'
@@ -98,7 +125,7 @@ export function studentMoveError(input: {
  */
 export function freeCancelDeadline(
   startsAt: Date,
-  rules: VenueSettings['booking'],
+  rules: Pick<BookingRules, 'cancelDeadlineHours'>,
   lastMove?: { by: 'student' | 'coach' | 'venue'; at: Date },
 ): Date {
   const usual = cancelDeadline(startsAt, rules)
@@ -108,7 +135,7 @@ export function freeCancelDeadline(
 /** Last instant a student can cancel and still get everything back. */
 export function cancelDeadline(
   startsAt: Date,
-  rules: Pick<VenueSettings['booking'], 'cancelDeadlineHours'>,
+  rules: Pick<BookingRules, 'cancelDeadlineHours'>,
 ): Date {
   return new Date(startsAt.getTime() - rules.cancelDeadlineHours * HOUR)
 }

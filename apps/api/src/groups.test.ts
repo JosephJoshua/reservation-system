@@ -854,6 +854,21 @@ describe('calling off a session', () => {
     expect(live(h, id)).toHaveLength(0)
   })
 
+  it("checks at the class's own free-cancel deadline", async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h, { minStudents: 2, rules: { cancelDeadlineHours: 48 } })
+    const admin = await h.admin()
+    const id = await session(h, admin, kids.id, coach.id)
+    const t = await h.student('a')
+    await seat(h, t, id, kids.id)
+    h.clock.now = venueInstant('2026-10-24', 9 * 60)
+    await cancelUnderfilledSessions(h.deps)
+    expect(live(h, id)).toHaveLength(1)
+    h.clock.now = venueInstant('2026-10-24', 10 * 60)
+    await cancelUnderfilledSessions(h.deps)
+    expect(live(h, id)).toHaveLength(0)
+  })
+
   it('leaves a session scheduled after its deadline alone', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h, { minStudents: 2 })

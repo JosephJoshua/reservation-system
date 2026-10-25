@@ -1,5 +1,6 @@
 import {
   type AccountDeletionDto,
+  bookingTermsSchema,
   bookingWindowError,
   type CatalogDto,
   type CoachDetailDto,
@@ -55,7 +56,7 @@ import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
 import { liveCounts } from '../services/sessions'
-import { getSettings } from '../services/settings'
+import { getSettings, ruleBook } from '../services/settings'
 import { linkDeskStudent } from '../services/student-link'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
@@ -256,6 +257,7 @@ export function studentRoutes(deps: Deps) {
     const settings = getSettings(db)
     const types = bookableTypes(student)
     const coachDtos = coachViews(db, activeCoaches(), types, now)
+    const rules = ruleBook(db)
     const typeDtos: LessonTypeDto[] = types.map((t) => {
       const prices = coachDtos.flatMap((cd) => cd.lessons.filter((l) => l.lessonTypeId === t.id))
       const cheapest = prices.reduce<(typeof prices)[number] | null>(
@@ -271,6 +273,7 @@ export function studentRoutes(deps: Deps) {
         capacity: t.capacity,
         minStudents: t.minStudents,
         fromPrice: cheapest?.price ?? null,
+        rules: rules.of(t.id),
       }
     })
     const visibleTypeIds = new Set(types.map((t) => t.id))
@@ -310,12 +313,6 @@ export function studentRoutes(deps: Deps) {
         perClassEnabled: settings.payment.perClassEnabled,
         packagesEnabled: settings.payment.packagesEnabled,
       },
-      booking: {
-        advanceDays: settings.booking.advanceDays,
-        minNoticeMinutes: settings.booking.minNoticeMinutes,
-        cancelDeadlineHours: settings.booking.cancelDeadlineHours,
-        lateCancel: settings.booking.lateCancel,
-      },
       policies: policies(settings),
     } satisfies CatalogDto)
   })
@@ -330,13 +327,17 @@ export function studentRoutes(deps: Deps) {
     from: Date,
     to: Date,
     q: { coachId?: number; lessonTypeId?: number },
-    moving?: number,
+    moving?: { id: number; lessonTypeId: number },
+    rules = ruleBook(db),
   ) {
-    const settings = getSettings(db)
     const lessonType = q.lessonTypeId
       ? db.select().from(lessonTypes).where(eq(lessonTypes.id, q.lessonTypeId)).get()
       : undefined
     if (q.lessonTypeId && !lessonType) throw notFound('课程')
+    // A private slot has no lesson type of its own: it follows the window of the lesson being
+    // booked or moved.
+    const windowOf = (s: { lessonTypeId: number | null }) =>
+      rules.of(s.lessonTypeId ?? lessonType?.id ?? moving?.lessonTypeId)
     const teaching = lessonType
       ? new Set(
           db
@@ -380,14 +381,12 @@ export function studentRoutes(deps: Deps) {
       db,
       rows.map((r) => r.id),
     )
-    const noTable = slotsWithoutTable(db, rows, moving)
+    const noTable = slotsWithoutTable(db, rows, moving?.id)
     return (
       rows
         // Closed slots and slots outside the window are hidden; full ones and ones without a free
         // table show as full.
-        .filter(
-          (s) => s.open && bookingWindowError(s.startsAt, now, settings.booking) !== 'too_far',
-        )
+        .filter((s) => s.open && bookingWindowError(s.startsAt, now, windowOf(s)) !== 'too_far')
         .map((s): SlotDto => {
           const seatsLeft = Math.max(0, s.capacity - (taken.get(s.id) ?? 0))
           return {
@@ -398,7 +397,7 @@ export function studentRoutes(deps: Deps) {
             available:
               seatsLeft > 0 &&
               !noTable.has(s.id) &&
-              bookingWindowError(s.startsAt, now, settings.booking) === null,
+              bookingWindowError(s.startsAt, now, windowOf(s)) === null,
             lessonTypeId: s.lessonTypeId,
             capacity: s.capacity,
             seatsLeft,
@@ -426,12 +425,12 @@ export function studentRoutes(deps: Deps) {
     }
     const moving = q.moving
       ? db
-          .select({ id: bookings.id })
+          .select({ id: bookings.id, lessonTypeId: bookings.lessonTypeId })
           .from(bookings)
           .where(and(eq(bookings.id, q.moving), eq(bookings.studentId, c.get('studentId'))))
           .get()
       : undefined
-    return c.json(studentSlots(deps.now(), from, venueInstant(q.date, 24 * 60), q, moving?.id))
+    return c.json(studentSlots(deps.now(), from, venueInstant(q.date, 24 * 60), q, moving))
   })
 
   // The venue days in the booking window with a slot that can be booked now, so the booking page
@@ -439,13 +438,17 @@ export function studentRoutes(deps: Deps) {
   app.get('/slots/open-days', (c) => {
     const q = parseQuery(c, z.object(slotFilter))
     const now = deps.now()
-    const days = getSettings(db).booking.advanceDays
+    const typeId = q.lessonTypeId
+    const rules = ruleBook(db)
+    const days = typeId ? rules.of(typeId).advanceDays : rules.longestAdvanceDays()
     const last = venueDateKey(new Date(now.getTime() + days * 86_400_000))
     const open = studentSlots(
       now,
       venueInstant(venueDateKey(now), 0),
       venueInstant(last, 24 * 60),
       q,
+      undefined,
+      rules,
     ).filter((s) => s.available)
     return c.json([...new Set(open.map((s) => venueDateKey(new Date(s.startsAt))))])
   })
@@ -461,6 +464,8 @@ export function studentRoutes(deps: Deps) {
         expectedPrice: z.number().int().nonnegative().optional(),
         /** The package the student was shown, when paying with one. */
         expectedPackageId: z.number().int().positive().optional(),
+        /** The cancel and move rules the student was shown. */
+        expectedTerms: bookingTermsSchema.optional(),
       }),
     )
     requireConsent(db, c.get('studentId'))
@@ -495,14 +500,14 @@ export function studentRoutes(deps: Deps) {
       .orderBy(q.scope === 'upcoming' ? asc(bookings.startsAt) : desc(bookings.startsAt))
       .limit(100)
       .all()
-    return c.json(bookingViews(db, rows, getSettings(db).booking, now))
+    return c.json(bookingViews(db, rows, now))
   })
 
   /** The student's own booking as they see it. */
   const ownBookingView = (id: number, studentId: number) => {
     const row = db.select().from(bookings).where(eq(bookings.id, id)).get()
     if (!row || row.studentId !== studentId) throw notFound('预约')
-    const [view] = bookingViews(db, [row], getSettings(db).booking, deps.now(), true)
+    const [view] = bookingViews(db, [row], deps.now(), true)
     return view
   }
 

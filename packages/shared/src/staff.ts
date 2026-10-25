@@ -42,6 +42,7 @@ export const staffActionLabels = {
   'invoice.refund_seen': '开票后退款已处理',
   'data.export': '导出数据',
   'settings.update': '修改设置',
+  'rules.lesson_type': '课程预约规则',
   'student.create': '前台建档',
   'student.update': '修改学员',
   'student.delete': '删除学员',

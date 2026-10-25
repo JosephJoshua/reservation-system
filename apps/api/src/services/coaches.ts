@@ -27,7 +27,7 @@ import { templateIds } from '../wx-notify'
 import { startCoachSession } from './auth'
 import { LIVE } from './bookings'
 import { newBindCode, normalizeBindCode } from './ids'
-import { getSettings } from './settings'
+import { ruleBook, taughtBy } from './settings'
 
 const BIND_CODE_MS = 24 * 3_600_000
 
@@ -67,7 +67,8 @@ function coachMe(deps: Deps, coach: typeof coaches.$inferSelect): CoachMeDto {
       'coach_cancelled',
       'coach_moved',
     ]),
-    advanceDays: getSettings(deps.db).booking.advanceDays,
+    // The days any of the coach's own lessons can be booked on.
+    advanceDays: ruleBook(deps.db).longestAdvanceDays(taughtBy(deps.db, coach.id)),
   }
 }
 
@@ -163,7 +164,7 @@ export function hoursView(deps: Deps, coachId: number): CoachHoursDto {
     hours: weeklyHours(db, coachId),
     daysOff: daysOffFrom(db, coachId, deps.now()),
     lessonMinutes: lessonMinutes(db, coachId),
-    advanceDays: getSettings(db).booking.advanceDays,
+    advanceDays: ruleBook(db).longestAdvanceDays(taughtBy(db, coachId)),
   }
 }
 
@@ -175,13 +176,12 @@ export function hoursView(deps: Deps, coachId: number): CoachHoursDto {
  * slots a person closed stay closed.
  */
 export function syncSlots(tx: Q, coachId: number, now: Date): SlotSyncDto {
-  const settings = getSettings(tx)
   const daysOff = new Set(daysOffFrom(tx, coachId, now))
-  const desired = lessonsFromHours(
-    weeklyHours(tx, coachId),
-    venueDates(now, settings.booking.advanceDays),
-    daysOff,
-  ).filter((l) => l.startsAt > now)
+  // Far enough ahead for the coach's lesson with the longest booking window.
+  const days = ruleBook(tx).longestAdvanceDays(taughtBy(tx, coachId))
+  const desired = lessonsFromHours(weeklyHours(tx, coachId), venueDates(now, days), daysOff).filter(
+    (l) => l.startsAt > now,
+  )
 
   const existing = tx
     .select()
@@ -310,16 +310,42 @@ export function setDayOff(deps: Deps, coachId: number, date: string, off: boolea
   })
 }
 
-/** Rolls every active coach's generated slots forward as days pass. */
-export function syncAllSlots(deps: Deps) {
-  const now = deps.now()
-  const ids = deps.db
+function coachesWithHours(db: Deps['db']) {
+  return db
     .selectDistinct({ id: coachHours.coachId })
     .from(coachHours)
     .innerJoin(coaches, eq(coaches.id, coachHours.coachId))
     .where(eq(coaches.active, true))
     .all()
-  for (const { id } of ids) {
+    .map((r) => r.id)
+}
+
+/** How many days ahead each coach's slots reach, to tell later whether an edit changed it. */
+export function slotWindows(db: Deps['db']): Map<number, number> {
+  const book = ruleBook(db)
+  return new Map(coachesWithHours(db).map((id) => [id, book.longestAdvanceDays(taughtBy(db, id))]))
+}
+
+/**
+ * Brings the slots of coaches whose window changed since `before` in line now, rather than at the
+ * next hourly sync, so a longer window is bookable at once.
+ */
+export function syncChangedWindows(deps: Deps, before: Map<number, number>) {
+  const now = deps.now()
+  for (const [id, days] of slotWindows(deps.db)) {
+    if (before.get(id) === days) continue
+    try {
+      immediate(deps.db, (tx) => syncSlots(tx, id, now))
+    } catch (e) {
+      deps.log('slot sync failed', { coachId: id, error: (e as Error).message })
+    }
+  }
+}
+
+/** Rolls every active coach's generated slots forward as days pass. */
+export function syncAllSlots(deps: Deps) {
+  const now = deps.now()
+  for (const id of coachesWithHours(deps.db)) {
     try {
       immediate(deps.db, (tx) => syncSlots(tx, id, now))
     } catch (e) {

@@ -3,7 +3,8 @@ import type { Attendance, AttendanceBy } from './availability'
 import type { OrderInvoiceDto } from './invoices'
 import type { LinkKind, LinkTarget } from './links'
 import type { PriceTag } from './pricing'
-import type { LateCancelRule } from './settings'
+import type { BookingTerms } from './rules'
+import type { BookingRules } from './settings'
 
 export interface LessonTypeDto {
   id: number
@@ -17,6 +18,8 @@ export interface LessonTypeDto {
   minStudents: number | null
   /** Lowest price across the coaches who teach it. */
   fromPrice: PriceTag | null
+  /** Its booking rules: its own where it sets them, the venue's otherwise. */
+  rules: BookingRules
 }
 
 export interface CoachDto {
@@ -51,12 +54,6 @@ export interface CatalogDto {
   coaches: CoachDto[]
   packageProducts: PackageProductDto[]
   payment: { trialEnabled: boolean; perClassEnabled: boolean; packagesEnabled: boolean }
-  booking: {
-    advanceDays: number
-    minNoticeMinutes: number
-    cancelDeadlineHours: number
-    lateCancel: LateCancelRule
-  }
   /** `agreement` falls back to the built-in text; `version` is what a consent agrees to. */
   policies: { booking: string; agreement: string; privacy: string; version: string }
 }
@@ -135,6 +132,10 @@ export interface BookingDto {
   canMove: boolean
   /** Moves the student has left on this booking. */
   movesLeft: number
+  /** The cancel and move rules it was booked under. */
+  terms: BookingTerms
+  /** Its lesson type's booking window now, which a move to another time must fall in. */
+  window: Pick<BookingRules, 'advanceDays' | 'minNoticeMinutes'>
   /** Start of the lesson's first time, when it was moved. */
   movedFrom: string | null
   cancelledBy: 'student' | 'venue' | null
