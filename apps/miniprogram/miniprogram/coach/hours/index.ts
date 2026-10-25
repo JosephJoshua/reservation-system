@@ -100,6 +100,8 @@ Page({
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     editable: true,
+    /** How many days ahead students can book the coach's lessons. */
+    advanceDays: 0,
     hours: [] as WeeklyHours[],
     week: [] as ReturnType<typeof weekView>,
     /** The date the edited hours apply from. */
@@ -155,6 +157,7 @@ Page({
       this.setData({
         state: 'ready',
         editable: view.coachEdits,
+        advanceDays: view.advanceDays,
         today,
         lastDay: venueDateKey(new Date(now + 365 * DAY)),
         planned: view.periods

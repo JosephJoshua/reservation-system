@@ -46,7 +46,7 @@
       </view>
     </picker>
   </view>
-  <view class="footnote">学员可在这些时间里按课程时长预约。点某一天添加时间段；改动从生效日期起算，已约的课不受影响。</view>
+  <view class="footnote">学员最多可提前 {{advanceDays}} 天，在这些时间里按课程时长预约。点某一天添加时间段；改动从生效日期起算，已约的课不受影响。</view>
 
   <block wx:if="{{planned.length}}">
     <view class="section-title">已安排的调整</view>
