@@ -129,15 +129,17 @@ export function CommandMenu({
   }, [open, canFindStudent, term])
 
   const go = (hash: string) => () => leaveTo(hash)
-  // On 设置 already, another section is a scroll, not a page change that asks about unsaved edits.
-  const toSection = (key: string) => () => {
-    const hash = `#/settings?section=${key}`
+  // On 设置 already, 设置 or a section of it is a scroll, not a page change that asks about unsaved
+  // edits, which stay on the page.
+  const toSettings = (key?: string) => async () => {
+    const hash = key ? `#/settings?section=${key}` : '#/settings'
     if (window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] !== 'settings') {
-      void leaveTo(hash)
+      await leaveTo(hash)
       return
     }
     history.replaceState(history.state, '', hash)
     window.dispatchEvent(new Event(SHOW_SECTION))
+    if (!key) window.scrollTo({ top: 0, behavior: 'smooth' })
   }
   const all: Item[] = [
     ...pages.map((p) => ({
@@ -146,7 +148,7 @@ export function CommandMenu({
       label: p.label,
       meta: p.group,
       words: pageWords[p.key],
-      run: go(`#/${p.key}`),
+      run: p.key === 'settings' ? toSettings() : go(`#/${p.key}`),
     })),
     ...(canBook
       ? [
@@ -177,7 +179,7 @@ export function CommandMenu({
           id: `settings-${s.key}`,
           group: '设置',
           label: `设置 · ${s.label}`,
-          run: toSection(s.key),
+          run: toSettings(s.key),
         }))
       : []),
     ...(
@@ -252,11 +254,6 @@ export function CommandMenu({
     // Keys pressed while picking characters belong to the input method.
     // Safari sends the Enter that picks a character after composing ends, as key code 229.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      dismiss()
-      return
-    }
     const step =
       e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')
         ? 1
@@ -295,8 +292,11 @@ export function CommandMenu({
         width={560}
         className="command-menu"
         destroyOnClose
-        // The field handles Esc, so one that ends composing a character does not close the menu.
+        // Not the Esc that ends composing a character, which only leaves the input method.
         closeOnEscKeydown={false}
+        onEscKeydown={({ e }) => {
+          if (!e.nativeEvent.isComposing && e.keyCode !== 229) dismiss()
+        }}
         onClose={dismiss}
       >
         <div className="command-search">
@@ -381,9 +381,11 @@ export function CommandMenu({
             setDialog(null)
             restore()
           }}
-          onDone={(student) => {
+          onDone={async (student) => {
             setDialog(null)
-            void leaveTo(`#/students/${student.id}`)
+            const from = window.location.hash
+            await leaveTo(`#/students/${student.id}`)
+            if (window.location.hash === from) restore()
           }}
         />
       )}

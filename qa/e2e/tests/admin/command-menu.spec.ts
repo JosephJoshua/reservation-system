@@ -124,18 +124,39 @@ test('on 设置, ⌘K scrolls to a section and keeps the unsaved edit without as
   await expect(page).toHaveURL(/#\/settings\?section=pay$/)
   await expect(field(page, '电话').locator('input')).toHaveValue(`020-${run}`)
 
-  // Leaving for 设置 itself and giving up the edit keeps no pass to leave for later.
+  // 设置 itself, from a section of it, goes to the top without asking.
   await openMenu(page)
   await search(page).fill('设置')
   await expect(page.getByRole('option', { selected: true })).toHaveText(/^设置系统$/)
   await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: '放弃修改' }).click()
+  await expect(page.getByText('放弃未保存的修改？')).toHaveCount(0)
   await expect(page).toHaveURL(/#\/settings$/)
-  await field(page, '电话').locator('input').fill(`021-${run}`)
+  await expect(field(page, '电话').locator('input')).toHaveValue(`020-${run}`)
+  // The edit is still guarded when leaving for real.
   await page.getByRole('link', { name: '订单' }).click()
   await expect(page.getByText('放弃未保存的修改？')).toBeVisible()
   await page.getByRole('button', { name: '继续编辑' }).click()
   await expect(page).toHaveURL(/#\/settings$/)
+})
+
+test('the forward button asks too, and goes forward once left', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/settings')
+  await page.goto('./#/orders')
+  await page.goBack()
+  await expect(page).toHaveURL(/#\/settings$/)
+  await field(page, '电话').locator('input').fill(`030-${run}`)
+  await page.goForward()
+  await expect(page.getByText('放弃未保存的修改？')).toBeVisible()
+  await page.getByRole('button', { name: '放弃修改' }).click()
+  await expect(page).toHaveURL(/#\/orders$/)
+  await expect(page.locator('.admin-title-text')).toHaveText('订单')
+  // The pass to leave was used up: a new edit is asked about again.
+  await page.goBack()
+  await expect(page).toHaveURL(/#\/settings$/)
+  await field(page, '电话').locator('input').fill(`031-${run}`)
+  await page.getByRole('link', { name: '订单' }).click()
+  await expect(page.getByText('放弃未保存的修改？')).toBeVisible()
 })
 
 test('⌘K gives the focus back after an item that stays on the page', async ({ page }) => {
