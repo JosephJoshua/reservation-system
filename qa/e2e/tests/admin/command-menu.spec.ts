@@ -123,6 +123,32 @@ test('on 设置, ⌘K scrolls to a section and keeps the unsaved edit without as
   await expect(page.locator('.t-card__title', { hasText: '课时费' })).toBeInViewport()
   await expect(page).toHaveURL(/#\/settings\?section=pay$/)
   await expect(field(page, '电话').locator('input')).toHaveValue(`020-${run}`)
+
+  // Leaving for 设置 itself and giving up the edit keeps no pass to leave for later.
+  await openMenu(page)
+  await search(page).fill('设置')
+  await expect(page.getByRole('option', { selected: true })).toHaveText(/^设置系统$/)
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: '放弃修改' }).click()
+  await expect(page).toHaveURL(/#\/settings$/)
+  await field(page, '电话').locator('input').fill(`021-${run}`)
+  await page.getByRole('link', { name: '订单' }).click()
+  await expect(page.getByText('放弃未保存的修改？')).toBeVisible()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  await expect(page).toHaveURL(/#\/settings$/)
+})
+
+test('⌘K gives the focus back after an item that stays on the page', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/products')
+  await page.getByRole('button', { name: '导出' }).focus()
+  await openMenu(page)
+  await search(page).fill('深色')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '导出' })).toBeFocused()
+  await openMenu(page)
+  await search(page).fill('跟随系统')
+  await page.keyboard.press('Enter')
 })
 
 test('⌘K waits while a dialog is open, and gives the focus back when closed', async ({ page }) => {

@@ -36,7 +36,9 @@ type Item = {
   meta?: string
   /** Other words it is found by. */
   words?: string
-  run: () => void
+  run: () => unknown
+  /** Opens a dialog, which gives the focus back when it closes. */
+  dialog?: boolean
 }
 
 /**
@@ -74,9 +76,12 @@ export function CommandMenu({
     setActive(0)
     setOpen(true)
   }
+  const restore = () => {
+    if (back.current instanceof HTMLElement && back.current.isConnected) back.current.focus()
+  }
   const dismiss = () => {
     setOpen(false)
-    if (back.current instanceof HTMLElement) back.current.focus()
+    restore()
   }
 
   // The latest show and dismiss for the key listener, which is added once.
@@ -89,7 +94,7 @@ export function CommandMenu({
       const { open, show, dismiss } = keys.current
       if (open) dismiss()
       // A dialog or drawer on screen keeps the keyboard, as leaving it could drop what it holds.
-      else if (!overlayShown()) show()
+      else if (!overlayShown('.command-menu')) show()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -123,7 +128,7 @@ export function CommandMenu({
     }
   }, [open, canFindStudent, term])
 
-  const go = (hash: string) => () => void leaveTo(hash)
+  const go = (hash: string) => () => leaveTo(hash)
   // On 设置 already, another section is a scroll, not a page change that asks about unsaved edits.
   const toSection = (key: string) => () => {
     const hash = `#/settings?section=${key}`
@@ -150,6 +155,7 @@ export function CommandMenu({
             group: '操作',
             label: '代约',
             words: '预约 约课',
+            dialog: true,
             run: () => setDialog('book'),
           },
         ]
@@ -161,6 +167,7 @@ export function CommandMenu({
             group: '操作',
             label: '前台建档',
             words: '新建学员 添加学员',
+            dialog: true,
             run: () => setDialog('student'),
           },
         ]
@@ -231,16 +238,25 @@ export function CommandMenu({
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [current])
 
-  const run = (item: Item | undefined) => {
+  const run = async (item: Item | undefined) => {
     if (!item) return
     setOpen(false)
-    item.run()
+    const from = window.location.hash
+    await item.run()
+    // Still here, such as after 外观 or a cancelled leave: the focus goes back. A dialog opened
+    // from the menu gives it back when it closes.
+    if (window.location.hash === from && !item.dialog) restore()
   }
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     // Keys pressed while picking characters belong to the input method.
     // Safari sends the Enter that picks a character after composing ends, as key code 229.
     if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      dismiss()
+      return
+    }
     const step =
       e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')
         ? 1
@@ -252,7 +268,7 @@ export function CommandMenu({
       setActive((current + step + items.length) % items.length)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      run(items[current])
+      void run(items[current])
     }
   }
 
@@ -279,6 +295,8 @@ export function CommandMenu({
         width={560}
         className="command-menu"
         destroyOnClose
+        // The field handles Esc, so one that ends composing a character does not close the menu.
+        closeOnEscKeydown={false}
         onClose={dismiss}
       >
         <div className="command-search">
@@ -325,7 +343,7 @@ export function CommandMenu({
                     onMouseMove={() => i !== current && setActive(i)}
                     // Keeps the focus in the field.
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => run(item)}
+                    onClick={() => void run(item)}
                     onKeyDown={() => {}}
                   >
                     <span className="command-label">{item.label}</span>
@@ -346,11 +364,23 @@ export function CommandMenu({
         </div>
       </Dialog>
       {dialog === 'book' && (
-        <BookForStudent onClose={() => setDialog(null)} onDone={() => setDialog(null)} />
+        <BookForStudent
+          onClose={() => {
+            setDialog(null)
+            restore()
+          }}
+          onDone={() => {
+            setDialog(null)
+            restore()
+          }}
+        />
       )}
       {dialog === 'student' && (
         <NewStudentDialog
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            setDialog(null)
+            restore()
+          }}
           onDone={(student) => {
             setDialog(null)
             void leaveTo(`#/students/${student.id}`)

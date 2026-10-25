@@ -72,7 +72,7 @@ export async function toggle<T extends object>({
   ) as Partial<T>
   const key = toggleKey(path)
   // A refusal because the record changed elsewhere loads the list again, so the next try works.
-  const opts = { key, stale: ['edited_elsewhere'], onStale: () => void reload() }
+  const opts = { key, stale: ['edited_elsewhere'], onStale: reload }
   let saved: T | undefined
   const ok = await attempt(
     async () => {

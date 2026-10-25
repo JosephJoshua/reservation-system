@@ -61,11 +61,18 @@ export function useSubmitting(key = DIALOG) {
   )
 }
 
-/** True while a dialog, drawer or popup is on screen, which then owns the keyboard. */
-export function overlayShown(except?: Element | null) {
+/**
+ * True while a dialog, drawer or popup is on screen, which then owns the keyboard. One matching
+ * `except`, such as a menu still fading out, does not count.
+ */
+export function overlayShown(except?: string) {
   return [
     ...document.querySelectorAll<HTMLElement>('.t-dialog__ctx, .t-drawer--open, .t-popup'),
-  ].some((el) => !except?.contains(el) && getComputedStyle(el).display !== 'none')
+  ].some(
+    (el) =>
+      !(except && (el.matches(except) || el.querySelector(except))) &&
+      getComputedStyle(el).display !== 'none',
+  )
 }
 
 // Refusals that mean the record changed elsewhere, so what the dialog shows is out of date.
@@ -86,10 +93,11 @@ const STALE = new Set([
 
 /**
  * Runs a change, shows its error as a message, and reports success. `onStale` runs when the
- * record changed elsewhere, so the page can close the dialog and reload; `stale` adds codes that
- * mean this for one action. `onRefused` runs when the server refused it for any other reason, but
- * not for a second click dropped while the first is on its way. Row actions pass their own `key`,
- * so a change on one row does not block another.
+ * record changed elsewhere, so the page can close the dialog and reload, and the change counts as
+ * on its way until a promise it returns settles; `stale` adds codes that mean this for one action.
+ * `onRefused` runs when the server refused it for any other reason, but not for a second click
+ * dropped while the first is on its way. Row actions pass their own `key`, so a change on one row
+ * does not block another.
  */
 export async function attempt(
   fn: () => Promise<unknown>,
@@ -99,7 +107,7 @@ export async function attempt(
     onRefused,
     key = DIALOG,
     stale = [],
-  }: { onStale?: () => void; onRefused?: () => void; key?: string; stale?: string[] } = {},
+  }: { onStale?: () => unknown; onRefused?: () => void; key?: string; stale?: string[] } = {},
 ): Promise<boolean> {
   if (inFlight.has(key)) return false
   setInFlight(key, true)
@@ -110,7 +118,7 @@ export async function attempt(
   } catch (e) {
     void MessagePlugin.error(e instanceof RequestError ? e.message : '操作失败，请重试')
     if (onStale && e instanceof RequestError && (STALE.has(e.code) || stale.includes(e.code))) {
-      onStale()
+      await onStale()
     } else onRefused?.()
     return false
   } finally {
