@@ -6,8 +6,7 @@ import {
 } from '../../lib/shared'
 import { ApiError, errorMessage } from '../../utils/api'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
-import { submitMove } from '../../utils/move'
-import { navigateBackOnce } from '../../utils/nav'
+import { leaveMove, submitMove } from '../../utils/move'
 import { askForNotices, coachApi } from '../utils/coach-api'
 
 interface DayView {
@@ -138,11 +137,14 @@ Page({
     if (!slot || this.data.submitting) return
     this.setData({ submitting: true })
     const coachId = this.coachId
-    const result = await submitMove(this, () =>
-      coachApi<CoachLessonDto>('POST', `/lessons/${this.id}/move`, {
-        coachId,
-        startsAt: slot.startsAt,
-      }),
+    const result = await submitMove(
+      this,
+      () =>
+        coachApi<CoachLessonDto>('POST', `/lessons/${this.id}/move`, {
+          coachId,
+          startsAt: slot.startsAt,
+        }),
+      `/coach/lesson/index?id=${this.id}`,
     )
     if (result === 'moved' || result === 'fixed') return
     this.setData({ submitting: false })
@@ -157,7 +159,7 @@ Page({
   },
 
   leave() {
-    navigateBackOnce()
+    leaveMove(`/coach/lesson/index?id=${this.id}`)
   },
 
   retry() {

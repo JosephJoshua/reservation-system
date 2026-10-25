@@ -49,3 +49,9 @@
   justify-content: center;
   margin-top: 32rpx;
 }
+
+/* A long note wraps instead of squeezing the row label. */
+.label {
+  flex: none;
+  white-space: nowrap;
+}

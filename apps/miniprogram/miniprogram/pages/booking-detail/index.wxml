@@ -20,15 +20,15 @@
   </view>
 
   <t-cell-group theme="card">
-    <t-cell title="课程" note="{{booking.lessonType.name}}" />
-    <t-cell title="教练" note="{{booking.coach.name}}" />
-    <t-cell title="时间" note="{{when}}" />
-    <t-cell wx:if="{{movedFrom}}" title="原定时间" note="{{movedFrom}}" />
-    <t-cell title="支付" note="{{payment}}" />
-    <t-cell wx:if="{{attendance}}" title="签到" note="{{attendance}}" arrow="{{booking.canCheckIn}}" hover="{{booking.canCheckIn}}" bind:click="checkIn" />
-    <t-cell wx:if="{{refund}}" title="退款" note="{{refund}}" />
-    <t-cell wx:if="{{invoice}}" title="发票" note="{{invoice}}" arrow="{{invoiceTappable}}" hover="{{invoiceTappable}}" bind:click="openInvoice" />
-    <t-cell wx:if="{{booking.status === 'confirmed' || booking.status === 'pending_payment'}}" title="免费取消截止" note="{{deadline}}" />
+    <t-cell t-class-title="label" title="课程" note="{{booking.lessonType.name}}" />
+    <t-cell t-class-title="label" title="教练" note="{{booking.coach.name}}" />
+    <t-cell t-class-title="label" title="时间" note="{{when}}" />
+    <t-cell t-class-title="label" wx:if="{{movedFrom}}" title="原定时间" note="{{movedFrom}}" />
+    <t-cell t-class-title="label" title="支付" note="{{payment}}" />
+    <t-cell t-class-title="label" wx:if="{{attendance}}" title="签到" note="{{attendance}}" arrow="{{booking.canCheckIn}}" hover="{{booking.canCheckIn}}" bind:click="checkIn" />
+    <t-cell t-class-title="label" wx:if="{{refund}}" title="退款" note="{{refund}}" />
+    <t-cell t-class-title="label" wx:if="{{invoice}}" title="发票" note="{{invoice}}" arrow="{{invoiceTappable}}" hover="{{invoiceTappable}}" bind:click="openInvoice" />
+    <t-cell t-class-title="label" wx:if="{{booking.status === 'confirmed' || booking.status === 'pending_payment'}}" title="免费取消截止" note="{{deadline}}" />
   </t-cell-group>
 
   <block wx:if="{{feedback}}">
