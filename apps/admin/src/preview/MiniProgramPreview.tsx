@@ -120,10 +120,15 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
     if (!source) return null
     const merged = withDraft(source, draft)
     const id = draftId(draft)
+    const banner = draft.kind === 'home' ? draft.bannerId : undefined
     return {
       merged,
       id,
-      catalog: studentCatalog(merged, now, { kind: draft.kind, id }),
+      catalog: studentCatalog(
+        merged,
+        now,
+        banner === undefined ? { kind: draft.kind, id } : { kind: 'banner', id: banner },
+      ),
       reasons: hiddenReasons(merged, draft, now),
     }
   }, [source, draft, now])
@@ -148,7 +153,9 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
             catalog={catalog}
             venue={venue}
             notice={merged.home.notice ?? ''}
-            bannerId={draft.kind === 'banner' ? id : undefined}
+            bannerId={
+              draft.kind === 'banner' ? id : draft.kind === 'home' ? draft.bannerId : undefined
+            }
             focus={
               draft.kind === 'coach' || draft.kind === 'lessonType'
                 ? { kind: draft.kind, id }

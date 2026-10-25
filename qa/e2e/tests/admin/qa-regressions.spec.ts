@@ -270,7 +270,7 @@ test('a settings save from a stale tab is refused and keeps what was typed', asy
   await login(page)
   const other = await context.newPage()
   for (const p of [page, other]) {
-    await p.goto('./#/settings')
+    await p.goto('./#/banners')
     await expect(p.locator('.t-card', { hasText: '首页公告' })).toBeVisible()
   }
   const notice = (p: Page) =>

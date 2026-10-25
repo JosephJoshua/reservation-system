@@ -186,6 +186,95 @@ body {
   animation: save-bar-in 0.18s ease-out;
 }
 
+/* 设置: the section menu stays at the left while the cards scroll beside it. The menu's item is
+   taken out of the column's flow and its menu sticks within it. */
+.settings-layout.t-space {
+  position: relative;
+  box-sizing: border-box;
+  padding-left: 184px;
+}
+
+.settings-layout > .t-space-item:has(> .section-nav) {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 160px;
+}
+
+.settings-layout .t-card {
+  /* Clears the sticky header when a section is scrolled to. */
+  scroll-margin-top: 72px;
+}
+
+.section-nav {
+  position: sticky;
+  top: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.section-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--td-text-color-secondary);
+  background: none;
+  border: 0;
+  border-radius: var(--td-radius-medium);
+  cursor: pointer;
+}
+
+.section-nav-item:hover {
+  color: var(--td-text-color-primary);
+  background: var(--td-bg-color-container-hover);
+}
+
+.section-nav-item:focus-visible {
+  outline: 2px solid var(--td-brand-color-focus);
+  outline-offset: -2px;
+}
+
+.section-nav-item[aria-current="true"] {
+  font-weight: 600;
+  color: var(--td-brand-color);
+  background: var(--td-brand-color-light);
+}
+
+.section-nav-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--td-warning-color);
+}
+
+.banner-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--td-text-color-primary);
+}
+
+.banner-row-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--td-text-color-secondary);
+}
+
+/* 首页内容: the phone preview clears the sticky header. */
+.home-content {
+  --preview-sticky-top: 72px;
+}
+
 .admin-content:has(.save-bar) {
   padding-bottom: 96px;
 }

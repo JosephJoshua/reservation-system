@@ -101,6 +101,8 @@ export function SaveBar({
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
+        // A dialog or drawer over the page, such as a banner's editor, saves with its own button.
+        if ((e.target as Element | null)?.closest?.('.t-dialog__ctx, .t-drawer')) return
         save.current()
       }
     }
