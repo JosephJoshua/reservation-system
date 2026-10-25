@@ -245,7 +245,7 @@ test('a venue cancel on a booking the student already cancelled closes and refre
   await dialog(page).getByRole('button', { name: '确认取消' }).click()
   await expect(page.getByText('该预约已取消')).toBeVisible()
   await expect(dialog(page)).toHaveCount(0)
-  await expect(rows.filter({ hasText: '学员取消' })).toHaveCount(2)
+  await expect(rows.filter({ hasText: /学员(逾时)?取消/ })).toHaveCount(2)
 })
 
 test('a banner title typed before the image survives the upload', async ({ page }) => {
