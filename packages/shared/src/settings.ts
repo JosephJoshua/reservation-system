@@ -38,6 +38,13 @@ export const bookingRules = z.object({
 /** A lesson type's own rules: a rule left out follows the venue's. */
 export const ruleOverrides = bookingRules.partial()
 
+/** The rules a booking keeps from when it was made. */
+export const bookingTermsSchema = bookingRules.pick({
+  cancelDeadlineHours: true,
+  lateCancel: true,
+  studentMoves: true,
+})
+
 export const venueSettings = z.object({
   venue: z.object({
     name: z.string().max(40),
@@ -128,7 +135,8 @@ export function ruleText<K extends RuleName>(name: K, value: BookingRules[K]): s
       return v === 0 ? '开课前都可以免费取消' : `开课前 ${v} 小时以上`
     case 'lateCancel': {
       const late = v as LateCancelRule
-      return late.kind === 'forfeit'
+      // Nothing back at 0% either, which reads plainer as the forfeit rule.
+      return late.kind === 'forfeit' || late.percent === 0
         ? '视为已上课，不退款，也不退回课时'
         : `退还 ${late.percent}% 的费用`
     }

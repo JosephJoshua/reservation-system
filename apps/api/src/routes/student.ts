@@ -1,5 +1,6 @@
 import {
   type AccountDeletionDto,
+  bookingTermsSchema,
   bookingWindowError,
   type CatalogDto,
   type CoachDetailDto,
@@ -463,6 +464,8 @@ export function studentRoutes(deps: Deps) {
         expectedPrice: z.number().int().nonnegative().optional(),
         /** The package the student was shown, when paying with one. */
         expectedPackageId: z.number().int().positive().optional(),
+        /** The cancel and move rules the student was shown. */
+        expectedTerms: bookingTermsSchema.optional(),
       }),
     )
     requireConsent(db, c.get('studentId'))

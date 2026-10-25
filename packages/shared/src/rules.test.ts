@@ -8,6 +8,7 @@ import {
   freeCancelDeadline,
   peakOverlap,
   rulesFor,
+  sameTerms,
   studentMoveError,
   tablesFor,
   tablesFree,
@@ -285,6 +286,9 @@ describe('ruleText', () => {
     expect(ruleText('cancelDeadlineHours', 0)).toBe('开课前都可以免费取消')
     expect(ruleText('minNoticeMinutes', 0)).toBe('开课前都可以预约')
     expect(ruleText('studentMoves', 0)).toBe('不允许')
+    expect(ruleText('lateCancel', { kind: 'partial', percent: 0 })).toBe(
+      '视为已上课，不退款，也不退回课时',
+    )
   })
 
   it('gives each rule its value', () => {
@@ -293,5 +297,26 @@ describe('ruleText', () => {
     expect(ruleText('cancelDeadlineHours', 24)).toBe('开课前 24 小时以上')
     expect(ruleText('lateCancel', { kind: 'partial', percent: 50 })).toBe('退还 50% 的费用')
     expect(ruleText('studentMoves', 2)).toBe('每节课 2 次')
+  })
+})
+
+describe('sameTerms', () => {
+  const terms = bookingTerms(defaultSettings.booking)
+  it('compares values, not key order', () => {
+    expect(
+      sameTerms(terms, {
+        studentMoves: 1,
+        lateCancel: { kind: 'forfeit' },
+        cancelDeadlineHours: 24,
+      }),
+    ).toBe(true)
+  })
+
+  it('tells any change apart', () => {
+    expect(sameTerms(terms, { ...terms, cancelDeadlineHours: 48 })).toBe(false)
+    expect(sameTerms(terms, { ...terms, studentMoves: 0 })).toBe(false)
+    expect(sameTerms(terms, { ...terms, lateCancel: { kind: 'partial', percent: 50 } })).toBe(false)
+    const half = { ...terms, lateCancel: { kind: 'partial' as const, percent: 50 } }
+    expect(sameTerms(half, { ...terms, lateCancel: { kind: 'partial', percent: 60 } })).toBe(false)
   })
 })

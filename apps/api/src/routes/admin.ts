@@ -69,6 +69,8 @@ import {
   newCoachBindCode,
   saveHours,
   setDayOff,
+  slotWindows,
+  syncChangedWindows,
   syncSlots,
   unbindCoach,
 } from '../services/coaches'
@@ -427,6 +429,7 @@ export function adminRoutes(deps: Deps) {
 
   app.put('/settings', need('manage'), async (c) => {
     const body = await parseBody(c, venueSettings)
+    const windows = slotWindows(db)
     const { before, after } = immediate(db, (tx) => {
       const before = getSettings(tx)
       checkVersion(c, before)
@@ -434,6 +437,7 @@ export function adminRoutes(deps: Deps) {
       saveSettings(tx, body, deps.now())
       return { before, after: getSettings(tx) }
     })
+    syncChangedWindows(deps, windows)
     const changed = (Object.keys(settingsSectionLabel) as (keyof typeof settingsSectionLabel)[])
       .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
       .map((k) => settingsSectionLabel[k])
@@ -569,6 +573,7 @@ export function adminRoutes(deps: Deps) {
   app.put('/coaches/:id', need('manage'), async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, coachBody)
+    const windows = slotWindows(db)
     const before = immediate(db, (tx) => {
       // Binding comes and goes on its own (codes expire), so only the edited fields count.
       const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...editable } = coachView(id)
@@ -581,6 +586,8 @@ export function adminRoutes(deps: Deps) {
       saveCoach(tx, id, body)
       return old?.categoryId ?? null
     })
+    // The lessons taught set how far ahead the coach's slots reach.
+    syncChangedWindows(deps, windows)
     const view = coachView(id)
     logCoachCategory(c.get('staffId'), view, before)
     return c.json(view)
@@ -796,6 +803,7 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/lesson-types', need('manage'), async (c) => {
     const body = await parseBody(c, lessonTypeBody)
+    const windows = slotWindows(db)
     const row = db
       .insert(lessonTypes)
       .values({ ...body, rules: body.rules ?? {}, sort: nextSort(db, lessonTypes) })
@@ -813,6 +821,7 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'lesson_type', id: row.id },
       })
     }
+    syncChangedWindows(deps, windows)
     return c.json(lessonTypeView(row), 201)
   })
 
@@ -860,6 +869,7 @@ export function adminRoutes(deps: Deps) {
     }
     const was = ownRules(existing.rules)
     const rules = body.rules ?? was
+    const windows = slotWindows(db)
     const row = db
       .update(lessonTypes)
       .set({ ...body, rules })
@@ -883,6 +893,7 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'lesson_type', id },
       })
     }
+    syncChangedWindows(deps, windows)
     return c.json(lessonTypeView(row))
   })
 

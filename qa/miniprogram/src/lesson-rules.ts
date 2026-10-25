@@ -177,6 +177,11 @@ try {
   const [first] = slots
   check(first, `the coach needs a free time on ${day}`)
 
+  // The app keeps the catalog for a minute and fetched it at launch, before the rules were set.
+  await miniProgram.reLaunch('/pages/booking/index')
+  const home = await waitForPage('pages/booking/index')
+  await home.callMethod('load', true)
+
   await step("选择时间 offers the lesson type's 30 days", async () => {
     await miniProgram.reLaunch(`/pages/book/index?lessonTypeId=${lesson.id}&coachId=${coach.id}`)
     const page = await waitForPage('pages/book/index', (d) => d.state === 'ready')

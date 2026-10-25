@@ -310,16 +310,42 @@ export function setDayOff(deps: Deps, coachId: number, date: string, off: boolea
   })
 }
 
-/** Rolls every active coach's generated slots forward as days pass. */
-export function syncAllSlots(deps: Deps) {
-  const now = deps.now()
-  const ids = deps.db
+function coachesWithHours(db: Deps['db']) {
+  return db
     .selectDistinct({ id: coachHours.coachId })
     .from(coachHours)
     .innerJoin(coaches, eq(coaches.id, coachHours.coachId))
     .where(eq(coaches.active, true))
     .all()
-  for (const { id } of ids) {
+    .map((r) => r.id)
+}
+
+/** How many days ahead each coach's slots reach, to tell later whether an edit changed it. */
+export function slotWindows(db: Deps['db']): Map<number, number> {
+  const book = ruleBook(db)
+  return new Map(coachesWithHours(db).map((id) => [id, book.longestAdvanceDays(taughtBy(db, id))]))
+}
+
+/**
+ * Brings the slots of coaches whose window changed since `before` in line now, rather than at the
+ * next hourly sync, so a longer window is bookable at once.
+ */
+export function syncChangedWindows(deps: Deps, before: Map<number, number>) {
+  const now = deps.now()
+  for (const [id, days] of slotWindows(deps.db)) {
+    if (before.get(id) === days) continue
+    try {
+      immediate(deps.db, (tx) => syncSlots(tx, id, now))
+    } catch (e) {
+      deps.log('slot sync failed', { coachId: id, error: (e as Error).message })
+    }
+  }
+}
+
+/** Rolls every active coach's generated slots forward as days pass. */
+export function syncAllSlots(deps: Deps) {
+  const now = deps.now()
+  for (const id of coachesWithHours(deps.db)) {
     try {
       immediate(deps.db, (tx) => syncSlots(tx, id, now))
     } catch (e) {

@@ -284,6 +284,33 @@ describe('booking rules per lesson type', () => {
     expect(off.advanceDays).toBe(14)
   })
 
+  it('refuses a booking whose rules changed since the student saw them', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    ownRules(h, lesson.id, {
+      cancelDeadlineHours: 48,
+      lateCancel: { kind: 'partial', percent: 50 },
+    })
+    const t = await h.student('a')
+    const shown = {
+      cancelDeadlineHours: 48,
+      lateCancel: { kind: 'partial', percent: 50 },
+      studentMoves: 1,
+    }
+    const slot = h.slot(coach.id, '2026-10-27', 10)
+    ownRules(h, lesson.id, { cancelDeadlineHours: 2 })
+    const body = { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' }
+    const refused = await h.call('POST', '/bookings', { ...body, expectedTerms: shown }, t)
+    expect(refused.status).toBe(409)
+    expect(refused.json.error.code).toBe('terms_changed')
+    expect(h.db.select().from(bookings).all()).toHaveLength(0)
+
+    const now = { cancelDeadlineHours: 2, lateCancel: { kind: 'forfeit' }, studentMoves: 1 }
+    const booked = await h.call('POST', '/bookings', { ...body, expectedTerms: now }, t)
+    expect(booked.status).toBe(201)
+    expect(h.db.select().from(bookings).get()?.terms).toEqual(now)
+  })
+
   it("offers move times inside the lesson type's own window", async () => {
     const h = setup()
     const { coach, lesson } = h.seed()

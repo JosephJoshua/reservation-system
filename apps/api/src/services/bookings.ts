@@ -1,5 +1,6 @@
 import {
   type BookingQuoteDto,
+  type BookingTerms,
   bookingTerms,
   bookingWindowError,
   type CancelledBy,
@@ -7,6 +8,7 @@ import {
   freeCancelDeadline,
   freeSeat,
   isGroup,
+  sameTerms,
 } from '@rs/shared'
 import { and, asc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
@@ -119,6 +121,8 @@ export interface CreateBookingInput {
   expectedPrice?: number
   /** The package the student was shown; another one now refuses the booking. */
   expectedPackageId?: number
+  /** The cancel and move rules the student was shown; others now refuse the booking. */
+  expectedTerms?: BookingTerms
 }
 
 export interface CancelOptions {
@@ -307,6 +311,10 @@ export async function createBooking(
     // Changed by the venue, or a sale ended, since the student saw the price.
     if (!pkg && input.expectedPrice !== undefined && input.expectedPrice !== price.price) {
       throw new ApiError(409, 'price_changed', '价格已变动')
+    }
+    // Changed by the venue since the page loaded: the student agrees to the terms they will keep.
+    if (input.expectedTerms && !sameTerms(input.expectedTerms, rules)) {
+      throw new ApiError(409, 'terms_changed', '预约规则已变动')
     }
 
     const base = {

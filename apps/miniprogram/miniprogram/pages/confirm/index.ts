@@ -1,5 +1,7 @@
 import {
   type BookingQuoteDto,
+  type BookingTerms,
+  bookingTerms,
   type CreateBookingResponse,
   type MeDto,
   minCheckHours,
@@ -65,6 +67,8 @@ Page({
 
   /** Set once the student has gone back from this page. */
   left: false,
+  /** The cancel and move rules shown, which the booking must still be made under. */
+  terms: null as BookingTerms | null,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -98,6 +102,7 @@ Page({
         return
       }
       const { price, package: pkg, perClassEnabled } = quote
+      this.terms = bookingTerms(lessonType.rules)
       this.setData({
         state: 'ready',
         lessonName: lessonType.name,
@@ -230,6 +235,8 @@ Page({
         ...(this.data.payWith === 'package' && this.data.pkg
           ? { expectedPackageId: this.data.pkg.id }
           : {}),
+        // And if the venue changed the cancel or move rules meanwhile.
+        ...(this.terms ? { expectedTerms: this.terms } : {}),
       })
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
@@ -251,6 +258,20 @@ Page({
           await wx.showModal({
             title: '价格已变动',
             content: `现价 ${this.data.priceText}，请确认后再支付`,
+            showCancel: false,
+          })
+        }
+        return
+      }
+      if (e instanceof ApiError && e.code === 'terms_changed') {
+        const { payWith } = this.data
+        await getCatalog(true).catch(() => undefined)
+        await this.load()
+        if (payWith === 'wechat' && this.data.perClassEnabled) this.setData({ payWith })
+        if (this.data.state === 'ready') {
+          await wx.showModal({
+            title: '预约规则已变动',
+            content: `${this.data.cancelRule}请确认后再预约`,
             showCancel: false,
           })
         }

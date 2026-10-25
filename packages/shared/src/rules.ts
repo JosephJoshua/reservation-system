@@ -21,6 +21,17 @@ export function bookingTerms(rules: BookingTerms): BookingTerms {
   }
 }
 
+/** Whether two sets of terms say the same, as a student shown one would be booked under the other. */
+export function sameTerms(a: BookingTerms, b: BookingTerms): boolean {
+  const late = (r: BookingTerms) =>
+    r.lateCancel.kind === 'partial' ? r.lateCancel.percent : r.lateCancel.kind
+  return (
+    a.cancelDeadlineHours === b.cancelDeadlineHours &&
+    a.studentMoves === b.studentMoves &&
+    late(a) === late(b)
+  )
+}
+
 export type BookingWindowError = 'started' | 'too_soon' | 'too_far'
 
 /** Whether a lesson starting at `startsAt` can be booked now under its lesson type's rules. */

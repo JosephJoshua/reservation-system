@@ -50,12 +50,13 @@ export function askForNotices(
 /** One line on what cancelling late costs, for the confirm and detail pages. */
 export function cancelRuleText(hours: number, rule: LateCancelRule): string {
   const late =
-    rule.kind === 'forfeit'
+    rule.kind === 'forfeit' || rule.percent === 0
       ? '之后再取消，则不退费用和课时'
       : rule.percent === 100
         ? '之后取消也全额退款'
         : `之后再取消，则退还 ${rule.percent}% 的费用，但不退课时`
-  return `开课前 ${hours} 小时以上可免费取消；${late}。`
+  // With no deadline, only a lesson that has started is late, and it cannot be cancelled then.
+  return hours === 0 ? '开课前随时可以免费取消。' : `开课前 ${hours} 小时以上可免费取消；${late}。`
 }
 
 /** Records that the student agreed to the policies now in force, as the policy page shows them. */

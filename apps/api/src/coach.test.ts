@@ -201,6 +201,27 @@ describe('weekly hours', () => {
     expect((await h.call('GET', '/coach/hours', undefined, token)).json.advanceDays).toBe(24)
   })
 
+  it('reach a longer window as soon as the admin sets it', async () => {
+    const h = setup()
+    const { coach, lesson, admin, token } = await withCoach(h)
+    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
+    expect(coachSlots(h, coach.id)).toHaveLength(2)
+    const row = (await h.call('GET', '/admin/lesson-types', undefined, admin)).json.find(
+      (t: { id: number }) => t.id === lesson.id,
+    )
+    const { id: _id, createdAt: _c, sort: _s, ...edit } = row
+    await h.call(
+      'PUT',
+      `/admin/lesson-types/${lesson.id}`,
+      { ...edit, rules: { advanceDays: 24 } },
+      admin,
+    )
+    expect(coachSlots(h, coach.id)).toHaveLength(4)
+    // Shortened again, the slots nobody booked go.
+    await h.call('PUT', `/admin/lesson-types/${lesson.id}`, { ...edit, rules: {} }, admin)
+    expect(coachSlots(h, coach.id)).toHaveLength(2)
+  })
+
   it('rejects lengths the coach does not teach and overlapping windows', async () => {
     const h = setup()
     const { token } = await withCoach(h)
