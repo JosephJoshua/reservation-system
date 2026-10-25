@@ -1,12 +1,16 @@
-import { Button, MessagePlugin } from 'tdesign-react'
+import { Button, MessagePlugin, Switch, type SwitchProps } from 'tdesign-react'
 import { api } from './api'
-import { attempt, newKey } from './hooks'
+import { attempt, newKey, useSubmitting } from './hooks'
 
 // Long enough to read the message and reach the button.
 const UNDO_MS = 6000
 
-/** A success message with 撤销, for a change made at once rather than after a confirmation. */
-export function undoMessage(text: string, undo: () => void) {
+/**
+ * A success message with 撤销, for a change made at once rather than after a confirmation.
+ * `undo` resolves true once undone; a refused undo leaves the button to try again.
+ */
+export function undoMessage(text: string, undo: () => Promise<boolean>) {
+  let busy = false
   let closed = false
   const shown = MessagePlugin.success({
     content: (
@@ -16,11 +20,14 @@ export function undoMessage(text: string, undo: () => void) {
           variant="text"
           theme="primary"
           size="small"
-          onClick={() => {
-            if (closed) return
+          onClick={async () => {
+            if (busy || closed) return
+            busy = true
+            const done = await undo()
+            busy = false
+            if (!done) return
             closed = true
             void shown.then((m) => m.close())
-            undo()
           }}
         >
           撤销
@@ -31,10 +38,20 @@ export function undoMessage(text: string, undo: () => void) {
   })
 }
 
+/** The `attempt` key a `toggle` of this record runs under, for its switch's loading state. */
+export const toggleKey = (path: string) => `toggle:${path}`
+
+/** A switch in a list for `toggle`, busy while its record is being changed. */
+export function ListSwitch({ path, ...props }: SwitchProps & { path: string }) {
+  const busy = useSubmitting(toggleKey(path))
+  return <Switch {...props} loading={busy} />
+}
+
 /**
  * Turns a switch in a list on or off at once, with 撤销 in the message. The whole record is saved
  * as listed, so a change someone else made meanwhile is refused rather than overwritten, and the
- * undo is checked against the record as this change left it.
+ * undo is checked against the record as this change left it. Until the list has loaded again the
+ * record takes no other change, as its switch would still show the old state.
  */
 export async function toggle<T extends object>({
   path,
@@ -53,25 +70,28 @@ export async function toggle<T extends object>({
   const back = Object.fromEntries(
     Object.keys(change).map((k) => [k, row[k as keyof T]]),
   ) as Partial<T>
+  const key = toggleKey(path)
+  // A refusal because the record changed elsewhere loads the list again, so the next try works.
+  const opts = { key, stale: ['edited_elsewhere'], onStale: () => void reload() }
   let saved: T | undefined
   const ok = await attempt(
     async () => {
       saved = await api<T>('PUT', path, { ...row, ...change }, { ifMatch: row, key: newKey() })
+      await reload()
     },
     undefined,
-    { key: path, onStale: () => void reload() },
+    opts,
   )
   if (!ok || !saved) return
-  await reload()
   const after = saved
-  undoMessage(done, async () => {
-    if (
-      await attempt(
-        () => api('PUT', path, { ...after, ...back }, { ifMatch: after, key: newKey() }),
-        '已撤销',
-        { key: path, onStale: () => void reload() },
-      )
-    )
-      await reload()
-  })
+  undoMessage(done, () =>
+    attempt(
+      async () => {
+        await api('PUT', path, { ...after, ...back }, { ifMatch: after, key: newKey() })
+        await reload()
+      },
+      '已撤销',
+      opts,
+    ),
+  )
 }

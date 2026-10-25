@@ -1,6 +1,6 @@
 import type { AdminFeedbackDto } from '@rs/shared'
 import { venueInstant } from '@rs/shared'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable, LoadMore } from '../DataTable'
@@ -38,21 +38,26 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
   )
   if (coachId && !studentId) params.set('coachId', String(coachId))
   const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
-  const { reload } = list
+  // The list as filtered now, also for a 撤销 pressed after the filter changed.
+  const reload = useRef(list.reload)
+  reload.current = list.reload
 
-  const setHidden = async (row: AdminFeedbackDto, hidden: boolean, undone = false) => {
-    if (
-      await attempt(
-        () => api('PUT', `/admin/feedback/${row.id}/hidden`, { hidden }),
-        undone ? '已撤销' : hidden ? undefined : '已恢复',
-        { key: `feedback-${row.id}` },
-      )
-    ) {
-      // Hiding takes effect at once, with 撤销 in the message instead of a confirmation.
-      if (hidden && !undone)
-        undoMessage('已隐藏，学员看不到这条点评', () => void setHidden(row, false, true))
-      await reload()
-    }
+  const setHidden = async (
+    row: AdminFeedbackDto,
+    hidden: boolean,
+    undone = false,
+  ): Promise<boolean> => {
+    const ok = await attempt(
+      () => api('PUT', `/admin/feedback/${row.id}/hidden`, { hidden }),
+      undone ? '已撤销' : hidden ? undefined : '已恢复',
+      { key: `feedback-${row.id}` },
+    )
+    if (!ok) return false
+    // Hiding takes effect at once, with 撤销 in the message instead of a confirmation.
+    if (hidden && !undone)
+      undoMessage('已隐藏，学员看不到这条点评', () => setHidden(row, false, true))
+    await reload.current()
+    return true
   }
 
   return (

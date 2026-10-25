@@ -4,9 +4,11 @@ import { Button, Dialog } from 'tdesign-react'
 import { api } from './api'
 import { BookForStudent } from './BookForStudent'
 import { NewStudentDialog } from './DeskStudent'
+import { overlayShown } from './hooks'
 import { useCan } from './me'
 import { sections as settingsSections } from './pages/Settings'
 import { leaveTo } from './SaveBar'
+import { SHOW_SECTION } from './SectionNav'
 import { setThemeChoice } from './theme'
 import type { StudentRow } from './types'
 
@@ -61,24 +63,41 @@ export function CommandMenu({
   )
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
+  // What had the focus, given back when the menu is closed without picking anything.
+  const back = useRef<Element | null>(null)
   const listId = useId()
 
+  // Each opening starts empty.
+  const show = () => {
+    back.current = document.activeElement
+    setQ('')
+    setActive(0)
+    setOpen(true)
+  }
+  const dismiss = () => {
+    setOpen(false)
+    if (back.current instanceof HTMLElement) back.current.focus()
+  }
+
+  // The latest show and dismiss for the key listener, which is added once.
+  const keys = useRef({ open, show, dismiss })
+  keys.current = { open, show, dismiss }
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setOpen((o) => !o)
-      }
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'k') return
+      e.preventDefault()
+      const { open, show, dismiss } = keys.current
+      if (open) dismiss()
+      // A dialog or drawer on screen keeps the keyboard, as leaving it could drop what it holds.
+      else if (!overlayShown()) show()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Each opening starts empty, with the field ready to type in.
+  // The field is ready to type in once the menu is on screen.
   useEffect(() => {
     if (!open) return
-    setQ('')
-    setActive(0)
     const timer = setTimeout(() => input.current?.focus())
     return () => clearTimeout(timer)
   }, [open])
@@ -105,6 +124,16 @@ export function CommandMenu({
   }, [open, canFindStudent, term])
 
   const go = (hash: string) => () => void leaveTo(hash)
+  // On 设置 already, another section is a scroll, not a page change that asks about unsaved edits.
+  const toSection = (key: string) => () => {
+    const hash = `#/settings?section=${key}`
+    if (window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] !== 'settings') {
+      void leaveTo(hash)
+      return
+    }
+    history.replaceState(history.state, '', hash)
+    window.dispatchEvent(new Event(SHOW_SECTION))
+  }
   const all: Item[] = [
     ...pages.map((p) => ({
       id: `page-${p.key}`,
@@ -141,7 +170,7 @@ export function CommandMenu({
           id: `settings-${s.key}`,
           group: '设置',
           label: `设置 · ${s.label}`,
-          run: go(`#/settings?section=${s.key}`),
+          run: toSection(s.key),
         }))
       : []),
     ...(
@@ -210,7 +239,8 @@ export function CommandMenu({
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     // Keys pressed while picking characters belong to the input method.
-    if (e.nativeEvent.isComposing) return
+    // Safari sends the Enter that picks a character after composing ends, as key code 229.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
     const step =
       e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')
         ? 1
@@ -226,7 +256,8 @@ export function CommandMenu({
     }
   }
 
-  let lastGroup = ''
+  // Items are already in group order.
+  const groups = [...new Set(items.map((i) => i.group))]
   return (
     <>
       <Button
@@ -234,7 +265,7 @@ export function CommandMenu({
         className="command-button"
         aria-label="快捷菜单"
         title={`快捷菜单（${MENU_KEYS}）`}
-        onClick={() => setOpen(true)}
+        onClick={show}
       >
         <kbd>{MENU_KEYS}</kbd>
       </Button>
@@ -248,7 +279,7 @@ export function CommandMenu({
         width={560}
         className="command-menu"
         destroyOnClose
-        onClose={() => setOpen(false)}
+        onClose={dismiss}
       >
         <div className="command-search">
           <SearchIcon size="20px" />
@@ -258,6 +289,7 @@ export function CommandMenu({
             placeholder="搜索页面、操作或学员"
             role="combobox"
             aria-label="快捷菜单"
+            aria-autocomplete="list"
             aria-expanded
             aria-controls={listId}
             aria-activedescendant={items[current] ? `${listId}-${items[current].id}` : undefined}
@@ -269,30 +301,40 @@ export function CommandMenu({
           />
         </div>
         <div className="command-list" id={listId} role="listbox" ref={list} aria-label="结果">
-          {items.map((item, i) => {
-            const head = item.group !== lastGroup
-            lastGroup = item.group
-            return (
-              <div key={item.id} role="presentation">
-                {head && <div className="command-group">{item.group}</div>}
-                <div
-                  id={`${listId}-${item.id}`}
-                  role="option"
-                  tabIndex={-1}
-                  aria-selected={i === current}
-                  className={i === current ? 'command-item active' : 'command-item'}
-                  onMouseMove={() => i !== current && setActive(i)}
-                  // Keeps the focus in the field.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => run(item)}
-                  onKeyDown={() => {}}
-                >
-                  <span className="command-label">{item.label}</span>
-                  {item.meta && <span className="muted command-meta">{item.meta}</span>}
-                </div>
+          {groups.map((group) => (
+            // A listbox groups its options with role="group"; a fieldset is for form fields.
+            // biome-ignore lint/a11y/useSemanticElements: see above
+            <div
+              key={group}
+              role="group"
+              aria-labelledby={`${listId}-${group}`}
+              className="command-section"
+            >
+              <div id={`${listId}-${group}`} className="command-group">
+                {group}
               </div>
-            )
-          })}
+              {items.map((item, i) =>
+                item.group !== group ? null : (
+                  <div
+                    key={item.id}
+                    id={`${listId}-${item.id}`}
+                    role="option"
+                    tabIndex={-1}
+                    aria-selected={i === current}
+                    className={i === current ? 'command-item active' : 'command-item'}
+                    onMouseMove={() => i !== current && setActive(i)}
+                    // Keeps the focus in the field.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => run(item)}
+                    onKeyDown={() => {}}
+                  >
+                    <span className="command-label">{item.label}</span>
+                    {item.meta && <span className="muted command-meta">{item.meta}</span>}
+                  </div>
+                ),
+              )}
+            </div>
+          ))}
           {studentNote && <div className="command-note">{studentNote}</div>}
           {items.length === 0 && !studentNote && <div className="command-note">没有找到</div>}
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   Button,
   type PrimaryTableCol,
@@ -6,6 +6,7 @@ import {
   type TableProps,
   type TableRowData,
 } from 'tdesign-react'
+import { overlayShown } from './hooks'
 import { type Reorder, ReorderCell } from './Reorder'
 
 // Columns of row buttons. On a phone they become the card's footer instead of a labelled row.
@@ -14,26 +15,26 @@ const ACTION_COLUMNS = new Set(['op', 'actions'])
 // Tables that take J / K, newest last: only the last one mounted answers the keys.
 const keyed: string[] = []
 
-/** True when the key belongs to something else: typing, a button, a dialog or a drawer. */
+/**
+ * True when the key belongs to something else: a field, button or tab with focus, or a dialog,
+ * drawer or popup on screen. The keys work with nothing focused or a row of the table focused.
+ */
 function keyTaken(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return true
   const el = e.target instanceof Element ? e.target : null
-  if (
-    el?.closest('input, textarea, select, button, a, [contenteditable], .t-dialog__ctx, .t-drawer')
-  )
-    return true
-  return [...document.querySelectorAll<HTMLElement>('.t-dialog__ctx, .t-drawer--open')].some(
-    (d) => getComputedStyle(d).display !== 'none',
-  )
+  if (el && el !== document.body && !el.matches('.t-table tr, .t-table td')) return true
+  return overlayShown()
 }
 
 /**
  * J and K move a highlighted row down and up, Enter or O opens it, Esc lets go, as in mail apps.
- * The row under the keys is `cursor`.
+ * The row under the keys is `cursor`; it lets go when the rows change, so Enter never opens a row
+ * other than the one picked.
  */
-function useRowKeys(count: number, open?: (index: number) => void) {
+function useRowKeys(rows: readonly TableRowData[], rowKey: string, open?: (index: number) => void) {
   const id = useId()
   const [cursor, setCursor] = useState<number | null>(null)
+  const count = rows.length
   const on = Boolean(open)
   useEffect(() => {
     if (!on) return
@@ -42,6 +43,12 @@ function useRowKeys(count: number, open?: (index: number) => void) {
       keyed.splice(keyed.indexOf(id), 1)
     }
   }, [on, id])
+  const ids = rows.map((r) => String(r[rowKey])).join(',')
+  const seen = useRef(ids)
+  if (seen.current !== ids) {
+    seen.current = ids
+    if (cursor !== null) setCursor(null)
+  }
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -90,7 +97,11 @@ export function DataTable<T extends TableRowData>({
   ...props
 }: TableProps<T> & { reorder?: Reorder<T>; onOpen?: (row: T) => void }) {
   const data = props.data ?? []
-  const keys = useRowKeys(data.length, onOpen && ((i) => data[i] && onOpen(data[i])))
+  const keys = useRowKeys(
+    data,
+    String(props.rowKey ?? 'id'),
+    onOpen && ((i) => data[i] && onOpen(data[i])),
+  )
   const all: PrimaryTableCol<T>[] | undefined = reorder
     ? [
         {
@@ -127,7 +138,11 @@ export function DataTable<T extends TableRowData>({
       dragSort={reorder && !reorder.disabled ? 'row-handler' : props.dragSort}
       onDragSort={reorder ? ({ newData }) => reorder.move(newData) : props.onDragSort}
       className={props.className ? `card-table ${props.className}` : 'card-table'}
-      rowClassName={({ rowIndex }) => (rowIndex === keys.cursor ? keys.className : '')}
+      rowClassName={(ctx) => {
+        const own = props.rowClassName
+        const theirs = typeof own === 'function' ? own(ctx) : own
+        return ctx.rowIndex === keys.cursor ? [theirs, keys.className] : theirs
+      }}
     />
   )
 }

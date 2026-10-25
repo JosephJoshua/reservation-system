@@ -23,7 +23,7 @@ import {
 } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
 import type { Banner } from '../types'
-import { toggle } from '../undo'
+import { ListSwitch, toggle } from '../undo'
 
 type BannerForm = Omit<Banner, 'id'>
 
@@ -121,13 +121,13 @@ export function Banners({
               <div className="banner-row">
                 <div className="banner-row-title">
                   <span>{row.title || '无标题'}</span>
-                  <Switch
-                    size="small"
+                  <ListSwitch
+                    path={`/admin/banners/${row.id}`}
                     value={row.active}
                     // TDesign leaves the state out for screen readers.
                     aria-checked={row.active}
                     label={['显示', '隐藏']}
-                    aria-label={`${row.title || '无标题'}：${row.active ? '显示' : '隐藏'}`}
+                    aria-label={`${row.title || '无标题'} 显示`}
                     onChange={(v) =>
                       void toggle({
                         path: `/admin/banners/${row.id}`,

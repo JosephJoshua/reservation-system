@@ -27,7 +27,7 @@ import {
 } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
-import { toggle } from '../undo'
+import { ListSwitch, toggle } from '../undo'
 
 type ProductForm = Omit<PackageProduct, 'id'>
 
@@ -165,12 +165,13 @@ export function Products() {
             title: '状态',
             // Takes effect at once, with 撤销 in the message instead of a confirmation.
             cell: ({ row }) => (
-              <Switch
+              <ListSwitch
+                path={`/admin/package-products/${row.id}`}
                 value={row.onSale}
                 // TDesign leaves the state out for screen readers.
                 aria-checked={row.onSale}
                 label={['在售', '下架']}
-                aria-label={`${row.name}：${row.onSale ? '在售' : '下架'}`}
+                aria-label={`${row.name} 在售`}
                 onChange={(v) =>
                   void toggle({
                     path: `/admin/package-products/${row.id}`,

@@ -12,6 +12,8 @@ let studentId = 0
 const menu = (page: Page) => page.locator('.command-menu .t-dialog')
 const search = (page: Page) => page.getByRole('combobox', { name: '快捷菜单' })
 const openMenu = async (page: Page) => {
+  // The keys work once the signed-in header is up.
+  await expect(page.getByRole('button', { name: '快捷菜单' })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+k')
   await expect(search(page)).toBeFocused()
 }
@@ -105,6 +107,38 @@ test('⌘K asks before leaving unsaved changes', async ({ page }) => {
   await expect(page.getByText('放弃未保存的修改？')).toBeVisible()
   await page.getByRole('button', { name: '继续编辑' }).click()
   await expect(page).toHaveURL(/#\/settings/)
+})
+
+test('on 设置, ⌘K scrolls to a section and keeps the unsaved edit without asking', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await login(page)
+  await page.goto('./#/settings')
+  await field(page, '电话').locator('input').fill(`020-${run}`)
+  await openMenu(page)
+  await search(page).fill('课时费')
+  await page.getByRole('option', { name: '设置 · 课时费' }).click()
+  await expect(page.getByText('放弃未保存的修改？')).toHaveCount(0)
+  await expect(page.locator('.t-card__title', { hasText: '课时费' })).toBeInViewport()
+  await expect(page).toHaveURL(/#\/settings\?section=pay$/)
+  await expect(field(page, '电话').locator('input')).toHaveValue(`020-${run}`)
+})
+
+test('⌘K waits while a dialog is open, and gives the focus back when closed', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/products')
+  await page.getByRole('button', { name: '新建课时包' }).click()
+  await expect(page.locator('.t-dialog__header', { hasText: '新建课时包' })).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+k')
+  await expect(menu(page)).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.t-dialog__header', { hasText: '新建课时包' })).toBeHidden()
+
+  await page.getByRole('button', { name: '导出' }).focus()
+  await openMenu(page)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: '导出' })).toBeFocused()
 })
 
 test('J and K move through the students and Enter opens one', async ({ page }) => {

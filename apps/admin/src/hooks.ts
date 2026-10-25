@@ -47,15 +47,25 @@ function setInFlight(key: string, on: boolean) {
   for (const fn of listeners) fn()
 }
 
-/** True while a dialog's change is on its way, for its confirm button's loading state. */
-export function useSubmitting() {
+/**
+ * True while a dialog's change is on its way, for its confirm button's loading state, or the
+ * change passed to `attempt` under `key`.
+ */
+export function useSubmitting(key = DIALOG) {
   return useSyncExternalStore(
     (fn) => {
       listeners.add(fn)
       return () => listeners.delete(fn)
     },
-    () => inFlight.has(DIALOG),
+    () => inFlight.has(key),
   )
+}
+
+/** True while a dialog, drawer or popup is on screen, which then owns the keyboard. */
+export function overlayShown(except?: Element | null) {
+  return [
+    ...document.querySelectorAll<HTMLElement>('.t-dialog__ctx, .t-drawer--open, .t-popup'),
+  ].some((el) => !except?.contains(el) && getComputedStyle(el).display !== 'none')
 }
 
 // Refusals that mean the record changed elsewhere, so what the dialog shows is out of date.
