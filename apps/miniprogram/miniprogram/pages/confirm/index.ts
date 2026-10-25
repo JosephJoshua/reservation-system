@@ -271,7 +271,7 @@ Page({
         if (this.data.state === 'ready') {
           await wx.showModal({
             title: '预约规则已变动',
-            content: `${this.data.cancelRule}请确认后再预约`,
+            content: `${this.data.cancelRule}\n请确认后再预约。`,
             showCancel: false,
           })
         }

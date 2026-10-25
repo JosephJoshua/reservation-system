@@ -179,8 +179,14 @@ try {
 
   // The app keeps the catalog for a minute and fetched it at launch, before the rules were set.
   await miniProgram.reLaunch('/pages/booking/index')
-  const home = await waitForPage('pages/booking/index')
-  await home.callMethod('load', true)
+  await waitForPage('pages/booking/index')
+  // Called inside the app: a page handle from waitForPage can go stale across the reload.
+  await miniProgram.evaluate(() => {
+    const pages = getCurrentPages()
+    const page = pages[pages.length - 1] as unknown as { load(fresh: boolean): Promise<void> }
+    return page.load(true)
+  })
+  await sleep(1000)
 
   await step("选择时间 offers the lesson type's 30 days", async () => {
     await miniProgram.reLaunch(`/pages/book/index?lessonTypeId=${lesson.id}&coachId=${coach.id}`)
