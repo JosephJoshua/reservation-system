@@ -5,6 +5,7 @@ import {
   bookingWindowError,
   type CatalogDto,
   type CoachDetailDto,
+  clashes,
   daysBetween,
   defaultAgreementText,
   type HomeDto,
@@ -58,7 +59,7 @@ import { liveLink } from '../services/links'
 import { moveBooking, moveOptions } from '../services/moves'
 import { startPayment, syncOrder, syncPendingOrders } from '../services/orders'
 import { purchasePackage, requestPackageRefund } from '../services/packages'
-import { openTimes } from '../services/schedule'
+import { exceptionsFor, openTimes } from '../services/schedule'
 import { liveCounts } from '../services/sessions'
 import { getSettings, ruleBook } from '../services/settings'
 import { linkDeskStudent } from '../services/student-link'
@@ -369,7 +370,7 @@ export function studentRoutes(deps: Deps) {
     const open = (startsAt: Date, typeId: number | null) =>
       bookingWindowError(startsAt, now, windowOf(typeId)) === null
 
-    const sessions = db
+    const listed = db
       .select()
       .from(slots)
       .where(
@@ -393,6 +394,14 @@ export function studentRoutes(deps: Deps) {
             ? lengthOf(s) === lengthOf(moving)
             : !lessonType || lengthOf(s) === lessonType.durationMinutes * 60_000),
       )
+    // A session a later 请假 or 闭馆 covers takes no one new, so it is not offered.
+    const off = exceptionsFor(db, activeCoaches, {
+      startsAt: venueInstant(from, 0),
+      endsAt: venueInstant(addVenueDays(to, 1), 0),
+    })
+    const sessions = listed.filter(
+      (s) => !(off.get(s.coachId) ?? []).some((e) => e.kind === 'off' && clashes(s, e)),
+    )
     const taken = liveCounts(
       db,
       sessions.map((r) => r.id),

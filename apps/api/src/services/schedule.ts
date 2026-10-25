@@ -267,13 +267,7 @@ export function assertPrivateTime(
       throw new ApiError(409, 'coach_busy', '该教练在这个时间已有课')
     }
     // Outside 排班 is time the coach agreed to, never their 请假 or a 闭馆.
-    const off = (exceptionsFor(tx, [coachId], span).get(coachId) ?? []).filter(
-      (e) => e.kind === 'off',
-    )
-    if (off.some((e) => e.coachId === null)) {
-      throw new ApiError(409, 'venue_closed', '这个时间闭馆')
-    }
-    if (off.length) throw new ApiError(409, 'coach_off', '该教练这个时间请假')
+    assertNotOff(tx, coachId, span)
     return
   }
   const { startGrid, bufferMinutes } = getSettings(tx).booking
@@ -287,6 +281,17 @@ export function assertPrivateTime(
   if (offered) return
   if (busy.some((b) => clashes(span, b, bufferMinutes))) throw timeTaken()
   throw new ApiError(409, 'time_unavailable', '该时间不可预约')
+}
+
+/** Refuses a lesson that runs into the coach's 请假 or a 闭馆, naming the 闭馆 first. */
+function assertNotOff(tx: Q, coachId: number, span: Span) {
+  const off = (exceptionsFor(tx, [coachId], span).get(coachId) ?? []).filter(
+    (e) => e.kind === 'off',
+  )
+  if (off.some((e) => e.coachId === null)) {
+    throw new ApiError(409, 'venue_closed', '这个时间闭馆')
+  }
+  if (off.length) throw new ApiError(409, 'coach_off', '该教练这个时间请假')
 }
 
 export const timeTaken = () => new ApiError(409, 'slot_taken', '该时段已被预约')
@@ -345,7 +350,11 @@ export function targetSlot(
   if ('slotId' in target) {
     const slot = tx.select().from(slots).where(eq(slots.id, target.slotId)).get()
     if (!slot) throw new ApiError(404, 'slot_not_found', '时段不存在')
-    if (slot.lessonTypeId !== null) return slot
+    if (slot.lessonTypeId !== null) {
+      // A session that a later 请假 or 闭馆 covers takes no one new.
+      assertNotOff(tx, slot.coachId, slot)
+      return slot
+    }
     coachId = slot.coachId
     startsAt = slot.startsAt
   } else {

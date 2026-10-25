@@ -538,6 +538,67 @@ describe('请假, 加班 and 闭馆', () => {
     expect((await session(SUN, '11:00')).status).toBe(201)
   })
 
+  it('takes no one new in a session that a later 请假 or 闭馆 covers', async () => {
+    const h = setup()
+    const { coach, admin } = await venue(h)
+    const kids = h.db
+      .insert(lessonTypes)
+      .values({ name: '少儿小班课', durationMinutes: 60, price: 8000, capacity: 4 })
+      .returning()
+      .get()
+    h.db.insert(coachLessonTypes).values({ coachId: coach.id, lessonTypeId: kids.id }).run()
+    await h.call(
+      'POST',
+      '/admin/sessions',
+      {
+        lessonTypeId: kids.id,
+        capacity: 4,
+        sessions: [SUN, MON].map((d) => ({
+          coachId: coach.id,
+          startsAt: at(d, '15:00'),
+          endsAt: at(d, '16:00'),
+        })),
+      },
+      admin,
+    )
+    const [sunday, monday] = h.db.select().from(slots).all()
+    const student = await h.student('b')
+    const offered = async (date: string) =>
+      (await h.call('GET', `/slots?date=${date}&lessonTypeId=${kids.id}`, undefined, student)).json
+        .length
+    expect([await offered(SUN), await offered(MON)]).toEqual([1, 1])
+
+    await exception(h, admin, coach.id, 'off', at(SUN, '14:30'), at(SUN, '15:30'))
+    await h.call(
+      'POST',
+      '/admin/closures',
+      { startsAt: at(MON, '00:00'), endsAt: at('2026-10-27', '00:00') },
+      admin,
+    )
+    expect([await offered(SUN), await offered(MON)]).toEqual([0, 0])
+    const leave = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: sunday?.id, lessonTypeId: kids.id },
+      student,
+    )
+    expect([leave.status, leave.json.error.code]).toEqual([409, 'coach_off'])
+    const closed = await h.call(
+      'POST',
+      '/admin/bookings',
+      {
+        studentId: 1,
+        slotId: monday?.id,
+        lessonTypeId: kids.id,
+        payWith: 'offline',
+        amount: 8000,
+        method: 'cash',
+      },
+      admin,
+    )
+    expect([closed.status, closed.json.error.code]).toEqual([409, 'venue_closed'])
+  })
+
   it('cuts one under way short at now instead of removing what is past', async () => {
     const h = setup()
     const { coach, admin } = await venue(h)
