@@ -237,7 +237,10 @@ test('a venue cancel on a booking the student already cancelled closes and refre
   // The student cancels both while the dialog is open.
   await dialog(page).locator('textarea').fill('教练临时有事')
   for (const b of booked) {
-    await call(request, 'POST', `/bookings/${b.bookingId}/cancel`, studentToken)
+    // The first open slot can be inside the free cancel window, depending on the time of day.
+    await call(request, 'POST', `/bookings/${b.bookingId}/cancel`, studentToken, {
+      acceptLate: true,
+    })
   }
   await dialog(page).getByRole('button', { name: '确认取消' }).click()
   await expect(page.getByText('该预约已取消')).toBeVisible()
