@@ -148,6 +148,13 @@ await build({
   target: 'es2017',
   logLevel: 'warning',
 })
+// The client entry must stay free of zod: bundled, it adds ~800 KB and DevTools stalls starting the app.
+const sharedJs = readFileSync(join(libDir, 'shared.js'), 'utf8')
+if (/\bzod\b/.test(sharedJs) || sharedJs.length > 100_000) {
+  throw new Error(
+    `lib/shared.js is ${Math.round(sharedJs.length / 1000)} KB and must not pull in zod; import only types from settings.ts in client modules`,
+  )
+}
 const typesPath = relative(libDir, sharedEntry).replace(/\\/g, '/').replace(/\.ts$/, '')
 writeFileSync(join(libDir, 'shared.d.ts'), `export * from '${typesPath}'\n`)
 
