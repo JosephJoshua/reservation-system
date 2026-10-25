@@ -1,13 +1,22 @@
 import type { Fen } from './pricing'
-import { type BookingRules, type RuleOverrides, ruleNames } from './settings'
+import type { BookingRules, RuleName, RuleOverrides } from './settings'
 import { venueDateKey, venueInstant } from './time'
+
+/** Every booking rule. Listed here rather than read off the zod schema so the mini program bundle stays free of zod. */
+export const RULE_NAMES = [
+  'advanceDays',
+  'minNoticeMinutes',
+  'cancelDeadlineHours',
+  'lateCancel',
+  'studentMoves',
+] as const satisfies readonly RuleName[]
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
 /** A lesson type's rules: its own where it sets one, the venue's otherwise. */
 export function rulesFor(venue: BookingRules, own: RuleOverrides | null | undefined): BookingRules {
-  return Object.fromEntries(ruleNames.map((k) => [k, own?.[k] ?? venue[k]])) as BookingRules
+  return Object.fromEntries(RULE_NAMES.map((k) => [k, own?.[k] ?? venue[k]])) as BookingRules
 }
 
 /** The rules a booking keeps from when it was made, so later edits leave it alone. */
