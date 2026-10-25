@@ -1910,3 +1910,119 @@ a:hover {
   min-width: 0;
   line-height: 32px;
 }
+
+/* ⌘K menu (CommandMenu.tsx). */
+.command-button kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-small);
+  color: var(--td-text-color-secondary);
+  font: 12px / 18px var(--td-font-family);
+}
+
+.command-menu .t-dialog {
+  padding: 0;
+  overflow: hidden;
+}
+
+.command-menu .t-dialog__body {
+  padding: 0;
+}
+
+.command-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  color: var(--td-text-color-placeholder);
+}
+
+.command-search input {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--td-text-color-primary);
+  font: inherit;
+  font-size: 16px;
+}
+
+.command-search input::placeholder {
+  color: var(--td-text-color-placeholder);
+}
+
+.command-list {
+  max-height: min(400px, 56vh);
+  padding: 4px 8px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.command-group {
+  padding: 12px 8px 4px;
+  color: var(--td-text-color-secondary);
+  font-size: 12px;
+}
+
+.command-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 8px;
+  border-radius: var(--td-radius-default);
+  color: var(--td-text-color-primary);
+  cursor: pointer;
+}
+
+.command-item.active {
+  background: var(--td-bg-color-container-hover);
+}
+
+.command-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-meta {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.command-note {
+  padding: 12px 8px;
+  color: var(--td-text-color-secondary);
+}
+
+.command-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--td-component-stroke);
+  color: var(--td-text-color-placeholder);
+  font-size: 12px;
+}
+
+/* The row J / K are on (DataTable.tsx). */
+.t-table tr.row-cursor > td {
+  background: var(--td-bg-color-container-hover);
+}
+
+.t-table tr.row-cursor > td:first-child {
+  box-shadow: inset 2px 0 var(--td-brand-color);
+}
+
+/* A message with 撤销 (undo.tsx). */
+.undo-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

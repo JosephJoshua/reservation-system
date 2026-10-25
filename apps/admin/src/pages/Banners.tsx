@@ -8,7 +8,6 @@ import {
   Popconfirm,
   Space,
   Switch,
-  Tag,
 } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
@@ -24,6 +23,7 @@ import {
 } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
 import type { Banner } from '../types'
+import { toggle } from '../undo'
 
 type BannerForm = Omit<Banner, 'id'>
 
@@ -104,6 +104,7 @@ export function Banners({
         loading={banners.loading}
         data={banners.data ?? []}
         reorder={{ move }}
+        onOpen={(row) => setEdit({ id: row.id, form: { ...row }, loaded: row, key: newKey() })}
         empty={banners.error ?? '还没有轮播图'}
         columns={[
           {
@@ -120,7 +121,23 @@ export function Banners({
               <div className="banner-row">
                 <div className="banner-row-title">
                   <span>{row.title || '无标题'}</span>
-                  {!row.active && <Tag variant="light">隐藏</Tag>}
+                  <Switch
+                    size="small"
+                    value={row.active}
+                    // TDesign leaves the state out for screen readers.
+                    aria-checked={row.active}
+                    label={['显示', '隐藏']}
+                    aria-label={`${row.title || '无标题'}：${row.active ? '显示' : '隐藏'}`}
+                    onChange={(v) =>
+                      void toggle({
+                        path: `/admin/banners/${row.id}`,
+                        row,
+                        change: { active: Boolean(v) },
+                        done: v ? '已显示这张轮播图' : '已隐藏这张轮播图',
+                        reload: banners.reload,
+                      })
+                    }
+                  />
                 </div>
                 <div className="banner-row-meta">
                   跳转：{targets.label(row)}

@@ -22,6 +22,7 @@ import {
 import { Button, ConfigProvider, Drawer, Loading } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
+import { CommandMenu } from './CommandMenu'
 import { useApi, useIsPhone } from './hooks'
 import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
@@ -275,6 +276,15 @@ function SignedInApp({
             </span>
             <span className="header-actions">
               {allowed.includes('students') && <StudentSearch compact={phone} />}
+              {!phone && (
+                <CommandMenu
+                  pages={allowed.map((key) => ({
+                    key,
+                    label: pages[key].label,
+                    group: navGroups.find((g) => g.keys.includes(key))?.title,
+                  }))}
+                />
+              )}
               <ThemeMenu />
               {me.data && <span className="muted signed-in">{me.data.name}</span>}
               <Button variant="text" onClick={onLogout}>

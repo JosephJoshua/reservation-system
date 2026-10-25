@@ -23,7 +23,7 @@ import { coordValid, VenueLocation } from '../VenueLocation'
 import { Closures } from './CoachDialogs'
 
 /** The parts of 设置, in the order of the page, with the settings each one holds. */
-const sections = [
+export const sections = [
   { key: 'venue', label: '场馆', pick: (v: VenueSettings) => v.venue },
   {
     key: 'booking',

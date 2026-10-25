@@ -9,6 +9,7 @@ import { addDays, fmtDateTime, today } from '../format'
 import { attempt, useApi, usePagedApi } from '../hooks'
 import { StudentCell } from '../StudentCell'
 import type { Coach } from '../types'
+import { undoMessage } from '../undo'
 
 function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default'] {
   if (row.deleted) return ['教练已删除', 'default']
@@ -39,14 +40,17 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
   const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
   const { reload } = list
 
-  const setHidden = async (row: AdminFeedbackDto, hidden: boolean) => {
+  const setHidden = async (row: AdminFeedbackDto, hidden: boolean, undone = false) => {
     if (
       await attempt(
         () => api('PUT', `/admin/feedback/${row.id}/hidden`, { hidden }),
-        hidden ? '已隐藏，学员看不到这条点评' : '已恢复',
+        undone ? '已撤销' : hidden ? undefined : '已恢复',
         { key: `feedback-${row.id}` },
       )
     ) {
+      // Hiding takes effect at once, with 撤销 in the message instead of a confirmation.
+      if (hidden && !undone)
+        undoMessage('已隐藏，学员看不到这条点评', () => void setHidden(row, false, true))
       await reload()
     }
   }

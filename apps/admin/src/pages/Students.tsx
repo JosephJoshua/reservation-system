@@ -60,6 +60,7 @@ import {
   packageStatusLabel,
 } from '../labels'
 import { useCan } from '../me'
+import { leaveTo } from '../SaveBar'
 import type { LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
 import { Feedback } from './Feedback'
 import { Orders } from './Orders'
@@ -196,6 +197,7 @@ export function Students() {
         rowKey="id"
         loading={list.loading && !list.loaded}
         data={list.rows}
+        onOpen={(row) => void leaveTo(`#/students/${row.id}`)}
         empty={
           list.error ??
           (query
