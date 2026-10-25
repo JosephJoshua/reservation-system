@@ -501,13 +501,16 @@ export function ExceptionForm({
               setRange([d, [d, range[1]].sort()[1] ?? d])
             }}
           />
-          <span>至</span>
-          <DatePicker
-            value={range[1]}
-            clearable={false}
-            disableDate={{ before: range[0] }}
-            onChange={(v) => setRange([range[0], String(v || range[0])])}
-          />
+          {/* 至 wraps with the end date on a phone, not after the start. */}
+          <Space align="center" size={8}>
+            <span>至</span>
+            <DatePicker
+              value={range[1]}
+              clearable={false}
+              disableDate={{ before: range[0] }}
+              onChange={(v) => setRange([range[0], String(v || range[0])])}
+            />
+          </Space>
         </Space>
       ) : (
         <Space align="center" breakLine size={8}>

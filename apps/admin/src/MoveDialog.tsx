@@ -35,6 +35,7 @@ export function MoveDialog({
   const coaches = useApi<Coach[]>('/admin/coaches')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [pick, setPick] = useState<LessonPick | null>(null)
+  const [refresh, setRefresh] = useState(0)
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
   const lessonType = (types.data ?? []).find((t) => t.id === booking.lessonType.id)
@@ -45,22 +46,21 @@ export function MoveDialog({
 
   const submit = async () => {
     if (!pick) return
-    let stale = false
     const ok = await attempt(
       () => api('POST', `/admin/bookings/${booking.id}/move`, pickBody(pick), { key }),
       '已改约',
       {
         // The lesson was cancelled or started meanwhile.
         stale: ['not_movable', 'started'],
-        onStale: () => {
-          stale = true
-          onDone()
+        onStale: onDone,
+        // The time may have gone meanwhile: pick again from what is free now.
+        onRefused: () => {
+          setPick(null)
+          setRefresh((n) => n + 1)
         },
       },
     )
     if (ok) onDone()
-    // The time may have gone meanwhile: pick again from what is free now.
-    else if (!stale) setPick(null)
   }
 
   return (
@@ -96,6 +96,7 @@ export function MoveDialog({
                 teaching.some((c) => c.id === booking.coach.id) ? booking.coach.id : undefined
               }
               initialDate={venueDateKey(new Date(booking.startsAt))}
+              refresh={refresh}
               value={pick}
               onChange={setPick}
             />

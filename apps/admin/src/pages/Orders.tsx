@@ -94,6 +94,8 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
           {
             colKey: 'outTradeNo',
             title: '订单号',
+            // 25 characters of a monospace-like id, kept on one line.
+            width: 210,
             cell: ({ row }) => <span className="muted nowrap">{row.outTradeNo}</span>,
           },
         ]}

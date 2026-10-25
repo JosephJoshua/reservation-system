@@ -1,6 +1,6 @@
 import type { OpenTimeDto } from '@rs/shared'
 import { venueInstant } from '@rs/shared'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, DatePicker, Select, TimePicker } from 'tdesign-react'
 import { fmtTime, today, venueIso } from './format'
 import { useApi } from './hooks'
@@ -47,6 +47,8 @@ export function LessonTimePicker({
   allowOutside,
   initialCoachId,
   initialDate,
+  snap = false,
+  refresh,
   value,
   onChange,
 }: {
@@ -58,6 +60,10 @@ export function LessonTimePicker({
   allowOutside: boolean
   initialCoachId?: number
   initialDate?: string
+  /** The value was handed in, as a time clicked on the 日程 board, and may not be open as is. */
+  snap?: boolean
+  /** Changed to load the open times again. */
+  refresh?: number
   value: LessonPick | null
   onChange: (p: LessonPick | null) => void
 }) {
@@ -119,20 +125,59 @@ export function LessonTimePicker({
       Date.parse(s.endsAt) - Date.parse(s.startsAt) === minutes * 60_000,
   )
 
-  // A time handed in (from the 日程 board) that 排班 does not offer is an outside time.
+  // A time handed in with `snap`, from the 日程 board, that 排班 does not offer as it stands (off
+  // the grid, or running into another lesson) settles once on the open start time that covers
+  // it, or else becomes an outside time. A picked time gone after a reload is dropped.
+  const snapping = useRef(snap)
   const loaded = times.data !== null && !times.loading
   useEffect(() => {
     if (!loaded || !value || value.kind !== 'time' || value.outside) return
+    const first = snapping.current
+    snapping.current = false
     const match = offered.find((t) => sameTime(value, t.coachId, t.startsAt))
     // No table is free then: nothing to book, in 排班 or outside it.
     if (match?.tableFull) onChange(null)
     if (match) return
-    if (allowOutside) {
-      setOutside(true)
-      onChange({ ...value, outside: true })
-    } else onChange(null)
+    if (!first) {
+      onChange(null)
+      return
+    }
+    const at = Date.parse(value.startsAt)
+    const covering = offered.findLast(
+      (t) =>
+        t.coachId === value.coachId &&
+        !t.tableFull &&
+        Date.parse(t.startsAt) <= at &&
+        at < Date.parse(t.endsAt),
+    )
+    if (covering) {
+      onChange({
+        kind: 'time',
+        coachId: covering.coachId,
+        startsAt: covering.startsAt,
+        endsAt: covering.endsAt,
+        outside: false,
+      })
+    } else onChange(allowOutside ? { ...value, outside: true } : null)
   })
 
+  // Asked again after a refused booking, so a time taken meanwhile goes from the list.
+  const refreshed = useRef(refresh)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloads only when `refresh` changes
+  useEffect(() => {
+    if (refresh === refreshed.current) return
+    refreshed.current = refresh
+    void times.reload()
+    void sessions.reload()
+  }, [refresh])
+
+  // An outside time handed in or settled on opens the outside time field, which stays open when
+  // the coach or date changes.
+  const outsideValue = value?.kind === 'time' && value.outside
+  useEffect(() => {
+    if (outsideValue) setOutside(true)
+  }, [outsideValue])
+  const showOutside = outside || outsideValue
   const outsideTime = value?.kind === 'time' && value.outside ? fmtTime(value.startsAt) : undefined
   const pickOutside = (hhmm: string) => {
     if (!coachId || !/^\d{2}:\d{2}$/.test(hhmm)) return
@@ -174,9 +219,12 @@ export function LessonTimePicker({
           onChange(null)
         }}
       />
-      {outside && !group ? (
+      {showOutside && !group ? (
         <>
-          <Alert theme="warning" message="排班外的时间请先和教练确认。教练这时已有课时不能预约。" />
+          <Alert
+            theme="warning"
+            message="排班外的时间请先和教练确认。教练已有课、请假或闭馆时不能预约。"
+          />
           {coach ? (
             <TimePicker
               format="HH:mm"

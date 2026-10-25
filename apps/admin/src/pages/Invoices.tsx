@@ -115,7 +115,7 @@ export function Invoices() {
           {
             colKey: 'order',
             title: '订单',
-            width: 170,
+            width: 160,
             cell: ({ row }) => (
               <span>
                 {orderTitle(row.order.kind, row.order.description)}
@@ -130,7 +130,7 @@ export function Invoices() {
           {
             colKey: 'title',
             title: '抬头',
-            width: 220,
+            width: 200,
             cell: ({ row }) =>
               row.title.name ? (
                 <span>
@@ -147,7 +147,7 @@ export function Invoices() {
           {
             colKey: 'email',
             title: '邮箱',
-            width: 190,
+            width: 170,
             cell: ({ row }) => row.title.email || <span className="muted">-</span>,
           },
           { colKey: 'amount', title: '开票金额', cell: ({ row }) => yuan(row.amount) },

@@ -30,6 +30,8 @@ const SLOT_GONE = [
   'not_found',
   'coach_not_teaching',
   'slot_not_found',
+  'coach_off',
+  'venue_closed',
 ]
 
 Page({

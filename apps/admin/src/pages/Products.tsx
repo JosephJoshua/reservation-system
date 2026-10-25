@@ -129,6 +129,7 @@ export function Products() {
           {
             colKey: 'name',
             title: '名称',
+            width: 180,
             cell: ({ row }) => <span className="nowrap">{row.name}</span>,
           },
           { colKey: 'lessonTypeId', title: '课程', cell: ({ row }) => typeName(row.lessonTypeId) },
@@ -173,6 +174,7 @@ export function Products() {
           {
             colKey: 'op',
             title: '操作',
+            width: 150,
             cell: ({ row }) => (
               <Space size={0}>
                 <Button
