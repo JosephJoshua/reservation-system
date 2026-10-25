@@ -2,6 +2,7 @@
 import {
   type Grip,
   type InvoiceTitle,
+  LINK_KINDS,
   type StaffRole,
   type StudentLevel,
   studentNoticeKinds,
@@ -585,9 +586,7 @@ export const banners = sqliteTable('banners', {
   id: id(),
   imageUrl: text('image_url').notNull(),
   title: text('title').notNull().default(''),
-  linkKind: text('link_kind', { enum: ['none', 'package', 'lesson_type'] })
-    .notNull()
-    .default('none'),
+  linkKind: text('link_kind', { enum: LINK_KINDS }).notNull().default('none'),
   linkId: integer('link_id'),
   startsAt: instant('starts_at'),
   endsAt: instant('ends_at'),

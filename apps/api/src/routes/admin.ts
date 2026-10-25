@@ -6,6 +6,9 @@ import {
   endsSameVenueDay,
   groupSettingsError,
   isGroup,
+  LINK_TARGET_MESSAGE,
+  linkShape,
+  linkTargetValid,
   MAX_CAPACITY,
   offlineMethodLabels,
   offlineMethods,
@@ -76,6 +79,7 @@ import {
   markRefundSeen,
   rejectInvoice,
 } from '../services/invoices'
+import { checkLinkTarget } from '../services/links'
 import { resolveMapLink } from '../services/map-links'
 import { moveBooking } from '../services/moves'
 import { nextSort, orderedLists, saveOrder } from '../services/order'
@@ -232,13 +236,12 @@ const bannerBody = z
   .object({
     imageUrl: z.string().min(1).max(300),
     title: z.string().trim().max(30).default(''),
-    linkKind: z.enum(['none', 'package', 'lesson_type']).default('none'),
-    linkId: z.number().int().positive().nullable().default(null),
+    ...linkShape,
     startsAt: nullableInstant.default(null),
     endsAt: nullableInstant.default(null),
     active: z.boolean().default(true),
   })
-  .refine((v) => (v.linkKind === 'none') === (v.linkId === null), { message: '请选择跳转目标' })
+  .refine(linkTargetValid, { message: LINK_TARGET_MESSAGE, path: ['linkId'] })
   .refine((v) => !v.startsAt || !v.endsAt || v.startsAt < v.endsAt, {
     message: '结束时间需晚于开始时间',
   })
@@ -420,6 +423,7 @@ export function adminRoutes(deps: Deps) {
     const { before, after } = immediate(db, (tx) => {
       const before = getSettings(tx)
       checkVersion(c, before)
+      checkLinkTarget(tx, body.notice)
       saveSettings(tx, body, deps.now())
       return { before, after: getSettings(tx) }
     })
@@ -2153,14 +2157,15 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/banners', need('manage'), async (c) => {
     const body = await parseBody(c, bannerBody)
-    return c.json(
-      db
+    const row = immediate(db, (tx) => {
+      checkLinkTarget(tx, body)
+      return tx
         .insert(banners)
-        .values({ ...body, sort: nextSort(db, banners) })
+        .values({ ...body, sort: nextSort(tx, banners) })
         .returning()
-        .get(),
-      201,
-    )
+        .get()
+    })
+    return c.json(row, 201)
   })
 
   app.put('/banners/:id', need('manage'), async (c) => {
@@ -2170,6 +2175,7 @@ export function adminRoutes(deps: Deps) {
       const current = tx.select().from(banners).where(eq(banners.id, id)).get()
       if (!current) throw notFound('轮播图')
       checkVersion(c, current)
+      checkLinkTarget(tx, body)
       return tx.update(banners).set(body).where(eq(banners.id, id)).returning().get()
     })
     return c.json(row)

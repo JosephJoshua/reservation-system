@@ -74,7 +74,7 @@ saveSettings(
       longitude: 116.3163,
       openingHours: '每天 09:00-22:00',
     },
-    notice: { text: '国庆假期正常营业，欢迎预约', endsAt: null },
+    notice: { text: '国庆假期正常营业，欢迎预约', endsAt: null, linkKind: 'none', linkId: null },
     policies: {
       booking:
         '1. 请提前 10 分钟到场热身。\n2. 开课前 24 小时以上可免费取消；之后再取消，则不退费用和课时。\n3. 迟到不顺延下课时间。',

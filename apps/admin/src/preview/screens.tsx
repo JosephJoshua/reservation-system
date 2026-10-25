@@ -14,12 +14,14 @@ export function HomeScreen({
   catalog,
   venue,
   notice,
+  noticeLinked,
   bannerId,
   focus,
 }: {
   catalog: CatalogData
   venue: HomeDto['venue']
   notice: string
+  noticeLinked: boolean
   bannerId?: number
   focus?: { kind: 'lessonType' | 'coach'; id: number }
 }) {
@@ -98,7 +100,7 @@ export function HomeScreen({
 
       {notice && (
         <div className="notice">
-          <TNoticeBar content={notice} marquee={notice.length > 22} />
+          <TNoticeBar content={notice} marquee={notice.length > 22} linked={noticeLinked} />
         </div>
       )}
 

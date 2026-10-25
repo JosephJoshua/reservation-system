@@ -7,6 +7,7 @@ import {
   formatYuan,
   type HomeDto,
   type LessonTypeDto,
+  type LinkTarget,
   lessonPrice,
   type PackageProductDto,
   type PriceTag,
@@ -31,7 +32,7 @@ export type Draft =
       kind: 'home'
       id: null
       venue: HomeDto['venue']
-      notice: { text: string; endsAt: string | null }
+      notice: { text: string; endsAt: string | null } & LinkTarget
       payment: { trialEnabled: boolean; packagesEnabled: boolean }
       /** The banners as the page shows them, so a change in order or a new one shows at once. */
       banners?: Banner[]
@@ -93,7 +94,13 @@ export function withDraft(source: PreviewSource, draft: Draft): PreviewSource {
       // Shown even when expired, so the admin sees it; hiddenReasons says it is not live.
       return {
         ...source,
-        home: { ...source.home, venue: draft.venue, notice: draft.notice.text },
+        home: {
+          ...source.home,
+          venue: draft.venue,
+          notice: draft.notice.text,
+          // As saved; the API also drops a link students cannot open, which the picker flags.
+          noticeLink: { linkKind: draft.notice.linkKind, linkId: draft.notice.linkId },
+        },
         payment: draft.payment,
         banners: draft.banners ?? source.banners,
       }

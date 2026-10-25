@@ -28,7 +28,14 @@
   </swiper>
 
   <view wx:if="{{notice}}" class="notice">
-    <t-notice-bar visible content="{{notice}}" prefixIcon="sound" marquee="{{notice.length > 22}}" />
+    <t-notice-bar
+      visible
+      content="{{notice}}"
+      prefixIcon="sound"
+      suffixIcon="{{noticeLink.linkKind === 'none' ? '' : 'chevron-right'}}"
+      marquee="{{notice.length > 22}}"
+      bind:click="openNotice"
+    />
   </view>
 
   <view class="section-title">选择课程</view>

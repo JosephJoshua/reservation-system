@@ -1,7 +1,8 @@
-import type { BannerDto, CatalogDto, HomeDto } from '../../lib/shared'
+import { type BannerDto, type CatalogDto, type HomeDto, NO_LINK } from '../../lib/shared'
 import { assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { priceText } from '../../utils/format'
+import { openLink, openVenue } from '../../utils/link'
 import { navigateOnce } from '../../utils/nav'
 import { openOnce } from '../../utils/tap'
 
@@ -13,6 +14,7 @@ Page({
     errorIcon: { name: 'error-circle', size: '112rpx' },
     venue: null as HomeDto['venue'] | null,
     notice: '',
+    noticeLink: NO_LINK,
     banners: [] as (BannerDto & { src: string })[],
     lessonTypes: [] as {
       id: number
@@ -57,6 +59,8 @@ Page({
       state: 'ready',
       venue: home.venue,
       notice: home.notice ?? '',
+      // Missing from an API older than this page.
+      noticeLink: home.noticeLink ?? NO_LINK,
       banners: home.banners.map((b) => ({ ...b, src: assetUrl(b.imageUrl) })),
       lessonTypes: catalog.lessonTypes.map((t) => {
         const { price, original } = priceText(t.fromPrice)
@@ -99,12 +103,11 @@ Page({
 
   openBanner(e: WechatMiniprogram.TouchEvent) {
     const banner = this.data.banners[e.currentTarget.dataset.index as number]
-    if (!banner?.linkId) return
-    if (banner.linkKind === 'lesson_type') {
-      navigateOnce(`/pages/book/index?lessonTypeId=${banner.linkId}`)
-    } else if (banner.linkKind === 'package') {
-      navigateOnce(`/pages/packages/index?id=${banner.linkId}`)
-    }
+    if (banner) openLink(banner, this.data.venue)
+  },
+
+  openNotice() {
+    openLink(this.data.noticeLink, this.data.venue)
   },
 
   openLessonType(e: WechatMiniprogram.TouchEvent) {
@@ -120,24 +123,7 @@ Page({
   },
 
   openMap() {
-    const venue = this.data.venue
-    if (!venue) return
-    const { latitude, longitude } = venue
-    if (latitude == null || longitude == null) {
-      const { address } = venue
-      if (address) openOnce((complete) => wx.setClipboardData({ data: address, complete }))
-      return
-    }
-    openOnce((complete) =>
-      wx.openLocation({
-        latitude,
-        longitude,
-        name: venue.name,
-        address: venue.address,
-        scale: 16,
-        complete,
-      }),
-    )
+    if (this.data.venue) openVenue(this.data.venue)
   },
 
   call() {

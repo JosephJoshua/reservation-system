@@ -6,7 +6,6 @@ import {
   Dialog,
   Input,
   Popconfirm,
-  Select,
   Space,
   Switch,
   Tag,
@@ -17,13 +16,14 @@ import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
 import { type ApiData, attempt, newKey, useApi, useSubmitting } from '../hooks'
 import { BANNER_IMAGE, useImageUpload } from '../ImageCrop'
+import { LinkPicker, type LinkTargets, useLinkTargets } from '../LinkPicker'
 import {
   EditorWithPreview,
   PREVIEW_DIALOG_WIDTH,
   PreviewDialog,
 } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
-import type { Banner, LessonType, PackageProduct } from '../types'
+import type { Banner } from '../types'
 
 type BannerForm = Omit<Banner, 'id'>
 
@@ -36,8 +36,7 @@ export function Banners({
   /** Shows a banner in the page's own preview; without it 预览 opens a dialog. */
   onPreview?: (banner: Banner) => void
 }) {
-  const products = useApi<PackageProduct[]>('/admin/package-products')
-  const types = useApi<LessonType[]>('/admin/lesson-types')
+  const targets = useLinkTargets()
   const [edit, setEdit] = useState<{
     id: number | null
     form: BannerForm
@@ -68,14 +67,6 @@ export function Banners({
 
   const remove = async (id: number) => {
     if (await attempt(() => api('DELETE', `/admin/banners/${id}`), '已删除')) await banners.reload()
-  }
-
-  const linkLabel = (b: Banner) => {
-    if (b.linkKind === 'package')
-      return `课时包：${products.data?.find((p) => p.id === b.linkId)?.name ?? ''}`
-    if (b.linkKind === 'lesson_type')
-      return `课程：${types.data?.find((t) => t.id === b.linkId)?.name ?? ''}`
-    return '无'
   }
 
   return (
@@ -132,7 +123,7 @@ export function Banners({
                   {!row.active && <Tag variant="light">隐藏</Tag>}
                 </div>
                 <div className="banner-row-meta">
-                  跳转：{linkLabel(row)}
+                  跳转：{targets.label(row)}
                   <br />
                   展示：
                   {row.startsAt || row.endsAt
@@ -193,8 +184,7 @@ export function Banners({
           <EditorWithPreview draft={{ kind: 'banner', id: edit.id, form: edit.form }}>
             <BannerEditor
               value={edit.form}
-              products={products.data ?? []}
-              types={types.data ?? []}
+              targets={targets}
               // Merged into the latest form, so an upload finishing later keeps what was typed meanwhile.
               onChange={(patch) => setEdit((e) => e && { ...e, form: { ...e.form, ...patch } })}
             />
@@ -214,21 +204,14 @@ export function Banners({
 
 function BannerEditor({
   value: f,
-  products,
-  types,
+  targets,
   onChange: set,
 }: {
   value: BannerForm
-  products: PackageProduct[]
-  types: LessonType[]
+  targets: LinkTargets
   onChange: (patch: Partial<BannerForm>) => void
 }) {
   const image = useImageUpload(BANNER_IMAGE, (url) => set({ imageUrl: url }))
-
-  const targets =
-    f.linkKind === 'package'
-      ? products.map((p) => ({ label: p.name, value: p.id }))
-      : types.map((t) => ({ label: t.name, value: t.id }))
 
   return (
     <div className="fields">
@@ -253,26 +236,7 @@ function BannerEditor({
         <Input value={f.title} maxlength={30} onChange={(v) => set({ title: String(v) })} />
       </Field>
       <Field label="点击跳转">
-        <Space>
-          <Select
-            style={{ width: 120 }}
-            value={f.linkKind}
-            options={[
-              { label: '不跳转', value: 'none' },
-              { label: '课时包', value: 'package' },
-              { label: '课程', value: 'lesson_type' },
-            ]}
-            onChange={(v) => set({ linkKind: v as BannerForm['linkKind'], linkId: null })}
-          />
-          {f.linkKind !== 'none' && (
-            <Select
-              style={{ width: 220 }}
-              value={f.linkId ?? undefined}
-              options={targets}
-              onChange={(v) => set({ linkId: Number(v) })}
-            />
-          )}
-        </Space>
+        <LinkPicker value={f} targets={targets} onChange={set} />
       </Field>
       <Field label="展示时间" help="不填则一直展示">
         <DateRangePicker

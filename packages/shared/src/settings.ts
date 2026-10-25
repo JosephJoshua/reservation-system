@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import { LINK_KINDS, LINK_TARGET_MESSAGE, linkTargetValid } from './links'
+
+/** Fields of a banner or notice link; refine the object with `linkTargetValid`. */
+export const linkShape = {
+  linkKind: z.enum(LINK_KINDS).default('none'),
+  linkId: z.number().int().positive().nullable().default(null),
+}
 
 export const lateCancelRule = z.discriminatedUnion('kind', [
   // The lesson counts as taken: no refund, no lesson returned.
@@ -41,10 +48,14 @@ export const venueSettings = z.object({
     timeoutMinutes: z.number().int().min(5).max(30),
     trialLimitPerStudent: z.number().int().min(1).max(10),
   }),
-  notice: z.object({
-    text: z.string().max(60),
-    endsAt: z.iso.datetime({ offset: true }).nullable(),
-  }),
+  notice: z
+    .object({
+      text: z.string().max(60),
+      endsAt: z.iso.datetime({ offset: true }).nullable(),
+      // Where a tap on the notice goes.
+      ...linkShape,
+    })
+    .refine(linkTargetValid, { message: LINK_TARGET_MESSAGE, path: ['linkId'] }),
   policies: z.object({
     booking: z.string().max(2000),
     agreement: z.string().max(5000),
@@ -94,7 +105,7 @@ export const defaultSettings: VenueSettings = {
     timeoutMinutes: 10,
     trialLimitPerStudent: 1,
   },
-  notice: { text: '', endsAt: null },
+  notice: { text: '', endsAt: null, linkKind: 'none', linkId: null },
   policies: {
     booking: '课前 24 小时以上取消的，全额退款或退回课时；之后再取消，则视为已上课。',
     agreement: '',

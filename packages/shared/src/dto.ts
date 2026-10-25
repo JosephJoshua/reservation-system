@@ -1,6 +1,7 @@
 // Response shapes of the student API. Instants are ISO strings; money is fen.
 import type { Attendance, AttendanceBy } from './availability'
 import type { OrderInvoiceDto } from './invoices'
+import type { LinkKind, LinkTarget } from './links'
 import type { PriceTag } from './pricing'
 import type { LateCancelRule } from './settings'
 
@@ -64,7 +65,7 @@ export interface BannerDto {
   id: number
   imageUrl: string
   title: string
-  linkKind: 'none' | 'package' | 'lesson_type'
+  linkKind: LinkKind
   linkId: number | null
 }
 
@@ -78,6 +79,8 @@ export interface HomeDto {
     openingHours: string
   }
   notice: string | null
+  /** Where a tap on the notice goes; a target students can no longer open comes as none. */
+  noticeLink: LinkTarget
   banners: BannerDto[]
 }
 
