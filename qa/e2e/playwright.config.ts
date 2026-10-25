@@ -26,7 +26,8 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'pnpm --filter @rs/api start',
+      // A fresh database each run, so specs that save settings find them as they expect.
+      command: 'rm -f ../../apps/api/data/e2e.db* && pnpm --filter @rs/api start',
       url: 'http://localhost:8787/api/health',
       env: { DATABASE_PATH: 'data/e2e.db', PORT: '8787' },
       reuseExistingServer: !ci,

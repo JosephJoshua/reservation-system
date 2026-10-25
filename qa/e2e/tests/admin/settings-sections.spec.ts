@@ -79,9 +79,8 @@ test('首页内容 saves the notice and 预约须知 with the bar', async ({ pag
 
   // 设置 saves the whole settings, and keeps what 首页内容 saved.
   await page.goto('./#/settings')
-  await field(page, '营业时间')
-    .locator('input')
-    .fill(`09:00-21:${run.slice(-1)}0`)
+  const hours = field(page, '营业时间').locator('input')
+  await hours.fill((await hours.inputValue()) === '09:00-21:30' ? '09:00-21:00' : '09:00-21:30')
   await bar(page).getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已保存').first()).toBeVisible()
   await page.goto('./#/banners')
