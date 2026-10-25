@@ -170,6 +170,12 @@ test('⌘K gives the focus back after an item that stays on the page', async ({ 
   await openMenu(page)
   await search(page).fill('跟随系统')
   await page.keyboard.press('Enter')
+
+  // Esc closes it with the focus outside the field too.
+  await openMenu(page)
+  await menu(page).locator('.command-hint').click()
+  await page.keyboard.press('Escape')
+  await expect(menu(page)).toBeHidden()
 })
 
 test('⌘K waits while a dialog is open, and gives the focus back when closed', async ({ page }) => {
