@@ -10,7 +10,7 @@ import {
   isGroup,
   sameTerms,
 } from '@rs/shared'
-import { and, asc, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -30,6 +30,7 @@ import { newOutTradeNo } from './ids'
 import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
 import { createRefund, submitRefund } from './refunds'
+import { type SlotTarget, targetSlot } from './schedule'
 import { getSettings, ruleBook } from './settings'
 import { assertTableFree } from './tables'
 
@@ -114,7 +115,7 @@ export const windowMessages = {
 } as const
 
 export interface CreateBookingInput {
-  slotId: number
+  target: SlotTarget
   lessonTypeId: number
   payWith?: 'package' | 'wechat'
   /** The price the student was shown, in fen; a different price now refuses the booking. */
@@ -179,22 +180,62 @@ function noPrice(tx: Q, coachId: number): ApiError {
   )
 }
 
-/** What booking a slot would cost the student, for the confirm page. */
-export function quoteBooking(deps: Deps, studentId: number, slotId: number, lessonTypeId: number) {
+/** The coach and start of a target, without checking whether it can be booked. */
+export function targetTime(tx: Q, target: SlotTarget) {
+  if (!('slotId' in target))
+    return { coachId: target.coachId, startsAt: target.startsAt, slot: null }
+  const slot = tx.select().from(slots).where(eq(slots.id, target.slotId)).get()
+  if (!slot) throw new ApiError(404, 'not_found', '该时段已取消')
+  return { coachId: slot.coachId, startsAt: slot.startsAt, slot }
+}
+
+/** What booking a lesson would cost the student, for the confirm page. */
+export function quoteBooking(
+  deps: Deps,
+  studentId: number,
+  target: SlotTarget,
+  lessonTypeId: number,
+) {
   const { db } = deps
   const student = db.select().from(students).where(eq(students.id, studentId)).get()
-  const slot = db.select().from(slots).where(eq(slots.id, slotId)).get()
   const lessonType = db.select().from(lessonTypes).where(eq(lessonTypes.id, lessonTypeId)).get()
-  if (!student || !slot || !lessonType || !visibleTo(lessonType, student)) throw notFound('时段')
-  assertTeaches(slot, lessonType)
-  const price = priceFor(db, slot.coachId, lessonType, deps.now())
-  if (!price) throw noPrice(db, slot.coachId)
-  const pkg = lessonType.isTrial ? undefined : usablePackage(db, studentId, lessonType.id, slot)
+  if (!student || !lessonType || !visibleTo(lessonType, student)) throw notFound('时段')
+  const at = targetTime(db, target)
+  assertTeaches(at.slot ?? { lessonTypeId: null }, lessonType)
+  const price = priceFor(db, at.coachId, lessonType, deps.now())
+  if (!price) throw noPrice(db, at.coachId)
+  const pkg = lessonType.isTrial ? undefined : usablePackage(db, studentId, lessonType.id, at)
   return {
     price,
     package: pkg ? { id: pkg.id, name: pkg.name, lessonsRemaining: pkg.lessonsRemaining } : null,
     perClassEnabled: lessonType.isTrial || getSettings(db).payment.perClassEnabled,
   } satisfies BookingQuoteDto
+}
+
+/**
+ * The student's live booking at a target, if they already hold it: in the session, or with that
+ * coach at that start for a private lesson.
+ */
+export function heldAt(tx: Q, studentId: number, target: SlotTarget) {
+  const at = targetTime(tx, target)
+  return tx
+    .select({ id: bookings.id, status: bookings.status, lessonTypeId: bookings.lessonTypeId })
+    .from(bookings)
+    .innerJoin(slots, eq(slots.id, bookings.slotId))
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        inArray(bookings.status, LIVE),
+        at.slot && at.slot.lessonTypeId !== null
+          ? eq(bookings.slotId, at.slot.id)
+          : and(
+              isNull(slots.lessonTypeId),
+              eq(slots.coachId, at.coachId),
+              eq(bookings.startsAt, at.startsAt),
+            ),
+      ),
+    )
+    .get()
 }
 
 /**
@@ -252,21 +293,9 @@ export async function createBooking(
     const student = tx.select().from(students).where(eq(students.id, studentId)).get()
     // Deleted while this request was on its way.
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
-    const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
-    if (!slot) throw new ApiError(404, 'not_found', '该时段已取消')
     // A repeated tap or a retry after a lost response gets the booking it already made, rather
-    // than being told the slot is taken (by the student themself).
-    const own = tx
-      .select({ id: bookings.id, status: bookings.status, lessonTypeId: bookings.lessonTypeId })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.slotId, slot.id),
-          eq(bookings.studentId, studentId),
-          inArray(bookings.status, LIVE),
-        ),
-      )
-      .get()
+    // than being told the time is taken (by the student themself).
+    const own = heldAt(tx, studentId, input.target)
     if (own && own.lessonTypeId === input.lessonTypeId) {
       const order = tx
         .select({ id: orders.id })
@@ -281,9 +310,6 @@ export async function createBooking(
         repeat: true,
       }
     }
-    // A cancelled class is closed too; say it was cancelled.
-    if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
-    if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段不可预约')
     const lessonType = tx
       .select()
       .from(lessonTypes)
@@ -291,6 +317,16 @@ export async function createBooking(
       .get()
     if (!lessonType || !visibleTo(lessonType, student)) {
       throw new ApiError(404, 'not_found', '该课程暂不可预约')
+    }
+    const slot = targetSlot(tx, input.target, {
+      minutes: lessonType.durationMinutes,
+      lessonType,
+      rule: 'schedule',
+    })
+    // A cancelled class is closed too; say it was cancelled.
+    if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
+    if (slot.lessonTypeId !== null && !slot.open) {
+      throw new ApiError(409, 'slot_closed', '该时段不可预约')
     }
     const rules = ruleBook(tx, settings).of(lessonType.id)
     const windowError = bookingWindowError(slot.startsAt, now, rules)

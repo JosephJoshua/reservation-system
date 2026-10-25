@@ -88,9 +88,8 @@ export interface Slot {
   coachId: number
   startsAt: string
   endsAt: string
+  /** Whether a group session takes new students. */
   open: boolean
-  /** `hours` slots come from the coach's weekly hours and come back if deleted. */
-  source: 'manual' | 'hours'
   /** Set for a group session: the class it teaches, to `capacity` students. */
   lessonTypeId: number | null
   capacity: number
@@ -98,7 +97,7 @@ export interface Slot {
   cancelReason: string | null
   /** Every table is in use at some moment of it, so it cannot take a new lesson. */
   tableFull: boolean
-  /** The one lesson in a private slot; null in a group session. */
+  /** The one lesson in a private lesson row; null in a group session. */
   booking: SlotBooking | null
   /** Every live booking, the students of a group session. */
   bookings: SlotBooking[]
@@ -107,6 +106,7 @@ export interface Slot {
 export interface SlotBooking {
   id: number
   status: BookingStatus
+  lessonTypeId: number
   attendance: Attendance | null
   student: Person | null
 }

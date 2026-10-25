@@ -4,6 +4,7 @@ import {
   bookingWindowError,
   freeCancelDeadline,
   type MoveOptionsDto,
+  type OpenTimeDto,
   type PriceTag,
   studentMoveError,
 } from '@rs/shared'
@@ -20,10 +21,18 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
-import { assertNoClash, assertTeaches, seatTaken, takeSeat, windowMessages } from './bookings'
+import {
+  assertNoClash,
+  assertTeaches,
+  seatTaken,
+  takeSeat,
+  targetTime,
+  windowMessages,
+} from './bookings'
 import { priceFor } from './catalog'
 import { coachNowKnows } from './coach-notices'
 import { moveSummaries } from './move-history'
+import { openTimes, type SlotTarget, targetSlot } from './schedule'
 import { ruleBook } from './settings'
 import { queueStudentNotice } from './student-notices'
 import { assertTableFree } from './tables'
@@ -142,13 +151,20 @@ function checkStudentMove(
 }
 
 /**
- * Moves a confirmed lesson to a free seat in another slot of the same length and kind: a private
- * slot, or another session of the same group class. The old seat is freed and the new one taken
+ * Moves a confirmed lesson to another time of the same length and kind: a private lesson to a time
+ * the coach's 排班 offers (or any free time, for the venue with `anyTime`), a group class seat to
+ * another session of the same class. The old seat is freed and the new one taken
  * in one IMMEDIATE transaction, and the unique index on live seats refuses a seat someone else
  * took meanwhile. The payment or package lesson stays with the booking. Moving to
- * the slot it is already in is a no-op, so a repeated request does nothing more.
+ * the time it already has is a no-op, so a repeated request does nothing more.
  */
-export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: Mover): boolean {
+export function moveBooking(
+  deps: Deps,
+  bookingId: number,
+  target: SlotTarget,
+  by: Mover,
+  options: { anyTime?: boolean } = {},
+): boolean {
   const now = deps.now()
   const student = typeof by === 'object' && 'studentId' in by ? by.studentId : null
   const coach = typeof by === 'object' && 'coachId' in by ? by.coachId : null
@@ -162,7 +178,21 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
       throw notFound('预约')
     }
     const { booking, lessonType } = row
-    if (booking.slotId === slotId && booking.status === 'confirmed') return false
+    // Its own code, so a page can offer other times instead of treating the lesson as gone.
+    const at = (() => {
+      try {
+        return targetTime(tx, target)
+      } catch {
+        throw new ApiError(404, 'slot_not_found', '时段不存在')
+      }
+    })()
+    const here =
+      'slotId' in target && at.slot?.lessonTypeId !== null
+        ? booking.slotId === at.slot?.id
+        : row.inSession === null &&
+          at.coachId === row.coachId &&
+          at.startsAt.getTime() === booking.startsAt.getTime()
+    if (here && booking.status === 'confirmed') return false
     if (booking.status !== 'confirmed') {
       throw new ApiError(409, 'not_movable', '只有预约成功的课程可以改约')
     }
@@ -171,18 +201,23 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
     if (coach !== null && row.inSession !== null) {
       throw new ApiError(409, 'group_lesson', '小班课请联系场馆调整')
     }
-
-    const slot = tx.select().from(slots).where(eq(slots.id, slotId)).get()
-    // Its own code, so a page can offer other times instead of treating the lesson as gone.
-    if (!slot || (coach !== null && slot.coachId !== coach)) {
+    if (coach !== null && at.coachId !== coach) {
       throw new ApiError(404, 'slot_not_found', '时段不存在')
     }
-    if (!slot.open || slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该时段不可预约')
-    // A group class moves to another session of the same class, a private lesson to a private slot.
-    assertTeaches(slot, lessonType)
     // Its own code: 'started' means the lesson itself can no longer move.
-    if (slot.startsAt <= now) throw new ApiError(409, 'slot_started', '该时段已开始')
+    if (at.startsAt <= now) throw new ApiError(409, 'slot_started', '该时段已开始')
     const length = booking.endsAt.getTime() - booking.startsAt.getTime()
+    const slot = targetSlot(tx, target, {
+      minutes: length / 60_000,
+      lessonType: row.inSession === null ? { capacity: 1 } : lessonType,
+      rule: by === 'venue' && options.anyTime ? 'anytime' : 'schedule',
+      except: booking.id,
+    })
+    if (slot.cancelledAt || (slot.lessonTypeId !== null && !slot.open)) {
+      throw new ApiError(409, 'slot_closed', '该时段不可预约')
+    }
+    // A group class moves to another session of the same class, a private lesson to a private time.
+    assertTeaches(slot, lessonType)
     if (slot.endsAt.getTime() - slot.startsAt.getTime() !== length) {
       throw new ApiError(409, 'duration_mismatch', '课程时长与时段不符')
     }
@@ -257,4 +292,34 @@ export function moveBooking(deps: Deps, bookingId: number, slotId: number, by: M
     })
     return true
   })
+}
+
+/**
+ * Times on some venue dates a coach can move one of their private lessons to: their own 排班's
+ * open start times for the lesson's length, other than the time it has now.
+ */
+export function coachMoveTimes(
+  deps: Deps,
+  bookingId: number,
+  coachId: number,
+  dates: string[],
+): OpenTimeDto[] {
+  const { db } = deps
+  const row = bookingRow(db, bookingId)
+  if (!row || row.coachId !== coachId || row.inSession !== null) throw notFound('预约')
+  const { booking } = row
+  return openTimes(db, {
+    coachIds: [coachId],
+    dates,
+    minutes: (booking.endsAt.getTime() - booking.startsAt.getTime()) / 60_000,
+    notBefore: deps.now(),
+    except: booking.id,
+  })
+    .filter((t) => t.startsAt.getTime() !== booking.startsAt.getTime())
+    .map((t) => ({
+      coachId: t.coachId,
+      startsAt: t.startsAt.toISOString(),
+      endsAt: t.endsAt.toISOString(),
+      tableFull: t.tableFull,
+    }))
 }

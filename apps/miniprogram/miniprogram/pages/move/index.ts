@@ -28,7 +28,9 @@ interface CoachOption {
 }
 
 interface SlotView {
-  id: number
+  /** A group session's id; null for a private lesson time, moved to by coach and start. */
+  id: number | null
+  key: string
   coachId: number
   time: string
   startsAt: string
@@ -68,8 +70,8 @@ Page({
   },
 
   id: 0,
-  /** Times the server refused for this lesson. */
-  refused: new Set<number>(),
+  /** Times the server refused for this lesson, by key. */
+  refused: new Set<string>(),
   booking: null as BookingDto | null,
   catalog: null as CatalogDto | null,
   templates: {} as MeDto['noticeTemplates'],
@@ -159,16 +161,18 @@ Page({
         )
         .map((s) => {
           const current = s.coachId === booking.coach.id && s.startsAt === booking.startsAt
+          const key = s.id === null ? `${s.coachId}@${s.startsAt}` : `s${s.id}`
           return {
             id: s.id,
+            key,
             coachId: s.coachId,
             time: time(s.startsAt),
             startsAt: s.startsAt,
             endsAt: s.endsAt,
-            available: s.available && !current && !this.refused.has(s.id),
+            available: s.available && !current && !this.refused.has(key),
             current,
             closed: !s.available && Date.parse(s.startsAt) - now < notice,
-            refused: this.refused.has(s.id),
+            refused: this.refused.has(key),
             seatsLeft: sessionOf === null ? null : s.seatsLeft,
           }
         })
@@ -222,19 +226,23 @@ Page({
     const result = await submitMove(this, async () => {
       // Asked inside the tap, before any await, or WeChat does not show the prompt.
       await askForNotices(this.templates, ['moved', 'reminder', 'cancelled'])
-      return api<BookingDto>('POST', `/bookings/${this.id}/move`, { slotId: slot.id })
+      return api<BookingDto>(
+        'POST',
+        `/bookings/${this.id}/move`,
+        slot.id === null ? { coachId: slot.coachId, startsAt: slot.startsAt } : { slotId: slot.id },
+      )
     })
     if (result === 'moved' || result === 'fixed') return
     this.setData({ submitting: false })
-    if (result === 'refused') this.refuse(slot.id)
+    if (result === 'refused') this.refuse(slot.key)
     // The picked time went: taken, closed or too close now. Show what is left.
     else if (result === 'gone') this.loadSlots()
   },
 
   /** Marks a time the server refused for this lesson, so it is not picked again. */
-  refuse(id: number) {
-    this.refused.add(id)
-    const index = this.data.slots.findIndex((s) => s.id === id)
+  refuse(key: string) {
+    this.refused.add(key)
+    const index = this.data.slots.findIndex((s) => s.key === key)
     if (index < 0) return
     this.setData({
       picked: null,

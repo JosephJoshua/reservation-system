@@ -68,3 +68,45 @@ export async function call<T = unknown>(
   if (!res.ok()) throw new Error(`${method} ${path} ${res.status()} ${text}`)
   return (text ? JSON.parse(text) : null) as T
 }
+
+/**
+ * Opens private lesson times for a coach outside their weekly hours, as 加班, so a student can
+ * book them by coach and start time.
+ */
+export async function addExtraTimes(
+  request: APIRequestContext,
+  admin: string,
+  coachId: number,
+  spans: { startsAt: string; endsAt: string }[],
+) {
+  for (const span of spans) {
+    await call(request, 'POST', `/admin/coaches/${coachId}/exceptions`, admin, {
+      kind: 'extra',
+      ...span,
+    })
+  }
+}
+
+/** Picks a date (YYYY-MM-DD) in a TDesign date picker by clicking through its calendar. */
+export async function pickDate(page: Page, picker: Locator, date: string) {
+  const [year, month, day] = date.split('-').map(Number) as [number, number, number]
+  await picker.click()
+  const panel = page.locator('.t-popup:visible .t-date-picker__panel')
+  for (let i = 0; i < 24; i++) {
+    const shownMonth = Number.parseInt(
+      await panel.locator('.t-date-picker__header-controller-month input').inputValue(),
+      10,
+    )
+    const shownYear = Number(
+      await panel.locator('.t-date-picker__header-controller-year input').inputValue(),
+    )
+    const diff = (year - shownYear) * 12 + (month - shownMonth)
+    if (diff === 0) break
+    await panel.getByTitle(diff > 0 ? '下个月' : '上个月').click()
+  }
+  await panel
+    .locator('td:not(.t-date-picker__cell--additional) .t-date-picker__cell-inner', {
+      hasText: new RegExp(`^${day}$`),
+    })
+    .click()
+}

@@ -1,7 +1,6 @@
 import type { Deps } from './deps'
 import { expireIdempotencyKeys } from './idempotency'
 import { notifyCoaches } from './services/coach-notices'
-import { syncAllSlots } from './services/coaches'
 import { removeStrayPhotos } from './services/feedback'
 import { expireOrders } from './services/orders'
 import { notifyPackages } from './services/package-notices'
@@ -23,8 +22,7 @@ function hourly(deps: Deps, name: string, chore: () => void) {
 /**
  * Closes expired orders, pushes refunds along, calls off group sessions short of students,
  * tells coaches and students about lessons and students about packages running out. Runs
- * every 30 seconds; slots from coaches' weekly hours roll forward and unused lesson photos are
- * removed once an hour.
+ * every 30 seconds; unused lesson photos are removed once an hour.
  */
 export async function sweep(deps: Deps) {
   try {
@@ -34,7 +32,6 @@ export async function sweep(deps: Deps) {
   }
   // Coach chores run on their own, so a failure in payments does not stop them, or the reverse.
   try {
-    hourly(deps, 'slots', () => syncAllSlots(deps))
     await notifyCoaches(deps)
   } catch (e) {
     deps.log('coach sweep failed', (e as Error).message)

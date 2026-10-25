@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import type { CoachLoginResponse, CreateBookingResponse, SlotSyncDto } from '@rs/shared'
-import { ADMIN_PASSWORD, API, call, dialog, login, student } from './helpers'
+import type { CoachLoginResponse, CreateBookingResponse, ScheduleViewDto } from '@rs/shared'
+import { addVenueDays, venueDateKey, venueInstant } from '@rs/shared'
+import { ADMIN_PASSWORD, API, call, dialog, login, pickDate, student } from './helpers'
 
-// The admin side of the coach mode: binding, weekly hours, attendance and the monthly report.
+// The admin side of the coach mode: binding, 排班, attendance and the monthly report.
 test.describe.configure({ mode: 'serial' })
 
 const run = Date.now().toString(36)
@@ -50,6 +51,7 @@ async function both(page: Page, name: string) {
 }
 
 let lessonTypeId = 0
+let coachId = 0
 let coachToken = ''
 let bookingId = 0
 // The admin pages default to today's dates; pinned to the lesson's day so it is always listed.
@@ -69,10 +71,12 @@ test('binds a coach to WeChat with a code', async ({ page, request }) => {
       price: 20000,
     })
   ).id
-  await call(request, 'POST', '/admin/coaches', admin, {
-    name: coachName,
-    lessonTypeIds: [lessonTypeId],
-  })
+  coachId = (
+    await call<{ id: number }>(request, 'POST', '/admin/coaches', admin, {
+      name: coachName,
+      lessonTypeIds: [lessonTypeId],
+    })
+  ).id
 
   await login(page)
   await page.goto('./#/catalog')
@@ -94,81 +98,85 @@ test('binds a coach to WeChat with a code', async ({ page, request }) => {
   await expect(row).toContainText('已绑定')
 })
 
-test('sets weekly hours and a day off for the coach', async ({ page, request }) => {
+test('sets weekly hours and a 请假 for the coach', async ({ page, request }) => {
   await login(page)
   await page.goto('./#/catalog')
   await page
     .getByRole('row')
     .filter({ hasText: coachName })
-    .getByRole('button', { name: '可约时间' })
+    .getByRole('button', { name: '排班' })
     .click()
-  await dialog(page).getByRole('button', { name: '添加时间段' }).click()
-  await expect(dialog(page).locator('tbody tr')).toHaveCount(1)
-  await expect(dialog(page).locator('tbody tr')).toContainText('3')
+  const monday = dialog(page).locator('.week-day', { hasText: '周一' })
+  await monday.getByRole('button', { name: '添加' }).click()
+  const times = monday.locator('.t-time-picker input')
+  await expect(times).toHaveCount(2)
+  await expect(times.nth(0)).toHaveValue('09:00')
+  await expect(times.nth(1)).toHaveValue('12:00')
 
-  // Two overlapping windows on Monday cannot be saved.
-  await dialog(page).getByRole('button', { name: '添加时间段' }).click()
+  // A second window starts an hour after the first; moved to overlap it, it cannot be saved.
+  await monday.getByRole('button', { name: '添加' }).click()
+  await expect(times.nth(2)).toHaveValue('13:00')
+  await times.nth(2).click()
+  await times.nth(2).press('ControlOrMeta+a')
+  await times.nth(2).pressSequentially('11:00')
+  await page.locator('.t-popup:visible').getByRole('button', { name: '确定' }).click()
   await expect(dialog(page).locator('.danger-text')).toHaveText('同一天的时间段不能重叠')
   await expect(dialog(page).locator('.t-dialog__footer .t-button--theme-primary')).toHaveClass(
     /t-is-disabled/,
   )
   await both(page, 'hours-invalid')
-  await dialog(page).locator('tbody tr').nth(1).getByRole('button', { name: '删除' }).click()
+  await monday.getByRole('button', { name: '删除' }).nth(1).click()
   await expect(dialog(page).locator('.danger-text')).toHaveCount(0)
 
   await dialog(page).getByRole('button', { name: '保存每周时间' }).click()
-  await expect(page.locator('.t-message')).toContainText(/已保存，新增 \d+ 个时段/)
+  await expect(page.locator('.t-message', { hasText: '已保存每周时间' })).toBeVisible()
+  const saved = await call<ScheduleViewDto>(request, 'GET', '/coach/hours', coachToken)
+  expect(saved.periods.at(-1)?.hours).toEqual([{ weekday: 1, startMinute: 540, endMinute: 720 }])
 
-  const saved = await call<{ hours: unknown[]; daysOff: string[] }>(
-    request,
-    'GET',
-    '/coach/hours',
-    coachToken,
-  )
-  expect(saved.hours).toEqual([{ weekday: 1, startMinute: 540, endMinute: 720, lessonMinutes: 60 }])
-
-  // A day off a week from now, typed into the date picker.
-  const day = new Date(Date.now() + 7 * 86_400_000 + 8 * 3_600_000).toISOString().slice(0, 10)
-  await page
-    .getByRole('row')
-    .filter({ hasText: coachName })
-    .getByRole('button', { name: '可约时间' })
-    .click()
-  const picker = dialog(page).getByPlaceholder('添加休息日')
-  await picker.click()
-  await picker.fill(day)
-  await page.locator('.t-date-picker__cell--active').click()
-  await expect(dialog(page).locator('.t-tag', { hasText: day })).toBeVisible()
+  // A whole-day 请假 a week from now.
+  const day = venueDateKey(new Date(Date.now() + 7 * 86_400_000))
+  const form = dialog(page).locator('.exception-form')
+  await pickDate(page, form.locator('.t-date-picker').first(), day)
+  await pickDate(page, form.locator('.t-date-picker').nth(1), day)
+  await form.getByPlaceholder('备注（选填）').fill('比赛')
+  await form.getByRole('button', { name: '添加请假' }).dblclick()
+  const leave = dialog(page).locator('.exception-row', { hasText: '比赛' })
+  await expect(leave).toHaveCount(1)
+  await expect(leave).toContainText('全天')
   await both(page, 'hours')
-  expect(
-    (await call<{ daysOff: string[] }>(request, 'GET', '/coach/hours', coachToken)).daysOff,
-  ).toEqual([day])
-  await dialog(page).locator('.t-tag', { hasText: day }).locator('.t-tag__icon-close').click()
-  await expect(dialog(page).locator('.t-tag', { hasText: day })).toHaveCount(0)
+  const view = await call<ScheduleViewDto>(request, 'GET', '/coach/hours', coachToken)
+  expect(view.exceptions).toMatchObject([
+    {
+      kind: 'off',
+      startsAt: venueInstant(day, 0).toISOString(),
+      endsAt: venueInstant(day, 24 * 60).toISOString(),
+      note: '比赛',
+    },
+  ])
+  await leave.getByRole('button', { name: '取消' }).click()
+  await page.locator('.t-popconfirm').getByRole('button', { name: '取消' }).click()
+  await expect(leave).toHaveCount(0)
 })
 
 test('marks attendance and shows the coach note on bookings', async ({ page, request }) => {
-  const sync = await call<SlotSyncDto>(request, 'PUT', '/coach/hours', coachToken, {
+  await call(request, 'PUT', '/coach/hours', coachToken, {
     hours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
       weekday,
       startMinute: 20 * 60,
       endMinute: 21 * 60,
-      lessonMinutes: 60,
     })),
   })
-  expect(sync.created).toBeGreaterThan(0)
-  const slots = await call<{ id: number; lesson: unknown; startsAt: string }[]>(
-    request,
-    'GET',
-    `/coach/schedule?from=${new Date(Date.now() + 8 * 3_600_000).toISOString().slice(0, 10)}&to=${new Date(Date.now() + 8 * 3_600_000 + 10 * 86_400_000).toISOString().slice(0, 10)}`,
-    coachToken,
-  )
-  const free = slots.find((s) => !s.lesson && Date.parse(s.startsAt) > Date.now() + 4 * 3_600_000)
-  if (!free) throw new Error('no free slot')
+  // 20:00 the first day that is more than four hours away.
+  const today = venueDateKey(new Date())
+  const startsAt = [0, 1, 2]
+    .map((d) => venueInstant(addVenueDays(today, d), 20 * 60))
+    .find((t) => t.getTime() > Date.now() + 4 * 3_600_000)
+  if (!startsAt) throw new Error('no free time')
   const token = await student(request, `coach-e2e-${run}`)
   await call(request, 'PUT', '/me', token, { name: '王小明', phone: '13800138000' })
   const booked = await call<CreateBookingResponse>(request, 'POST', '/bookings', token, {
-    slotId: free.id,
+    coachId,
+    startsAt: startsAt.toISOString(),
     lessonTypeId,
   })
   if (booked.orderId) await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
@@ -242,7 +250,7 @@ test("shows the lesson on today's overview and in the business stats", async ({ 
 
   await page.goto('./#/reports')
   await expect(page.locator('.kpi-grid')).toContainText('课消')
-  const coaches = page.locator('.t-card').filter({ hasText: '教练排课占用' })
+  const coaches = page.locator('.t-card').filter({ hasText: '教练排班占用' })
   await expect(coaches.locator('.viz-meter').filter({ hasText: coachName })).toBeVisible()
   await expect(page.locator('.viz-heat-cell:not(.viz-heat-none)').first()).toBeVisible()
   // The same numbers as a table.

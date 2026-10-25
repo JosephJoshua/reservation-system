@@ -11,7 +11,7 @@ const coachName = `教练${run}`
 const productName = `十次卡${run}`
 const categoryName = `高级${run.slice(-4)}`
 
-test('sets up a lesson, a coach category with its own price, a package and slots', async ({
+test('sets up a lesson, a coach category with its own price, a package and 排班', async ({
   page,
 }) => {
   await login(page)
@@ -61,13 +61,19 @@ test('sets up a lesson, a coach category with its own price, a package and slots
   await expect(row).toContainText('¥2500')
   await expect(row.locator('.strike')).toHaveText('¥2800')
 
-  await page.goto('./#/schedule')
-  await page.locator('.toolbar .t-select').click()
-  await page.locator('.t-select-option', { hasText: coachName }).click()
-  await page.getByRole('button', { name: '下一周' }).click()
-  await page.getByRole('button', { name: '批量排课' }).click()
-  await dialog(page).getByRole('button', { name: '创建 35 个时段' }).click()
-  await expect(page.locator('.slot-chip')).toHaveCount(35)
+  // The coach takes lessons on Wednesday mornings.
+  await page.goto('./#/catalog')
+  await page
+    .getByRole('row')
+    .filter({ hasText: coachName })
+    .getByRole('button', { name: '排班' })
+    .click()
+  await dialog(page)
+    .locator('.week-day', { hasText: '周三' })
+    .getByRole('button', { name: '添加' })
+    .click()
+  await dialog(page).getByRole('button', { name: '保存每周时间' }).click()
+  await expect(page.locator('.t-message', { hasText: '已保存每周时间' })).toBeVisible()
 })
 
 test('shows a paid booking and refunds it in full when the venue cancels', async ({
@@ -82,8 +88,7 @@ test('shows a paid booking and refunds it in full when the venue cancels', async
   if (!lesson || !coach) throw new Error('setup missing')
   expect(coach.lessons[0]?.price.price).toBe(30000)
 
-  // The Wednesday of the venue week after this one, where the test above created the slots. Eight
-  // days ahead missed that week when run on a venue Sunday.
+  // The Wednesday of the venue week after this one, inside the coach's 排班.
   const venueNow = new Date(Date.now() + 8 * 3_600_000)
   const toNextMonday = 7 - ((venueNow.getUTCDay() + 6) % 7)
   const date = new Date(venueNow.getTime() + (toNextMonday + 2) * 86_400_000)
@@ -96,9 +101,10 @@ test('shows a paid booking and refunds it in full when the venue cancels', async
     token,
   )
   const slot = slots.find((s) => s.available)
-  if (!slot) throw new Error('no slot')
+  if (!slot) throw new Error('no free time')
   const booking = await call<CreateBookingResponse>(request, 'POST', '/bookings', token, {
-    slotId: slot.id,
+    coachId: slot.coachId,
+    startsAt: slot.startsAt,
     lessonTypeId: lesson.id,
   })
   expect(booking.status).toBe('pending_payment')

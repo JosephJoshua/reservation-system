@@ -3,7 +3,6 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   can,
-  endsSameVenueDay,
   groupSettingsError,
   isGroup,
   LINK_TARGET_MESSAGE,
@@ -64,16 +63,7 @@ import {
   requireAdmin,
 } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
-import {
-  hoursView,
-  newCoachBindCode,
-  saveHours,
-  setDayOff,
-  slotWindows,
-  syncChangedWindows,
-  syncSlots,
-  unbindCoach,
-} from '../services/coaches'
+import { newCoachBindCode, unbindCoach } from '../services/coaches'
 import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
 import { adminFeedback, setFeedbackHidden, studentFeedback } from '../services/feedback'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
@@ -103,11 +93,16 @@ import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
 import {
-  assertNoSessionOverlap,
-  cancelSession,
-  createSessions,
-  setSessionCapacity,
-} from '../services/sessions'
+  addException,
+  dayPlan,
+  leaveConflicts,
+  openTimes,
+  removeException,
+  saveHours,
+  scheduleView,
+  upcomingClosures,
+} from '../services/schedule'
+import { cancelSession, createSessions, setSessionCapacity } from '../services/sessions'
 import { getSettings, ownRules, saveSettings } from '../services/settings'
 import {
   createStaff,
@@ -129,7 +124,8 @@ import {
 import { profileInput, saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
-import { dateKey, weeklyHoursBody } from './coach'
+import { exceptionBody, weeklyHoursBody } from './coach'
+import { dateKey, oneTarget, targetFields, toTarget } from './target'
 
 const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
 const nullableInstant = instant.nullable()
@@ -429,7 +425,6 @@ export function adminRoutes(deps: Deps) {
 
   app.put('/settings', need('manage'), async (c) => {
     const body = await parseBody(c, venueSettings)
-    const windows = slotWindows(db)
     const { before, after } = immediate(db, (tx) => {
       const before = getSettings(tx)
       checkVersion(c, before)
@@ -437,7 +432,6 @@ export function adminRoutes(deps: Deps) {
       saveSettings(tx, body, deps.now())
       return { before, after: getSettings(tx) }
     })
-    syncChangedWindows(deps, windows)
     const changed = (Object.keys(settingsSectionLabel) as (keyof typeof settingsSectionLabel)[])
       .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
       .map((k) => settingsSectionLabel[k])
@@ -573,7 +567,6 @@ export function adminRoutes(deps: Deps) {
   app.put('/coaches/:id', need('manage'), async (c) => {
     const id = idParam(c)
     const body = await parseBody(c, coachBody)
-    const windows = slotWindows(db)
     const before = immediate(db, (tx) => {
       // Binding comes and goes on its own (codes expire), so only the edited fields count.
       const { bound: _b, bindCode: _c, bindCodeExpiresAt: _e, ...editable } = coachView(id)
@@ -586,8 +579,6 @@ export function adminRoutes(deps: Deps) {
       saveCoach(tx, id, body)
       return old?.categoryId ?? null
     })
-    // The lessons taught set how far ahead the coach's slots reach.
-    syncChangedWindows(deps, windows)
     const view = coachView(id)
     logCoachCategory(c.get('staffId'), view, before)
     return c.json(view)
@@ -756,20 +747,150 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  app.get('/coaches/:id/hours', need('bookings'), (c) => c.json(hoursView(deps, idParam(c))))
+  // 排班
+
+  const coachName = (id: number) =>
+    db.select({ name: coaches.name }).from(coaches).where(eq(coaches.id, id)).get()?.name ?? ''
+  const spanText = (startsAt: Date, endsAt: Date) => {
+    const end = venueParts(endsAt)
+    const sameDay = venueDateKey(startsAt) === venueDateKey(new Date(endsAt.getTime() - 1))
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return sameDay
+      ? `${venueMoment(startsAt)}-${end.hours || end.minutes ? `${pad(end.hours)}:${pad(end.minutes)}` : '24:00'}`
+      : `${venueMoment(startsAt)} 至 ${venueMoment(endsAt)}`
+  }
+
+  app.get('/coaches/:id/hours', need('view'), (c) =>
+    c.json(scheduleView(db, deps.now(), idParam(c))),
+  )
 
   app.put('/coaches/:id/hours', need('bookings'), async (c) => {
-    const { hours } = await parseBody(c, weeklyHoursBody)
-    return c.json(saveHours(deps, idParam(c), hours))
+    const body = await parseBody(c, weeklyHoursBody)
+    const id = idParam(c)
+    const from = body.from ?? venueDateKey(deps.now())
+    const conflicts = saveHours(deps, id, { from, hours: body.hours })
+    log(c.get('staffId'), {
+      action: 'schedule.hours',
+      summary: `${coachName(id)}：每周时间（${from} 起）`,
+      target: { kind: 'coach', id },
+    })
+    return c.json({ conflicts })
   })
 
-  app.put('/coaches/:id/days-off/:date', need('bookings'), (c) =>
-    c.json(setDayOff(deps, idParam(c), c.req.param('date'), true)),
-  )
+  app.post('/coaches/:id/exceptions', need('bookings'), async (c) => {
+    const body = await parseBody(c, exceptionBody)
+    const id = idParam(c)
+    const result = addException(deps, { ...body, coachId: id }, c.get('staffId'))
+    log(c.get('staffId'), {
+      action: 'schedule.add',
+      summary: `${coachName(id)}：${body.kind === 'off' ? '请假' : '加班'} ${spanText(body.startsAt, body.endsAt)}`,
+      target: { kind: 'coach', id },
+    })
+    return c.json(result, 201)
+  })
 
-  app.delete('/coaches/:id/days-off/:date', need('bookings'), (c) =>
-    c.json(setDayOff(deps, idParam(c), c.req.param('date'), false)),
-  )
+  // 闭馆: time nobody at the venue takes lessons.
+  app.get('/closures', need('view'), (c) => c.json(upcomingClosures(db, deps.now())))
+
+  app.post('/closures', need('manage'), async (c) => {
+    const body = await parseBody(
+      c,
+      z.object({
+        startsAt: instant,
+        endsAt: instant,
+        note: z.string().trim().max(40).default(''),
+      }),
+    )
+    const result = addException(deps, { ...body, kind: 'off', coachId: null }, c.get('staffId'))
+    log(c.get('staffId'), {
+      action: 'schedule.add',
+      summary: `闭馆 ${spanText(body.startsAt, body.endsAt)}${body.note ? `（${body.note}）` : ''}`,
+    })
+    return c.json(result, 201)
+  })
+
+  const logRemoved = (staffId: number, row: ReturnType<typeof removeException>) => {
+    if (!row) return
+    const what =
+      row.coachId === null
+        ? '闭馆'
+        : `${coachName(row.coachId)}：${row.kind === 'off' ? '请假' : '加班'}`
+    log(staffId, {
+      action: 'schedule.remove',
+      summary: `${what} ${spanText(row.startsAt, row.endsAt)}`,
+      target: row.coachId === null ? undefined : { kind: 'coach', id: row.coachId },
+    })
+  }
+
+  app.delete('/coaches/:id/exceptions/:exceptionId', need('bookings'), (c) => {
+    const exceptionId = Number(c.req.param('exceptionId'))
+    if (!Number.isInteger(exceptionId) || exceptionId <= 0) throw notFound('请假/加班')
+    logRemoved(c.get('staffId'), removeException(deps, exceptionId, idParam(c)))
+    return c.body(null, 204)
+  })
+
+  app.delete('/closures/:id', need('manage'), (c) => {
+    logRemoved(c.get('staffId'), removeException(deps, idParam(c), null))
+    return c.body(null, 204)
+  })
+
+  // Lessons and sessions yet to start that fall in 请假 or 闭馆.
+  app.get('/schedule/conflicts', need('view'), (c) => c.json(leaveConflicts(db, deps.now(), null)))
+
+  // A day for the 日程 board: each coach's working time and 请假, and tables in use.
+  app.get('/schedule/day', need('view'), (c) => {
+    const q = parseQuery(c, z.object({ date: dateKey }))
+    return c.json(dayPlan(db, q.date))
+  })
+
+  // Start times a private lesson can be booked or moved to, for 代约 and 改约.
+  app.get('/open-times', need('view'), (c) => {
+    const q = parseQuery(
+      c,
+      z.object({
+        date: dateKey,
+        lessonTypeId: z.coerce.number().int().positive().optional(),
+        coachId: z.coerce.number().int().positive().optional(),
+        // A booking being moved: its coach's other coaches may take it, at its length.
+        moving: z.coerce.number().int().positive().optional(),
+      }),
+    )
+    const moving = q.moving
+      ? db.select().from(bookings).where(eq(bookings.id, q.moving)).get()
+      : undefined
+    if (q.moving && !moving) throw notFound('预约')
+    const lessonTypeId = q.lessonTypeId ?? moving?.lessonTypeId
+    if (!lessonTypeId) throw new ApiError(400, 'invalid_query', '请选择课程')
+    const lessonType = db.select().from(lessonTypes).where(eq(lessonTypes.id, lessonTypeId)).get()
+    if (!lessonType) throw notFound('课程')
+    if (isGroup(lessonType)) return c.json([])
+    const coachIds = db
+      .select({ id: coaches.id })
+      .from(coachLessonTypes)
+      .innerJoin(coaches, eq(coaches.id, coachLessonTypes.coachId))
+      .where(and(eq(coachLessonTypes.lessonTypeId, lessonType.id), eq(coaches.active, true)))
+      .orderBy(asc(coaches.sort), asc(coaches.id))
+      .all()
+      .map((r) => r.id)
+      .filter((id) => !q.coachId || id === q.coachId)
+    const times = openTimes(db, {
+      coachIds,
+      dates: [q.date],
+      minutes: moving
+        ? (moving.endsAt.getTime() - moving.startsAt.getTime()) / 60_000
+        : lessonType.durationMinutes,
+      notBefore: deps.now(),
+      except: moving?.id,
+    })
+    return c.json(
+      times.map((t) => ({
+        coachId: t.coachId,
+        startsAt: t.startsAt.toISOString(),
+        endsAt: t.endsAt.toISOString(),
+        tableFull: t.tableFull,
+      })),
+    )
+  })
 
   // Lesson types
 
@@ -803,7 +924,6 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/lesson-types', need('manage'), async (c) => {
     const body = await parseBody(c, lessonTypeBody)
-    const windows = slotWindows(db)
     const row = db
       .insert(lessonTypes)
       .values({ ...body, rules: body.rules ?? {}, sort: nextSort(db, lessonTypes) })
@@ -821,7 +941,6 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'lesson_type', id: row.id },
       })
     }
-    syncChangedWindows(deps, windows)
     return c.json(lessonTypeView(row), 201)
   })
 
@@ -869,7 +988,6 @@ export function adminRoutes(deps: Deps) {
     }
     const was = ownRules(existing.rules)
     const rules = body.rules ?? was
-    const windows = slotWindows(db)
     const row = db
       .update(lessonTypes)
       .set({ ...body, rules })
@@ -893,7 +1011,6 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'lesson_type', id },
       })
     }
-    syncChangedWindows(deps, windows)
     return c.json(lessonTypeView(row))
   })
 
@@ -930,6 +1047,7 @@ export function adminRoutes(deps: Deps) {
             id: bookings.id,
             status: bookings.status,
             studentId: bookings.studentId,
+            lessonTypeId: bookings.lessonTypeId,
             attendance: bookings.attendance,
             seat: bookings.seat,
           })
@@ -965,84 +1083,26 @@ export function adminRoutes(deps: Deps) {
     const noTable = slotsWithoutTable(db, rows, q.moving)
     const now = deps.now()
     return c.json(
-      rows.map((s) => {
-        const seats = (bySlot.get(s.id) ?? []).map((b) => ({
-          id: b.id,
-          status: bookingStatus({ status: b.status, endsAt: s.endsAt }, now),
-          attendance: b.attendance,
-          student: byStudent.get(b.studentId) ?? null,
-        }))
-        // `booking` is the one lesson in a private slot; a group session lists `bookings`.
-        return {
-          ...s,
-          tableFull: noTable.has(s.id),
-          booking: s.lessonTypeId === null ? (seats[0] ?? null) : null,
-          bookings: seats,
-        }
-      }),
+      rows
+        // A private lesson row left free by a cancel is not a lesson.
+        .filter((s) => s.lessonTypeId !== null || bySlot.has(s.id))
+        .map((s) => {
+          const seats = (bySlot.get(s.id) ?? []).map((b) => ({
+            id: b.id,
+            status: bookingStatus({ status: b.status, endsAt: s.endsAt }, now),
+            lessonTypeId: b.lessonTypeId,
+            attendance: b.attendance,
+            student: byStudent.get(b.studentId) ?? null,
+          }))
+          // `booking` is the one lesson in a private slot; a group session lists `bookings`.
+          return {
+            ...s,
+            tableFull: noTable.has(s.id),
+            booking: s.lessonTypeId === null ? (seats[0] ?? null) : null,
+            bookings: seats,
+          }
+        }),
     )
-  })
-
-  app.post('/slots', need('bookings'), async (c) => {
-    const body = await parseBody(
-      c,
-      z.object({
-        slots: z
-          .array(
-            z.object({ coachId: z.number().int().positive(), startsAt: instant, endsAt: instant }),
-          )
-          .min(1)
-          .max(MAX_SLOTS_PER_REQUEST),
-      }),
-    )
-    const now = deps.now()
-    const created = immediate(db, (tx) => {
-      const coachIds = new Set(
-        tx
-          .select({ id: coaches.id })
-          .from(coaches)
-          .all()
-          .map((r) => r.id),
-      )
-      const ids: number[] = []
-      body.slots.forEach((s) => {
-        if (!coachIds.has(s.coachId)) throw notFound('教练')
-        if (s.endsAt <= s.startsAt) {
-          throw new ApiError(400, 'invalid_slot', '结束时间需晚于开始时间')
-        }
-        if (s.startsAt <= now) throw new ApiError(400, 'slot_in_past', '不能给已过去的时间排课')
-        if (s.endsAt.getTime() - s.startsAt.getTime() > 8 * 3_600_000) {
-          throw new ApiError(400, 'invalid_slot', '单个时段不能超过 8 小时')
-        }
-        if (!endsSameVenueDay(s.startsAt, s.endsAt)) {
-          throw new ApiError(400, 'crosses_midnight', '时段不能跨到第二天')
-        }
-        // Overlaps with existing slots and with earlier slots in this request (already inserted).
-        const overlap = tx
-          .select({ id: slots.id })
-          .from(slots)
-          .where(
-            and(
-              eq(slots.coachId, s.coachId),
-              lt(slots.startsAt, s.endsAt),
-              gt(slots.endsAt, s.startsAt),
-            ),
-          )
-          .get()
-        if (overlap) {
-          const t = venueParts(s.startsAt)
-          const pad = (n: number) => String(n).padStart(2, '0')
-          throw new ApiError(
-            409,
-            'slot_overlap',
-            `${t.month}月${t.day}日 ${pad(t.hours)}:${pad(t.minutes)} 与该教练已有时段重叠`,
-          )
-        }
-        ids.push(tx.insert(slots).values(s).returning({ id: slots.id }).get().id)
-      })
-      return ids
-    })
-    return c.json({ ids: created }, 201)
   })
 
   app.patch('/slots/:id', need('bookings'), async (c) => {
@@ -1057,16 +1117,18 @@ export function adminRoutes(deps: Deps) {
     const changed = immediate(db, (tx) => {
       const slot = tx.select().from(slots).where(eq(slots.id, id)).get()
       if (!slot) throw notFound('时段')
+      if (slot.lessonTypeId === null) {
+        throw new ApiError(409, 'not_group', '私教课的时间由教练排班决定')
+      }
       if (body.open && slot.cancelledAt) {
         throw new ApiError(409, 'session_cancelled', '已取消的小班课不能重新开放')
       }
-      if (body.open && !slot.open) assertNoSessionOverlap(tx, slot)
       const capacity =
         body.capacity !== undefined && body.capacity !== slot.capacity
           ? setSessionCapacity(tx, id, body.capacity)
           : null
       if (body.open !== undefined) {
-        tx.update(slots).set({ open: body.open, closedBySync: false }).where(eq(slots.id, id)).run()
+        tx.update(slots).set({ open: body.open }).where(eq(slots.id, id)).run()
       }
       return { slot, capacity }
     })
@@ -1151,30 +1213,18 @@ export function adminRoutes(deps: Deps) {
   app.delete('/slots/:id', need('bookings'), (c) => {
     const id = idParam(c)
     immediate(db, (tx) => {
+      const slot = tx.select().from(slots).where(eq(slots.id, id)).get()
+      if (!slot) throw notFound('时段')
+      if (slot.lessonTypeId === null) {
+        throw new ApiError(409, 'not_group', '私教课的时间由教练排班决定')
+      }
       const used = tx
         .select({ id: bookings.id })
         .from(bookings)
         .where(eq(bookings.slotId, id))
         .get()
       if (used) throw new ApiError(409, 'slot_has_bookings', '该时段有预约记录，只能关闭，不能删除')
-      // Deleting it would only bring it back at the next sync.
-      const generated = tx
-        .select({ id: slots.id })
-        .from(slots)
-        .where(and(eq(slots.id, id), eq(slots.source, 'hours')))
-        .get()
-      if (generated) {
-        throw new ApiError(
-          409,
-          'slot_from_hours',
-          '该时段来自教练的每周时间，请关闭时段或修改每周时间',
-        )
-      }
-      const slot = tx.select().from(slots).where(eq(slots.id, id)).get()
-      if (!slot) throw notFound('时段')
       tx.delete(slots).where(eq(slots.id, id)).run()
-      // The coach's private slots it closed open again.
-      if (slot.lessonTypeId !== null) syncSlots(tx, slot.coachId, deps.now())
     })
     return c.body(null, 204)
   })
@@ -1272,32 +1322,39 @@ export function adminRoutes(deps: Deps) {
 
   const frontDeskTarget = {
     studentId: z.number().int().positive(),
-    slotId: z.number().int().positive(),
+    ...targetFields,
     lessonTypeId: z.number().int().positive(),
+    // A private lesson outside the coach's 排班, which the desk agreed with the coach.
+    anyTime: z.boolean().default(false),
   }
 
   app.post('/bookings/quote', need('bookings'), async (c) => {
-    const body = await parseBody(c, z.object(frontDeskTarget))
-    return c.json(frontDeskQuote(deps, body))
+    const body = await parseBody(c, z.object(frontDeskTarget).refine(oneTarget, '请选择上课时间'))
+    return c.json(frontDeskQuote(deps, { ...body, target: toTarget(body) }))
   })
 
   // 代约: the front desk books a lesson for a student.
   app.post('/bookings', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
-      z.discriminatedUnion('payWith', [
-        z.object({ ...frontDeskTarget, payWith: z.literal('package') }),
-        z.object({
-          ...frontDeskTarget,
-          payWith: z.literal('offline'),
-          amount: fen,
-          method: offlineMethod.optional(),
-          note: z.string().trim().max(100).default(''),
-        }),
-      ]),
+      z
+        .discriminatedUnion('payWith', [
+          z.object({ ...frontDeskTarget, payWith: z.literal('package') }),
+          z.object({
+            ...frontDeskTarget,
+            payWith: z.literal('offline'),
+            amount: fen,
+            method: offlineMethod.optional(),
+            note: z.string().trim().max(100).default(''),
+          }),
+        ])
+        .refine(oneTarget, '请选择上课时间'),
     )
     const listedPriceOnly = !can(c.get('roles'), 'manage')
-    return c.json(bookForStudent(deps, c.get('staffId'), { ...body, listedPriceOnly }), 201)
+    return c.json(
+      bookForStudent(deps, c.get('staffId'), { ...body, target: toTarget(body), listedPriceOnly }),
+      201,
+    )
   })
 
   // The front desk's 签到 list: every student's lesson on one venue day.
@@ -1371,20 +1428,26 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.post('/bookings/:id/move', need('bookings'), async (c) => {
-    const { slotId } = await parseBody(c, z.object({ slotId: z.number().int().positive() }))
+    const body = await parseBody(
+      c,
+      z
+        .object({ ...targetFields, anyTime: z.boolean().default(false) })
+        .refine(oneTarget, '请选择上课时间'),
+    )
     const id = idParam(c)
     const before = describeBooking(db, id)
     // A repeat of a move that already happened logs nothing.
-    if (moveBooking(deps, id, slotId, 'venue')) {
+    if (moveBooking(deps, id, toTarget(body), 'venue', { anyTime: body.anyTime })) {
       const to = db
         .select({ startsAt: slots.startsAt, coach: coaches.name })
-        .from(slots)
+        .from(bookings)
+        .innerJoin(slots, eq(slots.id, bookings.slotId))
         .innerJoin(coaches, eq(coaches.id, slots.coachId))
-        .where(eq(slots.id, slotId))
+        .where(eq(bookings.id, id))
         .get()
       log(c.get('staffId'), {
         action: 'booking.move',
-        summary: `${before.what} 改到 ${to ? `${venueMoment(to.startsAt)} ${to.coach}` : `时段 #${slotId}`}`,
+        summary: `${before.what} 改到 ${to ? `${venueMoment(to.startsAt)} ${to.coach}` : ''}`,
         studentId: before.studentId,
         target: { kind: 'booking', id },
       })

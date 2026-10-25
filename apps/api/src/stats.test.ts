@@ -1,4 +1,5 @@
 import { venueInstant } from '@rs/shared'
+import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {
   bookings,
@@ -9,6 +10,7 @@ import {
   packageProducts,
   packages,
   refunds,
+  scheduleExceptions,
   slots,
   students,
 } from './db/schema'
@@ -45,12 +47,26 @@ function october(h: Harness) {
       })
       .returning()
       .get()
-  const slot = (coachId: number, date: string, hour: number, fields = {}) =>
-    h.db
+  // The coach works that hour (加班), unless the slot is closed; a group session needs no 排班.
+  const slot = (
+    coachId: number,
+    date: string,
+    hour: number,
+    fields: Partial<typeof slots.$inferInsert> = {},
+  ) => {
+    const span = { startsAt: at(date, hour), endsAt: at(date, hour + 1) }
+    if (fields.open !== false && !fields.lessonTypeId) {
+      h.db
+        .insert(scheduleExceptions)
+        .values({ coachId, kind: 'extra', ...span })
+        .run()
+    }
+    return h.db
       .insert(slots)
-      .values({ coachId, startsAt: at(date, hour), endsAt: at(date, hour + 1), ...fields })
+      .values({ coachId, ...span, ...fields })
       .returning()
       .get()
+  }
   const book = (
     slotRow: typeof slots.$inferSelect,
     studentId: number,
@@ -186,7 +202,7 @@ function october(h: Harness) {
   }
   slot(li.id, '2026-10-25', 9, { lessonTypeId: group.id, capacity: 4 })
 
-  return { wang, li, amy, bo, cai, pkg, group }
+  return { wang, li, amy, bo, cai, pkg, group, lesson }
 }
 
 describe('GET /admin/reports/stats', () => {
@@ -262,6 +278,69 @@ describe('GET /admin/reports/stats', () => {
     expect(r.packages.liability[day(10)]).toBe(135000)
     expect(r.packages.liability[day(24)]).toBe(120000)
     expect(r.renewal).toEqual({ ended: 0, renewed: 0 })
+  })
+
+  it('counts a lesson booked outside 排班 as time on offer', async () => {
+    const h = setup({ now: '2026-10-24T12:00:00Z' })
+    const v = october(h)
+    const admin = await h.admin()
+    const report = async () =>
+      (await h.call('GET', '/admin/reports/stats?from=2026-10-01&to=2026-10-31', undefined, admin))
+        .json.coaches as { id: number; offeredMinutes: number; bookedMinutes: number }[]
+    const before = (await report()).find((c) => c.id === v.li.id)
+    // 李 had no 排班 at 10-12 13:00; the desk booked Cai then anyway.
+    const span = { startsAt: at('2026-10-12', 13), endsAt: at('2026-10-12', 14) }
+    const row = h.db
+      .insert(slots)
+      .values({ coachId: v.li.id, ...span })
+      .returning()
+      .get()
+    h.db
+      .insert(bookings)
+      .values({
+        slotId: row.id,
+        studentId: v.cai.id,
+        lessonTypeId: v.lesson.id,
+        ...span,
+        status: 'confirmed',
+        paidWith: 'order',
+        price: 20000,
+      })
+      .run()
+    const after = (await report()).find((c) => c.id === v.li.id)
+    expect(after?.offeredMinutes).toBe((before?.offeredMinutes ?? 0) + 60)
+    expect(after?.bookedMinutes).toBe((before?.bookedMinutes ?? 0) + 60)
+  })
+
+  it('leaves closed empty sessions and inactive coaches out of time on offer', async () => {
+    const h = setup({ now: '2026-10-24T12:00:00Z' })
+    const v = october(h)
+    const admin = await h.admin()
+    const report = async () =>
+      (await h.call('GET', '/admin/reports/stats?from=2026-10-01&to=2026-10-31', undefined, admin))
+        .json.coaches as { id: number; offeredMinutes: number }[]
+    const offered = async (id: number) => (await report()).find((c) => c.id === id)?.offeredMinutes
+    const before = await offered(v.li.id)
+    const session = (open: boolean, hour: number) =>
+      h.db
+        .insert(slots)
+        .values({
+          coachId: v.li.id,
+          lessonTypeId: v.lesson.id,
+          capacity: 4,
+          open,
+          startsAt: at('2026-10-14', hour),
+          endsAt: at('2026-10-14', hour + 1),
+        })
+        .run()
+    session(false, 15)
+    expect(await offered(v.li.id)).toBe(before)
+    session(true, 17)
+    expect(await offered(v.li.id)).toBe((before ?? 0) + 60)
+
+    // 李 stops taking lessons: their 排班 was not for sale, the open session still was.
+    h.db.update(coaches).set({ active: false }).where(eq(coaches.id, v.li.id)).run()
+    expect(await offered(v.li.id)).toBeLessThan(before ?? 0)
   })
 
   it('groups long ranges by week or month', async () => {

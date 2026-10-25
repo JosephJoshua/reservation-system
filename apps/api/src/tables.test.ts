@@ -8,6 +8,7 @@ import {
   lessonTypes,
   orders,
   refunds,
+  scheduleExceptions,
   slots,
 } from './db/schema'
 import { type Harness, setup } from './test/harness'
@@ -38,17 +39,34 @@ function venue(h: Harness, n: number, tables: number | null) {
   return { ...seeded, coach }
 }
 
-/** A 60-minute slot starting at a venue time given in minutes after midnight. */
+/**
+ * A 60-minute private lesson time starting at a venue time given in minutes after midnight: the
+ * coach works then, and the lesson row exists so it can be booked by id.
+ */
 function slotAt(h: Harness, coachId: number, minute: number) {
+  const span = {
+    startsAt: venueInstant('2026-10-25', minute),
+    endsAt: venueInstant('2026-10-25', minute + 60),
+  }
+  h.db
+    .insert(scheduleExceptions)
+    .values({ coachId, kind: 'extra', ...span })
+    .run()
   return h.db
     .insert(slots)
-    .values({
-      coachId,
-      startsAt: venueInstant('2026-10-25', minute),
-      endsAt: venueInstant('2026-10-25', minute + 60),
-    })
+    .values({ coachId, ...span })
     .returning()
     .get()
+}
+
+/** Whether the private time at a lesson row's coach and start shows as bookable. */
+function listedAvailable(
+  listed: { coachId: number; startsAt: string; available: boolean }[],
+  slot: { coachId: number; startsAt: Date },
+) {
+  return listed.find(
+    (s) => s.coachId === slot.coachId && s.startsAt === slot.startsAt.toISOString(),
+  )?.available
 }
 
 const book = (h: Harness, t: string, slotId: number, lessonTypeId: number) =>
@@ -64,7 +82,8 @@ describe('table limit', () => {
     const v = venue(h, 3, 2)
     const a = h.slot(v.coach(0)).id
     const b = h.slot(v.coach(1)).id
-    const c = h.slot(v.coach(2)).id
+    const cSlot = h.slot(v.coach(2))
+    const c = cSlot.id
     const t1 = await h.student('s1')
     const t2 = await h.student('s2')
     const t3 = await h.student('s3')
@@ -77,12 +96,13 @@ describe('table limit', () => {
     expect(third.json.error).toMatchObject({ code: 'tables_full', message: '该时段球台已满' })
 
     // The student sees the third coach's time as full.
-    const listed = (await h.call('GET', '/slots?date=2026-10-25', undefined, t3)).json
-    expect(listed.find((s: { id: number }) => s.id === c).available).toBe(false)
+    const list = `/slots?date=2026-10-25&lessonTypeId=${v.lesson.id}`
+    const listed = (await h.call('GET', list, undefined, t3)).json
+    expect(listedAvailable(listed, cSlot)).toBe(false)
 
     await h.call('POST', `/bookings/${first.json.bookingId}/cancel`, {}, t1)
-    const listedAgain = (await h.call('GET', '/slots?date=2026-10-25', undefined, t3)).json
-    expect(listedAgain.find((s: { id: number }) => s.id === c).available).toBe(true)
+    const listedAgain = (await h.call('GET', list, undefined, t3)).json
+    expect(listedAvailable(listedAgain, cSlot)).toBe(true)
     expect((await book(h, t3, c, v.lesson.id)).status).toBe(201)
   })
 
@@ -159,18 +179,18 @@ describe('table limit', () => {
         t1,
       )
     ).json
-    expect(listed.find((s: { id: number }) => s.id === half.id).available).toBe(true)
+    expect(listedAvailable(listed, half)).toBe(true)
     // Another student's booking cannot be used to free a table.
     const t3 = await h.student('s3')
     const peek = (
       await h.call(
         'GET',
-        `/slots?date=2026-10-25&coachId=${v.coach(2)}&moving=${id}`,
+        `/slots?date=2026-10-25&coachId=${v.coach(2)}&lessonTypeId=${v.lesson.id}&moving=${id}`,
         undefined,
         t3,
       )
     ).json
-    expect(peek.find((s: { id: number }) => s.id === half.id).available).toBe(false)
+    expect(listedAvailable(peek, half)).toBe(false)
 
     const admin = await h.admin()
     const moved = await h.call('POST', `/admin/bookings/${id}/move`, { slotId: half.id }, admin)
@@ -218,35 +238,61 @@ describe('table limit', () => {
     const t1 = await h.student('s1')
     const own = await book(h, t1, slotAt(h, v.coach(0), 10 * 60).id, v.lesson.id)
     await pay(h, own)
-    const other = slotAt(h, v.coach(1), 10 * 60 + 30)
+    slotAt(h, v.coach(1), 10 * 60 + 30)
     const admin = await h.admin()
-    const range = `from=${venueInstant('2026-10-25', 0).toISOString()}&to=${venueInstant('2026-10-26', 0).toISOString()}`
-    const adminRows = (await h.call('GET', `/admin/slots?${range}`, undefined, admin)).json
-    expect(adminRows.map((s: { tableFull: boolean }) => s.tableFull)).toEqual([false, true])
+    const times = async (q: string) =>
+      (
+        await h.call(
+          'GET',
+          `/admin/open-times?date=2026-10-25&coachId=${v.coach(1)}&${q}`,
+          undefined,
+          admin,
+        )
+      ).json.map((t: { startsAt: string; tableFull: boolean }) => [t.startsAt, t.tableFull])
+    expect(await times(`lessonTypeId=${v.lesson.id}`)).toEqual([
+      [venueInstant('2026-10-25', 10 * 60 + 30).toISOString(), true],
+    ])
     // Moving the 10:00 lesson frees its table.
-    const movingRows = (
-      await h.call('GET', `/admin/slots?${range}&moving=${own.json.bookingId}`, undefined, admin)
-    ).json
-    expect(movingRows.map((s: { tableFull: boolean }) => s.tableFull)).toEqual([false, false])
+    expect(await times(`moving=${own.json.bookingId}`)).toEqual([
+      [venueInstant('2026-10-25', 10 * 60 + 30).toISOString(), false],
+    ])
 
+    // The coach moving a lesson of their own sees the same.
+    const theirs = await book(
+      h,
+      await h.student('s2'),
+      slotAt(h, v.coach(1), 14 * 60).id,
+      v.lesson.id,
+    )
+    await pay(h, theirs)
     const { code } = (await h.call('POST', `/admin/coaches/${v.coach(1)}/bind-code`, {}, admin))
       .json
     const coach = (await h.call('POST', '/coach/bind', { code: 'dev:coach', bindCode: code })).json
       .token as string
-    const schedule = (
-      await h.call('GET', '/coach/schedule?from=2026-10-25&to=2026-10-25', undefined, coach)
-    ).json
-    expect(schedule).toMatchObject([{ id: other.id, tableFull: true }])
-    // Another coach's lesson does not count as the one being moved.
-    const peek = (
+    const moveTimes = (
       await h.call(
         'GET',
-        `/coach/schedule?from=2026-10-25&to=2026-10-25&moving=${own.json.bookingId}`,
+        `/coach/move-times?bookingId=${theirs.json.bookingId}&from=2026-10-25&to=2026-10-25`,
         undefined,
         coach,
       )
     ).json
-    expect(peek).toMatchObject([{ id: other.id, tableFull: true }])
+    expect(moveTimes).toEqual([
+      {
+        coachId: v.coach(1),
+        startsAt: venueInstant('2026-10-25', 10 * 60 + 30).toISOString(),
+        endsAt: venueInstant('2026-10-25', 11 * 60 + 30).toISOString(),
+        tableFull: true,
+      },
+    ])
+    // Another coach's lesson is not theirs to move.
+    const peek = await h.call(
+      'GET',
+      `/coach/move-times?bookingId=${own.json.bookingId}&from=2026-10-25&to=2026-10-25`,
+      undefined,
+      coach,
+    )
+    expect(peek.status).toBe(404)
   })
 
   it('counts a group session as one table however many join', async () => {
@@ -338,7 +384,9 @@ describe('table limit', () => {
     expect((await join(1)).status).toBe(201)
     const adult = await h.student('adult')
     const privateSlot = slotAt(h, v.coach(1), 10 * 60)
-    const listed = (await h.call('GET', '/slots?date=2026-10-25', undefined, kidTokens[2])).json
+    const listed = (
+      await h.call('GET', `/slots?date=2026-10-25&lessonTypeId=${kids.id}`, undefined, kidTokens[2])
+    ).json
     expect(listed.find((s: { id: number }) => s.id === sessionId).available).toBe(true)
     expect((await book(h, adult, privateSlot.id, v.lesson.id)).status).toBe(201)
     // A third kid would need a second table, which the private lesson now uses.

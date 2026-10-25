@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { BookingDto, CoachLoginResponse, CreateBookingResponse } from '@rs/shared'
 import { venueDateKey, venueInstant } from '@rs/shared'
-import { ADMIN_PASSWORD, API, call, login, student } from './helpers'
+import { ADMIN_PASSWORD, API, addExtraTimes, call, login, student } from './helpers'
 
 // 课后点评 as the venue sees it: the list, photos, hiding and the action log entry.
 
@@ -64,15 +64,10 @@ test('a coach writes feedback with a photo through the API', async ({ request })
     name: coachName,
     lessonTypeIds: [lesson.id],
   })
-  const { ids } = await call<{ ids: number[] }>(request, 'POST', '/admin/slots', admin, {
-    slots: [
-      {
-        coachId: coach.id,
-        startsAt: venueInstant(day, 10 * 60).toISOString(),
-        endsAt: venueInstant(day, 11 * 60).toISOString(),
-      },
-    ],
-  })
+  const startsAt = venueInstant(day, 10 * 60).toISOString()
+  await addExtraTimes(request, admin, coach.id, [
+    { startsAt, endsAt: venueInstant(day, 11 * 60).toISOString() },
+  ])
   const { code } = await call<{ code: string }>(
     request,
     'POST',
@@ -89,7 +84,8 @@ test('a coach writes feedback with a photo through the API', async ({ request })
   studentToken = await student(request, `feedback-${run}`)
   await call(request, 'PUT', '/me', studentToken, { name: studentName, phone: '13800000004' })
   const booked = await call<CreateBookingResponse>(request, 'POST', '/bookings', studentToken, {
-    slotId: ids[0],
+    coachId: coach.id,
+    startsAt,
     lessonTypeId: lesson.id,
   })
   await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)

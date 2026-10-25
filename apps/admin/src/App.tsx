@@ -50,7 +50,7 @@ type Page = { label: string; icon: ComponentType; component: ComponentType }
 
 const pages = {
   overview: { label: '概览', icon: DashboardIcon, component: Overview },
-  schedule: { label: '排课', icon: CalendarIcon, component: Schedule },
+  schedule: { label: '日程', icon: CalendarIcon, component: Schedule },
   checkin: { label: '今日', icon: CheckCircleIcon, component: CheckIn },
   bookings: { label: '预约', icon: AssignmentIcon, component: Bookings },
   students: { label: '学员', icon: UsergroupIcon, component: Students },

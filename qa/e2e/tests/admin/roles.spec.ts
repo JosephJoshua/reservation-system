@@ -65,7 +65,7 @@ for (const scheme of ['light', 'dark'] as const) {
   test(`前台 sees only the desk pages (${scheme})`, async ({ page }) => {
     await page.emulateMedia({ colorScheme: scheme })
     await login(page, desk.username, password)
-    await expect(menu(page)).toHaveText(['概览', '排课', '今日', '预约', '学员', '课后点评'])
+    await expect(menu(page)).toHaveText(['概览', '日程', '今日', '预约', '学员', '课后点评'])
     // No money on the home page.
     await expect(page.getByText('今日收款')).toHaveCount(0)
     await expect(page.getByText('待审核退款')).toHaveCount(0)
@@ -99,7 +99,7 @@ test('管理员 changes a role, and the open session follows', async ({ page, br
   const deskPage = await (await browser.newContext({ baseURL: ADMIN_URL })).newPage()
   await login(deskPage, desk.username, password)
   await deskPage.goto('./#/schedule')
-  await expect(deskPage.locator('.admin-title')).toHaveText('排课')
+  await expect(deskPage.locator('.admin-title')).toHaveText('日程')
 
   await login(page)
   await page.goto('./#/staff')
@@ -124,7 +124,7 @@ test('管理员 changes a role, and the open session follows', async ({ page, br
   // The open desk session picks up the new role when it moves to another page.
   await deskPage.locator('.admin-aside .nav-item', { hasText: '预约' }).click()
   await expect(deskPage.locator('.admin-aside .nav-item', { hasText: '订单' })).toBeVisible()
-  await expect(deskPage.locator('.admin-aside .nav-item', { hasText: '排课' })).toHaveCount(0)
+  await expect(deskPage.locator('.admin-aside .nav-item', { hasText: '日程' })).toHaveCount(0)
 
   await page.goto('./#/actions')
   await expect(

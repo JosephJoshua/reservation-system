@@ -1,6 +1,15 @@
 import { venueInstant } from '@rs/shared'
 import { describe, expect, it } from 'vitest'
-import { bookings, orders, packageProducts, packages, refunds, slots, students } from './db/schema'
+import {
+  bookings,
+  coachHours,
+  orders,
+  packageProducts,
+  packages,
+  refunds,
+  slots,
+  students,
+} from './db/schema'
 import { setup } from './test/harness'
 
 const at = (date: string, hour: number) => venueInstant(date, hour * 60)
@@ -184,7 +193,7 @@ describe('reports at a busy venue', () => {
     // SQLite takes at most 32766 values in one query; a busy year has more lessons than that.
     const client = h.db.$client
     const slot = client.prepare(
-      'insert into slots (coach_id, starts_at, ends_at, open, source, capacity) values (?, ?, ?, 1, ?, 1)',
+      'insert into slots (coach_id, starts_at, ends_at, open, capacity) values (?, ?, ?, 1, 1)',
     )
     const booking = client.prepare(
       "insert into bookings (slot_id, student_id, lesson_type_id, starts_at, ends_at, status, seat, paid_with, price, attendance) values (?, ?, ?, ?, ?, 'confirmed', 1, 'order', 20000, 'attended')",
@@ -192,13 +201,26 @@ describe('reports at a busy venue', () => {
     const order = client.prepare(
       "insert into orders (out_trade_no, student_id, kind, description, amount, provider, status, booking_id, paid_at) values (?, ?, 'class', '', 20000, 'wechat', 'paid', ?, ?)",
     )
+    // The coach works all day, every day.
+    h.db
+      .insert(coachHours)
+      .values(
+        [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+          coachId: coach.id,
+          weekday,
+          startMinute: 0,
+          endMinute: 24 * 60,
+          fromDate: '2000-01-01',
+        })),
+      )
+      .run()
     const first = at('2025-10-25', 0).getTime()
     const n = 33_000
     client.transaction(() => {
       for (let i = 0; i < n; i++) {
         // Spread over the year, from 9:00, a minute later each lap.
         const start = first + (i % 360) * 86_400_000 + 9 * 3_600_000 + Math.floor(i / 360) * 60_000
-        const s = slot.run(coach.id, start, start + 3_600_000, 'manual')
+        const s = slot.run(coach.id, start, start + 3_600_000)
         const b = booking.run(s.lastInsertRowid, amy.id, lesson.id, start, start + 3_600_000)
         order.run(`y${i}`, amy.id, b.lastInsertRowid, start)
       }
@@ -216,10 +238,13 @@ describe('reports at a busy venue', () => {
     expect(sum(r.json.revenue.paid)).toBe(n * 20000)
     expect(sum(r.json.revenue.consumed)).toBe(n * 20000)
     expect(r.json.attendance).toEqual({ attended: n, noShow: 0, unmarked: 0 })
-    expect(r.json.coaches).toEqual([
-      { id: coach.id, name: coach.name, offeredMinutes: n * 60, bookedMinutes: n * 60 },
-    ])
-    expect(sum(r.json.heatmap.map((c: { booked: number }) => c.booked))).toBe(n)
+    // A day's lessons start a minute apart and overlap: 240 days have 92, the rest 91, and the
+    // coach is busy from the first start to an hour after the last.
+    const busy = 240 * (91 + 60) + 120 * (90 + 60)
+    expect(r.json.coaches).toMatchObject([{ id: coach.id, name: coach.name, bookedMinutes: busy }])
+    expect(r.json.coaches[0].offeredMinutes).toBeGreaterThan(busy)
+    const booked = sum(r.json.heatmap.map((c: { booked: number }) => c.booked))
+    expect(Math.abs(booked - busy / 60)).toBeLessThan(5)
     expect(r.json.students.total).toEqual({ new: 1, returning: 0 })
   }, 60_000)
 })

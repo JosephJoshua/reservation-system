@@ -102,7 +102,10 @@ export interface StatsReport {
   renewal: { ended: number; renewed: number }
   /** Hours each coach was open for lessons and how many of them were booked. */
   coaches: { id: number; name: string; offeredMinutes: number; bookedMinutes: number }[]
-  /** Lesson starts by weekday (0 is Monday) and venue hour. Only cells with open lessons. */
+  /**
+   * Coach-hours open for lessons and booked, by weekday (0 is Monday) and venue hour, to one
+   * decimal. Only cells with open hours.
+   */
   heatmap: { weekday: number; hour: number; offered: number; booked: number }[]
   packages: {
     sales: { productId: number; name: string; count: number; amount: number }[]

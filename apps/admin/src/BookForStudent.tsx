@@ -1,12 +1,13 @@
 import type { PriceTag } from '@rs/shared'
-import { venueInstant } from '@rs/shared'
+import { venueDateKey } from '@rs/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, DatePicker, Dialog, Input, InputNumber, Radio, Select } from 'tdesign-react'
+import { Button, Dialog, Input, InputNumber, Radio, Select } from 'tdesign-react'
 import { api, RequestError } from './api'
 import { NewStudentDialog } from './DeskStudent'
 import { Field } from './Field'
-import { addDays, fmtDate, fmtTime, fmtWeekday, today, toFen, toYuan, yuan } from './format'
+import { fmtDate, fmtTime, fmtWeekday, toFen, toYuan, yuan } from './format'
 import { attempt, useApi, useIdempotencyKey, useSubmitting } from './hooks'
+import { type LessonPick, LessonTimePicker, pickBody } from './LessonTimePicker'
 import { offlineMethodLabel } from './labels'
 import { useCan } from './me'
 import type { Coach, LessonType, Person, Slot } from './types'
@@ -80,101 +81,25 @@ function StudentPicker({
   )
 }
 
-function localDateKey(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
-/** Free, open slots of one coach on one venue date that have not started. */
-function SlotPicker({
-  coaches,
-  value,
-  onChange,
-}: {
-  coaches: Coach[]
-  value: Slot | null
-  onChange: (s: Slot | null) => void
-}) {
-  const [coachId, setCoachId] = useState<number | undefined>(coaches[0]?.id)
-  const [date, setDate] = useState(today())
-  useEffect(() => {
-    if (coachId === undefined && coaches[0]) setCoachId(coaches[0].id)
-  }, [coaches, coachId])
-  const from = venueInstant(date, 0).toISOString()
-  const to = venueInstant(addDays(date, 1), 0).toISOString()
-  const slots = useApi<Slot[]>(
-    coachId
-      ? `/admin/slots?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&coachId=${coachId}`
-      : null,
-  )
-  const free = (slots.data ?? []).filter(
-    (s) =>
-      s.open &&
-      !s.cancelledAt &&
-      s.bookings.length < s.capacity &&
-      !s.tableFull &&
-      new Date(s.startsAt) > new Date(),
-  )
-  return (
-    <div className="fields">
-      <Select
-        value={coachId}
-        placeholder="选择教练"
-        options={coaches.map((c) => ({ label: c.name, value: c.id }))}
-        onChange={(v) => {
-          setCoachId(Number(v))
-          onChange(null)
-        }}
-      />
-      <DatePicker
-        value={date}
-        clearable={false}
-        // The picker hands over local calendar days; past venue dates have nothing to book.
-        disableDate={(d) => localDateKey(d as Date) < today()}
-        onChange={(v) => {
-          setDate(String(v || today()))
-          onChange(null)
-        }}
-      />
-      {slots.error ? (
-        <span className="muted">{slots.error}</span>
-      ) : slots.loading ? (
-        <span className="muted">加载中</span>
-      ) : free.length === 0 ? (
-        <span className="muted">这天没有可约时段</span>
-      ) : (
-        // A grid of times rather than a radio group, so it wraps evenly on a phone too.
-        <div className="slot-picks">
-          {free.map((s) => (
-            <Button
-              key={s.id}
-              variant={s.id === value?.id ? 'base' : 'outline'}
-              theme={s.id === value?.id ? 'primary' : 'default'}
-              aria-pressed={s.id === value?.id}
-              onClick={() => onChange(s)}
-            >
-              {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
-              {s.lessonTypeId !== null && ` 小班课 剩 ${s.capacity - s.bookings.length} 位`}
-            </Button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 /**
- * 代约: the front desk books a lesson for a student. Opened from a free slot, from a student,
- * or with nothing chosen yet. The booking is paid from the student's package or recorded as
- * paid at the desk.
+ * 代约: the front desk books a lesson for a student. Opened from a group session, from a time on
+ * the 日程 board, from a student, or with nothing chosen yet. The booking is paid from the
+ * student's package or recorded as paid at the desk.
  */
 export function BookForStudent({
-  slot: givenSlot,
+  session,
+  at,
+  date,
   student: givenStudent,
   onClose,
   onDone,
 }: {
-  slot?: Slot
+  /** A group session to book a seat in. */
+  session?: Slot
+  /** A coach and start time picked on the 日程 board. */
+  at?: { coachId: number; startsAt: string }
+  /** The day to show times for first, such as the day on the 日程 board. */
+  date?: string
   student?: Person
   onClose: () => void
   onDone: () => void
@@ -183,8 +108,12 @@ export function BookForStudent({
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [student, setStudent] = useState<Person | null>(givenStudent ?? null)
   const canAdd = useCan('students')
-  const [slot, setSlot] = useState<Slot | null>(givenSlot ?? null)
-  const [lessonTypeId, setLessonTypeId] = useState<number | undefined>()
+  const [lessonTypeId, setLessonTypeId] = useState<number | undefined>(
+    session?.lessonTypeId ?? undefined,
+  )
+  const [pick, setPick] = useState<LessonPick | null>(
+    session ? { kind: 'session', slot: session } : null,
+  )
   const [quote, setQuote] = useState<Quote | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [payWith, setPayWith] = useState<'package' | 'offline'>('offline')
@@ -198,36 +127,52 @@ export function BookForStudent({
   const requestKey = useIdempotencyKey()
 
   const activeCoaches = (coaches.data ?? []).filter((c) => c.active)
-  const coach = (coaches.data ?? []).find((c) => c.id === slot?.coachId)
-  // Lesson types this coach teaches that fit the slot's length.
-  const fitting = useMemo(() => {
-    if (!slot || !coach) return []
-    const minutes = (Date.parse(slot.endsAt) - Date.parse(slot.startsAt)) / 60_000
-    const taught = new Set(coach.lessonTypeIds)
-    // A group session teaches its own class; a private slot takes private lessons.
-    const fits = (t: LessonType) =>
-      slot.lessonTypeId !== null ? t.id === slot.lessonTypeId : t.capacity === 1
-    // Regular lessons first: the desk books those far more often than trials.
+  const atCoach = activeCoaches.find((c) => c.id === at?.coachId)
+  // Lesson types the desk can book: those an active coach teaches, the board's coach's when a
+  // time was picked there. Regular lessons first: the desk books those far more often than trials.
+  const bookable = useMemo(() => {
+    const taught = new Set((atCoach ? [atCoach] : activeCoaches).flatMap((c) => c.lessonTypeIds))
     return (types.data ?? [])
-      .filter((t) => t.active && taught.has(t.id) && t.durationMinutes === minutes && fits(t))
-      .sort((a, b) => Number(a.isTrial) - Number(b.isTrial))
-  }, [slot, coach, types.data])
+      .filter((t) => t.active && taught.has(t.id) && (!at || t.capacity === 1))
+      .sort((a, b) => Number(a.isTrial) - Number(b.isTrial) || a.capacity - b.capacity)
+  }, [types.data, activeCoaches, atCoach, at])
+  const lessonType = session
+    ? (types.data ?? []).find((t) => t.id === session.lessonTypeId)
+    : bookable.find((t) => t.id === lessonTypeId)
+  const teaching = activeCoaches.filter(
+    (c) => lessonType && c.lessonTypeIds.includes(lessonType.id),
+  )
 
   useEffect(() => {
-    if (!fitting.some((t) => t.id === lessonTypeId)) setLessonTypeId(fitting[0]?.id)
-  }, [fitting, lessonTypeId])
+    if (session || !types.data || !coaches.data) return
+    if (!bookable.some((t) => t.id === lessonTypeId)) setLessonTypeId(bookable[0]?.id)
+  }, [session, types.data, coaches.data, bookable, lessonTypeId])
+
+  // A time from the board is picked once its lesson type is known, at that type's length.
+  const placed = useRef(false)
+  useEffect(() => {
+    if (!at || placed.current || !lessonType) return
+    placed.current = true
+    setPick({
+      kind: 'time',
+      coachId: at.coachId,
+      startsAt: at.startsAt,
+      endsAt: new Date(Date.parse(at.startsAt) + lessonType.durationMinutes * 60_000).toISOString(),
+      outside: false,
+    })
+  }, [at, lessonType])
 
   // Asks the server what the booking would cost, and whether it is allowed at all.
   const seq = useRef(0)
   useEffect(() => {
     setQuote(null)
     setQuoteError(null)
-    if (!student || !slot || !lessonTypeId) return
+    if (!student || !pick || !lessonTypeId) return
     const mine = ++seq.current
     api<Quote>('POST', '/admin/bookings/quote', {
       studentId: student.id,
-      slotId: slot.id,
       lessonTypeId,
+      ...pickBody(pick),
     })
       .then((q) => {
         if (mine !== seq.current) return
@@ -240,7 +185,7 @@ export function BookForStudent({
           setQuoteError(e instanceof RequestError ? e.message : '操作失败，请重试')
         }
       })
-  }, [student, slot, lessonTypeId])
+  }, [student, pick, lessonTypeId])
 
   const fen = toFen(amount)
   const ready =
@@ -248,8 +193,8 @@ export function BookForStudent({
     (payWith === 'package' ? quote.package !== null : fen !== null && fen <= 10_000_000)
 
   const submit = async () => {
-    if (!ready || !student || !slot || !lessonTypeId) return
-    const target = { studentId: student.id, slotId: slot.id, lessonTypeId }
+    if (!ready || !student || !pick || !lessonTypeId) return
+    const target = { studentId: student.id, lessonTypeId, ...pickBody(pick) }
     const body =
       payWith === 'package'
         ? { ...target, payWith }
@@ -286,36 +231,54 @@ export function BookForStudent({
             <StudentPicker value={student} onChange={setStudent} />
           )}
         </Field>
-        <Field label="时段">
-          {givenSlot ? (
-            <span className="field-text">
-              {fmtDate(givenSlot.startsAt).slice(5)} {fmtWeekday(givenSlot.startsAt)}{' '}
-              {fmtTime(givenSlot.startsAt)}-{fmtTime(givenSlot.endsAt)} {coach?.name}
-            </span>
+        <Field label="课程">
+          {coaches.error || types.error ? (
+            <span className="field-text danger-text">{coaches.error ?? types.error}</span>
+          ) : !coaches.data || !types.data ? (
+            <span className="field-text muted">加载中</span>
+          ) : session ? (
+            <span className="field-text">{lessonType?.name}</span>
+          ) : bookable.length === 0 ? (
+            <span className="field-text muted">没有可预约的课程</span>
           ) : (
-            <SlotPicker coaches={activeCoaches} value={slot} onChange={setSlot} />
+            <Select
+              value={lessonTypeId}
+              options={bookable.map((t) => ({
+                label: `${t.isTrial && !t.name.includes('体验') ? `${t.name}（体验课）` : t.name}${t.capacity > 1 ? '（小班课）' : ''}`,
+                value: t.id,
+              }))}
+              onChange={(v) => {
+                setLessonTypeId(Number(v))
+                // Another length or kind of lesson needs its own time.
+                if (!at) setPick(null)
+                else placed.current = false
+              }}
+            />
           )}
         </Field>
-        {slot && (
-          <Field label="课程">
-            {coaches.error || types.error ? (
-              <span className="field-text danger-text">{coaches.error ?? types.error}</span>
-            ) : !coaches.data || !types.data ? (
-              <span className="field-text muted">加载中</span>
-            ) : fitting.length === 0 ? (
-              <span className="field-text muted">这位教练没有和时段时长一致的课程</span>
-            ) : (
-              <Select
-                value={lessonTypeId}
-                options={fitting.map((t) => ({
-                  label: t.isTrial && !t.name.includes('体验') ? `${t.name}（体验课）` : t.name,
-                  value: t.id,
-                }))}
-                onChange={(v) => setLessonTypeId(Number(v))}
-              />
-            )}
-          </Field>
-        )}
+        <Field label="时间">
+          {session ? (
+            <span className="field-text">
+              {fmtDate(session.startsAt).slice(5)} {fmtWeekday(session.startsAt)}{' '}
+              {fmtTime(session.startsAt)}-{fmtTime(session.endsAt)}{' '}
+              {activeCoaches.find((c) => c.id === session.coachId)?.name}
+            </span>
+          ) : lessonType ? (
+            <LessonTimePicker
+              key={lessonType.id}
+              lessonType={lessonType}
+              coaches={teaching}
+              minutes={lessonType.durationMinutes}
+              allowOutside
+              initialCoachId={at?.coachId}
+              initialDate={at ? venueDateKey(new Date(at.startsAt)) : date}
+              value={pick}
+              onChange={setPick}
+            />
+          ) : (
+            <span className="field-text muted">先选择课程</span>
+          )}
+        </Field>
         {quoteError && (
           <Field>
             <span className="field-text danger-text">{quoteError}</span>

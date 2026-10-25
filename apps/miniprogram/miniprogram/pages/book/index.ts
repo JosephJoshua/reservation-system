@@ -18,7 +18,9 @@ interface CoachOption {
 type Seek = 'quiet' | 'tell'
 
 interface SlotView {
-  id: number
+  /** A group session's id; null for a private lesson time, booked by coach and start. */
+  id: number | null
+  key: string
   coachId: number
   coachName: string
   time: string
@@ -158,6 +160,7 @@ Page({
         .filter((s) => names.has(s.coachId) && Date.parse(s.startsAt) > now)
         .map((s) => ({
           id: s.id,
+          key: s.id === null ? `${s.coachId}@${s.startsAt}` : `s${s.id}`,
           coachId: s.coachId,
           coachName: names.get(s.coachId) ?? '',
           time: time(s.startsAt),
@@ -245,7 +248,7 @@ Page({
     const slot = this.data.slots[e.currentTarget.dataset.index as number]
     if (!slot?.available) return
     const query = [
-      `slotId=${slot.id}`,
+      ...(slot.id === null ? [] : [`slotId=${slot.id}`]),
       `lessonTypeId=${this.data.lessonTypeId}`,
       `coachId=${slot.coachId}`,
       `startsAt=${encodeURIComponent(slot.startsAt)}`,

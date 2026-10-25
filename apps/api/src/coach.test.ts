@@ -1,22 +1,14 @@
 import { venueInstant } from '@rs/shared'
 import { and, eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings, coaches, lessonTypes, packageProducts, refunds, slots } from './db/schema'
+import { bookings, coaches, packageProducts, refunds } from './db/schema'
 import { notifyCoaches } from './services/coach-notices'
-import { syncAllSlots } from './services/coaches'
 import { type Harness, setup } from './test/harness'
 import { fieldValue, type NoticeTemplate, type Notifier, parseTemplate } from './wx-notify'
 
 const MON = 1
 const at = (date: string, hhmm: string) =>
   venueInstant(date, Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3))).toISOString()
-const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3))
-const hours = (weekday: number, from: string, to: string, lessonMinutes = 60) => ({
-  weekday,
-  startMinute: minutes(from),
-  endMinute: minutes(to),
-  lessonMinutes,
-})
 
 /** A seeded venue with the coach bound to the WeChat user `dev:coach`. */
 async function withCoach(h: Harness) {
@@ -33,15 +25,6 @@ async function book(h: Harness, token: string, slotId: number, lessonTypeId: num
   const res = await h.call('POST', '/bookings', { slotId, lessonTypeId }, token)
   if (res.json.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
   return res.json.bookingId as number
-}
-
-function coachSlots(h: Harness, coachId: number) {
-  return h.db
-    .select()
-    .from(slots)
-    .where(eq(slots.coachId, coachId))
-    .all()
-    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
 }
 
 describe('binding a coach to WeChat', () => {
@@ -145,286 +128,6 @@ describe('binding a coach to WeChat', () => {
   })
 })
 
-describe('weekly hours', () => {
-  it('turn into slots across the booking window', async () => {
-    const h = setup()
-    const { coach, token } = await withCoach(h)
-    const res = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '14:00', '17:00'), hours(3, '09:00', '10:30')] },
-      token,
-    )
-    expect(res.status).toBe(200)
-    // Today is Friday 10-23 and the window runs 14 days to Friday 11-06:
-    // Mondays 10-26 and 11-02 with 3 lessons, Wednesdays 10-28 and 11-04 with 1.
-    expect(res.json).toEqual({ created: 8, removed: 0, bookedOnDaysOff: 0 })
-    const rows = coachSlots(h, coach.id)
-    expect(rows[0]).toMatchObject({ source: 'hours', open: true })
-    expect(rows[0]?.startsAt.toISOString()).toBe(at('2026-10-26', '14:00'))
-    // The half hour left over on Wednesday holds no lesson.
-    expect(rows[3]?.endsAt.toISOString()).toBe(at('2026-10-28', '10:00'))
-
-    // Saving the same hours again changes nothing.
-    const again = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '14:00', '17:00'), hours(3, '09:00', '10:30')] },
-      token,
-    )
-    expect(again.json).toEqual({ created: 0, removed: 0, bookedOnDaysOff: 0 })
-    expect((await h.call('GET', '/coach/hours', undefined, token)).json).toMatchObject({
-      hours: [hours(MON, '14:00', '17:00'), hours(3, '09:00', '10:30')],
-      daysOff: [],
-      lessonMinutes: [60],
-      advanceDays: 14,
-    })
-  })
-
-  it("reach as far as the coach's lesson with the longest booking window", async () => {
-    const h = setup()
-    const { coach, lesson, token } = await withCoach(h)
-    h.db
-      .update(lessonTypes)
-      .set({ rules: { advanceDays: 24 } })
-      .where(eq(lessonTypes.id, lesson.id))
-      .run()
-    const res = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '14:00', '15:00')] },
-      token,
-    )
-    // 24 days from Friday 10-23 runs to Monday 11-16: four Mondays, not the venue's two.
-    expect(res.json).toMatchObject({ created: 4 })
-    expect(coachSlots(h, coach.id).at(-1)?.startsAt.toISOString()).toBe(at('2026-11-16', '14:00'))
-    expect((await h.call('GET', '/coach/hours', undefined, token)).json.advanceDays).toBe(24)
-  })
-
-  it('reach a longer window as soon as the admin sets it', async () => {
-    const h = setup()
-    const { coach, lesson, admin, token } = await withCoach(h)
-    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
-    expect(coachSlots(h, coach.id)).toHaveLength(2)
-    const row = (await h.call('GET', '/admin/lesson-types', undefined, admin)).json.find(
-      (t: { id: number }) => t.id === lesson.id,
-    )
-    const { id: _id, createdAt: _c, sort: _s, ...edit } = row
-    await h.call(
-      'PUT',
-      `/admin/lesson-types/${lesson.id}`,
-      { ...edit, rules: { advanceDays: 24 } },
-      admin,
-    )
-    expect(coachSlots(h, coach.id)).toHaveLength(4)
-    // Shortened again, the slots nobody booked go.
-    await h.call('PUT', `/admin/lesson-types/${lesson.id}`, { ...edit, rules: {} }, admin)
-    expect(coachSlots(h, coach.id)).toHaveLength(2)
-  })
-
-  it('rejects lengths the coach does not teach and overlapping windows', async () => {
-    const h = setup()
-    const { token } = await withCoach(h)
-    const badLength = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '09:00', '12:00', 45)] },
-      token,
-    )
-    expect(badLength.json.error.message).toBe('每节时长需与所教课程一致')
-    const overlap = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '09:00', '12:00'), hours(MON, '11:00', '13:00')] },
-      token,
-    )
-    expect(overlap.json.error.message).toBe('同一天的时间段不能重叠')
-    const outOfDay = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '23:00', '25:00')] },
-      token,
-    )
-    expect(outOfDay.status).toBe(400)
-  })
-
-  it('keeps booked lessons and removes the rest when hours change', async () => {
-    const h = setup()
-    const { coach, lesson, token } = await withCoach(h)
-    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '17:00')] }, token)
-    const [first, second] = coachSlots(h, coach.id)
-    if (!first || !second) throw new Error('no slots')
-    const student = await h.student('a')
-    await book(h, student, first.id, lesson.id)
-    // Someone booked and cancelled the second one: it has history, so it is closed, not deleted.
-    const cancelled = await book(h, await h.student('b'), second.id, lesson.id)
-    await h.call('POST', `/bookings/${cancelled}/cancel`, undefined, await h.student('b'))
-
-    const res = await h.call('PUT', '/coach/hours', { hours: [hours(2, '14:00', '15:00')] }, token)
-    expect(res.json).toEqual({ created: 2, removed: 5, bookedOnDaysOff: 0 })
-    const rows = coachSlots(h, coach.id)
-    expect(rows.map((s) => [s.id === first.id, s.id === second.id, s.open])).toEqual([
-      [true, false, true],
-      [false, true, false],
-      [false, false, true],
-      [false, false, true],
-    ])
-  })
-
-  it('reopens a slot with history when its hours come back', async () => {
-    const h = setup()
-    const { coach, lesson, token, admin } = await withCoach(h)
-    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
-    const [first] = coachSlots(h, coach.id)
-    if (!first) throw new Error('no slot')
-    const student = await h.student('a')
-    const cancelled = await book(h, student, first.id, lesson.id)
-    await h.call('POST', `/bookings/${cancelled}/cancel`, undefined, student)
-
-    await h.call('PUT', '/coach/hours', { hours: [] }, token)
-    expect(h.db.select().from(slots).where(eq(slots.id, first.id)).get()?.open).toBe(false)
-    const back = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '14:00', '15:00')] },
-      token,
-    )
-    expect(back.json).toEqual({ created: 2, removed: 0, bookedOnDaysOff: 0 })
-    expect(h.db.select().from(slots).where(eq(slots.id, first.id)).get()?.open).toBe(true)
-    const [, fresh] = coachSlots(h, coach.id)
-    if (!fresh) throw new Error('no slot')
-
-    // Deleting a generated slot would only bring it back on the next sync.
-    const del = await h.call('DELETE', `/admin/slots/${fresh.id}`, undefined, admin)
-    expect(del.status).toBe(409)
-    expect(del.json.error.code).toBe('slot_from_hours')
-  })
-
-  it('never puts a generated slot over a manual one', async () => {
-    const h = setup()
-    const { coach, token } = await withCoach(h)
-    const manual = h.slot(coach.id, '2026-10-26', 14)
-    const res = await h.call(
-      'PUT',
-      '/coach/hours',
-      { hours: [hours(MON, '13:30', '16:30')] },
-      token,
-    )
-    // 13:30 and 14:30 overlap the manual 14:00 lesson on 10-26 only.
-    expect(res.json.created).toBe(4)
-    const day = coachSlots(h, coach.id).filter((s) => s.startsAt < new Date('2026-10-27T00:00:00Z'))
-    expect(day.map((s) => [s.id === manual.id, s.startsAt.toISOString()])).toEqual([
-      [true, at('2026-10-26', '14:00')],
-      [false, at('2026-10-26', '15:30')],
-    ])
-  })
-
-  it('roll forward as days pass', async () => {
-    const h = setup()
-    const { coach, token } = await withCoach(h)
-    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
-    expect(coachSlots(h, coach.id)).toHaveLength(2)
-    h.clock.now = new Date('2026-10-28T02:00:00Z')
-    syncAllSlots(h.deps)
-    // Monday 11-09 is now inside the window; the past Monday stays as history.
-    expect(coachSlots(h, coach.id).map((s) => s.startsAt.toISOString())).toEqual([
-      at('2026-10-26', '14:00'),
-      at('2026-11-02', '14:00'),
-      at('2026-11-09', '14:00'),
-    ])
-  })
-
-  it('give slots students can book', async () => {
-    const h = setup()
-    const { lesson, token } = await withCoach(h)
-    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '15:00')] }, token)
-    const student = await h.student('a')
-    const list = await h.call(
-      'GET',
-      `/slots?date=2026-10-26&lessonTypeId=${lesson.id}`,
-      undefined,
-      student,
-    )
-    expect(list.json).toHaveLength(1)
-    expect(list.json[0].available).toBe(true)
-    const id = await book(h, student, list.json[0].id, lesson.id)
-    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.status).toBe('confirmed')
-  })
-})
-
-describe('days off', () => {
-  it('remove free lessons, close manual slots and report booked ones', async () => {
-    const h = setup()
-    const { coach, lesson, token } = await withCoach(h)
-    await h.call('PUT', '/coach/hours', { hours: [hours(MON, '14:00', '17:00')] }, token)
-    const manual = h.slot(coach.id, '2026-10-26', 9)
-    const booked = coachSlots(h, coach.id).find(
-      (s) => s.startsAt.toISOString() === at('2026-10-26', '15:00'),
-    )
-    if (!booked) throw new Error('no slot')
-    await book(h, await h.student('a'), booked.id, lesson.id)
-
-    const res = await h.call('PUT', '/coach/days-off/2026-10-26', undefined, token)
-    expect(res.json).toEqual({ created: 0, removed: 3, bookedOnDaysOff: 1 })
-    const day = coachSlots(h, coach.id).filter((s) => s.startsAt < new Date('2026-10-27T00:00:00Z'))
-    expect(day.map((s) => [s.id, s.open])).toEqual([
-      [manual.id, false],
-      [booked.id, true],
-    ])
-    expect((await h.call('GET', '/coach/hours', undefined, token)).json.daysOff).toEqual([
-      '2026-10-26',
-    ])
-
-    const back = await h.call('DELETE', '/coach/days-off/2026-10-26', undefined, token)
-    expect(back.json).toEqual({ created: 3, removed: 0, bookedOnDaysOff: 0 })
-    expect(h.db.select().from(slots).where(eq(slots.id, manual.id)).get()?.open).toBe(true)
-  })
-
-  it('leaves a slot the coach closed by hand closed after the day off', async () => {
-    const h = setup()
-    const { coach, token } = await withCoach(h)
-    const manual = h.slot(coach.id, '2026-10-26', 9)
-    await h.call('PUT', `/coach/slots/${manual.id}`, { open: false }, token)
-    await h.call('PUT', '/coach/days-off/2026-10-26', undefined, token)
-    const back = await h.call('DELETE', '/coach/days-off/2026-10-26', undefined, token)
-    expect(back.json.created).toBe(0)
-    expect(h.db.select().from(slots).where(eq(slots.id, manual.id)).get()?.open).toBe(false)
-  })
-
-  it('refuses past and far dates', async () => {
-    const h = setup()
-    const { token } = await withCoach(h)
-    expect((await h.call('PUT', '/coach/days-off/2026-10-22', undefined, token)).status).toBe(400)
-    expect((await h.call('PUT', '/coach/days-off/2028-01-01', undefined, token)).status).toBe(400)
-    expect((await h.call('PUT', '/coach/days-off/2026-02-30', undefined, token)).status).toBe(400)
-    expect((await h.call('PUT', '/coach/days-off/2026-10-23', undefined, token)).status).toBe(200)
-  })
-
-  it('can be set by the admin for a coach', async () => {
-    const h = setup()
-    const { coach, admin } = await withCoach(h)
-    await h.call(
-      'PUT',
-      `/admin/coaches/${coach.id}/hours`,
-      { hours: [hours(MON, '14:00', '15:00')] },
-      admin,
-    )
-    const res = await h.call(
-      'PUT',
-      `/admin/coaches/${coach.id}/days-off/2026-10-26`,
-      undefined,
-      admin,
-    )
-    expect(res.json.removed).toBe(1)
-    expect(
-      (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)).json,
-    ).toMatchObject({
-      hours: [hours(MON, '14:00', '15:00')],
-      daysOff: ['2026-10-26'],
-    })
-  })
-})
-
 describe('the coach schedule and lessons', () => {
   async function bookedLesson(h: Harness) {
     const ctx = await withCoach(h)
@@ -435,43 +138,60 @@ describe('the coach schedule and lessons', () => {
     return { ...ctx, slot, student, bookingId }
   }
 
-  it('lists slots with who booked them', async () => {
+  it('lists lessons with who booked them, the free working time and 请假', async () => {
     const h = setup()
     const { coach, token, slot, bookingId } = await bookedLesson(h)
-    const free = h.slot(coach.id, '2026-10-26', 11)
+    h.hours(coach.id, [{ weekday: MON, from: '09:00', to: '13:00' }])
+    const admin = await h.admin()
+    await h.call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      {
+        kind: 'off',
+        startsAt: at('2026-10-26', '12:00'),
+        endsAt: at('2026-10-26', '13:00'),
+        note: '体检',
+      },
+      admin,
+    )
     const res = await h.call(
       'GET',
       '/coach/schedule?from=2026-10-26&to=2026-10-26',
       undefined,
       token,
     )
-    expect(res.json).toEqual([
-      {
-        id: slot.id,
-        startsAt: at('2026-10-26', '10:00'),
-        endsAt: at('2026-10-26', '11:00'),
-        open: true,
-        tableFull: false,
-        lesson: {
-          bookingId,
-          status: 'confirmed',
-          attendance: null,
-          studentName: '小明',
-          lessonTypeName: '一对一私教',
-          isTrial: false,
+    expect(res.json).toEqual({
+      lessons: [
+        {
+          id: slot.id,
+          startsAt: at('2026-10-26', '10:00'),
+          endsAt: at('2026-10-26', '11:00'),
+          lesson: {
+            bookingId,
+            status: 'confirmed',
+            attendance: null,
+            studentName: '小明',
+            lessonTypeName: '一对一私教',
+            isTrial: false,
+          },
+          group: null,
         },
-        group: null,
-      },
-      {
-        id: free.id,
-        startsAt: at('2026-10-26', '11:00'),
-        endsAt: at('2026-10-26', '12:00'),
-        open: true,
-        tableFull: false,
-        lesson: null,
-        group: null,
-      },
-    ])
+      ],
+      free: [
+        { startsAt: at('2026-10-26', '09:00'), endsAt: at('2026-10-26', '10:00') },
+        { startsAt: at('2026-10-26', '11:00'), endsAt: at('2026-10-26', '12:00') },
+      ],
+      off: [
+        {
+          id: expect.any(Number),
+          startsAt: at('2026-10-26', '12:00'),
+          endsAt: at('2026-10-26', '13:00'),
+          note: '体检',
+          closure: false,
+        },
+      ],
+      coachEdits: true,
+    })
     expect(
       (await h.call('GET', '/coach/schedule?from=2026-10-26&to=2027-03-31', undefined, token))
         .status,
@@ -495,7 +215,7 @@ describe('the coach schedule and lessons', () => {
     expect(lesson.student).toEqual({ id: 1, name: '已注销学员', phone: '' })
     const [slot] = (
       await h.call('GET', '/coach/schedule?from=2026-10-26&to=2026-10-26', undefined, token)
-    ).json
+    ).json.lessons
     expect(slot.lesson.studentName).toBe('已注销学员')
     const note = await h.call('PUT', `/coach/lessons/${bookingId}/note`, { note: '反手' }, token)
     expect(note.json.error.code).toBe('account_deleted')
@@ -683,27 +403,6 @@ describe('the coach schedule and lessons', () => {
     expect(res.json.error.code).toBe('started')
     const row = h.db.select().from(bookings).where(eq(bookings.id, bookingId)).get()
     expect(row).toMatchObject({ status: 'confirmed', coachToldCancelledAt: null })
-  })
-
-  it('opens and closes the coach own future slots', async () => {
-    const h = setup()
-    const { coach, lesson, token } = await withCoach(h)
-    const slot = h.slot(coach.id, '2026-10-26', 10)
-    expect((await h.call('PUT', `/coach/slots/${slot.id}`, { open: false }, token)).status).toBe(
-      204,
-    )
-    expect(h.db.select().from(slots).where(eq(slots.id, slot.id)).get()?.open).toBe(false)
-    h.clock.now = new Date('2026-10-26T02:00:00Z')
-    expect((await h.call('PUT', `/coach/slots/${slot.id}`, { open: true }, token)).status).toBe(409)
-    const booked = h.slot(coach.id, '2026-10-27', 10)
-    await book(h, await h.student('a'), booked.id, lesson.id)
-    const late = await h.call('PUT', `/coach/slots/${booked.id}`, { open: false }, token)
-    expect(late.json.error.code).toBe('slot_booked')
-    const other = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
-    const theirs = h.slot(other.id, '2026-10-28', 10)
-    expect((await h.call('PUT', `/coach/slots/${theirs.id}`, { open: false }, token)).status).toBe(
-      404,
-    )
   })
 })
 

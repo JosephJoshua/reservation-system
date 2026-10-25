@@ -1,5 +1,6 @@
 // Fills an empty development database with a believable venue: coaches, lessons, packages,
-// two weeks of slots, banners and a notice. Refuses to touch a database that already has coaches.
+// 排班 for every coach, weekend group classes, banners and a notice. Refuses to touch a database
+// that already has coaches.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { crc32, deflateSync } from 'node:zlib'
@@ -14,9 +15,11 @@ import {
   categoryPrices,
   coachCategories,
   coaches,
+  coachHours,
   coachLessonTypes,
   lessonTypes,
   packageProducts,
+  scheduleExceptions,
   slots,
 } from './schema'
 
@@ -226,31 +229,41 @@ const [tenPack] = db
   .all()
 if (!tenPack) throw new Error('package insert failed')
 
-// Hourly slots 09:00-21:00 for every coach, from today through two weeks out. Zhao starts
-// tomorrow, so QA can check that picking him skips ahead to his first open day.
+// 排班: Wang works 09:00-12:00 and 13:00-21:00 every day, Li 11:00-21:00 (from 10:30 at weekends,
+// after the kids' group class), and Zhao 14:00-21:00 from tomorrow, so QA can check that picking
+// him skips ahead to his first open day. Wang takes the afternoon off the day after tomorrow.
 const today = venueDateKey(now)
-const zhaoId = zhao.id
+const tomorrow = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + 86400000))
+const week = [0, 1, 2, 3, 4, 5, 6]
+db.insert(coachHours)
+  .values([
+    ...week.flatMap((weekday) => [
+      { coachId: wang.id, weekday, startMinute: 9 * 60, endMinute: 12 * 60, fromDate: today },
+      { coachId: wang.id, weekday, startMinute: 13 * 60, endMinute: 21 * 60, fromDate: today },
+      {
+        coachId: li.id,
+        weekday,
+        startMinute: [0, 6].includes(weekday) ? 10 * 60 + 30 : 11 * 60,
+        endMinute: 21 * 60,
+        fromDate: today,
+      },
+      { coachId: zhao.id, weekday, startMinute: 14 * 60, endMinute: 21 * 60, fromDate: tomorrow },
+    ]),
+  ])
+  .run()
+const dayAfter = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + 2 * 86400000))
+db.insert(scheduleExceptions)
+  .values({
+    coachId: wang.id,
+    kind: 'off',
+    startsAt: venueInstant(dayAfter, 13 * 60),
+    endsAt: venueInstant(dayAfter, 21 * 60),
+    note: '比赛',
+  })
+  .run()
+
+// Li teaches the kids' group class 09:00-10:30 at weekends.
 const rows: (typeof slots.$inferInsert)[] = []
-for (let day = 0; day <= 14; day++) {
-  const date = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + day * 86400000))
-  const weekend = [0, 6].includes(venueInstant(date, 12 * 60).getUTCDay())
-  for (const coach of [wang, li, zhao]) {
-    if (coach.id === zhaoId && day === 0) continue
-    for (let hour = 9; hour < 21; hour++) {
-      // Li teaches the kids' group class 09:00-10:30 at weekends.
-      if (weekend && coach.id === li.id && hour < 11) continue
-      // Leave each coach a couple of gaps so the grid looks like a real week.
-      if ((hour + coach.id + day) % 5 === 0) continue
-      const startsAt = venueInstant(date, hour * 60)
-      if (startsAt <= now) continue
-      rows.push({
-        coachId: coach.id,
-        startsAt,
-        endsAt: venueInstant(date, hour * 60 + 60),
-      })
-    }
-  }
-}
 for (let day = 0; day <= 14; day++) {
   const date = venueDateKey(new Date(Date.parse(`${today}T12:00:00Z`) + day * 86400000))
   if (![0, 6].includes(venueInstant(date, 12 * 60).getUTCDay())) continue
@@ -264,7 +277,7 @@ for (let day = 0; day <= 14; day++) {
     capacity: 6,
   })
 }
-db.insert(slots).values(rows).run()
+if (rows.length) db.insert(slots).values(rows).run()
 
 mkdirSync(config.uploadsDir, { recursive: true })
 const images = [
@@ -293,5 +306,5 @@ db.insert(banners)
   .run()
 
 console.log(
-  `Seeded ${config.databasePath}: 3 coaches, 2 lesson types, 2 packages, ${rows.length} slots.`,
+  `Seeded ${config.databasePath}: 3 coaches, 2 lesson types, 2 packages, weekly hours, ${rows.length} group sessions.`,
 )

@@ -138,7 +138,6 @@ async function step(name: string, fn: () => Promise<void>) {
 }
 
 interface Slot {
-  id: number
   coachId: number
   startsAt: string
   endsAt: string
@@ -181,11 +180,11 @@ try {
   const studentLogin = `qa_tables_${run}`
   const token = await signUp(studentLogin, '吴桌')
   const rival = await signUp(`qa_tables_rival_${run}`, '郑台')
-  const book = async (who: string, slotId: number) => {
+  const book = async (who: string, t: Slot) => {
     const res = await call(
       'POST',
       '/bookings',
-      { slotId, lessonTypeId: lesson.id, payWith: 'wechat' },
+      { coachId: t.coachId, startsAt: t.startsAt, lessonTypeId: lesson.id, payWith: 'wechat' },
       who,
     )
     if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
@@ -206,11 +205,18 @@ try {
       )) as Slot[]
     ).filter((s) => s.available)
   const theirs = await free(other.id)
-  const shared = (await free(coach.id)).filter((s) => theirs.some((t) => t.startsAt === s.startsAt))
+  // Apart from each other, since with one table a lesson also takes the times overlapping it.
+  const shared: Slot[] = []
+  for (const s of await free(coach.id)) {
+    const last = shared.at(-1)
+    if (theirs.some((t) => t.startsAt === s.startsAt) && (!last || s.startsAt >= last.endsAt)) {
+      shared.push(s)
+    }
+  }
   check(shared.length >= 3, `both coaches need three free times in common on ${day}`)
   const [full, lost, own] = shared as [Slot, Slot, Slot]
   const at = (s: Slot) => theirs.find((t) => t.startsAt === s.startsAt) as Slot
-  await book(rival, at(full).id)
+  await book(rival, at(full))
 
   // The first page signs in as whoever devLogin named at launch. Let that finish before switching,
   // or its late token replaces the student's.
@@ -233,33 +239,39 @@ try {
       (d) => d.slotsState === 'ready' && d.date === day,
     )
     const slots = (await page.data('slots')) as Slot[]
-    const shown = slots.find((s) => s.id === full.id)
+    const shown = slots.find((s) => s.startsAt === full.startsAt)
     check(shown && !shown.available, 'the time the other coach teaches should be full')
-    check(slots.find((s) => s.id === lost.id)?.available, 'the next shared time should be free')
+    check(
+      slots.find((s) => s.startsAt === lost.startsAt)?.available,
+      'the next shared time should be free',
+    )
     await screenshot('book-full')
   })
 
   await step('losing the last table on 确认预约 sends the student back', async () => {
-    const q = `slotId=${lost.id}&lessonTypeId=${lesson.id}&coachId=${coach.id}&startsAt=${encodeURIComponent(lost.startsAt)}&endsAt=${encodeURIComponent(lost.endsAt)}`
+    const q = `lessonTypeId=${lesson.id}&coachId=${coach.id}&startsAt=${encodeURIComponent(lost.startsAt)}&endsAt=${encodeURIComponent(lost.endsAt)}`
     await miniProgram.navigateTo(`/pages/confirm/index?${q}`)
     await waitForPage('pages/confirm/index', (d) => d.state === 'ready')
     await screenshot('confirm')
     // Taken by the other coach's student, as from another phone, after the page loaded.
-    await book(rival, at(lost).id)
+    await book(rival, at(lost))
     await invokeTwice('submit')
     const back = await waitForPage(
       'pages/book/index',
       (d) => d.slotsState === 'ready' && d.date === day,
     )
     const slots = (await back.data('slots')) as Slot[]
-    check(!slots.find((s) => s.id === lost.id)?.available, 'the lost time should now be full')
+    check(
+      !slots.find((s) => s.startsAt === lost.startsAt)?.available,
+      'the lost time should now be full',
+    )
     const mine = (await call('GET', '/bookings', undefined, token)) as unknown[]
     check(mine.length === 0, 'nothing should have been booked')
     await screenshot('book-after-lost')
   })
 
   await step('the coach sees the full time as 球台已满 when moving a lesson', async () => {
-    const bookingId = await book(token, own.id)
+    const bookingId = await book(token, own)
     if (coach.bound) await call('DELETE', `/admin/coaches/${coach.id}/binding`, undefined, admin)
     const { code } = await call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)
     await miniProgram.callWxMethod('setStorageSync', 'devLogin', `qa_tables_coach_${run}`)
@@ -274,10 +286,13 @@ try {
     const move = await waitForPage('coach/move/index', (d) => d.state === 'ready')
     await invoke('pickDate', { currentTarget: { dataset: { key: day } } })
     await sleep(300)
-    const slots = (await move.data('slots')) as { id: number; full?: boolean }[]
-    check(slots.find((s) => s.id === full.id)?.full, 'the full time should be marked 球台已满')
+    const slots = (await move.data('slots')) as { startsAt: string; full?: boolean }[]
+    check(
+      slots.find((s) => s.startsAt === full.startsAt)?.full,
+      'the full time should be marked 球台已满',
+    )
     await screenshot('coach-move-full')
-    const index = slots.findIndex((s) => s.id === full.id)
+    const index = slots.findIndex((s) => s.startsAt === full.startsAt)
     await tap(move, '.slot', index)
     await sleep(300)
     check(!(await move.data()).picked, 'a full time should not be pickable')

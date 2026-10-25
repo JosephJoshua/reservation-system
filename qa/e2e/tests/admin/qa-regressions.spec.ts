@@ -140,53 +140,33 @@ test('back closes a student opened from the list', async ({ page }) => {
   await expect(page.locator('.t-drawer')).toContainText('学员不存在')
 })
 
-test('batch scheduling sends one request on a double click and names the overlap', async ({
-  page,
-}) => {
+test('the schedule fits the screen and 排班 saves once on a double click', async ({ page }) => {
   await login(page)
   await page.setViewportSize({ width: 1024, height: 700 })
   await page.goto('./#/schedule')
-  await page.locator('.toolbar .t-select').click()
-  await page.locator('.t-select-option', { hasText: coachName }).click()
-  // The week grid scrolls on its own; the page and its header stay put.
+  await page.getByPlaceholder('搜索教练').fill(coachName)
+  // The board scrolls on its own; the page and its header stay put.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024)
   await expect(page.getByRole('button', { name: '退出登录' })).toBeInViewport()
   await page.screenshot({ path: `${shots}/schedule-1024.png` })
 
-  await page.getByRole('button', { name: '下一周' }).click()
-  await page.getByRole('button', { name: '批量排课' }).click()
-  const creates = await countRequests(page, '/admin/slots', () =>
-    dialog(page)
-      .getByRole('button', { name: /^创建 \d+ 个时段$/ })
-      .dblclick(),
+  await page.goto('./#/catalog')
+  await page
+    .getByRole('row')
+    .filter({ hasText: coachName })
+    .getByRole('button', { name: '排班' })
+    .click()
+  for (const day of ['周一', '周二', '周三', '周四', '周五', '周六', '周日']) {
+    await dialog(page)
+      .locator('.week-day', { hasText: day })
+      .getByRole('button', { name: '添加' })
+      .click()
+  }
+  const saves = await countRequests(page, `/admin/coaches/${coachId}/hours`, () =>
+    dialog(page).getByRole('button', { name: '保存每周时间' }).dblclick(),
   )
-  expect(creates).toBe(1)
-  await expect(dialog(page)).toHaveCount(0)
-
-  await page.getByRole('button', { name: '批量排课' }).click()
-  await dialog(page)
-    .getByRole('button', { name: /^创建 \d+ 个时段$/ })
-    .click()
-  await expect(page.getByText(/^\d+月\d+日 09:00 与该教练已有时段重叠$/)).toBeVisible()
-})
-
-test('batch scheduling counts every day of a long range', async ({ page }) => {
-  await login(page)
-  await page.goto('./#/schedule')
-  await page.getByRole('button', { name: '批量排课' }).click()
-  await dialog(page).locator('.t-date-range-picker input').nth(1).click()
-  const right = page.locator('.t-date-picker__panel-content').nth(1)
-  for (let i = 0; i < 6; i++) await right.locator('.t-pagination-mini__next').click()
-  await right
-    .locator('.t-date-picker__cell:not(.t-date-picker__cell--additional)', { hasText: /^15$/ })
-    .click()
-  await dialog(page).locator('.t-dialog__header').click()
-  await field(dialog(page), '开始时间').locator('input').fill('23:00')
-  // Six months of days used to stop at 120 without saying so.
-  const label = await dialog(page)
-    .getByRole('button', { name: /^创建 \d+ 个时段$/ })
-    .textContent()
-  expect(Number(label?.match(/\d+/)?.[0])).toBeGreaterThan(150)
+  expect(saves).toBe(1)
+  await expect(page.locator('.t-message', { hasText: '已保存每周时间' })).toBeVisible()
 })
 
 test('a venue cancel on a booking the student already cancelled closes and refreshes', async ({
@@ -196,23 +176,26 @@ test('a venue cancel on a booking the student already cancelled closes and refre
   const catalog = await call<CatalogDto>(request, 'GET', '/catalog', studentToken)
   const lesson = catalog.lessonTypes.find((t) => t.name === lessonName)
   if (!lesson) throw new Error('setup missing')
-  // The batch above filled next week, which starts within the next 1 to 7 days.
-  let open: SlotDto[] = []
-  for (let day = 1; day <= 13 && open.length < 2; day++) {
+  // 排班 above opened 09:00 to 12:00 every day from today.
+  const open: { coachId: number; startsAt: string }[] = []
+  // From two days out, so the student's own cancel stays free whatever the time of day.
+  for (let day = 2; day <= 8 && open.length < 2; day++) {
     const slots = await call<SlotDto[]>(
       request,
       'GET',
       `/slots?date=${venueDate(day)}&coachId=${coachId}&lessonTypeId=${lesson.id}`,
       studentToken,
     )
-    open = open.concat(slots.filter((s) => s.available))
+    // One a day, so the two lessons never overlap.
+    const t = slots.find((s) => s.available)
+    if (t) open.push({ coachId, startsAt: t.startsAt })
   }
   const [first, second] = open
-  if (!first || !second) throw new Error('no slots')
+  if (!first || !second) throw new Error('no times')
   const booked: CreateBookingResponse[] = []
   for (const slot of [first, second]) {
     const b = await call<CreateBookingResponse>(request, 'POST', '/bookings', studentToken, {
-      slotId: slot.id,
+      ...slot,
       lessonTypeId: lesson.id,
       payWith: 'wechat',
     })
@@ -353,10 +336,8 @@ test('on a phone the menu is a drawer, lists fit the screen and dialog actions s
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
   }
   await page.goto('./#/schedule')
-  await page.locator('.t-select').first().click()
-  await page.getByRole('listitem').filter({ hasText: coachName }).click()
-  await page.getByRole('button', { name: '批量排课' }).click()
-  const confirm = dialog(page).getByRole('button', { name: /创建/ })
+  await page.getByRole('button', { name: '排小班课' }).click()
+  const confirm = dialog(page).locator('.t-dialog__footer .t-button--theme-primary')
   // Polled, since the sheet zooms in.
   await expect
     .poll(async () => {

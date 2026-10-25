@@ -10,14 +10,19 @@
   </view>
 </view>
 
-<view wx:elif="{{!lessonMinutes.length}}" class="centered">
-  <t-empty icon="{{emptyIcon}}" description="场馆还没有给你分配课程，请联系场馆" />
-</view>
+<view wx:else class="{{editable ? 'has-action-bar' : 'read-only'}}">
+  <view wx:if="{{!editable}}" class="locked">排班由场馆设置，需要调整请联系前台。</view>
 
-<view wx:else class="has-action-bar">
-  <view class="section-title">每周可约时间</view>
+  <view class="section-title">每周时间</view>
   <view class="card">
-    <view wx:for="{{week}}" wx:key="weekday" class="day" hover-class="day-hover" data-weekday="{{item.weekday}}" bind:tap="openAdd">
+    <view
+      wx:for="{{week}}"
+      wx:key="weekday"
+      class="day"
+      hover-class="{{editable ? 'day-hover' : 'none'}}"
+      data-weekday="{{item.weekday}}"
+      bind:tap="openAdd"
+    >
       <view class="day-name">{{item.name}}</view>
       <view class="day-windows">
         <view wx:if="{{!item.windows.length}}" class="day-off">不接课</view>
@@ -26,32 +31,63 @@
             <text class="window-time">{{w.time}}</text>
             <text class="window-sub">{{w.sub}}</text>
           </view>
-          <view class="window-remove" data-index="{{w.index}}" catch:tap="remove">
+          <view wx:if="{{editable}}" class="window-remove" data-index="{{w.index}}" catch:tap="remove">
             <t-icon name="close-circle-filled" size="40rpx" />
           </view>
         </view>
       </view>
-      <view class="day-add"><t-icon name="add" size="40rpx" /></view>
+      <view wx:if="{{editable}}" class="day-add"><t-icon name="add" size="40rpx" /></view>
     </view>
-  </view>
-  <view class="footnote">点某一天即可添加时间段。保存后会自动生成未来 {{advanceDays}} 天的可约时段，已被预约的课不受影响。</view>
-
-  <view class="section-title">休息日</view>
-  <view class="card {{daysOff.length ? 'has-days' : ''}}">
-    <view wx:for="{{daysOff}}" wx:key="key" class="off">
-      <text class="off-date">{{item.text}}</text>
-      <view class="off-remove" data-key="{{item.key}}" bind:tap="removeDayOff">取消休息</view>
-    </view>
-    <picker mode="date" value="{{today}}" start="{{today}}" end="{{lastDay}}" bind:change="addDayOff">
-      <view class="off off-add" hover-class="day-hover">
-        <t-icon name="add" size="40rpx" />
-        <text>添加休息日</text>
+    <picker wx:if="{{editable}}" mode="date" value="{{from}}" start="{{today}}" end="{{lastDay}}" bind:change="onFrom">
+      <view class="day from" hover-class="day-hover">
+        <view class="from-label">生效日期</view>
+        <view class="from-value">{{fromText}}</view>
+        <view class="row-arrow"><t-icon name="chevron-right" size="40rpx" /></view>
       </view>
     </picker>
   </view>
-  <view class="footnote">设为休息日后立即生效，当天的空闲时段会关闭。当天已有的预约，需要你联系学员或在课程详情里取消。</view>
+  <view class="footnote">学员可在这些时间里按课程时长预约。点某一天添加时间段；改动从生效日期起算，已约的课不受影响。</view>
 
-  <view class="action-bar">
+  <block wx:if="{{planned.length}}">
+    <view class="section-title">已安排的调整</view>
+    <view class="card">
+      <view wx:for="{{planned}}" wx:key="from" class="plan">
+        <view class="plan-date">{{item.text}}</view>
+        <view class="plan-hours">{{item.summary}}</view>
+      </view>
+    </view>
+    <view class="footnote">从更早的日期保存每周时间，会替换之后已安排的调整。</view>
+  </block>
+
+  <view class="section-title">请假和加班</view>
+  <view class="card {{exceptions.length ? 'has-days' : ''}}">
+    <view wx:for="{{exceptions}}" wx:key="id" class="off">
+      <view class="off-text">
+        <view class="off-title"><text class="off-kind off-kind-{{item.closure ? 'closure' : item.kind}}">{{item.label}}</text><text wx:for="{{item.parts}}" wx:for-item="part" wx:key="index" class="off-part">{{part}}</text></view>
+        <view wx:if="{{item.note}}" class="off-note">{{item.note}}</view>
+      </view>
+      <view
+        wx:if="{{editable && !item.closure}}"
+        class="off-remove"
+        data-index="{{index}}"
+        bind:tap="removeException"
+      >{{item.underway ? '提前结束' : '取消'}}</view>
+    </view>
+    <block wx:if="{{editable}}">
+      <view class="off off-add" hover-class="day-hover" data-kind="off" bind:tap="openException">
+        <t-icon name="add" size="40rpx" />
+        <text>请假</text>
+      </view>
+      <view class="off off-add" hover-class="day-hover" data-kind="extra" bind:tap="openException">
+        <t-icon name="add" size="40rpx" />
+        <text>加班</text>
+      </view>
+    </block>
+    <view wx:elif="{{!exceptions.length}}" class="off off-empty">没有请假和加班</view>
+  </view>
+  <view class="footnote">请假立即生效，期间已约的课需要联系学员改约或取消。加班是每周时间之外临时开放的时间。</view>
+
+  <view wx:if="{{editable}}" class="action-bar">
     <view class="grow">
       <t-button block t-class="action-button" theme="primary" disabled="{{!dirty}}" loading="{{saving}}" bind:tap="save">保存每周时间</t-button>
     </view>
@@ -70,18 +106,55 @@
     <picker mode="time" value="{{addEnd}}" bind:change="onEnd">
       <view class="sheet-row" hover-class="day-hover">
         <text>结束</text>
-        <text class="sheet-value">{{addEnd}}</text>
+        <text class="sheet-value">{{addEnd === '00:00' ? '24:00' : addEnd}}</text>
       </view>
     </picker>
-    <view class="sheet-row">
-      <text>每节</text>
-      <view class="chips">
-        <view wx:for="{{lessonMinutes}}" wx:key="*this" class="chip {{addMinutes === item ? 'chip-active' : ''}}" data-minutes="{{item}}" bind:tap="onMinutes">{{item}} 分钟</view>
-      </view>
-    </view>
     <view class="sheet-hint {{addInvalid ? 'sheet-hint-error' : ''}}">{{addHint}}</view>
     <view class="sheet-actions">
       <t-button block t-class="action-button" theme="primary" disabled="{{addInvalid}}" bind:tap="confirmAdd">添加</t-button>
+    </view>
+  </view>
+</t-popup>
+
+<t-popup visible="{{excepting}}" placement="bottom" bind:visible-change="onExPopup">
+  <view class="sheet">
+    <view class="sheet-title">{{exKind === 'off' ? '请假' : '加班'}}</view>
+    <view wx:if="{{exKind === 'off'}}" class="sheet-row">
+      <text>全天</text>
+      <t-switch value="{{exWholeDay}}" bind:change="onExWholeDay" />
+    </view>
+    <picker mode="date" value="{{exDate}}" start="{{today}}" end="{{lastDay}}" bind:change="onExDate">
+      <view class="sheet-row" hover-class="day-hover">
+        <text>{{exKind === 'off' && exWholeDay ? '开始日期' : '日期'}}</text>
+        <text class="sheet-value">{{exDateText}}</text>
+      </view>
+    </picker>
+    <picker wx:if="{{exKind === 'off' && exWholeDay}}" mode="date" value="{{exEndDate}}" start="{{exDate}}" end="{{lastDay}}" bind:change="onExEndDate">
+      <view class="sheet-row" hover-class="day-hover">
+        <text>结束日期</text>
+        <text class="sheet-value">{{exEndDateText}}</text>
+      </view>
+    </picker>
+    <block wx:else>
+      <picker mode="time" value="{{exStart}}" bind:change="onExStart">
+        <view class="sheet-row" hover-class="day-hover">
+          <text>开始</text>
+          <text class="sheet-value">{{exStart}}</text>
+        </view>
+      </picker>
+      <picker mode="time" value="{{exEnd}}" bind:change="onExEnd">
+        <view class="sheet-row" hover-class="day-hover">
+          <text>结束</text>
+          <text class="sheet-value">{{exEnd === '00:00' ? '24:00' : exEnd}}</text>
+        </view>
+      </picker>
+    </block>
+    <view class="sheet-row">
+      <input class="sheet-input" placeholder="备注（选填）" maxlength="{{40}}" value="{{exNote}}" bind:input="onExNote" />
+    </view>
+    <view class="sheet-hint {{exInvalid ? 'sheet-hint-error' : ''}}">{{exHint}}</view>
+    <view class="sheet-actions">
+      <t-button block t-class="action-button" theme="primary" disabled="{{exInvalid}}" loading="{{exSaving}}" bind:tap="confirmException">确定</t-button>
     </view>
   </view>
 </t-popup>

@@ -1,8 +1,17 @@
-import { endsSameVenueDay, venueDateKey, venueInstant, venueParts } from '@rs/shared'
+import {
+  type DayPlanDto,
+  endsSameVenueDay,
+  type ScheduleConflictDto,
+  venueDateKey,
+  venueInstant,
+  venueParts,
+} from '@rs/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Alert,
   Button,
   Checkbox,
+  DatePicker,
   DateRangePicker,
   Dialog,
   Input,
@@ -20,197 +29,352 @@ import { Field } from '../Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
 import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import { bookingStatusLabel } from '../labels'
+import { MoveDialog } from '../MoveDialog'
 import type { Coach, LessonType, Slot } from '../types'
-
-/** The second line of a slot in the week grid. */
-function slotLabel(s: Slot, types: LessonType[]) {
-  if (s.lessonTypeId !== null) {
-    const name = types.find((t) => t.id === s.lessonTypeId)?.name ?? '小班课'
-    if (s.cancelledAt) return `${name} · 已取消`
-    // An empty session holds no table yet, so it can be filled out of its first seat.
-    const full = !s.bookings.length && s.open && s.tableFull && new Date(s.startsAt) > new Date()
-    return `${name} · ${full ? '球台已满' : `${s.bookings.length}/${s.capacity} 人`}`
-  }
-  const b = s.booking
-  if (!b) {
-    if (new Date(s.startsAt) <= new Date()) return '已过'
-    if (!s.open) return '已关闭'
-    return s.tableFull ? '球台已满' : '可预约'
-  }
-  const state =
-    b.status === 'pending_payment'
-      ? '待支付'
-      : b.status !== 'completed'
-        ? '已约'
-        : b.attendance
-          ? ATTENDANCE[b.attendance]
-          : '未签到'
-  return `${b.student?.name || '学员'} · ${state}`
-}
-
-const ATTENDANCE = { attended: '已到课', no_show: '缺席' } as const
+import { CoachScheduleDialog, spanText } from './CoachDialogs'
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 // Matches the API's limit per request.
 const MAX_SLOTS = 500
+const HOUR_PX = 72
+const MINUTE = 60_000
 
-/** Monday of the venue week containing `dateKey`. */
-function mondayOf(dateKey: string) {
-  const day = venueInstant(dateKey, 12 * 60).getUTCDay() // noon at the venue is the same UTC day
-  return addDays(dateKey, -((day + 6) % 7))
+const ATTENDANCE = { attended: '已到课', no_show: '缺席' } as const
+
+/** Minutes after the venue midnight that starts `date`. */
+const minuteOf = (iso: string, date: string) =>
+  (Date.parse(iso) - venueInstant(date, 0).getTime()) / MINUTE
+
+/** What a private lesson block says after the student's name. */
+function lessonState(b: NonNullable<Slot['booking']>) {
+  if (b.status === 'pending_payment') return '待支付'
+  if (b.status !== 'completed') return '已约'
+  return b.attendance ? ATTENDANCE[b.attendance] : '未签到'
 }
 
+/**
+ * 日程: one day of the venue, a row per coach with their working time, 请假 and lessons, and the
+ * tables in use. Clicking free time books a lesson there; clicking a coach opens their 排班.
+ */
 export function Schedule() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const types = useApi<LessonType[]>('/admin/lesson-types')
-  const [coachId, setCoachId] = useState<number | null>(null)
-  const [week, setWeek] = useState(() => mondayOf(today()))
-  const [creating, setCreating] = useState<'slots' | 'sessions' | null>(null)
-  const [selected, setSelected] = useState<Slot | null>(null)
-
-  const active = (coaches.data ?? []).filter((c) => c.active)
-  useEffect(() => {
-    if (coachId === null && active[0]) setCoachId(active[0].id)
-  }, [active, coachId])
-
-  const from = venueInstant(week, 0).toISOString()
-  const to = venueInstant(addDays(week, 7), 0).toISOString()
+  const [date, setDate] = useState(today)
+  const plan = useApi<DayPlanDto>(`/admin/schedule/day?date=${date}`)
   const slots = useApi<Slot[]>(
-    coachId
-      ? `/admin/slots?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&coachId=${coachId}`
-      : null,
+    `/admin/slots?${new URLSearchParams({
+      from: venueInstant(date, 0).toISOString(),
+      to: venueInstant(addDays(date, 1), 0).toISOString(),
+    })}`,
   )
-
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(week, i)), [week])
-  // A phone shows one day of the week at a time.
+  const conflicts = useApi<ScheduleConflictDto[]>('/admin/schedule/conflicts')
+  const [category, setCategory] = useState<string>('')
+  const [search, setSearch] = useState('')
+  const [booking, setBooking] = useState<{ coachId: number; startsAt: string } | 'any' | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [selected, setSelected] = useState<Slot | null>(null)
+  const [scheduleOf, setScheduleOf] = useState<Coach | null>(null)
+  const [showConflicts, setShowConflicts] = useState(false)
   const phone = useIsPhone()
-  const [day, setDay] = useState(today)
-  const shownDay = days.includes(day) ? day : (days[0] ?? day)
+
+  const reload = () => {
+    void plan.reload()
+    void slots.reload()
+    void conflicts.reload()
+  }
+
+  const day = plan.data?.date === date ? plan.data : null
+  const categories = [
+    ...new Set((day?.coaches ?? []).map((c) => c.categoryName).filter((n): n is string => !!n)),
+  ]
+  const shown = (day?.coaches ?? []).filter(
+    (c) =>
+      (!category || c.categoryName === category) &&
+      (!search.trim() || c.name.includes(search.trim())),
+  )
+  const daySlots = (slots.data ?? []).filter((s) => venueDateKey(new Date(s.startsAt)) === date)
+
+  // The hours shown: 8:00 to 22:00, widened to whatever the day holds.
+  const [startHour, endHour] = useMemo(() => {
+    let first = 8 * 60
+    let last = 22 * 60
+    const see = (from: string, to: string) => {
+      first = Math.min(first, Math.max(0, minuteOf(from, date)))
+      last = Math.max(last, Math.min(24 * 60, minuteOf(to, date)))
+    }
+    for (const c of day?.coaches ?? []) for (const w of c.working) see(w.startsAt, w.endsAt)
+    for (const s of daySlots) see(s.startsAt, s.endsAt)
+    return [Math.floor(first / 60), Math.ceil(last / 60)]
+  }, [day, daySlots, date])
+  const hours = Array.from({ length: endHour - startHour }, (_, i) => startHour + i)
+  const width = hours.length * HOUR_PX
+  const x = (iso: string) =>
+    ((Math.min(Math.max(minuteOf(iso, date), startHour * 60), endHour * 60) - startHour * 60) /
+      60) *
+    HOUR_PX
+  const span = (from: string, to: string) => ({
+    left: x(from),
+    width: Math.max(2, x(to) - x(from)),
+  })
+
+  const typeName = (id: number | null) => (types.data ?? []).find((t) => t.id === id)?.name ?? ''
+  const coachOf = (id: number) => (coaches.data ?? []).find((c) => c.id === id)
+
+  /** Books at the clicked time, rounded down to the half hour. */
+  const bookAt = (coachId: number, e: React.MouseEvent<HTMLDivElement>) => {
+    const box = e.currentTarget.getBoundingClientRect()
+    const minute = startHour * 60 + ((e.clientX - box.left) / HOUR_PX) * 60
+    const startsAt = venueInstant(date, Math.floor(minute / 30) * 30).toISOString()
+    if (Date.parse(startsAt) <= Date.now()) {
+      void MessagePlugin.info('这个时间已过')
+      return
+    }
+    setBooking({ coachId, startsAt })
+  }
+
+  const tables = day?.tables ?? null
+  const use = new Map((day?.tableUse ?? []).map((u) => [u.startsAt, u.used]))
+  const pending = conflicts.data ?? []
+  const clashing = new Set(pending.map((c) => c.slotId))
 
   return (
     <div>
       <div className="toolbar">
-        <Select
-          style={{ width: 180 }}
-          value={coachId ?? undefined}
-          placeholder="选择教练"
-          options={active.map((c) => ({ label: c.name, value: c.id }))}
-          onChange={(v) => setCoachId(Number(v))}
-        />
         <div className="week-nav">
-          <Button variant="outline" onClick={() => setWeek(addDays(week, -7))}>
-            上一周
+          <Button variant="outline" onClick={() => setDate(addDays(date, -1))}>
+            前一天
           </Button>
-          <span>
-            {phone
-              ? `${week.slice(5)} 至 ${addDays(week, 6).slice(5)}`
-              : `${week} 至 ${addDays(week, 6)}`}
-          </span>
-          <Button variant="outline" onClick={() => setWeek(addDays(week, 7))}>
-            下一周
+          <DatePicker
+            value={date}
+            clearable={false}
+            style={{ width: phone ? undefined : 140 }}
+            onChange={(v) => setDate(String(v || today()))}
+          />
+          <Button variant="outline" onClick={() => setDate(addDays(date, 1))}>
+            后一天
           </Button>
-          <Button
-            variant="text"
-            onClick={() => {
-              setWeek(mondayOf(today()))
-              setDay(today())
-            }}
-          >
-            本周
-          </Button>
+          {date !== today() && (
+            <Button variant="text" onClick={() => setDate(today())}>
+              今天
+            </Button>
+          )}
         </div>
+        {categories.length > 0 && (
+          <Select
+            style={{ width: 140 }}
+            value={category}
+            options={[
+              { label: '全部级别', value: '' },
+              ...categories.map((c) => ({ label: c, value: c })),
+            ]}
+            onChange={(v) => setCategory(String(v ?? ''))}
+          />
+        )}
+        <Input
+          style={{ width: 160 }}
+          clearable
+          placeholder="搜索教练"
+          value={search}
+          onChange={(v) => setSearch(String(v))}
+        />
         <span className="spacer" />
         <Space>
-          <Button variant="outline" disabled={!coachId} onClick={() => setCreating('sessions')}>
+          <Button variant="outline" onClick={() => setCreating(true)}>
             排小班课
           </Button>
-          <Button disabled={!coachId} onClick={() => setCreating('slots')}>
-            批量排课
-          </Button>
+          <Button onClick={() => setBooking('any')}>代约</Button>
         </Space>
       </div>
 
-      {active.length === 0 && !coaches.loading && (
+      {pending.length > 0 && (
+        <Alert
+          theme="warning"
+          className="board-alert"
+          message={
+            <div>
+              <span>有 {pending.length} 节课在教练请假或闭馆时间里，请改约或取消。</span>
+              <Button
+                variant="text"
+                theme="primary"
+                onClick={() => setShowConflicts(!showConflicts)}
+              >
+                {showConflicts ? '收起' : '查看'}
+              </Button>
+              {showConflicts &&
+                pending.map((c) => (
+                  <div key={`${c.slotId}-${c.bookingId}`}>
+                    <Button
+                      variant="text"
+                      theme="primary"
+                      onClick={() => setDate(venueDateKey(new Date(c.startsAt)))}
+                    >
+                      {spanText(c.startsAt, c.endsAt)} {c.coachName} {c.title}
+                      {c.group && '（小班课）'}
+                    </Button>
+                  </div>
+                ))}
+            </div>
+          }
+        />
+      )}
+
+      <h3 className="board-date">
+        {date.slice(5)} 周{WEEKDAYS[(venueInstant(date, 12 * 60).getUTCDay() + 6) % 7]}
+        {date === today() && <span className="muted"> 今天</span>}
+      </h3>
+
+      {plan.error || slots.error ? (
+        <p className="danger-text">{plan.error ?? slots.error}</p>
+      ) : !day ? (
+        <p className="muted">加载中</p>
+      ) : day.coaches.length === 0 ? (
         <p className="muted">先在“课程与教练”里添加教练</p>
-      )}
-
-      {phone && (
-        <div className="day-strip">
-          {days.map((d, i) => (
-            <button
-              type="button"
-              key={d}
-              className={`day-tab${d === shownDay ? ' active' : ''}`}
-              onClick={() => setDay(d)}
-            >
-              周{WEEKDAYS[i]}
-              <br />
-              {d.slice(8)}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="week-scroll">
-        <div className={phone ? 'day-grid' : 'week-grid'}>
-          {days.map((d, i) => {
-            if (phone && d !== shownDay) return null
-            const daySlots = (slots.data ?? []).filter(
-              (s) => venueDateKey(new Date(s.startsAt)) === d,
-            )
-            return (
-              <div key={d} className="week-day">
-                <h4>
-                  周{WEEKDAYS[i]} {d.slice(5)}
-                  {d === today() && <span className="muted"> 今天</span>}
-                </h4>
-                {daySlots.length === 0 && <span className="muted">无时段</span>}
-                {daySlots.map((s) => (
-                  <button
-                    type="button"
-                    key={s.id}
-                    className={`slot-chip${s.bookings.length ? ' booked' : ''}${s.lessonTypeId !== null ? ' group' : ''}${s.open ? '' : ' closed'}${slotLabel(s, types.data ?? []).endsWith('球台已满') ? ' full' : ''}`}
-                    onClick={() => setSelected(s)}
-                  >
-                    {fmtTime(s.startsAt)}-{fmtTime(s.endsAt)}
-                    <br />
-                    {slotLabel(s, types.data ?? [])}
-                  </button>
+      ) : (
+        <div className="board-scroll">
+          <div className="board" style={{ width: width + 120 }}>
+            <div className="board-row board-head">
+              <div className="board-name" />
+              <div className="board-track" style={{ width }}>
+                {hours.map((h) => (
+                  <span key={h} className="board-hour" style={{ left: (h - startHour) * HOUR_PX }}>
+                    {String(h).padStart(2, '0')}:00
+                  </span>
                 ))}
               </div>
-            )
-          })}
+            </div>
+            {tables !== null && (
+              <div className="board-row board-tables">
+                <div className="board-name">
+                  球台 <span className="muted">共 {tables} 张</span>
+                </div>
+                <div className="board-track" style={{ width }}>
+                  {hours.flatMap((h) =>
+                    [0, 30].map((m) => {
+                      const at = venueInstant(date, h * 60 + m).toISOString()
+                      const used = use.get(at) ?? 0
+                      return (
+                        <span
+                          key={at}
+                          className={`board-table${used >= tables ? ' full' : used ? ' some' : ''}`}
+                          style={{
+                            left: ((h - startHour) * 60 + m) * (HOUR_PX / 60),
+                            width: HOUR_PX / 2,
+                          }}
+                          title={`${String(h).padStart(2, '0')}:${m ? '30' : '00'} 用了 ${used}/${tables} 张`}
+                        >
+                          {used || ''}
+                        </span>
+                      )
+                    }),
+                  )}
+                </div>
+              </div>
+            )}
+            {shown.length === 0 && <p className="muted board-empty">没有符合条件的教练</p>}
+            {shown.map((c) => {
+              const mine = daySlots.filter((s) => s.coachId === c.id)
+              const full = coachOf(c.id)
+              return (
+                <div key={c.id} className="board-row">
+                  <button
+                    type="button"
+                    className="board-name board-coach"
+                    title="查看排班"
+                    onClick={() => full && setScheduleOf(full)}
+                  >
+                    <span>{c.name}</span>
+                    <span className="muted">
+                      {c.active ? (c.categoryName ?? '') : '已停止接课'}
+                    </span>
+                  </button>
+                  {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the 代约 button does the same from the keyboard */}
+                  <div
+                    className={`board-track${c.active ? ' bookable' : ''}`}
+                    style={{ width }}
+                    onClick={(e) => c.active && bookAt(c.id, e)}
+                  >
+                    {c.working.map((w) => (
+                      <span
+                        key={w.startsAt}
+                        className="board-work"
+                        style={span(w.startsAt, w.endsAt)}
+                      />
+                    ))}
+                    {c.off.map((o) => (
+                      <span
+                        key={o.id}
+                        className="board-off"
+                        style={span(o.startsAt, o.endsAt)}
+                        title={`${o.coachId === null ? '闭馆' : '请假'} ${o.note}`}
+                      >
+                        {o.coachId === null ? '闭馆' : '请假'}
+                        {o.note && ` · ${o.note}`}
+                      </span>
+                    ))}
+                    {mine.map((s) => {
+                      const group = s.lessonTypeId !== null
+                      const label = group
+                        ? `${typeName(s.lessonTypeId)} ${s.cancelledAt ? '已取消' : `${s.bookings.length}/${s.capacity}`}`
+                        : `${s.booking?.student?.name || '未填写姓名'} · ${s.booking ? lessonState(s.booking) : ''}`
+                      return (
+                        <button
+                          type="button"
+                          key={s.id}
+                          className={`board-block${group ? ' group' : ''}${s.cancelledAt ? ' cancelled' : ''}${s.booking?.status === 'pending_payment' ? ' pending' : ''}${clashing.has(s.id) ? ' conflict' : ''}`}
+                          style={span(s.startsAt, s.endsAt)}
+                          title={`${fmtTime(s.startsAt)}-${fmtTime(s.endsAt)} ${label}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelected(s)
+                          }}
+                        >
+                          <span className="board-block-time">{fmtTime(s.startsAt)}</span>
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
+      <p className="muted">
+        浅色为教练排班时间，斜线为请假或闭馆。点空白处代约，点教练名查看和修改排班。
+      </p>
 
-      {creating === 'slots' && coachId && (
-        <CreateSlots
-          coachId={coachId}
-          durations={[
-            ...new Set(
-              (types.data ?? [])
-                .filter((t) => t.active && t.capacity === 1)
-                .map((t) => t.durationMinutes),
-            ),
-          ]}
-          initialFrom={week}
-          onClose={() => setCreating(null)}
+      {booking && (
+        <BookForStudent
+          at={booking === 'any' ? undefined : booking}
+          date={date}
+          onClose={() => setBooking(null)}
           onDone={() => {
-            setCreating(null)
-            void slots.reload()
+            setBooking(null)
+            reload()
           }}
         />
       )}
 
-      {creating === 'sessions' && coachId && (
+      {creating && (
         <CreateSessions
-          coach={active.find((c) => c.id === coachId)}
+          coaches={(coaches.data ?? []).filter((c) => c.active)}
           types={(types.data ?? []).filter((t) => t.active && t.capacity > 1)}
-          initialFrom={week}
-          onClose={() => setCreating(null)}
+          initialFrom={date}
+          onClose={() => setCreating(false)}
           onDone={() => {
-            setCreating(null)
-            void slots.reload()
+            setCreating(false)
+            reload()
+          }}
+        />
+      )}
+
+      {scheduleOf && (
+        <CoachScheduleDialog
+          coach={scheduleOf}
+          onClose={() => {
+            setScheduleOf(null)
+            reload()
           }}
         />
       )}
@@ -222,18 +386,21 @@ export function Schedule() {
           onClose={() => setSelected(null)}
           onChanged={() => {
             setSelected(null)
-            void slots.reload()
+            reload()
           }}
         />
       )}
 
-      {selected && selected.lessonTypeId === null && (
-        <SlotDialog
+      {selected && selected.lessonTypeId === null && selected.booking && (
+        <LessonDialog
           slot={selected}
+          booking={selected.booking}
+          lessonType={(types.data ?? []).find((t) => t.id === selected.booking?.lessonTypeId)}
+          coach={coachOf(selected.coachId)}
           onClose={() => setSelected(null)}
           onChanged={() => {
             setSelected(null)
-            void slots.reload()
+            reload()
           }}
         />
       )}
@@ -350,99 +517,33 @@ function PlanFields({ plan }: { plan: Plan }) {
   )
 }
 
-function CreateSlots({
-  coachId,
-  durations,
-  initialFrom,
-  onClose,
-  onDone,
-}: {
-  coachId: number
-  durations: number[]
-  initialFrom: string
-  onClose: () => void
-  onDone: () => void
-}) {
-  const plan = usePlan(initialFrom, '09:00, 10:00, 14:00, 15:00, 16:00')
-  const [minutes, setMinutes] = useState(durations[0] ?? 60)
-  const submitting = useSubmitting()
-  const key = useIdempotencyKey()
-  const slots = useMemo(() => planned(plan, coachId, minutes), [plan, coachId, minutes])
-  const count = slots.length
-
-  const submit = async () => {
-    const error = planError(plan, slots, '时段')
-    if (error) {
-      void MessagePlugin.warning(error)
-      return
-    }
-    if (
-      await attempt(
-        () => api('POST', '/admin/slots', { slots }, { key }),
-        `已创建 ${count} 个时段`,
-        { onStale: onDone },
-      )
-    )
-      onDone()
-  }
-
-  return (
-    <Dialog
-      visible
-      width={560}
-      header="批量排课"
-      confirmBtn={{ content: `创建 ${count} 个时段`, loading: submitting }}
-      onConfirm={submit}
-      onClose={onClose}
-    >
-      <div className="fields">
-        <PlanFields plan={plan} />
-        <Field label="时长" help="需要与课程时长一致，学员才能预约">
-          <Space>
-            <InputNumber
-              theme="normal"
-              value={minutes}
-              min={15}
-              max={480}
-              step={15}
-              suffix="分钟"
-              onChange={(v) => setMinutes(Number(v) || 60)}
-            />
-            {durations.map((d) => (
-              <Tag
-                key={d}
-                variant={d === minutes ? 'dark' : 'outline'}
-                theme="primary"
-                className="pick-tag"
-                onClick={() => setMinutes(d)}
-              >
-                {d} 分钟
-              </Tag>
-            ))}
-          </Space>
-        </Field>
-      </div>
-    </Dialog>
-  )
-}
-
 /** 排小班课: sessions of a group class for one coach, repeated over a date range. */
 function CreateSessions({
-  coach,
+  coaches,
   types,
   initialFrom,
   onClose,
   onDone,
 }: {
-  coach: Coach | undefined
+  coaches: Coach[]
   types: LessonType[]
   initialFrom: string
   onClose: () => void
   onDone: () => void
 }) {
+  // Coaches who teach a group class.
+  const able = coaches.filter((c) => types.some((t) => c.lessonTypeIds.includes(t.id)))
+  const [coachId, setCoachId] = useState<number | undefined>(able[0]?.id)
+  const coach = able.find((c) => c.id === coachId)
   const taught = types.filter((t) => coach?.lessonTypeIds.includes(t.id))
   const [lessonTypeId, setLessonTypeId] = useState<number | undefined>(taught[0]?.id)
   const lessonType = taught.find((t) => t.id === lessonTypeId)
+  useEffect(() => {
+    if (!taught.some((t) => t.id === lessonTypeId)) {
+      setLessonTypeId(taught[0]?.id)
+      if (taught[0]) setCapacity(taught[0].capacity)
+    }
+  }, [taught, lessonTypeId])
   const [capacity, setCapacity] = useState<number>(lessonType?.capacity ?? 6)
   const least = Math.max(2, lessonType?.minStudents ?? 0)
   const plan = usePlan(initialFrom, '10:00')
@@ -481,7 +582,7 @@ function CreateSessions({
     <Dialog
       visible
       width={560}
-      header={`排小班课${coach ? ` · ${coach.name}` : ''}`}
+      header="排小班课"
       confirmBtn={{
         content: `创建 ${count} 节`,
         loading: submitting,
@@ -490,13 +591,19 @@ function CreateSessions({
       onConfirm={submit}
       onClose={onClose}
     >
-      {taught.length === 0 ? (
+      {able.length === 0 ? (
         <p className="muted">
-          这位教练还没有小班课。请先在“课程与教练”里新建上课人数多于 1
-          人的课程，并把它加入教练的所教课程。
+          还没有教练教小班课。先在“课程与教练”里新建上课人数多于 1 人的课程，并让教练教这门课。
         </p>
       ) : (
         <div className="fields">
+          <Field label="教练">
+            <Select
+              value={coachId}
+              options={able.map((c) => ({ label: c.name, value: c.id }))}
+              onChange={(v) => setCoachId(Number(v))}
+            />
+          </Field>
           <Field label="课程">
             <Select
               value={lessonTypeId}
@@ -514,7 +621,7 @@ function CreateSessions({
           <PlanFields plan={plan} />
           <Field
             label="每节人数"
-            help={`${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时，整节课会自动取消并退款。` : ''}与已有预约重叠的时间不能排课，重叠的空闲时段会被关闭`}
+            help={`${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时整节自动取消并退款。` : ''}与该教练已有的课重叠、或在请假和闭馆里的时间不能排`}
           >
             <InputNumber
               theme="normal"
@@ -531,47 +638,46 @@ function CreateSessions({
   )
 }
 
-function SlotDialog({
+/** A private lesson on the board: who, and moving, cancelling or marking attendance. */
+function LessonDialog({
   slot,
+  booking: b,
+  lessonType,
+  coach,
   onClose,
   onChanged,
 }: {
   slot: Slot
+  booking: NonNullable<Slot['booking']>
+  lessonType: LessonType | undefined
+  coach: Coach | undefined
   onClose: () => void
   onChanged: () => void
 }) {
   const [reason, setReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
-  const [booking, setBooking] = useState(false)
+  const [moving, setMoving] = useState(false)
   const submitting = useSubmitting()
-  const b = slot.booking
-  const status = b ? bookingStatusLabel[b.status as keyof typeof bookingStatusLabel] : null
-  const started = new Date(slot.startsAt) <= new Date()
+  const status = bookingStatusLabel[b.status as keyof typeof bookingStatusLabel]
+  const now = new Date()
+  const started = new Date(slot.startsAt) <= now
 
-  const toggle = async () => {
+  const cancel = async () => {
+    if (!reason.trim()) return
     if (
       await attempt(
-        () => api('PATCH', `/admin/slots/${slot.id}`, { open: !slot.open }),
-        slot.open ? '已关闭' : '已开放',
+        () => api('POST', `/admin/bookings/${b.id}/cancel`, { reason }),
+        '已取消，学员会收到全额退款或退回的课时',
         { onStale: onChanged },
       )
     )
       onChanged()
   }
-  const remove = async () => {
-    if (
-      await attempt(() => api('DELETE', `/admin/slots/${slot.id}`), '已删除', {
-        onStale: onChanged,
-      })
-    )
-      onChanged()
-  }
-  const cancel = async () => {
-    if (!b || !reason.trim()) return
+  const mark = async (attendance: string) => {
     if (
       await attempt(
-        () => api('POST', `/admin/bookings/${b.id}/cancel`, { reason }),
-        '已取消，学员会收到全额退款或退回的课时',
+        () => api('PUT', `/admin/bookings/${b.id}/attendance`, { attendance: attendance || null }),
+        '已保存',
         { onStale: onChanged },
       )
     )
@@ -587,36 +693,53 @@ function SlotDialog({
       onClose={onClose}
     >
       <Space direction="vertical" style={{ width: '100%' }}>
-        {b ? (
-          <div>
-            <Space>
-              <span>
-                {b.student?.name || '未填写姓名'} {b.student?.phone}
-              </span>
-              {status && (
-                <Tag theme={status[1]} variant="light">
-                  {status[0]}
-                </Tag>
-              )}
-            </Space>
-          </div>
-        ) : (
-          <span className="muted">
-            {!slot.open
-              ? '已关闭，学员看不到'
-              : slot.tableFull
-                ? '还没有预约，但这个时段的球台已满'
-                : '还没有预约'}
+        <Space breakLine>
+          <span>
+            {b.student?.name || '未填写姓名'} {b.student?.phone}
           </span>
+          {status && (
+            <Tag theme={status[1]} variant="light">
+              {status[0]}
+            </Tag>
+          )}
+        </Space>
+        <span className="muted">
+          {coach?.name} {lessonType?.name}
+        </span>
+
+        {started && b.status !== 'pending_payment' && (
+          <Space align="center">
+            <span>签到</span>
+            <Select
+              size="small"
+              style={{ width: 100 }}
+              value={b.attendance ?? ''}
+              options={[
+                { label: '未签到', value: '' },
+                { label: '到课', value: 'attended' },
+                { label: '缺席', value: 'no_show' },
+              ]}
+              onChange={(v) => mark(String(v))}
+            />
+          </Space>
         )}
 
-        {/* The API refuses to cancel a lesson that has ended. */}
-        {b && !cancelling && new Date(slot.endsAt) > new Date() && (
-          <Button theme="danger" variant="outline" onClick={() => setCancelling(true)}>
-            场馆取消该预约
-          </Button>
+        {!cancelling && (
+          <Space>
+            {!started && b.status === 'confirmed' && lessonType && coach && (
+              <Button variant="outline" onClick={() => setMoving(true)}>
+                改约
+              </Button>
+            )}
+            {/* The API refuses to cancel a lesson that has ended. */}
+            {new Date(slot.endsAt) > now && (
+              <Button theme="danger" variant="outline" onClick={() => setCancelling(true)}>
+                场馆取消
+              </Button>
+            )}
+          </Space>
         )}
-        {b && cancelling && (
+        {cancelling && (
           <>
             <Textarea
               placeholder="取消原因（学员可见）"
@@ -639,36 +762,20 @@ function SlotDialog({
             </Space>
           </>
         )}
-
-        {!b && slot.open && !slot.tableFull && !started && (
-          <Button onClick={() => setBooking(true)}>代约</Button>
-        )}
-
-        <Space>
-          {!started && (
-            <Button variant="outline" loading={submitting} onClick={toggle}>
-              {slot.open ? '关闭时段' : '重新开放'}
-            </Button>
-          )}
-          {/* Slots from weekly hours would come back at the next sync, so they are only closed. */}
-          {!b && slot.source === 'manual' && (
-            <Popconfirm
-              theme="danger"
-              content="删除这个时段？"
-              confirmBtn={{ content: '删除', theme: 'danger' }}
-              cancelBtn="返回"
-              onConfirm={remove}
-            >
-              <Button variant="text" theme="danger" loading={submitting}>
-                删除时段
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-        {slot.open && b && <span className="muted">关闭时段不会影响已有的预约</span>}
       </Space>
-      {booking && (
-        <BookForStudent slot={slot} onClose={() => setBooking(false)} onDone={onChanged} />
+      {moving && lessonType && coach && (
+        <MoveDialog
+          booking={{
+            id: b.id,
+            startsAt: slot.startsAt,
+            endsAt: slot.endsAt,
+            lessonType,
+            coach,
+            student: b.student,
+          }}
+          onClose={() => setMoving(false)}
+          onDone={onChanged}
+        />
       )}
     </Dialog>
   )
@@ -908,7 +1015,7 @@ function SessionDialog({
         )}
       </div>
       {booking && (
-        <BookForStudent slot={slot} onClose={() => setBooking(false)} onDone={onChanged} />
+        <BookForStudent session={slot} onClose={() => setBooking(false)} onDone={onChanged} />
       )}
     </Dialog>
   )

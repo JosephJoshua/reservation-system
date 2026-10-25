@@ -1,5 +1,10 @@
-import type { Attendance, BookingStatus, StudentProfileDto } from '../../lib/shared'
-import { fullDate, time } from '../../utils/format'
+import {
+  type Attendance,
+  type BookingStatus,
+  type StudentProfileDto,
+  venueDateKey,
+} from '../../lib/shared'
+import { dateText, fullDate, time } from '../../utils/format'
 
 export interface Tag {
   text: string
@@ -37,4 +42,19 @@ export function hhmm(minutes: number): string {
 export function profileEdited(p: StudentProfileDto): string {
   if (!p.updatedBy || !p.updatedAt) return ''
   return `${p.updatedBy.name} ${fullDate(p.updatedAt)} ${time(p.updatedAt)} 修改`
+}
+
+/** 10月25日 周日 09:00-12:00, or a span over several days. */
+export function spanText(startsAt: string, endsAt: string) {
+  const end = new Date(Date.parse(endsAt) - 1)
+  const sameDay = venueDateKey(new Date(startsAt)) === venueDateKey(end)
+  const endTime = time(endsAt) === '00:00' ? '24:00' : time(endsAt)
+  if (sameDay) {
+    const whole = time(startsAt) === '00:00' && endTime === '24:00'
+    return `${dateText(startsAt)} ${whole ? '全天' : `${time(startsAt)}-${endTime}`}`
+  }
+  const wholeDays = time(startsAt) === '00:00' && time(endsAt) === '00:00'
+  return wholeDays
+    ? `${dateText(startsAt)} 至 ${dateText(end)}`
+    : `${dateText(startsAt)} ${time(startsAt)} 至 ${dateText(endsAt)} ${time(endsAt)}`
 }

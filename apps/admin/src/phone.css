@@ -76,9 +76,9 @@
     flex: 1;
   }
 
-  /* Coach and batch scheduling on the first row, week paging below. */
+  /* Day paging first, filters and actions below it. */
   .week-nav {
-    order: 1;
+    order: -2;
     flex-basis: 100%;
     gap: 8px;
   }
@@ -255,6 +255,8 @@
   .t-dialog__position .t-dialog__footer {
     position: sticky;
     bottom: 0;
+    /* Above inputs' positioned icons scrolling under it. */
+    z-index: 2;
     display: flex;
     gap: 8px;
     margin-top: auto;

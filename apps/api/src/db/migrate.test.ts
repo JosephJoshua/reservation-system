@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
@@ -94,5 +94,86 @@ describe('0008_booking_moves', () => {
       { coach: 3, startsAt: 1000, endsAt: 2000 },
       { coach: null, startsAt: null, endsAt: null },
     ])
+  })
+})
+
+describe('0022_schedule', () => {
+  it('turns days off and hand-made slots into 请假 and 加班, and drops unused slots', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = off')
+    const run = (file: string) => {
+      const sql = readFileSync(join(migrationsFolder, file), 'utf8')
+      for (const statement of sql.split('--> statement-breakpoint')) db.exec(statement)
+    }
+    const files = readdirSync(migrationsFolder)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+    for (const file of files.slice(0, files.indexOf('0022_schedule.sql'))) run(file)
+    const ms = (iso: string) => Date.parse(iso)
+    const now = Date.now()
+    const future = (h: number) => now + h * 3_600_000
+    db.exec(
+      `insert into coach_hours (coach_id, weekday, start_minute, end_minute, lesson_minutes) values (1, 0, 540, 720, 60)`,
+    )
+    db.exec(`insert into coach_days_off (coach_id, date) values (1, '2026-10-25')`)
+    const slot = db.prepare(
+      'insert into slots (id, coach_id, starts_at, ends_at, lesson_type_id, source, open, closed_by_sync) values (?, 1, ?, ?, ?, ?, ?, ?)',
+    )
+    // 1: opened by hand, free. 2: from weekly hours, free. 3: closed by a person, free.
+    // 4: closed by the hourly sync. 5: booked. 6: a group session. 7: closed by a person, past.
+    slot.run(1, future(24), future(25), null, 'manual', 1, 0)
+    slot.run(2, future(26), future(27), null, 'hours', 1, 0)
+    slot.run(3, future(28), future(29), null, 'hours', 0, 0)
+    slot.run(4, future(30), future(31), null, 'hours', 0, 1)
+    slot.run(5, future(32), future(33), null, 'hours', 1, 0)
+    slot.run(6, future(34), future(35), 9, 'manual', 1, 0)
+    slot.run(7, future(-30), future(-29), null, 'hours', 0, 0)
+    // A cancelled booking still keeps its slot, which history points at.
+    db.exec(
+      `insert into bookings (slot_id, student_id, lesson_type_id, starts_at, ends_at, status, paid_with, price) values (5, 1, 1, ${future(32)}, ${future(33)}, 'confirmed', 'order', 100), (4, 1, 1, ${future(30)}, ${future(31)}, 'cancelled', 'order', 100)`,
+    )
+    run('0022_schedule.sql')
+
+    const exceptions = db
+      .prepare(
+        'select coach_id as coachId, kind, starts_at as startsAt, ends_at as endsAt from schedule_exceptions order by id',
+      )
+      .all()
+    expect(exceptions).toEqual([
+      // Venue midnight to midnight, UTC+8.
+      {
+        coachId: 1,
+        kind: 'off',
+        startsAt: ms('2026-10-24T16:00:00Z'),
+        endsAt: ms('2026-10-25T16:00:00Z'),
+      },
+      { coachId: 1, kind: 'extra', startsAt: future(24), endsAt: future(25) },
+      { coachId: 1, kind: 'off', startsAt: future(28), endsAt: future(29) },
+    ])
+    expect(db.prepare('select id from slots order by id').all()).toEqual([
+      { id: 4 },
+      { id: 5 },
+      { id: 6 },
+    ])
+    expect(db.prepare('select * from coach_hours').all()).toEqual([
+      {
+        id: 1,
+        coach_id: 1,
+        weekday: 0,
+        start_minute: 540,
+        end_minute: 720,
+        from_date: '2000-01-01',
+        to_date: null,
+      },
+    ])
+    const slotColumns = db
+      .prepare('pragma table_info(slots)')
+      .all()
+      .map((c) => (c as { name: string }).name)
+    expect(slotColumns).not.toContain('source')
+    expect(slotColumns).not.toContain('closed_by_sync')
+    expect(
+      db.prepare("select name from sqlite_master where name = 'coach_days_off'").all(),
+    ).toEqual([])
   })
 })

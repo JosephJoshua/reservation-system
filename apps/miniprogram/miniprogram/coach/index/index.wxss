@@ -150,10 +150,8 @@
   color: var(--td-text-color-secondary);
 }
 
-.row-closed .row-start,
-.row-closed .row-free,
-.row-past .row-start,
-.row-past .row-free {
+.row-off .row-start,
+.row-off .row-title {
   color: var(--td-text-color-placeholder);
 }
 

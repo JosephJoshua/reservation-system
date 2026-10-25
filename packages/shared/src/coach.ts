@@ -1,5 +1,5 @@
 // Response shapes of the coach API. Instants are ISO strings; money is fen.
-import type { Attendance, WeeklyHours } from './availability'
+import type { Attendance } from './availability'
 import type { BookingStatus, FeedbackDto } from './dto'
 import type { StudentProfileDto } from './students'
 
@@ -22,14 +22,12 @@ export interface CoachLoginResponse {
   coach: CoachMeDto
 }
 
+/** A coach's private lesson or group session. */
 export interface CoachSlotDto {
   id: number
   startsAt: string
   endsAt: string
-  open: boolean
-  /** Every table is in use at some moment of it, so it cannot take a new lesson. */
-  tableFull: boolean
-  /** The live booking in a private slot; null in a group session. */
+  /** The live booking in a private lesson; null in a group session. */
   lesson: {
     bookingId: number
     status: BookingStatus
@@ -121,20 +119,13 @@ export interface CoachLessonDto {
   }[]
 }
 
-export interface CoachHoursDto {
-  hours: WeeklyHours[]
-  /** Upcoming days off as venue dates. */
-  daysOff: string[]
-  /** Lesson lengths the coach teaches, in minutes. */
-  lessonMinutes: number[]
-  /** How many days ahead lessons open for booking. */
-  advanceDays: number
-}
-
-/** What saving hours or days off did to the coach's open slots. */
-export interface SlotSyncDto {
-  created: number
-  removed: number
-  /** Lessons already booked on days off. They stay until someone cancels them. */
-  bookedOnDaysOff: number
+/** A coach's days, for the schedule in coach mode. */
+export interface CoachDaysDto {
+  lessons: CoachSlotDto[]
+  /** Working time ahead with no lesson in it, still open for private lessons. */
+  free: { startsAt: string; endsAt: string }[]
+  /** 请假, and 闭馆 when `closure`; may run over several days. */
+  off: { id: number; startsAt: string; endsAt: string; note: string; closure: boolean }[]
+  /** Whether the coach may change their own 排班. */
+  coachEdits: boolean
 }

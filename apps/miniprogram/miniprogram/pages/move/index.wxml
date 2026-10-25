@@ -73,8 +73,8 @@
     <view class="slot-grid">
       <view
         wx:for="{{slots}}"
-        wx:key="id"
-        class="slot {{item.available ? '' : 'slot-full'}} {{picked.id === item.id ? 'slot-picked' : ''}}"
+        wx:key="key"
+        class="slot {{item.available ? '' : 'slot-full'}} {{picked.key === item.key ? 'slot-picked' : ''}}"
         hover-class="{{item.available ? 'slot-hover' : 'none'}}"
         data-index="{{index}}"
         bind:tap="pickSlot"

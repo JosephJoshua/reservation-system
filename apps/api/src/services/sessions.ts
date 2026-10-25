@@ -7,13 +7,14 @@ import {
   minCheckHours,
   venueParts,
 } from '@rs/shared'
-import { and, eq, gt, inArray, isNotNull, isNull, lt, ne } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { bookings, coaches, lessonTypes, orders, slots } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { cancelBooking, LIVE, takenSeats } from './bookings'
 import { priceFor } from './catalog'
+import { exceptionsFor } from './schedule'
 import { getSettings, ruleBook } from './settings'
 
 export interface NewSessions {
@@ -45,9 +46,8 @@ export function liveCounts(tx: Q, slotIds: number[]) {
 
 /**
  * Schedules group sessions, all or none. A session takes the coach's time: it is refused over a
- * booked lesson or another session, and closes the coach's free private slots it overlaps. The
- * weekly-hours sync keeps them closed while the session is there and opens them again once it is
- * deleted. Returns the new slot ids.
+ * booked lesson, another session, 请假 or 闭馆, and private lessons cannot be booked over it while
+ * it is on. It may lie outside the coach's weekly hours. Returns the new slot ids.
  */
 export function createSessions(tx: Q, now: Date, input: NewSessions) {
   const lessonType = tx
@@ -94,9 +94,15 @@ export function createSessions(tx: Q, now: Date, input: NewSessions) {
     if (overlapping.some((o) => (counts.get(o.id) ?? 0) > 0)) {
       throw new ApiError(409, 'slot_overlap', `${when(s.startsAt)} 该教练已有预约`)
     }
-    const free = overlapping.filter((o) => o.open).map((o) => o.id)
-    if (free.length) {
-      tx.update(slots).set({ open: false, closedBySync: true }).where(inArray(slots.id, free)).run()
+    const off = exceptionsFor(tx, [s.coachId], s)
+      .get(s.coachId)
+      ?.find((e) => e.kind === 'off')
+    if (off) {
+      throw new ApiError(
+        409,
+        'coach_off',
+        `${when(s.startsAt)} ${off.coachId === null ? '场馆闭馆' : `${coach.name}请假`}`,
+      )
     }
     ids.push(
       tx
@@ -166,26 +172,6 @@ function renumberSeats(tx: Q, slotId: number) {
   })
 }
 
-/** Refuses opening a private slot while a group session takes that coach's time. */
-export function assertNoSessionOverlap(tx: Q, slot: typeof slots.$inferSelect) {
-  if (slot.lessonTypeId !== null) return
-  const session = tx
-    .select({ startsAt: slots.startsAt })
-    .from(slots)
-    .where(
-      and(
-        eq(slots.coachId, slot.coachId),
-        ne(slots.id, slot.id),
-        isNotNull(slots.lessonTypeId),
-        isNull(slots.cancelledAt),
-        lt(slots.startsAt, slot.endsAt),
-        gt(slots.endsAt, slot.startsAt),
-      ),
-    )
-    .get()
-  if (session) throw new ApiError(409, 'session_overlap', '该时间已排小班课，不能开放')
-}
-
 /**
  * Calls off a whole session: it takes no more bookings, and every student's seat is cancelled by
  * the venue, with everything given back and each student told. Safe to repeat: a retry after a
@@ -201,7 +187,6 @@ export async function cancelSession(deps: Deps, slotId: number, reason: string) 
     tx.update(slots)
       .set({
         open: false,
-        closedBySync: false,
         cancelledAt: row.cancelledAt ?? now,
         cancelReason: row.cancelReason ?? reason,
       })

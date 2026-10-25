@@ -1,6 +1,6 @@
 // Drives the coach mode end to end against a local API seeded with `pnpm --filter @rs/api db:seed`:
 // binding with a code from the admin, the schedule, a lesson with a note and attendance, weekly
-// hours and a day off, and cancelling a lesson. Saves a screenshot of each screen to
+// hours, a 请假 and a 加班, and cancelling a lesson. Saves a screenshot of each screen to
 // screenshots/coach/. Set QA_DB to the API's database file so a lesson can be moved into the past
 // for attendance; the API runs on real time.
 import { mkdirSync } from 'node:fs'
@@ -163,11 +163,18 @@ try {
   check(coach, 'seed the API first: no coaches')
   if (coach.bound) await call('DELETE', `/admin/coaches/${coach.id}/binding`, undefined, admin)
   const { code } = await call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)
-  // Start from no weekly hours and no days off, so the script can run again on the same database.
-  const before = await call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)
-  await call('PUT', `/admin/coaches/${coach.id}/hours`, { hours: [] }, admin)
-  for (const day of before.daysOff as string[]) {
-    await call('DELETE', `/admin/coaches/${coach.id}/days-off/${day}`, undefined, admin)
+  // Start from no weekly hours, 请假 or 加班, so the script can run again on the same database.
+  const before = (await call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)) as {
+    exceptions: { id: number }[]
+  }
+  await call(
+    'PUT',
+    `/admin/coaches/${coach.id}/hours`,
+    { from: venueDate(Date.now()), hours: [] },
+    admin,
+  )
+  for (const e of before.exceptions) {
+    await call('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`, undefined, admin)
   }
 
   // Two students with lessons: one two days out, one moved to an hour ago.
@@ -188,18 +195,20 @@ try {
       { name: name.startsWith('qa_a') ? '林小雨' : '陈子轩', phone: '13900139000' },
       token,
     )
-    const slots = (await call(
-      'GET',
-      `/slots?date=${venueDate(Date.now() + days * DAY)}&coachId=${coach.id}&lessonTypeId=${lesson.id}`,
-      undefined,
-      token,
-    )) as { id: number; available: boolean }[]
-    const slot = slots.find((s) => s.available)
-    check(slot, `no free slot ${days} days out`)
+    // The coach has no weekly hours here, so each lesson is booked in a 加班 opened for it.
+    const date = venueDate(Date.now() + days * DAY)
+    const startsAt = new Date(Date.parse(`${date}T10:00:00+08:00`)).toISOString()
+    const endsAt = new Date(Date.parse(`${date}T11:00:00+08:00`)).toISOString()
+    await call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      { kind: 'extra', startsAt, endsAt },
+      admin,
+    )
     const res = await call(
       'POST',
       '/bookings',
-      { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
+      { coachId: coach.id, startsAt, lessonTypeId: lesson.id, payWith: 'wechat' },
       token,
     )
     if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
@@ -236,19 +245,19 @@ try {
 
   await step('the schedule shows today with the past lesson to mark', async () => {
     const home = await waitForPage('coach/index/index', (d) => d.state === 'ready')
-    const slots = (await home.data('slots')) as { kind: string; bookingId: number; tag: string }[]
-    const row = slots.find((s) => s.bookingId === past)
+    const rows = (await home.data('rows')) as { kind: string; bookingId: number; tag: string }[]
+    const row = rows.find((s) => s.bookingId === past)
     check(row?.tag === '待签到', `past lesson should wait for attendance, got ${row?.tag}`)
     await screenshot('schedule-today')
   })
 
   await step('marks attendance on the past lesson', async () => {
     const home = await waitForPage('coach/index/index', (d) => d.state === 'ready')
-    const slots = (await home.data('slots')) as { bookingId: number }[]
+    const rows = (await home.data('rows')) as { bookingId: number }[]
     await tap(
       home,
       '.row',
-      slots.findIndex((s) => s.bookingId === past),
+      rows.findIndex((s) => s.bookingId === past),
     )
     const page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
     check(
@@ -279,7 +288,7 @@ try {
     await miniProgram.navigateBack()
     // The list reloads on show; waitForPage fails with a timeout if 缺席 never appears.
     await waitForPage('coach/index/index', (d) =>
-      (d.slots as { bookingId: number; tag: string }[]).some(
+      (d.rows as { bookingId: number; tag: string }[]).some(
         (s) => s.bookingId === past && s.tag === '缺席',
       ),
     )
@@ -295,14 +304,14 @@ try {
       days.findIndex((d) => d.key === target),
     )
     await waitForPage('coach/index/index', (d) =>
-      (d.slots as { bookingId: number }[]).some((s) => s.bookingId === future),
+      (d.rows as { bookingId: number }[]).some((s) => s.bookingId === future),
     )
     await screenshot('schedule-future-day')
-    const slots = (await home.data('slots')) as { bookingId: number }[]
+    const rows = (await home.data('rows')) as { bookingId: number }[]
     await tap(
       home,
       '.row',
-      slots.findIndex((s) => s.bookingId === future),
+      rows.findIndex((s) => s.bookingId === future),
     )
     const page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
     check(
@@ -343,7 +352,7 @@ try {
     await miniProgram.restoreWxMethod('showModal')
   })
 
-  await step('sets weekly hours and a day off', async () => {
+  await step('sets weekly hours, a 请假 and a 加班', async () => {
     await miniProgram.navigateTo('/coach/hours/index')
     const page = await waitForPage('coach/hours/index', (d) => d.state === 'ready')
     await screenshot('hours-empty')
@@ -352,7 +361,7 @@ try {
     await invoke('onStart', { detail: { value: '14:00' } })
     await invoke('onEnd', { detail: { value: '17:30' } })
     await screenshot('hours-add-sheet')
-    check(String(await page.data('addHint')).includes('3 节课'), 'hint should count 3 lessons')
+    check(String(await page.data('addHint')).includes('3.5 小时'), 'hint should count 3.5 hours')
     await invoke('confirmAdd')
     await invoke('openAdd', { currentTarget: { dataset: { weekday: 2 } } })
     await invoke('onStart', { detail: { value: '16:00' } })
@@ -372,17 +381,40 @@ try {
     await waitForPage('coach/hours/index', (d) => d.dirty === false && d.saving === false)
     const token = (await miniProgram.callWxMethod('getStorageSync', 'coachToken')) as string
     const saved = await call('GET', '/coach/hours', undefined, token)
-    check(saved.hours.length === 2, `expected 2 windows, got ${saved.hours.length}`)
+    const hours = saved.periods[0]?.hours ?? []
+    check(hours.length === 2, `expected 2 windows, got ${hours.length}`)
 
+    type Ex = { id: number; kind: string; closure: boolean }
+    const mine = (d: Record<string, unknown>) => (d.exceptions as Ex[]).filter((e) => !e.closure)
+    // A whole-day 请假 five days out.
     const dayOff = venueDate(Date.now() + 5 * DAY)
-    await answerModals('')
-    await invoke('addDayOff', { detail: { value: dayOff } })
-    await waitForPage('coach/hours/index', (d) => (d.daysOff as unknown[]).length === 1)
+    await invoke('openException', { currentTarget: { dataset: { kind: 'off' } } })
+    await sleep(400)
+    await invoke('onExDate', { detail: { value: dayOff } })
+    await invoke('onExNote', { detail: { value: '比赛' } })
+    await screenshot('hours-leave-sheet')
+    await invoke('confirmException')
+    await waitForPage('coach/hours/index', (d) => mine(d).some((e) => e.kind === 'off'))
+    // A 加班 evening six days out.
+    await invoke('openException', { currentTarget: { dataset: { kind: 'extra' } } })
+    await sleep(400)
+    await invoke('onExDate', { detail: { value: venueDate(Date.now() + 6 * DAY) } })
+    check(
+      (await page.data('exInvalid')) === false,
+      `加班 should be valid: ${await page.data('exHint')}`,
+    )
+    await invoke('confirmException')
+    await waitForPage('coach/hours/index', (d) => mine(d).some((e) => e.kind === 'extra'))
     await miniProgram.pageScrollTo(10000)
-    await screenshot('hours-day-off')
+    await screenshot('hours-exceptions')
+
+    await answerModals('')
+    const list = (await page.data('exceptions')) as Ex[]
+    await invoke('removeException', {
+      currentTarget: { dataset: { index: list.findIndex((e) => e.kind === 'off' && !e.closure) } },
+    })
+    await waitForPage('coach/hours/index', (d) => !mine(d).some((e) => e.kind === 'off'))
     await miniProgram.restoreWxMethod('showModal')
-    await invoke('removeDayOff', { currentTarget: { dataset: { key: dayOff } } })
-    await waitForPage('coach/hours/index', (d) => (d.daysOff as unknown[]).length === 0)
   })
 
   await step('a bound coach finds the workbench on 我的', async () => {

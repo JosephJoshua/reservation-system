@@ -225,7 +225,7 @@ describe('students moving a lesson', () => {
     expect(entries[0]?.summary).toBe('10月25日 10:00 王教练 一对一私教 改到 10月26日 14:00 王教练')
   })
 
-  it('refuses slots that are taken, closed, too soon, too far or of another length', async () => {
+  it('refuses times that are taken, in 请假, outside 排班, too soon or too far', async () => {
     const h = setup()
     const { coach, lesson, t, id } = await booked(h)
     const other = await h.student('b')
@@ -234,8 +234,13 @@ describe('students moving a lesson', () => {
     expect((await move(h, t, id, taken.id)).json.error.code).toBe('slot_taken')
 
     const closed = h.slot(coach.id, '2026-10-26', 11)
-    h.db.update(slots).set({ open: false }).where(eq(slots.id, closed.id)).run()
-    expect((await move(h, t, id, closed.id)).json.error.code).toBe('slot_closed')
+    await h.call(
+      'POST',
+      `/admin/coaches/${coach.id}/exceptions`,
+      { kind: 'off', startsAt: closed.startsAt.toISOString(), endsAt: closed.endsAt.toISOString() },
+      await h.admin(),
+    )
+    expect((await move(h, t, id, closed.id)).json.error.code).toBe('time_unavailable')
 
     expect((await move(h, t, id, h.slot(coach.id, '2026-10-23', 11).id)).json.error.code).toBe(
       'too_soon',
@@ -246,16 +251,17 @@ describe('students moving a lesson', () => {
     expect((await move(h, t, id, h.slot(coach.id, '2026-10-22', 11).id)).json.error.code).toBe(
       'slot_started',
     )
-    const long = h.db
+    // A lesson row from another time stands for that time, which the coach does not work.
+    const outside = h.db
       .insert(slots)
       .values({
         coachId: coach.id,
         startsAt: new Date('2026-10-27T02:00:00Z'),
-        endsAt: new Date('2026-10-27T03:30:00Z'),
+        endsAt: new Date('2026-10-27T03:00:00Z'),
       })
       .returning()
       .get()
-    expect((await move(h, t, id, long.id)).json.error.code).toBe('duration_mismatch')
+    expect((await move(h, t, id, outside.id)).json.error.code).toBe('time_unavailable')
     expect((await move(h, t, id, 99999)).status).toBe(404)
     expect(h.db.select().from(bookingMoves).all()).toHaveLength(0)
   })

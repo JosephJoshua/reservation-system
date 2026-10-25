@@ -7,6 +7,7 @@ import {
   InputNumber,
   Loading,
   MessagePlugin,
+  Radio,
   Space,
   Switch,
   Textarea,
@@ -19,11 +20,25 @@ import { SectionNav, useSections } from '../SectionNav'
 import { useSettingsDraft } from '../settingsDraft'
 import type { LessonType } from '../types'
 import { coordValid, VenueLocation } from '../VenueLocation'
+import { Closures } from './CoachDialogs'
 
 /** The parts of 设置, in the order of the page, with the settings each one holds. */
 const sections = [
   { key: 'venue', label: '场馆', pick: (v: VenueSettings) => v.venue },
-  { key: 'booking', label: '默认预约规则', pick: (v: VenueSettings) => v.booking },
+  {
+    key: 'booking',
+    label: '默认预约规则',
+    pick: ({
+      booking: { startGrid: _g, bufferMinutes: _b, coachEditsHours: _c, ...rules },
+    }: VenueSettings) => rules,
+  },
+  {
+    key: 'schedule',
+    label: '排班',
+    pick: ({ booking: b }: VenueSettings) => [b.startGrid, b.bufferMinutes, b.coachEditsHours],
+  },
+  // Saved as soon as each one is added, so never left unsaved.
+  { key: 'closures', label: '闭馆', pick: () => null },
   { key: 'payment', label: '支付', pick: (v: VenueSettings) => v.payment },
   { key: 'attendance', label: '签到', pick: (v: VenueSettings) => v.attendance },
   { key: 'pay', label: '课时费', pick: (v: VenueSettings) => v.pay },
@@ -217,6 +232,56 @@ export function Settings() {
             />
           </Field>
         </div>
+      </Card>
+
+      <Card title="排班" bordered ref={nav.refs.schedule}>
+        <div className="fields form-narrow">
+          <Field label="开始时间间隔" help="学员可选的上课开始时间，从整点起每隔多久一个">
+            <Radio.Group
+              variant="default-filled"
+              value={s.booking.startGrid}
+              onChange={(v) =>
+                set((d) => {
+                  d.booking.startGrid = Number(v) as 15 | 30 | 60
+                })
+              }
+            >
+              <Radio.Button value={15}>15 分钟</Radio.Button>
+              <Radio.Button value={30}>30 分钟</Radio.Button>
+              <Radio.Button value={60}>1 小时</Radio.Button>
+            </Radio.Group>
+          </Field>
+          <Field label="课间休息" help="同一教练两节课之间至少空出的时间">
+            <InputNumber
+              theme="normal"
+              value={s.booking.bufferMinutes}
+              min={0}
+              max={60}
+              step={5}
+              suffix="分钟"
+              onChange={(v) =>
+                set((d) => {
+                  const n = Math.round((Number(v) || 0) / 5) * 5
+                  d.booking.bufferMinutes = Math.min(Math.max(n, 0), 60)
+                })
+              }
+            />
+          </Field>
+          <Field label="教练自己排班" help="关闭后教练只能查看排班，请假和改时间由前台操作">
+            <Switch
+              value={s.booking.coachEditsHours}
+              onChange={(v) =>
+                set((d) => {
+                  d.booking.coachEditsHours = Boolean(v)
+                })
+              }
+            />
+          </Field>
+        </div>
+      </Card>
+
+      <Card title="闭馆" bordered ref={nav.refs.closures}>
+        <Closures />
       </Card>
 
       <Card title="支付" bordered ref={nav.refs.payment}>

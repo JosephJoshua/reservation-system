@@ -1,4 +1,4 @@
-import { type CancelledBy, validityEnd } from '@rs/shared'
+import { type CancelledBy, clashes, validityEnd } from '@rs/shared'
 import { and, eq, gt, inArray, isNotNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -17,6 +17,7 @@ import type { OrderState, PaymentParams } from '../pay/gateway'
 import { seatFor } from './bookings'
 import { trialsUsed } from './catalog'
 import { createRefund, submitRefund } from './refunds'
+import { busyTime, exceptionsFor } from './schedule'
 import { getSettings } from './settings'
 import { hasFreeTable } from './tables'
 
@@ -186,14 +187,24 @@ function revivedSeat(tx: Q, slotId: number) {
 
 /**
  * Whether a booking whose hold ran out can still be confirmed by a late payment: the lesson is
- * ahead, the slot still takes bookings, a trial is still within the student's limit and the
- * student has not booked that time since, and a table is still free. Whether a seat is left is
- * checked when it is revived, and the unique index backs that up.
+ * ahead, the slot still takes bookings (for a private lesson, the coach is still free and not on
+ * leave), a trial is still within the student's limit, the student has not booked that time since,
+ * and a table is still free. Whether a seat is left is checked when it is revived, and the unique
+ * index backs that up.
  */
 function revivable(tx: Q, booking: typeof bookings.$inferSelect, now: Date) {
   if (booking.startsAt <= now) return false
   const slot = tx.select().from(slots).where(eq(slots.id, booking.slotId)).get()
-  if (!slot?.open || slot.cancelledAt || !hasFreeTable(tx, slot)) return false
+  if (!slot || slot.cancelledAt || !hasFreeTable(tx, slot)) return false
+  if (slot.lessonTypeId !== null && !slot.open) return false
+  // A private lesson's coach may have taken another lesson or 请假 at that time since.
+  if (slot.lessonTypeId === null) {
+    const span = { startsAt: booking.startsAt, endsAt: booking.endsAt }
+    const busy = busyTime(tx, [slot.coachId], span, booking.id).get(slot.coachId) ?? []
+    if (busy.some((b) => clashes(span, b))) return false
+    const off = exceptionsFor(tx, [slot.coachId], span).get(slot.coachId) ?? []
+    if (off.some((e) => e.kind === 'off')) return false
+  }
   const lessonType = tx
     .select({ isTrial: lessonTypes.isTrial })
     .from(lessonTypes)

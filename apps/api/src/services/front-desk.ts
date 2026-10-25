@@ -1,6 +1,6 @@
 import { bookingTerms, type OfflineMethod } from '@rs/shared'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
-import { immediate, type Q } from '../db/client'
+import { dryRun, immediate, type Q } from '../db/client'
 import {
   bookings,
   coaches,
@@ -8,7 +8,6 @@ import {
   orders,
   packageLedger,
   packages,
-  slots,
   students,
 } from '../db/schema'
 import type { Deps } from '../deps'
@@ -18,12 +17,15 @@ import { describeBooking, logAction, yuan } from './action-log'
 import { checkBookable, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
 import { listedPriceOnly } from './packages'
+import { type SlotTarget, targetSlot } from './schedule'
 import { ruleBook } from './settings'
 
 export interface FrontDeskBookingInput {
   studentId: number
-  slotId: number
+  target: SlotTarget
   lessonTypeId: number
+  /** Book a private lesson outside the coach's 排班; the desk confirmed it with the coach. */
+  anyTime?: boolean
   /** `offline`: paid at the front desk, recorded as a paid offline order. */
   payWith: 'package' | 'offline'
   amount?: number
@@ -41,22 +43,27 @@ export interface FrontDeskBookingInput {
 function check(
   tx: Q,
   now: Date,
-  input: { studentId: number; slotId: number; lessonTypeId: number },
+  input: { studentId: number; target: SlotTarget; lessonTypeId: number; anyTime?: boolean },
 ) {
   const student = tx.select().from(students).where(eq(students.id, input.studentId)).get()
   if (!student) throw notFound('学员')
   if (student.deletedAt) throw accountDeleted()
-  const slot = tx.select().from(slots).where(eq(slots.id, input.slotId)).get()
-  if (!slot) throw notFound('时段')
-  if (slot.startsAt <= now) throw new ApiError(409, 'started', '该时段已开始')
-  if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
-  if (!slot.open) throw new ApiError(409, 'slot_closed', '该时段已关闭，请先重新开放')
   const lessonType = tx
     .select()
     .from(lessonTypes)
     .where(eq(lessonTypes.id, input.lessonTypeId))
     .get()
   if (!lessonType?.active) throw notFound('课程')
+  const slot = targetSlot(tx, input.target, {
+    minutes: lessonType.durationMinutes,
+    lessonType,
+    rule: input.anyTime ? 'anytime' : 'schedule',
+  })
+  if (slot.startsAt <= now) throw new ApiError(409, 'started', '该时段已开始')
+  if (slot.cancelledAt) throw new ApiError(409, 'slot_closed', '该课已取消')
+  if (slot.lessonTypeId !== null && !slot.open) {
+    throw new ApiError(409, 'slot_closed', '该小班课已停止报名，请先重新开放')
+  }
   const { price, seat } = checkBookable(
     tx,
     now,
@@ -107,9 +114,10 @@ function packageMismatch(
 /** What the booking would cost, for the front desk's confirm step. */
 export function frontDeskQuote(
   deps: Deps,
-  input: { studentId: number; slotId: number; lessonTypeId: number },
+  input: { studentId: number; target: SlotTarget; lessonTypeId: number; anyTime?: boolean },
 ) {
-  const { price, pkg, slot, lessonType } = check(deps.db, deps.now(), input)
+  // Checked in a transaction that is rolled back, since a private time gets its row on the way.
+  const { price, pkg, slot, lessonType } = dryRun(deps.db, (tx) => check(tx, deps.now(), input))
   return {
     price,
     packageNote:

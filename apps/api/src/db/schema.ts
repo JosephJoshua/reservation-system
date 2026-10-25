@@ -147,7 +147,11 @@ export const coaches = sqliteTable('coaches', {
   createdAt: createdAt(),
 })
 
-/** Weekly hours a coach takes lessons in. Slots are generated from them. */
+/**
+ * Weekly hours a coach takes private lessons in (排班). Each row applies to venue dates from
+ * `fromDate` until `toDate` (exclusive, null for no end), so a change can start on a later date
+ * and past days keep the hours they had.
+ */
 export const coachHours = sqliteTable(
   'coach_hours',
   {
@@ -158,21 +162,30 @@ export const coachHours = sqliteTable(
     weekday: integer('weekday').notNull(),
     startMinute: integer('start_minute').notNull(),
     endMinute: integer('end_minute').notNull(),
-    lessonMinutes: integer('lesson_minutes').notNull(),
+    fromDate: text('from_date').notNull(),
+    toDate: text('to_date'),
   },
   (t) => [index('coach_hours_coach').on(t.coachId)],
 )
 
-/** Venue dates a coach takes off; no slots are generated for them. */
-export const coachDaysOff = sqliteTable(
-  'coach_days_off',
+/**
+ * Dated changes to the weekly hours: 请假 (`off`) and 加班 (`extra`) for one coach, or 闭馆 for
+ * the whole venue when coachId is null (always `off`).
+ */
+export const scheduleExceptions = sqliteTable(
+  'schedule_exceptions',
   {
-    coachId: integer('coach_id')
-      .notNull()
-      .references(() => coaches.id),
-    date: text('date').notNull(),
+    id: id(),
+    coachId: integer('coach_id').references(() => coaches.id),
+    kind: text('kind', { enum: ['off', 'extra'] }).notNull(),
+    startsAt: instant('starts_at').notNull(),
+    endsAt: instant('ends_at').notNull(),
+    note: text('note').notNull().default(''),
+    // Who added it: the coach in the mini program, or a staff login.
+    byStaffId: integer('by_staff_id').references(() => staff.id),
+    createdAt: createdAt(),
   },
-  (t) => [primaryKey({ columns: [t.coachId, t.date] })],
+  (t) => [index('schedule_exceptions_coach_time').on(t.coachId, t.endsAt)],
 )
 
 export const lessonTypes = sqliteTable('lesson_types', {
@@ -214,6 +227,11 @@ export const coachLessonTypes = sqliteTable(
   (t) => [primaryKey({ columns: [t.coachId, t.lessonTypeId] })],
 )
 
+/**
+ * When a lesson takes place. A private lesson's row is made when it is first booked, at a time
+ * the coach's 排班 offers, and kept with its bookings; a group session (小班课) is put on the
+ * timetable by the venue and takes several students.
+ */
 export const slots = sqliteTable(
   'slots',
   {
@@ -223,14 +241,8 @@ export const slots = sqliteTable(
       .references(() => coaches.id),
     startsAt: instant('starts_at').notNull(),
     endsAt: instant('ends_at').notNull(),
-    // Closed slots take no new bookings; existing bookings stay.
+    // A closed group session takes no new bookings; existing bookings stay.
     open: integer('open', { mode: 'boolean' }).notNull().default(true),
-    // Generated slots follow the coach's weekly hours; manual ones are left alone.
-    source: text('source', { enum: ['manual', 'hours'] })
-      .notNull()
-      .default('manual'),
-    // Closed by the weekly hours or a day off rather than by a person, so it can reopen itself.
-    closedBySync: integer('closed_by_sync', { mode: 'boolean' }).notNull().default(false),
     // Set for a group session (小班课): the one lesson type it teaches, to `capacity` students.
     // Private slots leave it null and take one booking.
     lessonTypeId: integer('lesson_type_id').references(() => lessonTypes.id),

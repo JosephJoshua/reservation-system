@@ -1,7 +1,7 @@
 import {
   type CoachLessonDto,
   type CoachMeDto,
-  type CoachSlotDto,
+  type OpenTimeDto,
   venueDateKey,
 } from '../../lib/shared'
 import { ApiError, errorMessage } from '../../utils/api'
@@ -18,7 +18,7 @@ interface DayView {
 }
 
 interface SlotView {
-  id: number
+  key: string
   time: string
   startsAt: string
   /** Refused for this lesson, say when the student has another lesson then. */
@@ -47,9 +47,10 @@ Page({
   },
 
   id: 0,
-  /** Times the server refused for this lesson. */
-  refused: new Set<number>(),
-  free: [] as CoachSlotDto[],
+  coachId: 0,
+  /** Times the server refused for this lesson, by start. */
+  refused: new Set<string>(),
+  free: [] as OpenTimeDto[],
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -69,21 +70,16 @@ Page({
         this.setData({ state: 'error', fixed: true, error: '这节课现在不能改约' })
         return
       }
+      this.coachId = me.id
       const strip = bookableDays(me.advanceDays)
       const first = strip[0]?.key ?? ''
       const last = strip[strip.length - 1]?.key ?? first
-      const rows = await coachApi<CoachSlotDto[]>(
+      // Start times in the coach's own 排班 that fit the lesson, with its own time free.
+      const times = await coachApi<OpenTimeDto[]>(
         'GET',
-        `/schedule?from=${first}&to=${last}&moving=${this.id}`,
+        `/move-times?bookingId=${this.id}&from=${first}&to=${last}`,
       )
-      const length = Date.parse(lesson.endsAt) - Date.parse(lesson.startsAt)
-      this.free = rows.filter(
-        (s) =>
-          s.open &&
-          !s.lesson &&
-          Date.parse(s.startsAt) > Date.now() &&
-          Date.parse(s.endsAt) - Date.parse(s.startsAt) === length,
-      )
+      this.free = times.filter((t) => Date.parse(t.startsAt) > Date.now())
       const days = strip.map((d) => ({
         ...d,
         free: this.free.filter((s) => !s.tableFull && venueDateKey(new Date(s.startsAt)) === d.key)
@@ -113,10 +109,10 @@ Page({
       slots: this.free
         .filter((s) => venueDateKey(new Date(s.startsAt)) === this.data.date)
         .map((s) => ({
-          id: s.id,
+          key: s.startsAt,
           time: time(s.startsAt),
           startsAt: s.startsAt,
-          refused: this.refused.has(s.id),
+          refused: this.refused.has(s.startsAt),
           full: s.tableFull,
         })),
     })
@@ -141,14 +137,18 @@ Page({
     const slot = this.data.picked
     if (!slot || this.data.submitting) return
     this.setData({ submitting: true })
+    const coachId = this.coachId
     const result = await submitMove(this, () =>
-      coachApi<CoachLessonDto>('POST', `/lessons/${this.id}/move`, { slotId: slot.id }),
+      coachApi<CoachLessonDto>('POST', `/lessons/${this.id}/move`, {
+        coachId,
+        startsAt: slot.startsAt,
+      }),
     )
     if (result === 'moved' || result === 'fixed') return
     this.setData({ submitting: false })
     if (result === 'refused') {
       // Say the student has another lesson then: keep the time from being picked again.
-      this.refused.add(slot.id)
+      this.refused.add(slot.startsAt)
       this.showDay()
     } else if (result === 'gone') {
       this.setData({ state: 'loading' })
