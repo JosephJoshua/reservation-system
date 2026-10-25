@@ -285,6 +285,7 @@ export function Bookings() {
                 {
                   colKey: 'op',
                   title: '操作',
+                  width: 150,
                   cell: ({ row }: { row: AdminBooking }) => {
                     const upcoming = Date.parse(row.startsAt) > Date.now()
                     return (

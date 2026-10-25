@@ -266,6 +266,14 @@ export function assertPrivateTime(
     if (busy.some((b) => clashes(span, b))) {
       throw new ApiError(409, 'coach_busy', '该教练在这个时间已有课')
     }
+    // Outside 排班 is time the coach agreed to, never their 请假 or a 闭馆.
+    const off = (exceptionsFor(tx, [coachId], span).get(coachId) ?? []).filter(
+      (e) => e.kind === 'off',
+    )
+    if (off.some((e) => e.coachId === null)) {
+      throw new ApiError(409, 'venue_closed', '这个时间闭馆')
+    }
+    if (off.length) throw new ApiError(409, 'coach_off', '该教练这个时间请假')
     return
   }
   const { startGrid, bufferMinutes } = getSettings(tx).booking

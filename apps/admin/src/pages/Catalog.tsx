@@ -272,6 +272,7 @@ export function Catalog() {
             {
               colKey: 'op',
               title: '操作',
+              width: 150,
               cell: ({ row }) => (
                 <Space size={0}>
                   <Button
@@ -495,6 +496,8 @@ export function Catalog() {
             {
               colKey: 'op',
               title: '操作',
+              // Three buttons: wider than an even share at 1360px.
+              width: 210,
               cell: ({ row }) => (
                 <Space size={0}>
                   <Button

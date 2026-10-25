@@ -109,4 +109,6 @@ export async function pickDate(page: Page, picker: Locator, date: string) {
       hasText: new RegExp(`^${day}$`),
     })
     .click()
+  // The panel fades out; the next picker's panel would otherwise match too.
+  await expect(panel).toHaveCount(0)
 }

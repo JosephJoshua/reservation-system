@@ -1,10 +1,14 @@
 import {
+  clashes,
   type DayPlanDto,
   endsSameVenueDay,
+  SCHEDULE_STEP,
   type ScheduleConflictDto,
+  type Span,
   venueDateKey,
   venueInstant,
   venueParts,
+  withinSpans,
 } from '@rs/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -41,6 +45,11 @@ const MINUTE = 60_000
 
 const ATTENDANCE = { attended: '已到课', no_show: '缺席' } as const
 
+const toSpan = (s: { startsAt: string; endsAt: string }): Span => ({
+  startsAt: new Date(s.startsAt),
+  endsAt: new Date(s.endsAt),
+})
+
 /** Minutes after the venue midnight that starts `date`. */
 const minuteOf = (iso: string, date: string) =>
   (Date.parse(iso) - venueInstant(date, 0).getTime()) / MINUTE
@@ -70,7 +79,9 @@ export function Schedule() {
   const conflicts = useApi<ScheduleConflictDto[]>('/admin/schedule/conflicts')
   const [category, setCategory] = useState<string>('')
   const [search, setSearch] = useState('')
-  const [booking, setBooking] = useState<{ coachId: number; startsAt: string } | 'any' | null>(null)
+  const [booking, setBooking] = useState<
+    { coachId: number; startsAt: string; outside: boolean } | 'any' | null
+  >(null)
   const [creating, setCreating] = useState(false)
   const [selected, setSelected] = useState<Slot | null>(null)
   const [scheduleOf, setScheduleOf] = useState<Coach | null>(null)
@@ -120,16 +131,32 @@ export function Schedule() {
   const typeName = (id: number | null) => (types.data ?? []).find((t) => t.id === id)?.name ?? ''
   const coachOf = (id: number) => (coaches.data ?? []).find((c) => c.id === id)
 
-  /** Books at the clicked time, rounded down to the half hour. */
-  const bookAt = (coachId: number, e: React.MouseEvent<HTMLDivElement>) => {
+  /**
+   * Books at the clicked time, rounded down to the half hour. In 排班 the picker settles on the
+   * open start time that covers it; outside 排班 it is a time to agree with the coach.
+   */
+  const bookAt = (coach: DayPlanDto['coaches'][number], e: React.MouseEvent<HTMLDivElement>) => {
     const box = e.currentTarget.getBoundingClientRect()
     const minute = startHour * 60 + ((e.clientX - box.left) / HOUR_PX) * 60
-    const startsAt = venueInstant(date, Math.floor(minute / 30) * 30).toISOString()
-    if (Date.parse(startsAt) <= Date.now()) {
+    const start = venueInstant(date, Math.floor(minute / 30) * 30)
+    if (start.getTime() <= Date.now()) {
       void MessagePlugin.info('这个时间已过')
       return
     }
-    setBooking({ coachId, startsAt })
+    // The first step of a lesson starting then.
+    const moment = { startsAt: start, endsAt: new Date(start.getTime() + SCHEDULE_STEP * MINUTE) }
+    const off = coach.off.filter((o) => clashes(moment, toSpan(o)))
+    if (off.length) {
+      void MessagePlugin.info(
+        off.some((o) => o.coachId === null) ? '这个时间闭馆' : '教练这个时间请假',
+      )
+      return
+    }
+    setBooking({
+      coachId: coach.id,
+      startsAt: start.toISOString(),
+      outside: !withinSpans(moment, coach.working.map(toSpan)),
+    })
   }
 
   const tables = day?.tables ?? null
@@ -291,7 +318,7 @@ export function Schedule() {
                   <div
                     className={`board-track${c.active ? ' bookable' : ''}`}
                     style={{ width }}
-                    onClick={(e) => c.active && bookAt(c.id, e)}
+                    onClick={(e) => c.active && bookAt(c, e)}
                   >
                     {c.working.map((w) => (
                       <span

@@ -96,8 +96,8 @@ export function BookForStudent({
 }: {
   /** A group session to book a seat in. */
   session?: Slot
-  /** A coach and start time picked on the 日程 board. */
-  at?: { coachId: number; startsAt: string }
+  /** A coach and start time picked on the 日程 board, and whether it is outside their 排班. */
+  at?: { coachId: number; startsAt: string; outside: boolean }
   /** The day to show times for first, such as the day on the 日程 board. */
   date?: string
   student?: Person
@@ -115,6 +115,7 @@ export function BookForStudent({
     session ? { kind: 'session', slot: session } : null,
   )
   const [quote, setQuote] = useState<Quote | null>(null)
+  const [refresh, setRefresh] = useState(0)
   const [quoteError, setQuoteError] = useState<string | null>(null)
   const [payWith, setPayWith] = useState<'package' | 'offline'>('offline')
   const [amount, setAmount] = useState<number | undefined>()
@@ -158,7 +159,7 @@ export function BookForStudent({
       coachId: at.coachId,
       startsAt: at.startsAt,
       endsAt: new Date(Date.parse(at.startsAt) + lessonType.durationMinutes * 60_000).toISOString(),
-      outside: false,
+      outside: at.outside,
     })
   }, [at, lessonType])
 
@@ -202,6 +203,8 @@ export function BookForStudent({
     const booked = await attempt(
       () => api('POST', '/admin/bookings', body, { key: requestKey }),
       '已代约',
+      // The time may have gone meanwhile: the list drops it if so.
+      { onRefused: () => setRefresh((n) => n + 1) },
     )
     if (booked) onDone()
   }
@@ -272,6 +275,8 @@ export function BookForStudent({
               allowOutside
               initialCoachId={at?.coachId}
               initialDate={at ? venueDateKey(new Date(at.startsAt)) : date}
+              snap={!!at && !at.outside}
+              refresh={refresh}
               value={pick}
               onChange={setPick}
             />

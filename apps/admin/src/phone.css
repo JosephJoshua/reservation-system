@@ -443,4 +443,9 @@
   .settings-layout .t-card {
     scroll-margin-top: 120px;
   }
+
+  /* A wrapped 请假 or 闭馆 row keeps its action at the end, not under the date. */
+  .exception-row > :last-child {
+    margin-left: auto;
+  }
 }

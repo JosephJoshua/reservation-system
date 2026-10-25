@@ -1147,6 +1147,44 @@ describe('the front desk booking outside 排班', () => {
     ).toBe(201)
   })
 
+  it('keeps out of 请假 and 闭馆, even outside 排班', async () => {
+    const h = setup()
+    const { coach, lesson, admin } = await venue(h)
+    await exception(h, admin, coach.id, 'off', at(SUN, '15:00'), at(SUN, '17:00'), '比赛')
+    await h.call(
+      'POST',
+      '/admin/closures',
+      { startsAt: at(SUN, '19:00'), endsAt: at(SUN, '21:00'), note: '检修' },
+      admin,
+    )
+    const outside = (startsAt: string) => ({
+      coachId: coach.id,
+      startsAt,
+      lessonTypeId: lesson.id,
+      anyTime: true,
+    })
+    for (const path of ['/admin/bookings/quote', '/admin/bookings']) {
+      const leave = await desk(h, admin, outside(at(SUN, '14:30')), path)
+      expect([leave.status, leave.json.error.code]).toEqual([409, 'coach_off'])
+      const closed = await desk(h, admin, outside(at(SUN, '20:00')), path)
+      expect([closed.status, closed.json.error.code]).toEqual([409, 'venue_closed'])
+    }
+    const booked = await desk(h, admin, outside(at(SUN, '17:00')))
+    expect(booked.status).toBe(201)
+    // A 闭馆 over a 请假 is named as the 闭馆.
+    await exception(h, admin, coach.id, 'off', at(SUN, '18:00'), at(SUN, '22:00'))
+    const both = await desk(h, admin, outside(at(SUN, '19:00')))
+    expect([both.status, both.json.error.code]).toEqual([409, 'venue_closed'])
+    const bookingId = h.db.select().from(bookings).get()?.id
+    const moved = await h.call(
+      'POST',
+      `/admin/bookings/${bookingId}/move`,
+      { coachId: coach.id, startsAt: at(SUN, '16:00'), anyTime: true },
+      admin,
+    )
+    expect([moved.status, moved.json.error.code]).toEqual([409, 'coach_off'])
+  })
+
   it('refuses a lesson in a group session of the same coach', async () => {
     const h = setup()
     const { coach, lesson, admin } = await venue(h)
