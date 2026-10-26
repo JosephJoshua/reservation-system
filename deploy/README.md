@@ -57,6 +57,46 @@ Needs the accounts in the launch checklist: the server, the filed domain, and a 
 6. Ship the first release and put it in production, as below. The first production deploy
    creates an empty database; sign in to `https://app.example.cn/admin/` and set up the venue.
 
+## On a server that already runs nginx
+
+On a server with its own reverse proxy on 80 and 443, leave Caddy off: set `PROXY=external` in
+`/srv/rs/.env`. `rs.sh` then starts only the app containers, which listen on `127.0.0.1` at
+`APP_PORT` (production, default 8787) and `STAGING_PORT` (staging, default 8788); pick ports
+nothing else uses. `APP_DOMAIN`, `STAGING_DOMAIN` and `ACME_EMAIL` must still be set, as compose
+reads them, but only the proxy uses the names. The proxy gets the certificates and forwards to the
+port, keeping the client address and the original host and port:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name staging.example.cn;
+    ssl_certificate     /etc/ssl/staging.example.cn/fullchain.pem;
+    ssl_certificate_key /etc/ssl/staging.example.cn/key.pem;
+    client_max_body_size 12m;   # invoice PDFs are up to 10MB
+    location / {
+        proxy_pass http://127.0.0.1:8788;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 60s;
+    }
+}
+```
+
+## Testing before the ICP filing
+
+Until the domain is filed, the venue can test on staging on a server outside the mainland, or on
+a mainland server that is reachable on another port, such as `https://test.example.com:444`, with
+a domain that is not the one being filed. Keep `NODE_ENV=staging` and the pay lines empty, so
+payments are fake, and set `WECHAT_APP_SECRET`, so sign-in is real (`rs.sh` refuses to start
+staging without it). `PUBLIC_BASE_URL` includes the port.
+
+Build the mini program with that address (`API_BASE_URL=https://test.example.com:444`) and upload
+it as the 体验版. Add each tester under 成员管理 → 体验成员. A domain without a filing cannot be a
+服务器域名, so each tester opens the 体验版, taps ··· → 开发调试 → 打开调试 and reopens it: WeChat
+then skips the domain check. A filed domain on a non-standard port can be added as a 服务器域名
+with its port instead, and then no tester needs 开发调试.
+
 ## Releases
 
 From your machine, with ssh access to the server:
@@ -123,6 +163,8 @@ students scan from 课程 → 扫码签到.
 | --- | --- |
 | `APP_DOMAIN`, `STAGING_DOMAIN` | Host names Caddy serves and gets certificates for. |
 | `ACME_EMAIL` | Let's Encrypt contact for certificate problems. |
+| `PROXY` | `caddy` (default), or `external` when the server already runs a reverse proxy; see [On a server that already runs nginx](#on-a-server-that-already-runs-nginx). |
+| `APP_PORT`, `STAGING_PORT` | Local ports the app containers listen on, on `127.0.0.1`. Default 8787 and 8788. |
 | `NPM_REGISTRY` | npm mirror for builds, `https://registry.npmmirror.com` in the mainland. |
 | `NODE_IMAGE`, `RCLONE_IMAGE` | Optional base image overrides; the Docker mirror usually makes them unnecessary. |
 | `APP_TAG`, `APP_PREV_TAG`, `STAGING_TAG` | Written by `rs.sh`. Do not edit. |
