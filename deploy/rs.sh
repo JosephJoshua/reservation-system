@@ -34,6 +34,9 @@ set_var() {
   if grep -q "^$1=" .env; then sed -i "s#^$1=.*#$1=$2#" .env; else echo "$1=$2" >>.env; fi
 }
 need_image() { docker image inspect "rs-app:$1" >/dev/null 2>&1 || die "no image rs-app:$1, build it first"; }
+# Caddy, unless the server already has a reverse proxy (PROXY=external in .env).
+proxy=caddy
+[ "$(get PROXY)" != external ] || proxy=
 prod_running() { [ -n "$(dc ps -q --status running app)" ]; }
 
 # compose.yml, the Caddyfile and this script follow the production release, so shipping a branch
@@ -89,7 +92,7 @@ case $cmd in
     grep -q '^WECHAT_APP_SECRET=.' staging.env || die "set WECHAT_APP_SECRET in staging.env first"
     [ -f compose.yml ] || install_config "$1" || die "installing $1's config failed"
     set_var STAGING_TAG "$1"
-    dc up -d --wait app-staging caddy
+    dc up -d --wait app-staging ${proxy:+"$proxy"}
     echo "staging runs $1"
     ;;
   prod)
@@ -101,7 +104,7 @@ case $cmd in
     install_config "$1" || die "installing $1's config failed; production still runs $current"
     remember_previous "$current" "$1"
     set_var APP_TAG "$1"
-    dc up -d --wait app backup caddy
+    dc up -d --wait app backup ${proxy:+"$proxy"}
     echo "production runs $1"
     ;;
   promote)
@@ -153,7 +156,7 @@ then run: $(pwd)/rs.sh restore $1 $tag"
       die "the database is restored but installing $tag's config failed; production is stopped. Fix it, then run: $(pwd)/rs.sh restore $1 $tag"
     fi
     set_var APP_TAG "$tag"
-    dc up -d --wait app backup caddy
+    dc up -d --wait app backup ${proxy:+"$proxy"}
     echo "production runs $tag on the restored database"
     staging=$(get STAGING_TAG)
     if [ -n "$staging" ] && [ "$staging" != "$tag" ]; then

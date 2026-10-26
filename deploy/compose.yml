@@ -25,6 +25,8 @@ services:
     image: rs-app:${APP_TAG:-none}
     restart: unless-stopped
     env_file: prod.env
+    # For a reverse proxy on the host instead of Caddy (PROXY=external).
+    ports: ["127.0.0.1:${APP_PORT:-8787}:8787"]
     volumes: [prod-data:/data, ./secrets/prod:/secrets:ro]
     logging: *logging
 
@@ -41,6 +43,7 @@ services:
     image: rs-app:${STAGING_TAG:-none}
     restart: unless-stopped
     env_file: staging.env
+    ports: ["127.0.0.1:${STAGING_PORT:-8788}:8787"]
     volumes: [staging-data:/data, ./secrets/staging:/secrets:ro]
     logging: *logging
 

@@ -16,7 +16,8 @@ tag=$(git rev-parse --short=12 "$ref^{commit}")
 dir=/srv/rs/releases/$tag
 
 echo "shipping $ref ($tag) to $host"
-git archive --format=tar "$tag" | ssh "$host" "rm -rf $dir && mkdir -p $dir && tar -x -C $dir"
+# Compressed: the release is about 5MB as a tar, a sixth of that gzipped, and some links are slow.
+git archive --format=tar.gz "$tag" | ssh "$host" "rm -rf $dir && mkdir -p $dir && tar -xz -C $dir"
 # The server's own rs.sh does the work; a release's copy only takes over when it is promoted.
 # shellcheck disable=SC2016
 ssh "$host" 'rs=/srv/rs/rs.sh; [ -x $rs ] || rs='"$dir"'/deploy/rs.sh; $rs build '"$dir $tag"' && $rs staging '"$tag"
