@@ -15,6 +15,8 @@ export function useSettingsDraft() {
   const busy = useRef(false)
   // The form as it was when saved: anything typed after it is kept when the saved settings load.
   const sent = useRef<VenueSettings | null>(null)
+  // The form was put back while a save was on its way: the saved settings load in full.
+  const discarded = useRef(false)
   // One per loaded version, so a retry after a lost response is not saved twice.
   const [key, setKey] = useState(newKey)
 
@@ -39,6 +41,7 @@ export function useSettingsDraft() {
     })
 
   const reset = () => {
+    if (busy.current) discarded.current = true
     if (data) setS(structuredClone(data))
   }
 
@@ -48,6 +51,7 @@ export function useSettingsDraft() {
     busy.current = true
     setSaving(true)
     const form = s
+    discarded.current = false
     // Its own key, so a dialog on the same page (a banner's editor) is not held up by it.
     const ok = await attempt(
       () => api('PUT', '/admin/settings', body, { ifMatch: data, key }),
@@ -55,7 +59,7 @@ export function useSettingsDraft() {
       { key: 'settings' },
     )
     if (ok) {
-      sent.current = form
+      sent.current = discarded.current ? null : form
       await reload()
     }
     busy.current = false

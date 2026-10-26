@@ -237,6 +237,31 @@ test('a course is switched off from the list and back with 撤销', async ({ pag
   await expect(active).toHaveAttribute('aria-checked', 'true')
 })
 
+test('a banner deleted meanwhile says so on save', async ({ page, request }) => {
+  const { token } = await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+    username: 'admin',
+    password: ADMIN_PASSWORD,
+  })
+  const banners = await call<{ imageUrl: string }[]>(request, 'GET', '/admin/banners', token)
+  const gone = await call<{ id: number }>(request, 'POST', '/admin/banners', token, {
+    imageUrl: banners[0]?.imageUrl ?? '/uploads/none.png',
+    title: `删掉${run}`,
+    linkKind: 'none',
+    linkId: null,
+    startsAt: null,
+    endsAt: null,
+    active: false,
+    sort: 0,
+  })
+  await login(page)
+  await page.goto(`./#/banners/${gone.id}`)
+  await field(editForm(page), '标题').locator('input').fill('改了')
+  await call(request, 'DELETE', `/admin/banners/${gone.id}`, token)
+  await bar(page).getByRole('button', { name: '保存' }).click()
+  await expect(page.locator('.edit-stale')).toContainText('它可能已被删除')
+  await both(page, 'deleted')
+})
+
 test('a record that is not there says so', async ({ page }) => {
   await login(page)
   await page.goto('./#/coaches/999999')

@@ -119,6 +119,11 @@ export function EditPage<R extends { id: number }, F>({
     window.scrollTo(0, 0)
   }, [])
 
+  // Deleted by someone else meanwhile, as a reload after a refused save shows: nothing to save to.
+  useEffect(() => {
+    if (base && rows.data && !row) setStale(true)
+  }, [base, rows.data, row])
+
   // Back to the list in place of this page, so the back button doesn't open it again.
   useEffect(() => {
     if (done) window.location.replace(list.hash)
@@ -134,6 +139,8 @@ export function EditPage<R extends { id: number }, F>({
       void MessagePlugin.warning(problem)
       return
     }
+    // The fields can't be typed in while saving, which takes the cursor out of them.
+    const focused = document.activeElement
     const ok = await attempt(
       () =>
         api(isNew ? 'POST' : 'PUT', isNew ? path : `${path}/${id}`, form, {
@@ -151,7 +158,11 @@ export function EditPage<R extends { id: number }, F>({
         },
       },
     )
-    if (!ok) return
+    if (!ok) {
+      // Back where it was, once the fields can be typed in again.
+      if (focused instanceof HTMLElement) setTimeout(() => focused.isConnected && focused.focus())
+      return
+    }
     void rows.reload()
     setStart(form)
     setDone(true)
