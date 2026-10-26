@@ -11,7 +11,6 @@ import {
   Select,
   Space,
   Switch,
-  Tag,
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
@@ -28,6 +27,7 @@ import {
 } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
+import { ListSwitch, toggle } from '../undo'
 
 type ProductForm = Omit<PackageProduct, 'id'>
 
@@ -124,6 +124,7 @@ export function Products() {
         loading={products.loading}
         data={products.data ?? []}
         reorder={{ move }}
+        onOpen={(row) => setEdit({ key: newKey(), id: row.id, form: { ...row }, loaded: row })}
         empty="还没有课时包"
         columns={[
           {
@@ -162,14 +163,26 @@ export function Products() {
           {
             colKey: 'onSale',
             title: '状态',
-            cell: ({ row }) =>
-              row.onSale ? (
-                <Tag theme="success" variant="light">
-                  在售
-                </Tag>
-              ) : (
-                <Tag variant="light">下架</Tag>
-              ),
+            // Takes effect at once, with 撤销 in the message instead of a confirmation.
+            cell: ({ row }) => (
+              <ListSwitch
+                path={`/admin/package-products/${row.id}`}
+                value={row.onSale}
+                // TDesign leaves the state out for screen readers.
+                aria-checked={row.onSale}
+                label={['在售', '下架']}
+                aria-label={`${row.name} 在售`}
+                onChange={(v) =>
+                  void toggle({
+                    path: `/admin/package-products/${row.id}`,
+                    row,
+                    change: { onSale: Boolean(v) },
+                    done: v ? `已上架：${row.name}` : `已下架：${row.name}`,
+                    reload: products.reload,
+                  })
+                }
+              />
+            ),
           },
           {
             colKey: 'op',

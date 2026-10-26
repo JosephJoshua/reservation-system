@@ -165,6 +165,15 @@ test('shows hidden feedback the coach then deleted, with nothing to restore', as
   const row = page.getByRole('row').filter({ hasText: studentName })
   await row.getByRole('button', { name: '隐藏' }).click()
   await expect(row).toContainText('已隐藏')
+  // Hiding takes effect at once; 撤销 in the message shows it again.
+  await page
+    .locator('.t-message', { hasText: '已隐藏，学员看不到这条点评' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  await expect(page.getByText('已撤销')).toBeVisible()
+  await expect(row).not.toContainText('已隐藏')
+  await row.getByRole('button', { name: '隐藏' }).click()
+  await expect(row).toContainText('已隐藏')
   await call(request, 'DELETE', `/coach/lessons/${bookingId}/feedback`, coachToken)
   await page.reload()
   await page.locator('.toolbar .t-select').click()

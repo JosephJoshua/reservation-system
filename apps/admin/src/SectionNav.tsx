@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { hashParam } from './hooks'
 
+/** Fired after the address names another section of the page shown, without a page change. */
+export const SHOW_SECTION = 'rs:show-section'
+
 /** Tracks which section of a long form is on screen and scrolls to one. */
 export function useSections<K extends string>(keys: readonly K[], ready: boolean) {
   const els = useRef(new Map<K, HTMLElement>())
@@ -79,7 +82,7 @@ export function useSections<K extends string>(keys: readonly K[], ready: boolean
     }
   }, [ready, keys])
 
-  // A link such as `#/settings?section=pay` opens at that section.
+  // A link such as `#/settings?section=pay` opens at that section, as does the ⌘K menu on the page.
   useEffect(() => {
     if (!ready) return
     const go = () => {
@@ -88,7 +91,11 @@ export function useSections<K extends string>(keys: readonly K[], ready: boolean
     }
     go()
     window.addEventListener('hashchange', go)
-    return () => window.removeEventListener('hashchange', go)
+    window.addEventListener(SHOW_SECTION, go)
+    return () => {
+      window.removeEventListener('hashchange', go)
+      window.removeEventListener(SHOW_SECTION, go)
+    }
   }, [ready, keys, scrollTo])
 
   return { refs, active, scrollTo }

@@ -12,7 +12,7 @@ async function adminToken(page: Page) {
 
 /** The titles in the 轮播图 list that this run made, top to bottom. */
 async function mine(page: Page) {
-  const titles = await page.locator('tbody tr .banner-row-title').allInnerTexts()
+  const titles = await page.locator('tbody tr .banner-row-title > span:first-child').allInnerTexts()
   return titles.map((t) => t.trim()).filter((t) => t.endsWith(run))
 }
 

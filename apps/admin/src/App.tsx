@@ -22,6 +22,7 @@ import {
 import { Button, ConfigProvider, Drawer, Loading } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
+import { CommandMenu } from './CommandMenu'
 import { useApi, useIsPhone } from './hooks'
 import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
@@ -42,6 +43,7 @@ import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
 import { confirmLeave, hasUnsaved, leaveTo, takeLeave } from './SaveBar'
+import { SHOW_SECTION } from './SectionNav'
 import { StudentSearch } from './StudentSearch'
 import { ThemeMenu } from './ThemeMenu'
 import { useThemeMode } from './theme'
@@ -104,7 +106,11 @@ export function App() {
     let asked = false
     const onHash = async () => {
       const next = window.location.hash
-      if (next === shown) return
+      // Back where it is, so a pass to leave given for this move is not kept for a later one.
+      if (next === shown) {
+        takeLeave()
+        return
+      }
       if (hasUnsaved() && !takeLeave()) {
         history.pushState(history.state, '', shown)
         if (asked) return
@@ -129,9 +135,15 @@ export function App() {
       void leaveTo(href)
     }
     document.addEventListener('click', onClick, true)
+    // Another section of the page shown is put in the address without a hashchange.
+    const onSection = () => {
+      shown = window.location.hash
+    }
     window.addEventListener('hashchange', onHash)
+    window.addEventListener(SHOW_SECTION, onSection)
     return () => {
       window.removeEventListener('hashchange', onHash)
+      window.removeEventListener(SHOW_SECTION, onSection)
       document.removeEventListener('click', onClick, true)
     }
   }, [])
@@ -275,6 +287,15 @@ function SignedInApp({
             </span>
             <span className="header-actions">
               {allowed.includes('students') && <StudentSearch compact={phone} />}
+              {!phone && (
+                <CommandMenu
+                  pages={allowed.map((key) => ({
+                    key,
+                    label: pages[key].label,
+                    group: navGroups.find((g) => g.keys.includes(key))?.title,
+                  }))}
+                />
+              )}
               <ThemeMenu />
               {me.data && <span className="muted signed-in">{me.data.name}</span>}
               <Button variant="text" onClick={onLogout}>

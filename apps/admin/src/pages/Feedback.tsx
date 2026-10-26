@@ -1,14 +1,15 @@
 import type { AdminFeedbackDto } from '@rs/shared'
 import { venueInstant } from '@rs/shared'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable, LoadMore } from '../DataTable'
 import { FeedbackPhotos } from '../FeedbackPhotos'
 import { addDays, fmtDateTime, today } from '../format'
-import { attempt, useApi, usePagedApi } from '../hooks'
+import { attempt, useApi, usePagedApi, useSubmitting } from '../hooks'
 import { StudentCell } from '../StudentCell'
 import type { Coach } from '../types'
+import { undoMessage } from '../undo'
 
 function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default'] {
   if (row.deleted) return ['教练已删除', 'default']
@@ -37,18 +38,29 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
   )
   if (coachId && !studentId) params.set('coachId', String(coachId))
   const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
-  const { reload } = list
+  // The list as filtered now, also for a 撤销 pressed after the filter changed.
+  const reload = useRef(list.reload)
+  reload.current = list.reload
 
-  const setHidden = async (row: AdminFeedbackDto, hidden: boolean) => {
-    if (
-      await attempt(
-        () => api('PUT', `/admin/feedback/${row.id}/hidden`, { hidden }),
-        hidden ? '已隐藏，学员看不到这条点评' : '已恢复',
-        { key: `feedback-${row.id}` },
-      )
-    ) {
-      await reload()
-    }
+  const setHidden = async (
+    row: AdminFeedbackDto,
+    hidden: boolean,
+    undone = false,
+  ): Promise<boolean> => {
+    // Busy until the list shows the change, so its button can't send it again meanwhile.
+    const ok = await attempt(
+      async () => {
+        await api('PUT', `/admin/feedback/${row.id}/hidden`, { hidden })
+        await reload.current()
+      },
+      undone ? '已撤销' : hidden ? undefined : '已恢复',
+      { key: hideKey(row.id) },
+    )
+    if (!ok) return false
+    // Hiding takes effect at once, with 撤销 in the message instead of a confirmation.
+    if (hidden && !undone)
+      undoMessage('已隐藏，学员看不到这条点评', () => setHidden(row, false, true))
+    return true
   }
 
   return (
@@ -141,13 +153,13 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
             width: 90,
             cell: ({ row }) =>
               row.deleted ? null : row.hidden ? (
-                <Button variant="text" theme="primary" onClick={() => setHidden(row, false)}>
+                <HideButton id={row.id} onClick={() => setHidden(row, false)}>
                   恢复
-                </Button>
+                </HideButton>
               ) : (
-                <Button variant="text" theme="danger" onClick={() => setHidden(row, true)}>
+                <HideButton id={row.id} danger onClick={() => setHidden(row, true)}>
                   隐藏
-                </Button>
+                </HideButton>
               ),
           },
         ]}
@@ -159,5 +171,26 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
         onMore={list.loadMore}
       />
     </div>
+  )
+}
+
+const hideKey = (id: number) => `feedback-${id}`
+
+function HideButton({
+  id,
+  danger = false,
+  onClick,
+  children,
+}: {
+  id: number
+  danger?: boolean
+  onClick: () => void
+  children: string
+}) {
+  const busy = useSubmitting(hideKey(id))
+  return (
+    <Button variant="text" theme={danger ? 'danger' : 'primary'} loading={busy} onClick={onClick}>
+      {children}
+    </Button>
   )
 }
