@@ -27,6 +27,7 @@ import {
   Loading,
   MessagePlugin,
   Popconfirm,
+  type PrimaryTableCol,
   Radio,
   Select,
   Space,
@@ -39,21 +40,13 @@ import {
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { LessonTime } from '../bookingCells'
-import { DataTable, LoadMore } from '../DataTable'
+import { DataTable } from '../DataTable'
 import { BindWechatDialog, NewStudentDialog } from '../DeskStudent'
 import { ExportButton } from '../ExportButton'
 import { FeedbackPhotos } from '../FeedbackPhotos'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import {
-  attempt,
-  hashParam,
-  useApi,
-  useIdempotencyKey,
-  useIsPhone,
-  usePagedApi,
-  useSubmitting,
-} from '../hooks'
+import { attempt, hashParam, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import {
   bookingStatusLabel,
   ledgerKindLabel,
@@ -61,9 +54,22 @@ import {
   packageStatusLabel,
 } from '../labels'
 import { useOnLessonChanged } from '../lessonLink'
+import {
+  DateFilter,
+  Filter,
+  FilterBar,
+  hashWith,
+  isDay,
+  oneOf,
+  Pager,
+  SearchInput,
+  setRange,
+  useListFilters,
+  usePagedList,
+} from '../lists'
 import { useCan } from '../me'
 import { leaveTo } from '../SaveBar'
-import type { LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
+import type { AdminBooking, LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
 import { Feedback } from './Feedback'
 import { Orders } from './Orders'
 
@@ -78,56 +84,71 @@ function pageFromHash() {
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
-type ListState = { q: string; filter: 'expiring' | 'desk' | null }
+const groupOptions = [
+  { label: '有剩余课时', value: 'lessons' },
+  { label: '课时包即将到期', value: 'expiring' },
+  { label: '未绑定微信', value: 'desk' },
+  { label: '测试学员', value: 'tester' },
+  { label: '已注销', value: 'deleted' },
+]
+
+/** The list's address with `id` set or cleared, keeping its filters: the drawer's step. */
+const withDrawer = (id: number | null) => hashWith({ id: id ? String(id) : null })
+
 const LIST_KEY = 'rs:students-list'
 
-// The list's search and filter, kept for the way back from 学员详情 after a refresh there. Only
-// read when the page opens on 学员详情, so the 学员 link in the menu opens a plain list.
-function savedList(): ListState {
+/** The list as it was last shown, with its filters, for 学员详情's way back to it. */
+function listAddress() {
   try {
-    const saved = pageFromHash() && JSON.parse(sessionStorage.getItem(LIST_KEY) ?? 'null')
-    if (typeof saved?.q === 'string')
-      return {
-        q: saved.q,
-        filter: saved.filter === 'expiring' || saved.filter === 'desk' ? saved.filter : null,
-      }
+    const saved = sessionStorage.getItem(LIST_KEY)
+    if (saved?.startsWith('#/students?')) return saved
   } catch {}
-  return { q: '', filter: null }
-}
-
-function saveList(state: ListState) {
-  try {
-    sessionStorage.setItem(LIST_KEY, JSON.stringify(state))
-  } catch {}
+  return '#/students'
 }
 
 export function Students() {
   const money = useCan('finance')
   const canAdd = useCan('students')
   // The header search links here with `q` to show all its results.
-  const [saved] = useState(savedList)
-  const [q, setQ] = useState(() => hashParam('q') ?? saved.q)
-  const [query, setQuery] = useState(q)
+  const filters = useListFilters(
+    { q: '', group: '', from: '', to: '' },
+    {
+      path: '#/students',
+      valid: {
+        group: oneOf(...groupOptions.map((o) => o.value)),
+        from: isDay,
+        to: isDay,
+      },
+    },
+  )
+  const f = filters.values
   const [openId, setOpenId] = useState<number | null>(idFromHash)
   const [pageId, setPageId] = useState<number | null>(pageFromHash)
-  const [filter, setFilter] = useState(saved.filter)
-  useEffect(() => saveList({ q, filter }), [q, filter])
   const [creating, setCreating] = useState(false)
-  const expiring = filter === 'expiring'
-  const list = usePagedApi<StudentRow>(
+  const expiring = f.group === 'expiring'
+  const params = new URLSearchParams()
+  if (f.q) params.set('q', f.q)
+  if (f.group) params.set(f.group, '1')
+  // The 即将到期 list is by expiry date, not when they joined.
+  if (!expiring) setRange(params, f.from, f.to)
+  const list = usePagedList<StudentRow>(
     // Not loaded under 学员详情; it loads when the list is back.
-    pageId ? null : `/admin/students?q=${encodeURIComponent(query)}${filter ? `&${filter}=1` : ''}`,
-    // The 即将到期 list is sorted by date, so it pages by position.
-    expiring ? 'offset' : 'before',
+    pageId ? null : `/admin/students?${params}`,
+    filters,
   )
 
-  // Searches as the name or phone is typed.
+  // Read when the address changes, so the listener stays put: one removed while the hashchange
+  // is going out, as when the filters change with it, would not hear it.
+  const reload = useRef(list.reload)
+  reload.current = list.reload
+  // After the list puts its filters in the address.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the filters or page change
   useEffect(() => {
-    const timer = setTimeout(() => setQuery(q.trim()), 300)
-    return () => clearTimeout(timer)
-  }, [q])
-
-  const { reload } = list
+    if (pageId || !window.location.hash.startsWith('#/students')) return
+    try {
+      sessionStorage.setItem(LIST_KEY, hashWith({ id: null }))
+    } catch {}
+  }, [pageId, filters.values, filters.page])
   // The drawer open before the address changed.
   const wasOpen = useRef(openId)
   useEffect(() => {
@@ -137,59 +158,77 @@ export function Students() {
       wasOpen.current = id
       setOpenId(id)
       setPageId(pageFromHash())
-      const search = hashParam('q')
-      if (search !== null) {
-        setQ(search)
-        setQuery(search.trim())
-      }
       // Closed with the back button: show what changed in the drawer. Back from 学员详情 the
       // list loads anyway.
-      if (closed && pageFromHash() === null) void reload()
+      if (closed && pageFromHash() === null) void reload.current()
     }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
-  }, [reload])
+  }, [])
 
   if (pageId) return <StudentPage key={pageId} id={pageId} />
 
   return (
-    <div>
-      <div className="toolbar">
-        <Input
-          style={{ width: 240 }}
-          placeholder="姓名或手机号"
-          value={q}
-          onChange={(v) => setQ(String(v))}
-          onEnter={() => setQuery(q.trim())}
-          clearable
-        />
-        <Select
-          style={{ width: 160 }}
-          clearable
-          placeholder="全部学员"
-          value={filter ?? undefined}
-          onChange={(v) => setFilter((v as typeof filter) || null)}
-          options={[
-            { label: '课时包即将到期', value: 'expiring' },
-            { label: '未绑定微信', value: 'desk' },
-          ]}
-        />
-        <div className="toolbar-actions">
-          {canAdd && (
-            <Button theme="primary" onClick={() => setCreating(true)}>
-              前台建档
-            </Button>
-          )}
-          {/* The export lists every student; it has no 即将到期 filter. */}
-          {!filter && money && (
-            <ExportButton
-              kind="students"
-              filters={{ q: query }}
-              filterText={query ? `搜索“${query}”` : undefined}
+    <div className="paged-list">
+      <FilterBar
+        main={
+          <>
+            <SearchInput
+              placeholder="姓名、手机号或编号"
+              width={240}
+              value={f.q}
+              onChange={(q) => filters.set({ q })}
             />
-          )}
-        </div>
-      </div>
+            {!expiring && (
+              <DateFilter
+                from={f.from}
+                to={f.to}
+                placeholder={['加入日期', '结束日期']}
+                onChange={(from, to) => filters.set({ from, to })}
+              />
+            )}
+          </>
+        }
+        more={
+          <Filter label="学员">
+            <Select
+              style={{ width: 160 }}
+              clearable
+              placeholder="全部学员"
+              value={f.group || undefined}
+              onChange={(v) => {
+                const group = String(v ?? '')
+                // 即将到期 is by expiry date, so it leaves out when they joined.
+                filters.set(group === 'expiring' ? { group, from: '', to: '' } : { group })
+              }}
+              options={groupOptions}
+            />
+          </Filter>
+        }
+        inline
+        set={filters.changed(['group'])}
+        onClear={() => filters.reset(['group'])}
+        actions={
+          (canAdd || money) && (
+            <>
+              {canAdd && (
+                <Button theme="primary" onClick={() => setCreating(true)}>
+                  前台建档
+                </Button>
+              )}
+              {/* The export lists students by when they joined, with no other filter. */}
+              {!f.group && money && (
+                <ExportButton
+                  kind="students"
+                  range={f.from && f.to ? [f.from, f.to] : undefined}
+                  filters={{ q: f.q }}
+                  filterText={f.q ? `搜索“${f.q}”` : undefined}
+                />
+              )}
+            </>
+          )
+        }
+      />
       {expiring && (
         <p className="muted">
           30 天内到期且有剩余课时的学员，按到期日排序。到期前 7 天会给学员发送提醒。
@@ -197,18 +236,20 @@ export function Students() {
       )}
       <DataTable
         rowKey="id"
-        loading={list.loading && !list.loaded}
+        loading={list.loading}
         data={list.rows}
         onOpen={(row) => void leaveTo(`#/students/${row.id}`)}
         empty={
           list.error ??
-          (query
+          (f.q || f.from
             ? '没有找到学员'
             : expiring
               ? '30 天内没有到期的课时包'
-              : filter === 'desk'
+              : f.group === 'desk'
                 ? '前台建档的学员都已绑定微信'
-                : '还没有学员')
+                : f.group
+                  ? '没有符合条件的学员'
+                  : '还没有学员')
         }
         columns={[
           {
@@ -316,7 +357,7 @@ export function Students() {
                 variant="text"
                 theme="primary"
                 onClick={() => {
-                  window.location.hash = `/students?id=${row.id}`
+                  window.location.hash = withDrawer(row.id)
                 }}
               >
                 查看
@@ -325,20 +366,15 @@ export function Students() {
           },
         ]}
       />
-      <LoadMore
-        shown={list.rows.length}
-        more={list.more}
-        loading={list.loading}
-        onMore={list.loadMore}
-      />
+      <Pager list={list} filters={filters} />
       {creating && (
         <NewStudentDialog
-          initial={q.trim()}
+          initial={f.q}
           onClose={() => setCreating(false)}
           onDone={(student) => {
             setCreating(false)
             void list.reload()
-            window.location.hash = `/students?id=${student.id}`
+            window.location.hash = withDrawer(student.id)
           }}
         />
       )}
@@ -349,7 +385,7 @@ export function Students() {
           onClose={() => {
             setOpenId(null)
             // Replaced rather than pushed, so back does not open the drawer again.
-            if (window.location.hash.includes('?')) history.replaceState(null, '', '#/students')
+            if (idFromHash()) history.replaceState(null, '', withDrawer(null))
             void list.reload()
           }}
         />
@@ -701,6 +737,35 @@ function PackagesCard({ student }: { student: Student }) {
   )
 }
 
+const bookingColumns: PrimaryTableCol<StudentDetail['bookings'][number]>[] = [
+  {
+    colKey: 'startsAt',
+    title: '时间',
+    cell: ({ row }) => <LessonTime slotId={row.slotId}>{fmtDateTime(row.startsAt)}</LessonTime>,
+  },
+  {
+    colKey: 'lesson',
+    title: '课程',
+    cell: ({ row }) => `${row.lessonType.name} · ${row.coach.name}`,
+  },
+  {
+    colKey: 'status',
+    title: '状态',
+    cell: ({ row }) => {
+      const [label, theme] = bookingStatusLabel[row.status]
+      return (
+        <Tag theme={theme} variant="light">
+          {label}
+        </Tag>
+      )
+    },
+  },
+]
+
+// How many of the latest bookings the drawer shows; 学员详情 pages through all of them.
+const DRAWER_BOOKINGS = 10
+
+/** The latest bookings, in the drawer. */
 function BookingsCard({ student }: { student: Student }) {
   const { s, book } = student
   const canBook = useCan('bookings')
@@ -719,44 +784,68 @@ function BookingsCard({ student }: { student: Student }) {
     >
       <DataTable
         rowKey="id"
-        data={s.bookings}
+        data={s.bookings.slice(0, DRAWER_BOOKINGS)}
         empty="没有预约"
-        columns={[
-          {
-            colKey: 'startsAt',
-            title: '时间',
-            cell: ({ row }) => (
-              <LessonTime slotId={row.slotId}>{fmtDateTime(row.startsAt)}</LessonTime>
-            ),
-          },
-          {
-            colKey: 'lesson',
-            title: '课程',
-            cell: ({ row }) => `${row.lessonType.name} · ${row.coach.name}`,
-          },
-          {
-            colKey: 'status',
-            title: '状态',
-            cell: ({ row }) => {
-              const [label, theme] = bookingStatusLabel[row.status]
-              return (
-                <Tag theme={theme} variant="light">
-                  {label}
-                </Tag>
-              )
-            },
-          },
-        ]}
+        columns={bookingColumns}
       />
-      {s.bookings.length >= STUDENT_BOOKINGS_SHOWN && (
-        <p className="muted">只显示最近 {STUDENT_BOOKINGS_SHOWN} 条预约</p>
+      {s.bookings.length > DRAWER_BOOKINGS && (
+        <p>
+          <a href={`#/students/${s.id}?tab=bookings`}>查看全部预约</a>
+        </p>
       )}
     </Card>
   )
 }
 
-// The API returns this many of a student's bookings, latest first.
-const STUDENT_BOOKINGS_SHOWN = 100
+/** All of a student's bookings on 学员详情, latest first, by status. 代约 is in its header. */
+function StudentBookings({ student }: { student: Student }) {
+  const { s } = student
+  const filters = useListFilters({ status: '' })
+  const params = new URLSearchParams({ studentId: String(s?.id ?? 0), order: 'desc' })
+  if (filters.values.status) params.set('status', filters.values.status)
+  const list = usePagedList<AdminBooking>(s ? `/admin/bookings?${params}` : null, filters)
+  const { reload } = list
+  // A booking, cancel or move from this page changes the student's record too.
+  const seen = useRef(s)
+  useEffect(() => {
+    if (seen.current === s) return
+    seen.current = s
+    void reload()
+  }, [s, reload])
+  if (!s) return null
+  return (
+    <div className="paged-list">
+      <FilterBar
+        more={
+          <Filter label="状态">
+            <Select
+              style={{ width: 120 }}
+              clearable
+              placeholder="全部状态"
+              value={filters.values.status || undefined}
+              onChange={(v) => filters.set({ status: String(v ?? '') })}
+              options={Object.entries(bookingStatusLabel).map(([value, [label]]) => ({
+                value,
+                label,
+              }))}
+            />
+          </Filter>
+        }
+        inline
+        set={filters.changed(['status'])}
+        onClear={() => filters.reset()}
+      />
+      <DataTable
+        rowKey="id"
+        loading={list.loading}
+        data={list.rows}
+        empty={list.error ?? (filters.values.status ? '没有符合条件的预约' : '没有预约')}
+        columns={bookingColumns}
+      />
+      <Pager list={list} filters={filters} />
+    </div>
+  )
+}
 
 /** A quick look at a student over the list, with everything on one scroll. */
 function StudentDrawer({
@@ -858,7 +947,7 @@ function StudentPage({ id }: { id: number }) {
   return (
     <div className="detail-page">
       <nav className="breadcrumb" aria-label="位置">
-        <a href="#/students">学员</a>
+        <a href={listAddress()}>学员</a>
         <span aria-hidden="true">/</span>
         <span aria-current="page">{s ? studentName(s) : '学员详情'}</span>
       </nav>
@@ -921,7 +1010,7 @@ function StudentPage({ id }: { id: number }) {
               <PackagesCard student={student} />
             </Tabs.TabPanel>
             <Tabs.TabPanel value="bookings" label="预约">
-              <BookingsCard student={student} />
+              <StudentBookings student={student} />
             </Tabs.TabPanel>
             {canBook && (
               <Tabs.TabPanel value="feedback" label="课后点评">

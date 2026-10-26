@@ -128,3 +128,8 @@ export async function pickDate(page: Page, picker: Locator, date: string) {
   // The panel fades out; the next picker's panel would otherwise match too.
   await expect(panel).toHaveCount(0)
 }
+
+/** A list filter by its label, such as the 教练 select over 预约. */
+export function listFilter(scope: Page | Locator, label: string) {
+  return scope.locator(`.filter[data-label="${label}"]:visible .t-select`)
+}

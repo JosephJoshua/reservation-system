@@ -8,9 +8,10 @@ import {
 import { type ReactNode, useState } from 'react'
 import { Button, Card, DateRangePicker, MessagePlugin, Radio } from 'tdesign-react'
 import { ColumnChart, Heatmap, LineChart, MeterList, type Series } from '../charts'
-import { DataTable, LoadMore } from '../DataTable'
+import { DataTable } from '../DataTable'
 import { addDays, fmtDate, today, yuanGrouped as yuan } from '../format'
-import { useApi, usePagedApi } from '../hooks'
+import { useApi } from '../hooks'
+import { Pager, useListFilters, usePagedList } from '../lists'
 import { Delta } from '../StatDelta'
 import { StudentCell } from '../StudentCell'
 
@@ -126,12 +127,13 @@ function BusyTimes({ cells, empty }: { cells: StatsReport['heatmap']; empty: str
 }
 
 function Dormant() {
-  const list = usePagedApi<DormantStudent>('/admin/reports/dormant', 'offset')
+  const filters = useListFilters({})
+  const list = usePagedList<DormantStudent>('/admin/reports/dormant', filters)
   return (
-    <Card bordered title="沉睡学员">
+    <Card bordered title="沉睡学员" className="paged-list">
       <DataTable
         rowKey="key"
-        loading={list.loading && !list.loaded}
+        loading={list.loading}
         data={list.rows.map((d) => ({ ...d, key: d.student.id }))}
         empty={list.error ?? `没有超过 ${DORMANT_DAYS} 天未上课的学员`}
         columns={[
@@ -149,12 +151,7 @@ function Dormant() {
           { colKey: 'expiresAt', title: '课时包到期', cell: ({ row }) => fmtDate(row.expiresAt) },
         ]}
       />
-      <LoadMore
-        shown={list.rows.length}
-        more={list.more}
-        loading={list.loading}
-        onMore={list.loadMore}
-      />
+      <Pager list={list} filters={filters} />
       <div className="muted" style={{ marginTop: 8 }}>
         截至今天，有剩余课时，但 {DORMANT_DAYS}{' '}
         天内既没上课也没有预约的学员。不受上方日期筛选的影响。

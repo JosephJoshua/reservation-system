@@ -65,7 +65,7 @@ export function setup(
     const text = await res.text()
     // biome-ignore lint/suspicious/noExplicitAny: test helper returns loosely typed JSON
     const json: any = text ? JSON.parse(text) : null
-    return { status: res.status, json }
+    return { status: res.status, json, headers: res.headers }
   }
 
   /** Logs a student in, having agreed to the policies unless `agreed` is false. */

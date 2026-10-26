@@ -42,8 +42,25 @@ export async function api<T = unknown>(
   method: string,
   path: string,
   body?: unknown,
-  { key, ifMatch }: { key?: string; ifMatch?: unknown } = {},
+  options: { key?: string; ifMatch?: unknown } = {},
 ): Promise<T> {
+  return (await request<T>(method, path, body, options)).data
+}
+
+/** A page of a list, with how many rows match in all. */
+export async function apiPage<T>(path: string): Promise<{ rows: T[]; total: number }> {
+  const { data, res } = await request<T[]>('GET', path)
+  const header = res.headers.get('X-Total-Count')
+  const total = header === null ? Number.NaN : Number(header)
+  return { rows: data, total: Number.isFinite(total) ? total : data.length }
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  { key, ifMatch }: { key?: string; ifMatch?: unknown } = {},
+): Promise<{ data: T; res: Response }> {
   const token = getToken()
   const isForm = body instanceof FormData
   let res: Response
@@ -61,7 +78,7 @@ export async function api<T = unknown>(
   } catch {
     throw new RequestError(0, 'network', '网络异常，请检查网络后重试')
   }
-  if (res.status === 204) return undefined as T
+  if (res.status === 204) return { data: undefined as T, res }
   const data = await res.json().catch(() => null)
   if (!res.ok) {
     const err = (data as ApiErrorBody | null)?.error
@@ -74,7 +91,7 @@ export async function api<T = unknown>(
       window.dispatchEvent(new Event(STAFF_CHANGED))
     throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? '操作失败，请重试')
   }
-  return data as T
+  return { data: data as T, res }
 }
 
 /** Uploads an image and returns its URL under /api/uploads/. */

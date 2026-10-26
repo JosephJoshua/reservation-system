@@ -5,7 +5,6 @@ import {
   type AdminInvoiceDto,
   type InvoiceOrderDto,
   type InvoiceState,
-  type InvoiceStatus,
   type InvoiceTitle,
   invoiceTitleError,
   normalizeInvoiceTitle,
@@ -18,6 +17,7 @@ import { invoices, orders, refunds, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import { accountDeleted } from './account'
+import { countAll, type InvoiceFilters, invoiceWhere } from './lists'
 
 type OrderRow = typeof orders.$inferSelect
 type InvoiceRow = typeof invoices.$inferSelect
@@ -258,36 +258,25 @@ export function flaggedIds(tx: Q, rows: InvoiceRow[]) {
   return new Set(live.filter((r) => (newest.get(r.orderId) ?? 0) > r.refundSeenId).map((r) => r.id))
 }
 
+/** The same test as flaggedIds, in SQL, to filter and count by it. */
+const flaggedSql = sql`${invoices.status} != 'rejected' and coalesce((select max(${refunds.id}) from ${refunds} where ${refunds.orderId} = ${invoices.orderId} and ${refunds.status} != 'rejected'), 0) > ${invoices.refundSeenId}`
+
 export function adminInvoices(
   tx: Q,
-  q: {
-    status?: InvoiceStatus
-    flagged?: boolean
-    studentId?: number
-    limit?: number
-    offset?: number
-  },
-): AdminInvoiceDto[] {
+  q: InvoiceFilters & { flagged?: boolean; limit?: number; offset?: number },
+): { rows: AdminInvoiceDto[]; total: number } {
+  const where = and(invoiceWhere(q), q.flagged ? flaggedSql : undefined)
   const rows = tx
     .select()
     .from(invoices)
-    .where(
-      and(
-        q.status ? eq(invoices.status, q.status) : undefined,
-        q.studentId ? eq(invoices.studentId, q.studentId) : undefined,
-      ),
-    )
+    .where(where)
     // The queue is worked oldest first; finished ones read newest first.
     .orderBy(q.status === 'requested' ? invoices.id : desc(invoices.id))
+    .limit(Math.min(q.limit ?? 500, 500))
+    .offset(q.offset ?? 0)
     .all()
-  const flagged = flaggedIds(tx, rows)
-  // Flagged ones show however old; either list is cut to a page.
-  const offset = q.offset ?? 0
-  const shown = (q.flagged ? rows.filter((r) => flagged.has(r.id)) : rows).slice(
-    offset,
-    offset + Math.min(q.limit ?? 500, 500),
-  )
-  return invoiceViews(tx, shown, flagged)
+  const total = tx.select({ n: countAll }).from(invoices).where(where).get()?.n ?? 0
+  return { rows: invoiceViews(tx, rows, flaggedIds(tx, rows)), total }
 }
 
 function invoiceViews(tx: Q, rows: InvoiceRow[], flagged: Set<number>): AdminInvoiceDto[] {

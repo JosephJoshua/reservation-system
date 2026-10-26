@@ -6,7 +6,7 @@ import {
   venueInstant,
   venueParts,
 } from '@rs/shared'
-import { and, asc, eq, gt, gte, inArray, isNull, like, lt, lte, or, type SQL } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, lt } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import {
   bookings,
@@ -23,6 +23,17 @@ import {
 import { ApiError } from '../errors'
 import { countsForPay, payRateLookup } from './coach-pay'
 import { flaggedIds } from './invoices'
+import {
+  type BookingFilters,
+  bookingWhere,
+  type InvoiceFilters,
+  invoiceWhere,
+  type OrderFilters,
+  orderWhere,
+  type RefundFilters,
+  refundWhere,
+  studentSearch,
+} from './lists'
 import { getSettings } from './settings'
 import { grantedLessons, packageStatus } from './views'
 
@@ -43,11 +54,21 @@ export interface ExportQuery {
   to: string
   status?: string
   coachId?: number
+  lessonTypeId?: number
   q?: string
   /** Invoices only: those with a refund after them that staff have not marked handled. */
   flagged?: boolean
   /** Bookings only: those with no attendance marked. */
   unmarked?: boolean
+  /** Bookings only, as in the list. */
+  pay?: BookingFilters['pay']
+  source?: BookingFilters['source']
+  /** Orders only. */
+  kind?: OrderFilters['kind']
+  /** Orders and refunds: 微信支付 or paid at the desk. */
+  provider?: OrderFilters['provider']
+  /** Invoices only. */
+  titleKind?: InvoiceFilters['titleKind']
 }
 
 type Cell = string | number | null
@@ -80,6 +101,8 @@ const packageStatusText = {
   refund_requested: '退款审核中',
   refunded: '已退款',
 } as const
+
+const payText = { package: '课时包', wechat: '微信支付', offline: '线下' } as const
 
 const DELETED = '已注销学员'
 
@@ -164,24 +187,10 @@ function checkSize(n: number) {
 
 function studentsTable(tx: Q, q: ExportQuery, now: Date): Table {
   const { from, to } = range(q)
-  const pattern = q.q ? `%${q.q.replace(/[%_]/g, '')}%` : null
   const rows = tx
     .select()
     .from(students)
-    .where(
-      and(
-        gte(students.createdAt, from),
-        lt(students.createdAt, to),
-        pattern
-          ? or(
-              like(students.name, pattern),
-              like(students.phone, pattern),
-              // A short number is a 学员编号, as in the list.
-              q.q && /^\d{1,6}$/.test(q.q) ? eq(students.id, Number(q.q)) : undefined,
-            )
-          : undefined,
-      ),
-    )
+    .where(and(gte(students.createdAt, from), lt(students.createdAt, to), studentSearch(q.q)))
     .orderBy(asc(students.id))
     .limit(MAX_ROWS + 1)
     .all()
@@ -219,14 +228,6 @@ function studentsTable(tx: Q, q: ExportQuery, now: Date): Table {
 
 function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
   const { from, to } = range(q)
-  const status: SQL | undefined =
-    q.status === 'confirmed'
-      ? and(eq(bookings.status, 'confirmed'), gt(bookings.endsAt, now))
-      : q.status === 'completed'
-        ? and(eq(bookings.status, 'confirmed'), lte(bookings.endsAt, now))
-        : q.status
-          ? eq(bookings.status, q.status as (typeof bookings.$inferSelect)['status'])
-          : undefined
   const rows = tx
     .select({
       b: bookings,
@@ -247,15 +248,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
     .leftJoin(packages, eq(packages.id, bookings.packageId))
     .leftJoin(staff, eq(staff.id, bookings.bookedByStaffId))
     .leftJoin(orders, eq(orders.bookingId, bookings.id))
-    .where(
-      and(
-        gte(bookings.startsAt, from),
-        lt(bookings.startsAt, to),
-        q.coachId ? eq(slots.coachId, q.coachId) : undefined,
-        q.unmarked ? isNull(bookings.attendance) : undefined,
-        status,
-      ),
-    )
+    .where(bookingWhere({ ...q, from, to, status: q.status as BookingFilters['status'] }, now))
     .orderBy(asc(bookings.startsAt), asc(bookings.id))
     .limit(MAX_ROWS + 1)
     .all()
@@ -361,13 +354,7 @@ function ordersTable(tx: Q, q: ExportQuery): Table {
   const rows = tx
     .select()
     .from(orders)
-    .where(
-      and(
-        gte(orders.createdAt, from),
-        lt(orders.createdAt, to),
-        q.status ? eq(orders.status, q.status as 'pending' | 'paid' | 'closed') : undefined,
-      ),
-    )
+    .where(orderWhere({ ...q, from, to, status: q.status as OrderFilters['status'] }))
     .orderBy(asc(orders.createdAt), asc(orders.id))
     .limit(MAX_ROWS + 1)
     .all()
@@ -421,15 +408,7 @@ function refundsTable(tx: Q, q: ExportQuery): Table {
     .select({ r: refunds, o: orders })
     .from(refunds)
     .innerJoin(orders, eq(orders.id, refunds.orderId))
-    .where(
-      and(
-        gte(refunds.createdAt, from),
-        lt(refunds.createdAt, to),
-        q.status
-          ? eq(refunds.status, q.status as (typeof refunds.$inferSelect)['status'])
-          : undefined,
-      ),
-    )
+    .where(refundWhere({ ...q, from, to, status: q.status as RefundFilters['status'] }))
     .orderBy(asc(refunds.createdAt), asc(refunds.id))
     .limit(MAX_ROWS + 1)
     .all()
@@ -532,15 +511,7 @@ function invoicesTable(tx: Q, q: ExportQuery): Table {
     .select({ i: invoices, o: orders })
     .from(invoices)
     .innerJoin(orders, eq(orders.id, invoices.orderId))
-    .where(
-      and(
-        gte(invoices.createdAt, from),
-        lt(invoices.createdAt, to),
-        q.status
-          ? eq(invoices.status, q.status as (typeof invoices.$inferSelect)['status'])
-          : undefined,
-      ),
-    )
+    .where(invoiceWhere({ ...q, from, to, status: q.status as InvoiceFilters['status'] }))
     .orderBy(asc(invoices.createdAt), asc(invoices.id))
     .all()
   const flagged = flaggedIds(
@@ -627,6 +598,19 @@ export function describeExport(tx: Q, kind: ExportKind, q: ExportQuery) {
       .get()
     parts.push(`教练：${coach?.name ?? q.coachId}`)
   }
+  if (q.lessonTypeId) {
+    const type = tx
+      .select({ name: lessonTypes.name })
+      .from(lessonTypes)
+      .where(eq(lessonTypes.id, q.lessonTypeId))
+      .get()
+    parts.push(`课程：${type?.name ?? q.lessonTypeId}`)
+  }
+  if (q.pay) parts.push(`支付：${payText[q.pay]}`)
+  if (q.source) parts.push(q.source === 'staff' ? '员工代约' : '学员自约')
+  if (q.kind) parts.push(`类型：${orderKindLabels[q.kind]}`)
+  if (q.provider) parts.push(`支付方式：${q.provider === 'wechat' ? '微信支付' : '线下'}`)
+  if (q.titleKind) parts.push(`抬头：${invoiceTitleKindLabels[q.titleKind]}`)
   if (q.q) parts.push('按搜索词筛选')
   if (q.flagged) parts.push('开票后有退款')
   if (q.unmarked) parts.push('未签到')

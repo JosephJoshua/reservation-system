@@ -1,15 +1,23 @@
-import { type StaffAction, staffActionLabels, venueInstant } from '@rs/shared'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
-import { api, RequestError } from '../api'
+import { type StaffAction, staffActionLabels } from '@rs/shared'
+import { Select, Tag } from 'tdesign-react'
 import { DataTable } from '../DataTable'
-import { addDays, fmtDateTime, yuan } from '../format'
+import { fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
+import {
+  DateFilter,
+  Filter,
+  FilterBar,
+  isDay,
+  isId,
+  oneOf,
+  Pager,
+  SearchInput,
+  setRange,
+  useListFilters,
+  usePagedList,
+} from '../lists'
 import { StudentCell } from '../StudentCell'
 import type { ActionLogEntry, Staff } from '../types'
-
-// Matches the API's page size.
-const PAGE = 50
 
 const groups: { label: string; actions: StaffAction[] }[] = [
   {
@@ -45,83 +53,81 @@ const groups: { label: string; actions: StaffAction[] }[] = [
 /** Read-only record of what each staff member did, newest first. */
 export function ActionLog() {
   const staff = useApi<Staff[]>('/admin/staff')
-  const [staffId, setStaffId] = useState<number | null>(null)
-  const [group, setGroup] = useState<string>('')
-  const [range, setRange] = useState<[string, string] | []>([])
-  const [rows, setRows] = useState<ActionLogEntry[]>([])
-  const [more, setMore] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const seq = useRef(0)
-
-  const params = new URLSearchParams()
-  if (staffId) params.set('staffId', String(staffId))
-  const actions = groups.find((g) => g.label === group)?.actions
-  if (actions) params.set('actions', actions.join(','))
-  if (range.length === 2) {
-    params.set('from', venueInstant(range[0], 0).toISOString())
-    params.set('to', venueInstant(addDays(range[1], 1), 0).toISOString())
-  }
-  const query = params.toString()
-
-  const load = useCallback(
-    async (before?: number) => {
-      const mine = ++seq.current
-      setLoading(true)
-      try {
-        const page = await api<ActionLogEntry[]>(
-          'GET',
-          `/admin/actions?${query}${before ? `&before=${before}` : ''}`,
-        )
-        if (mine !== seq.current) return
-        setRows((old) => (before ? [...old, ...page] : page))
-        setMore(page.length === PAGE)
-        setError(null)
-      } catch (e) {
-        if (mine === seq.current) setError(e instanceof RequestError ? e.message : '加载失败')
-      } finally {
-        if (mine === seq.current) setLoading(false)
-      }
+  const filters = useListFilters(
+    { staff: '', group: '', from: '', to: '', q: '' },
+    {
+      path: '#/actions',
+      valid: {
+        staff: isId,
+        group: oneOf(...groups.map((g) => g.label)),
+        from: isDay,
+        to: isDay,
+      },
     },
-    [query],
   )
-
-  useEffect(() => {
-    setRows([])
-    void load()
-  }, [load])
+  const f = filters.values
+  const params = new URLSearchParams()
+  if (f.staff) params.set('staffId', f.staff)
+  const actions = groups.find((g) => g.label === f.group)?.actions
+  if (actions) params.set('actions', actions.join(','))
+  setRange(params, f.from, f.to)
+  if (f.q) params.set('q', f.q)
+  const list = usePagedList<ActionLogEntry>(`/admin/actions?${params}`, filters)
+  const more = ['staff', 'group'] as const
 
   return (
-    <div>
-      <div className="toolbar">
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部员工"
-          value={staffId ?? undefined}
-          options={(staff.data ?? []).map((s) => ({ label: s.name, value: s.id }))}
-          onChange={(v) => setStaffId(v ? Number(v) : null)}
-        />
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部操作"
-          value={group || undefined}
-          options={groups.map((g) => ({ label: g.label, value: g.label }))}
-          onChange={(v) => setGroup(String(v ?? ''))}
-        />
-        <DateRangePicker
-          clearable
-          placeholder={['开始日期', '结束日期']}
-          value={range}
-          onChange={(v) => setRange(v[0] && v[1] ? [String(v[0]), String(v[1])] : [])}
-        />
-      </div>
+    <div className="paged-list">
+      <FilterBar
+        main={
+          <>
+            <DateFilter
+              from={f.from}
+              to={f.to}
+              placeholder={['开始日期', '结束日期']}
+              onChange={(from, to) => filters.set({ from, to })}
+            />
+            <SearchInput
+              placeholder="内容或学员"
+              value={f.q}
+              onChange={(q) => filters.set({ q })}
+            />
+          </>
+        }
+        more={
+          <>
+            <Filter label="员工">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部员工"
+                value={f.staff ? Number(f.staff) : undefined}
+                options={(staff.data ?? []).map((s) => ({ label: s.name, value: s.id }))}
+                onChange={(v) => filters.set({ staff: v ? String(v) : '' })}
+              />
+            </Filter>
+            <Filter label="操作">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部操作"
+                value={f.group || undefined}
+                options={groups.map((g) => ({ label: g.label, value: g.label }))}
+                onChange={(v) => filters.set({ group: String(v ?? '') })}
+              />
+            </Filter>
+          </>
+        }
+        set={filters.changed([...more])}
+        onClear={() => filters.reset([...more])}
+      />
       <DataTable
         rowKey="id"
-        loading={loading && rows.length === 0}
-        data={rows}
-        empty={error ?? '没有记录'}
+        loading={list.loading}
+        data={list.rows}
+        empty={
+          list.error ??
+          (filters.changed([...more, 'from', 'q']) ? '没有符合条件的记录' : '没有记录')
+        }
         columns={[
           {
             colKey: 'createdAt',
@@ -166,14 +172,7 @@ export function ActionLog() {
           },
         ]}
       />
-      {rows.length > 0 && error && <p className="muted">{error}</p>}
-      {more && (
-        <div className="load-more">
-          <Button variant="outline" loading={loading} onClick={() => load(rows.at(-1)?.id)}>
-            加载更多
-          </Button>
-        </div>
-      )}
+      <Pager list={list} filters={filters} />
     </div>
   )
 }

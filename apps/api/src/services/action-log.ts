@@ -12,6 +12,7 @@ import {
   students,
 } from '../db/schema'
 import { DELETED_NAME } from './account'
+import { contains, countAll, ofStudents } from './lists'
 
 export interface ActionEntry {
   action: StaffAction
@@ -42,20 +43,19 @@ export function logAction(tx: Q, now: Date, staffId: number, entry: ActionEntry)
 
 export const ACTION_LOG_PAGE = 50
 
-/** Newest first, one page at a time: `before` is the last id of the previous page. */
-export function listActions(
-  tx: Q,
-  q: {
-    staffId?: number
-    actions?: StaffAction[]
-    studentId?: number
-    /** What was done to one lesson: to the session itself and to each of its seats. */
-    slotId?: number
-    from?: Date
-    to?: Date
-    before?: number
-  },
-): ActionLogEntryDto[] {
+export interface ActionFilters {
+  staffId?: number
+  actions?: StaffAction[]
+  studentId?: number
+  /** What was done to one lesson: to the session itself and to each of its seats. */
+  slotId?: number
+  from?: Date
+  to?: Date
+  /** Text in the summary, or the student it was done for. */
+  q?: string
+}
+
+function actionWhere(tx: Q, q: ActionFilters) {
   const slot = q.slotId ? tx.select().from(slots).where(eq(slots.id, q.slotId)).get() : undefined
   // Bookings in the lesson now, and those moved out of it, which keep their history.
   const movedOut = slot
@@ -87,6 +87,27 @@ export function listActions(
         ),
       )
     : undefined
+  return and(
+    q.staffId ? eq(actionLog.staffId, q.staffId) : undefined,
+    q.actions?.length ? inArray(actionLog.action, q.actions) : undefined,
+    q.studentId ? eq(actionLog.studentId, q.studentId) : undefined,
+    lesson,
+    q.from ? gte(actionLog.createdAt, q.from) : undefined,
+    q.to ? lt(actionLog.createdAt, q.to) : undefined,
+    q.q ? or(contains(actionLog.summary, q.q), ofStudents(actionLog.studentId, q.q)) : undefined,
+  )
+}
+
+/**
+ * Newest first, one page at a time: from `offset`, or after `before`, the last id of the
+ * previous page. With how many entries match in all, for the log's page numbers.
+ */
+export function listActions(
+  tx: Q,
+  q: ActionFilters & { before?: number; limit?: number; offset?: number },
+): { rows: ActionLogEntryDto[]; total: number } {
+  const where = actionWhere(tx, q)
+  const total = tx.select({ n: countAll }).from(actionLog).where(where).get()?.n ?? 0
   const rows = tx
     .select({
       entry: actionLog,
@@ -94,19 +115,10 @@ export function listActions(
     })
     .from(actionLog)
     .innerJoin(staff, eq(staff.id, actionLog.staffId))
-    .where(
-      and(
-        q.staffId ? eq(actionLog.staffId, q.staffId) : undefined,
-        q.actions?.length ? inArray(actionLog.action, q.actions) : undefined,
-        q.studentId ? eq(actionLog.studentId, q.studentId) : undefined,
-        lesson,
-        q.from ? gte(actionLog.createdAt, q.from) : undefined,
-        q.to ? lt(actionLog.createdAt, q.to) : undefined,
-        q.before ? lt(actionLog.id, q.before) : undefined,
-      ),
-    )
+    .where(and(where, q.before ? lt(actionLog.id, q.before) : undefined))
     .orderBy(desc(actionLog.id))
-    .limit(ACTION_LOG_PAGE)
+    .limit(q.limit ?? ACTION_LOG_PAGE)
+    .offset(q.before ? 0 : (q.offset ?? 0))
     .all()
   const ids = [...new Set(rows.flatMap((r) => (r.entry.studentId ? [r.entry.studentId] : [])))]
   const people = new Map(
@@ -127,7 +139,7 @@ export function listActions(
           ])
       : [],
   )
-  return rows.map(({ entry, staff }) => ({
+  const entries = rows.map(({ entry, staff }) => ({
     id: entry.id,
     action: entry.action as StaffAction,
     summary: entry.summary,
@@ -138,6 +150,7 @@ export function listActions(
     staff,
     student: entry.studentId ? (people.get(entry.studentId) ?? null) : null,
   }))
+  return { rows: entries, total }
 }
 
 const hm = (p: { hours: number; minutes: number }) =>

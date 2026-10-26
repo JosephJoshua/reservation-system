@@ -73,7 +73,8 @@ function ExportDialog({
 }) {
   // This month so far, unless the page shows a range of its own.
   const [dates, setDates] = useState<[string, string]>(
-    () => range ?? [`${today().slice(0, 8)}01`, today()],
+    // A link may give the page its dates either way round.
+    () => (range ? ([...range].sort() as [string, string]) : [`${today().slice(0, 8)}01`, today()]),
   )
   const [status, setStatus] = useState('')
   const submitting = useSubmitting()

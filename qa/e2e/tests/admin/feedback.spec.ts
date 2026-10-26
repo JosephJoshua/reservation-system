@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { BookingDto, CoachLoginResponse, CreateBookingResponse } from '@rs/shared'
 import { venueDateKey, venueInstant } from '@rs/shared'
-import { ADMIN_PASSWORD, API, addExtraTimes, call, login, student } from './helpers'
+import { ADMIN_PASSWORD, API, addExtraTimes, call, listFilter, login, student } from './helpers'
 
 // 课后点评 as the venue sees it: the list, photos, hiding and the action log entry.
 
@@ -111,7 +111,7 @@ test('a coach writes feedback with a photo through the API', async ({ request })
 test('lists the feedback and hides it from the student', async ({ page, request }) => {
   await login(page)
   await page.goto('./#/feedback')
-  await page.locator('.t-tab-panel:visible .toolbar .t-select').click()
+  await listFilter(page.locator('.t-tab-panel:visible'), '教练').click()
   await page.locator('.t-select-option', { hasText: coachName }).click()
   const row = page.locator('.t-tab-panel:visible').getByRole('row').filter({ hasText: studentName })
   await expect(row).toHaveCount(1)
@@ -160,7 +160,7 @@ test('shows hidden feedback the coach then deleted, with nothing to restore', as
 }) => {
   await login(page)
   await page.goto('./#/feedback')
-  await page.locator('.t-tab-panel:visible .toolbar .t-select').click()
+  await listFilter(page.locator('.t-tab-panel:visible'), '教练').click()
   await page.locator('.t-select-option', { hasText: coachName }).click()
   const row = page.locator('.t-tab-panel:visible').getByRole('row').filter({ hasText: studentName })
   await row.getByRole('button', { name: '隐藏' }).click()
@@ -176,7 +176,7 @@ test('shows hidden feedback the coach then deleted, with nothing to restore', as
   await expect(row).toContainText('已隐藏')
   await call(request, 'DELETE', `/coach/lessons/${bookingId}/feedback`, coachToken)
   await page.reload()
-  await page.locator('.t-tab-panel:visible .toolbar .t-select').click()
+  await listFilter(page.locator('.t-tab-panel:visible'), '教练').click()
   await page.locator('.t-select-option', { hasText: coachName }).click()
   await expect(row).toContainText('教练已删除')
   await expect(row).not.toContainText(text)

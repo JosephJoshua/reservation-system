@@ -126,7 +126,7 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
 
   await login(page)
   await page.goto('./#/students')
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(`前台${run}`)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(`前台${run}`)
   await expect(page.getByRole('button', { name: '查看' })).toHaveCount(1)
   await page.getByRole('button', { name: '查看' }).click()
   await page.getByRole('button', { name: '前台售卖' }).click()

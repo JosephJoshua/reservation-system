@@ -1,11 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import {
-  Button,
-  type PrimaryTableCol,
-  Table,
-  type TableProps,
-  type TableRowData,
-} from 'tdesign-react'
+import { type PrimaryTableCol, Table, type TableProps, type TableRowData } from 'tdesign-react'
 import { overlayShown } from './hooks'
 import { type Reorder, ReorderCell } from './Reorder'
 
@@ -144,31 +138,5 @@ export function DataTable<T extends TableRowData>({
         return ctx.rowIndex === keys.cursor ? [theirs, keys.className] : theirs
       }}
     />
-  )
-}
-
-/** The button under a paged list, with how many rows are shown so far. */
-export function LoadMore({
-  shown,
-  more,
-  loading,
-  onMore,
-}: {
-  shown: number
-  more: boolean
-  loading: boolean
-  onMore: () => void
-}) {
-  if (shown === 0) return null
-  return (
-    <div className="load-more">
-      {more ? (
-        <Button variant="outline" loading={loading} onClick={onMore}>
-          加载更多
-        </Button>
-      ) : (
-        <span className="muted">共 {shown} 条</span>
-      )}
-    </div>
   )
 }

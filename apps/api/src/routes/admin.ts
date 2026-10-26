@@ -29,15 +29,15 @@ import {
   asc,
   desc,
   eq,
+  exists,
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
-  like,
   lt,
   lte,
   ne,
-  or,
   sql,
 } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -81,7 +81,13 @@ import {
 import { cancelBooking, LIVE } from '../services/bookings'
 import { newCoachBindCode, unbindCoach } from '../services/coaches'
 import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
-import { adminFeedback, setFeedbackHidden, studentFeedback } from '../services/feedback'
+import {
+  adminFeedback,
+  adminFeedbackCount,
+  feedbackStates,
+  setFeedbackHidden,
+  studentFeedback,
+} from '../services/feedback'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
 import {
   adminInvoice,
@@ -93,6 +99,23 @@ import {
   rejectInvoice,
 } from '../services/invoices'
 import { checkLinkTarget } from '../services/links'
+import {
+  bookingPayParam,
+  bookingStatusParam,
+  bookingWhere,
+  countAll,
+  flag,
+  orderKindParam,
+  orderWhere,
+  pageParams,
+  providerParam,
+  refundWhere,
+  searchParam,
+  setTotal,
+  sourceParam,
+  studentSearch,
+  titleKindParam,
+} from '../services/lists'
 import { resolveMapLink } from '../services/map-links'
 import { moveBooking } from '../services/moves'
 import { nextSort, orderedLists, saveOrder } from '../services/order'
@@ -144,6 +167,10 @@ import { exceptionBody, weeklyHoursBody } from './coach'
 import { dateKey, oneTarget, targetFields, toTarget } from './target'
 
 const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
+const id = z.coerce.number().int().positive().optional()
+// A query parameter that only some kinds of a request take; the others refuse it.
+const only = <T extends z.ZodType>(allowed: boolean, schema: T) =>
+  allowed ? schema : z.undefined().optional()
 const nullableInstant = instant.nullable()
 const fen = z.number().int().min(0).max(10_000_000)
 const MAX_SLOTS_PER_REQUEST = 500
@@ -420,10 +447,15 @@ export function adminRoutes(deps: Deps) {
           .pipe(z.array(z.enum(staffActions)).optional()),
         from: instant.optional(),
         to: instant.optional(),
+        q: searchParam,
         before: z.coerce.number().int().positive().optional(),
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
       }),
     )
-    return c.json(listActions(db, q))
+    const { rows, total } = listActions(db, q)
+    setTotal(c, total)
+    return c.json(rows)
   })
 
   // Settings
@@ -1303,45 +1335,38 @@ export function adminRoutes(deps: Deps) {
         to: instant.optional(),
         studentId: z.coerce.number().int().positive().optional(),
         coachId: z.coerce.number().int().positive().optional(),
+        lessonTypeId: z.coerce.number().int().positive().optional(),
         // The seats of one lesson, or one booking, for 课程详情.
         slotId: z.coerce.number().int().positive().optional(),
         id: z.coerce.number().int().positive().optional(),
-        status: z
-          .enum(['pending_payment', 'confirmed', 'completed', 'cancelled', 'expired'])
-          .optional(),
+        status: bookingStatusParam.optional(),
         order: z.enum(['asc', 'desc']).default('asc'),
         // Only bookings with no attendance marked, for the overview's 待签到.
-        unmarked: z.literal('1').optional(),
-        limit: z.coerce.number().int().min(1).max(500).default(500),
-        offset: z.coerce.number().int().min(0).default(0),
+        unmarked: flag,
+        q: searchParam,
+        pay: bookingPayParam.optional(),
+        source: sourceParam.optional(),
+        ...pageParams,
       }),
     )
     const now = deps.now()
-    // A confirmed booking that has ended shows as completed, so the two filters split on endsAt.
-    const status =
-      q.status === 'confirmed'
-        ? and(eq(bookings.status, 'confirmed'), gt(bookings.endsAt, now))
-        : q.status === 'completed'
-          ? and(eq(bookings.status, 'confirmed'), lte(bookings.endsAt, now))
-          : q.status
-            ? eq(bookings.status, q.status)
-            : undefined
+    const where = and(
+      bookingWhere(q, now),
+      q.slotId ? eq(bookings.slotId, q.slotId) : undefined,
+      q.id ? eq(bookings.id, q.id) : undefined,
+    )
+    const count = db
+      .select({ n: countAll })
+      .from(bookings)
+      .innerJoin(slots, eq(slots.id, bookings.slotId))
+      .where(where)
+      .get()
+    setTotal(c, count?.n ?? 0)
     const rows = db
       .select({ booking: bookings })
       .from(bookings)
       .innerJoin(slots, eq(slots.id, bookings.slotId))
-      .where(
-        and(
-          q.from ? gte(bookings.startsAt, q.from) : undefined,
-          q.to ? lt(bookings.startsAt, q.to) : undefined,
-          q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
-          q.coachId ? eq(slots.coachId, q.coachId) : undefined,
-          q.slotId ? eq(bookings.slotId, q.slotId) : undefined,
-          q.id ? eq(bookings.id, q.id) : undefined,
-          q.unmarked ? isNull(bookings.attendance) : undefined,
-          status,
-        ),
-      )
+      .where(where)
       .orderBy(
         q.order === 'asc' ? asc(bookings.startsAt) : desc(bookings.startsAt),
         asc(bookings.id),
@@ -1534,11 +1559,14 @@ export function adminRoutes(deps: Deps) {
         to: instant.optional(),
         coachId: z.coerce.number().int().positive().optional(),
         studentId: z.coerce.number().int().positive().optional(),
+        lessonTypeId: z.coerce.number().int().positive().optional(),
         slotId: z.coerce.number().int().positive().optional(),
-        limit: z.coerce.number().int().min(1).max(500).optional(),
-        offset: z.coerce.number().int().min(0).optional(),
+        q: searchParam,
+        state: z.enum(feedbackStates).optional(),
+        ...pageParams,
       }),
     )
+    setTotal(c, adminFeedbackCount(db, q))
     return c.json(adminFeedback(db, q))
   })
 
@@ -1653,27 +1681,30 @@ export function adminRoutes(deps: Deps) {
   // Students and their packages
 
   app.get('/students', need('view'), (c) => {
-    const { q, expiring, desk, limit, before, offset } = parseQuery(
-      c,
-      z.object({
-        q: z.string().trim().max(30).default(''),
-        // 即将到期: students with lessons left on a package that expires soon, soonest first.
-        expiring: z.enum(['1']).optional(),
-        // Pages of the plain list, newest first: up to `limit` students older than `before`.
-        limit: z.coerce.number().int().min(1).max(500).default(PAGE_SIZE),
-        before: z.coerce.number().int().positive().optional(),
-        // The expiring list is sorted by date, so it pages by position.
-        offset: z.coerce.number().int().min(0).default(0),
-        // Front-desk students who have not linked their WeChat yet.
-        desk: z.enum(['1']).optional(),
-      }),
-    )
-    const pattern = `%${q.replace(/[%_]/g, '')}%`
-    // A short number is also a 学员编号, which the student can show on their 我的 page.
-    const byId = /^\d{1,6}$/.test(q) ? eq(students.id, Number(q)) : undefined
-    const search = q
-      ? or(like(students.name, pattern), like(students.phone, pattern), byId)
-      : undefined
+    const { q, expiring, desk, lessons, deleted, tester, from, to, limit, before, offset } =
+      parseQuery(
+        c,
+        z.object({
+          q: z.string().trim().max(30).default(''),
+          // 即将到期: students with lessons left on a package that expires soon, soonest first.
+          expiring: flag,
+          // Front-desk students who have not linked their WeChat yet.
+          desk: flag,
+          // Students with lessons left on a package they can still use.
+          lessons: flag,
+          deleted: flag,
+          tester: flag,
+          // When they joined.
+          from: instant.optional(),
+          to: instant.optional(),
+          // Pages of the plain list, newest first: by position, or up to `limit` students older
+          // than `before`.
+          limit: z.coerce.number().int().min(1).max(500).default(PAGE_SIZE),
+          before: z.coerce.number().int().positive().optional(),
+          offset: z.coerce.number().int().min(0).default(0),
+        }),
+      )
+    const search = studentSearch(q)
     const columns = {
       id: students.id,
       name: students.name,
@@ -1689,19 +1720,40 @@ export function adminRoutes(deps: Deps) {
         ),
     }
     if (!expiring) {
+      const where = and(
+        search,
+        desk ? unlinkedSql : undefined,
+        lessons
+          ? exists(
+              db
+                .select({ id: packages.id })
+                .from(packages)
+                .where(
+                  and(
+                    eq(packages.studentId, students.id),
+                    eq(packages.status, 'active'),
+                    gt(packages.lessonsRemaining, 0),
+                    gt(packages.expiresAt, deps.now()),
+                  ),
+                ),
+            )
+          : undefined,
+        // As with 即将到期, an account deleted keeps its packages but is left out.
+        lessons ? isNull(students.deletedAt) : undefined,
+        deleted ? isNotNull(students.deletedAt) : undefined,
+        tester ? eq(students.tester, true) : undefined,
+        from ? gte(students.createdAt, from) : undefined,
+        to ? lt(students.createdAt, to) : undefined,
+      )
+      setTotal(c, db.select({ n: countAll }).from(students).where(where).get()?.n ?? 0)
       return c.json(
         db
           .select(columns)
           .from(students)
-          .where(
-            and(
-              search,
-              before ? lt(students.id, before) : undefined,
-              desk ? unlinkedSql : undefined,
-            ),
-          )
+          .where(and(where, before ? lt(students.id, before) : undefined))
           .orderBy(desc(students.id))
           .limit(limit)
+          .offset(before ? 0 : offset)
           .all(),
       )
     }
@@ -1739,6 +1791,7 @@ export function adminRoutes(deps: Deps) {
       if (first) first.more++
       else byStudent.set(r.id, { ...r, more: 0 })
     }
+    setTotal(c, byStudent.size)
     return c.json(
       [...byStudent.values()]
         .slice(offset, offset + limit)
@@ -1986,10 +2039,18 @@ export function adminRoutes(deps: Deps) {
       z.object({
         status: z.enum(['pending', 'paid', 'closed']).optional(),
         studentId: z.coerce.number().int().positive().optional(),
-        limit: z.coerce.number().int().min(1).max(500).default(500),
+        // When the order was placed.
+        from: instant.optional(),
+        to: instant.optional(),
+        kind: orderKindParam.optional(),
+        provider: providerParam.optional(),
+        q: searchParam,
+        ...pageParams,
         before: z.coerce.number().int().positive().optional(),
       }),
     )
+    const where = orderWhere(q)
+    setTotal(c, db.select({ n: countAll }).from(orders).where(where).get()?.n ?? 0)
     const rows = db
       .select({
         order: orders,
@@ -1997,15 +2058,10 @@ export function adminRoutes(deps: Deps) {
       })
       .from(orders)
       .innerJoin(students, eq(students.id, orders.studentId))
-      .where(
-        and(
-          q.status ? eq(orders.status, q.status) : undefined,
-          q.studentId ? eq(orders.studentId, q.studentId) : undefined,
-          q.before ? lt(orders.id, q.before) : undefined,
-        ),
-      )
+      .where(and(where, q.before ? lt(orders.id, q.before) : undefined))
       .orderBy(desc(orders.id))
       .limit(q.limit)
+      .offset(q.before ? 0 : q.offset)
       .all()
     const refunded = new Map(
       rows.length
@@ -2043,9 +2099,24 @@ export function adminRoutes(deps: Deps) {
         status: z
           .enum(['requested', 'pending', 'processing', 'succeeded', 'failed', 'rejected'])
           .optional(),
-        limit: z.coerce.number().int().min(1).max(500).default(500),
+        // When the refund was asked for.
+        from: instant.optional(),
+        to: instant.optional(),
+        provider: providerParam.optional(),
+        q: searchParam,
+        ...pageParams,
         before: z.coerce.number().int().positive().optional(),
       }),
+    )
+    const where = refundWhere(q)
+    setTotal(
+      c,
+      db
+        .select({ n: countAll })
+        .from(refunds)
+        .innerJoin(orders, eq(orders.id, refunds.orderId))
+        .where(where)
+        .get()?.n ?? 0,
     )
     const rows = db
       .select({
@@ -2062,14 +2133,10 @@ export function adminRoutes(deps: Deps) {
       .from(refunds)
       .innerJoin(orders, eq(orders.id, refunds.orderId))
       .innerJoin(students, eq(students.id, orders.studentId))
-      .where(
-        and(
-          q.status ? eq(refunds.status, q.status) : undefined,
-          q.before ? lt(refunds.id, q.before) : undefined,
-        ),
-      )
+      .where(and(where, q.before ? lt(refunds.id, q.before) : undefined))
       .orderBy(desc(refunds.id))
       .limit(q.limit)
+      .offset(q.before ? 0 : q.offset)
       .all()
     const packageIds = rows.flatMap((r) => (r.refund.packageId ? [r.refund.packageId] : []))
     const pkgs = new Map(
@@ -2204,16 +2271,19 @@ export function adminRoutes(deps: Deps) {
       c,
       z.object({
         status: z.enum(['requested', 'issued', 'rejected']).optional(),
-        flagged: z
-          .enum(['1'])
-          .optional()
-          .transform((v) => v === '1'),
+        flagged: flag,
         studentId: z.coerce.number().int().positive().optional(),
-        limit: z.coerce.number().int().min(1).max(500).optional(),
-        offset: z.coerce.number().int().min(0).optional(),
+        // When the invoice was asked for.
+        from: instant.optional(),
+        to: instant.optional(),
+        titleKind: titleKindParam.optional(),
+        q: searchParam,
+        ...pageParams,
       }),
     )
-    return c.json(adminInvoices(db, q))
+    const { rows, total } = adminInvoices(db, q)
+    setTotal(c, total)
+    return c.json(rows)
   })
 
   app.post('/invoices/:id/issue', need('finance'), async (c) => {
@@ -2300,25 +2370,17 @@ export function adminRoutes(deps: Deps) {
         from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         status: statuses ? z.enum(statuses).optional() : z.undefined().optional(),
-        coachId:
-          k === 'bookings'
-            ? z.coerce.number().int().positive().optional()
-            : z.undefined().optional(),
-        q: k === 'students' ? z.string().trim().max(30).optional() : z.undefined().optional(),
-        flagged:
-          k === 'invoices'
-            ? z
-                .enum(['1'])
-                .optional()
-                .transform((v) => v === '1')
-            : z.undefined().optional(),
-        unmarked:
-          k === 'bookings'
-            ? z
-                .enum(['1'])
-                .optional()
-                .transform((v) => v === '1')
-            : z.undefined().optional(),
+        // The filters of the export's list, each only where that list has it.
+        coachId: only(k === 'bookings', id),
+        lessonTypeId: only(k === 'bookings', id),
+        q: only(k !== 'packages', searchParam),
+        pay: only(k === 'bookings', bookingPayParam.optional()),
+        source: only(k === 'bookings', sourceParam.optional()),
+        kind: only(k === 'orders', orderKindParam.optional()),
+        provider: only(k === 'orders' || k === 'refunds', providerParam.optional()),
+        titleKind: only(k === 'invoices', titleKindParam.optional()),
+        flagged: only(k === 'invoices', flag),
+        unmarked: only(k === 'bookings', flag),
       }),
     )
     const { csv, rows } = buildExport(db, k, q, deps.now())
@@ -2442,14 +2504,10 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.get('/reports/dormant', need('finance'), (c) => {
-    const { limit, offset } = parseQuery(
-      c,
-      z.object({
-        limit: z.coerce.number().int().min(1).max(500).default(500),
-        offset: z.coerce.number().int().min(0).default(0),
-      }),
-    )
-    return c.json(dormantStudents(deps).slice(offset, offset + limit))
+    const { limit, offset } = parseQuery(c, z.object(pageParams))
+    const all = dormantStudents(deps)
+    setTotal(c, all.length)
+    return c.json(all.slice(offset, offset + limit))
   })
 
   // Dashboard numbers for the admin home page.

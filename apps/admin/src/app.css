@@ -2082,3 +2082,54 @@ a:hover {
 .t-drawer .detail-head {
   margin-bottom: 0;
 }
+
+/* A list with page numbers. A new page scrolls its top back under the sticky header. */
+.paged-list {
+  scroll-margin-top: 72px;
+}
+
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.pager-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+}
+
+.pager-count .muted {
+  font-size: 12px;
+}
+
+/* The phone's filter sheet: one filter per row, its label above it. */
+.filter-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filter-sheet-body .filter::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 8px;
+  color: var(--td-text-color-secondary);
+}
+
+.filter-sheet-body .filter[data-label=""]::before {
+  display: none;
+}
+
+.filter-sheet .t-drawer__footer {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-sheet .t-drawer__footer .t-button {
+  flex: 1;
+  margin: 0;
+}

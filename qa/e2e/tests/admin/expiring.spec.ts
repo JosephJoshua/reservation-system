@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
-import { ADMIN_PASSWORD, call, login, student } from './helpers'
+import { ADMIN_PASSWORD, call, listFilter, login, student } from './helpers'
 
 const shots = 'test-results/expiring'
 mkdirSync(shots, { recursive: true })
@@ -67,11 +67,11 @@ test('lists students whose packages expire soon, soonest first', async ({ page, 
 
   await login(page)
   await page.goto('./#/students')
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(run)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(run)
   await expect(page.getByRole('row')).toHaveCount(4)
   await expect(page.getByRole('button', { name: '导出' })).toBeVisible()
 
-  await page.locator('.toolbar .t-select').click()
+  await listFilter(page, '学员').click()
   await page.locator('.t-select-option', { hasText: '课时包即将到期' }).click()
   await expect(page.getByText('30 天内到期且有剩余课时的学员')).toBeVisible()
   await expect(page.getByRole('button', { name: '导出' })).toHaveCount(0)
@@ -90,9 +90,9 @@ test('lists students whose packages expire soon, soonest first', async ({ page, 
   await page.setViewportSize({ width: 1280, height: 720 })
 
   // Search narrows the filtered list; a name with nothing expiring shows the empty state.
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(`丙${run}`)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(`丙${run}`)
   await expect(page.getByText('没有找到学员')).toBeVisible()
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(`乙${run}`)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(`乙${run}`)
   await expect(rows).toHaveCount(1)
 
   // Opening a student keeps the filter.
@@ -103,8 +103,8 @@ test('lists students whose packages expire soon, soonest first', async ({ page, 
   await expect(page.getByText('30 天内到期且有剩余课时的学员')).toBeVisible()
 
   // Cleared, the list is every student again.
-  await page.locator('.toolbar .t-select').hover()
-  await page.locator('.toolbar .t-select .t-input__suffix-clear').click()
+  await listFilter(page, '学员').hover()
+  await listFilter(page, '学员').locator('.t-input__suffix-clear').click()
   await expect(page.getByRole('button', { name: '导出' })).toBeVisible()
   await expect(page.getByText(`乙${run}`)).toBeVisible()
 })
