@@ -91,7 +91,7 @@ describe('policy consent', () => {
       version: POLICY_VERSION,
     })
     // Without an operator, the venue name and phone stand in.
-    expect(catalog.json.policies.privacy).toContain('乒乓球馆（以下简称“我们”）')
+    expect(catalog.json.policies.privacy).toContain('Lumi乒乓（以下简称“我们”）')
     expect(catalog.json.policies.privacy).toContain('联系方式：场馆前台')
   })
 })

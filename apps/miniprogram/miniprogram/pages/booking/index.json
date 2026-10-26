@@ -1,5 +1,5 @@
 {
-  "navigationBarTitleText": "预约",
+  "navigationBarTitleText": "Lumi乒乓",
   "enablePullDownRefresh": true,
   "usingComponents": {
     "t-avatar": "tdesign-miniprogram/avatar/avatar",

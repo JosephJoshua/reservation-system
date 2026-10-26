@@ -30,7 +30,7 @@ export function Login({ notice, onDone }: { notice?: string; onDone: () => void 
 
   return (
     <div className="login">
-      <Card className="login-card" title="球馆管理" bordered>
+      <Card className="login-card" title="Lumi乒乓 管理" bordered>
         {notice && <p className="login-notice">{notice}</p>}
         <form
           className="fields"

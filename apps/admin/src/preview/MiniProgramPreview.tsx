@@ -143,7 +143,7 @@ export function MiniProgramPreview({ draft, maxHeight }: { draft: Draft; maxHeig
     const venue = merged.home.venue
     if (screen === 'home') {
       page = {
-        title: venue.name || '预约',
+        title: venue.name || 'Lumi乒乓',
         tab: true,
         styles: pageStyles.booking,
         body: (
