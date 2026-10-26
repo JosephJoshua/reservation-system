@@ -1,7 +1,7 @@
 // 点击跳转: the searchable picker for where a banner or the home notice goes in the mini program.
 import { expect, test } from '@playwright/test'
 import type { HomeDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login } from './helpers'
+import { ADMIN_PASSWORD, call, editForm, field, login, saveEdit } from './helpers'
 
 const run = Date.now().toString(36)
 const coachName = `跳转教练${run}`
@@ -26,18 +26,19 @@ test('picks a coach for a banner by searching, and Esc closes only the list', as
   const row = page.locator('tr', { hasText: bannerTitle })
   await expect(row).toContainText('无')
   await row.getByRole('button', { name: '编辑' }).click()
-  const picker = field(dialog(page), '点击跳转')
+  const picker = field(editForm(page), '点击跳转')
   await picker.locator('.t-select').click()
   await page.keyboard.type(run)
   // Only the coach group is left; the other groups have no match.
   await expect(page.locator('.t-select-option')).toHaveText([`${coachName} · 一级教练`])
   await page.keyboard.press('Escape')
-  await expect(dialog(page)).toBeVisible()
+  await expect(page.locator('.t-select-option:visible')).toHaveCount(0)
+  await expect(page.locator('.edit-page')).toBeVisible()
   await picker.locator('.t-select').click()
   await page.keyboard.type(coachName)
   await page.locator('.t-select-option', { hasText: coachName }).click()
   await expect(picker).toContainText(`学员点击后打开${coachName}的教练介绍页`)
-  await page.getByRole('button', { name: '保存' }).click()
+  await saveEdit(page)
   await expect(row).toContainText(`教练：${coachName}`)
 
   const home = await call<HomeDto>(request, 'GET', '/home')

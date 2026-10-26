@@ -255,7 +255,7 @@ export function Schedule() {
       ) : !day ? (
         <p className="muted">加载中</p>
       ) : day.coaches.length === 0 ? (
-        <p className="muted">先在“课程与教练”里添加教练</p>
+        <p className="muted">先在“教练”页添加教练</p>
       ) : (
         <div className="board-scroll">
           <div className="board" style={{ width: width + 120 }}>
@@ -620,7 +620,7 @@ function CreateSessions({
     >
       {able.length === 0 ? (
         <p className="muted">
-          还没有教练教小班课。先在“课程与教练”里新建上课人数多于 1 人的课程，并让教练教这门课。
+          还没有教练教小班课。先在“课程”页新建上课人数多于 1 人的课程，并在“教练”页让教练教这门课。
         </p>
       ) : (
         <div className="fields">

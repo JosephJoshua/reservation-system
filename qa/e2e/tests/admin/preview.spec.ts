@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, type Locator, type Page, test } from '@playwright/test'
-import { ADMIN_PASSWORD, API, call, dialog, field, login, typeNumber } from './helpers'
+import { ADMIN_PASSWORD, API, call, dialog, field, login, saveEdit, typeNumber } from './helpers'
 
 // Previews of coaches, lessons, packages, banners and the home notice in the mini program's
 // own styles, beside the edit forms and from each list's 预览.
@@ -15,9 +15,10 @@ const shots = join(import.meta.dirname, '../../test-results/preview-shots')
 /** The page inside the phone. */
 const screen = (scope: Page | Locator) => scope.locator('.mp-page')
 const navTitle = (scope: Page | Locator) => scope.locator('.mp-nav-title')
-/** The lesson's row in the 课程 table; the 教练 table mentions it too. */
-const lessonRow = (page: Page, name = lessonName) =>
-  page.locator('.t-card').filter({ hasText: '新建课程' }).getByRole('row').filter({ hasText: name })
+/** The lesson's row in the 课程 table. */
+const lessonRow = (page: Page, name = lessonName) => page.getByRole('row').filter({ hasText: name })
+/** A record's edit page, with its form and the phone beside it. */
+const editPage = (page: Page) => page.locator('.edit-page')
 
 async function both(page: Page, name: string) {
   for (const scheme of ['light', 'dark'] as const) {
@@ -68,9 +69,9 @@ test.beforeAll(async ({ request }) => {
 
 test('a new coach shows on their page as it is typed', async ({ page }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page.getByRole('button', { name: '新建教练' }).click()
-  const d = dialog(page)
+  const d = editPage(page)
   // Nothing typed yet: no lessons to book, and the page says so.
   await expect(screen(d)).toContainText('这位教练暂未开放预约')
   await expect(d.locator('.mp-preview-alert')).toContainText('还没有可预约的课程')
@@ -105,13 +106,13 @@ test('a new coach shows on their page as it is typed', async ({ page }) => {
   await expect(screen(d).locator('[data-preview-focus]')).toBeInViewport()
   await both(page, 'coach-edit')
 
-  await d.getByRole('button', { name: '保存' }).click()
+  await saveEdit(page)
   await expect(page.locator('.t-message')).toContainText('已保存')
 })
 
 test('the dark switch shows the dark theme whatever the admin uses', async ({ page }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   const row = page.getByRole('row').filter({ hasText: coachName })
   await row.getByRole('button', { name: '预览' }).click()
   const d = dialog(page)
@@ -131,10 +132,10 @@ test('the dark switch shows the dark theme whatever the admin uses', async ({ pa
 
 test('a lesson shows on the home tab with its price and who teaches it', async ({ page }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/courses')
   const row = lessonRow(page)
   await row.getByRole('button', { name: '编辑' }).click()
-  const d = dialog(page)
+  const d = editPage(page)
   const focused = screen(d).locator('[data-preview-focus]')
   await expect(focused).toContainText(lessonName)
   await expect(focused).toContainText('¥188')
@@ -152,16 +153,17 @@ test('a lesson shows on the home tab with its price and who teaches it', async (
   await expect(screen(d).locator('.coach-row')).toContainText('¥150')
 
   // Not saved: the list keeps the old price.
-  await d.getByRole('button', { name: '取消' }).click()
+  await page.locator('.breadcrumb').getByRole('link', { name: '课程' }).click()
+  await page.getByRole('button', { name: '放弃修改' }).click()
   await row.getByRole('button', { name: '预览' }).click()
-  await expect(screen(d).locator('[data-preview-focus]')).toContainText('¥188')
+  await expect(screen(dialog(page)).locator('[data-preview-focus]')).toContainText('¥188')
 })
 
 test('a package previews on the 课时包 page, outlined', async ({ page }) => {
   await login(page)
   await page.goto('./#/products')
   await page.getByRole('button', { name: '新建课时包' }).click()
-  const d = dialog(page)
+  const d = editPage(page)
   await field(d, '名称').locator('input').fill(productName)
   await field(d, '课程').locator('.t-select').click()
   await page.locator('.t-select-option').filter({ hasText: lessonName }).click()
@@ -189,7 +191,7 @@ test('a banner previews on the home tab with its title', async ({ page }) => {
   await expect(dialog(page)).toHaveCount(0)
 
   await row.getByRole('button', { name: '编辑' }).click()
-  const d = dialog(page)
+  const d = editPage(page)
   await field(d, '标题').locator('input').fill(`预览标题${run}`)
   await expect(screen(d).locator('.banner-title')).toHaveText(`预览标题${run}`)
   await field(d, '展示').locator('.t-switch').click()
@@ -218,9 +220,9 @@ test('on a phone, 预览 on 首页内容 opens the banner in a dialog', async ({
 test('on a phone the form and the preview take turns', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/courses')
   await lessonRow(page).getByRole('button', { name: '编辑' }).click()
-  const d = dialog(page)
+  const d = editPage(page)
   await expect(screen(d)).toHaveCount(0)
   await field(d, '名称').locator('input').fill(`${lessonName}改`)
   await d.locator('.editor-preview-switch').getByText('预览').click()

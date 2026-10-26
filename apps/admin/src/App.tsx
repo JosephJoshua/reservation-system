@@ -18,6 +18,7 @@ import {
   SettingIcon,
   UserCircleIcon,
   UsergroupIcon,
+  UserIcon,
 } from 'tdesign-icons-react'
 import { Button, ConfigProvider, Drawer, Loading } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
@@ -27,8 +28,9 @@ import { useApi, useIsPhone } from './hooks'
 import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
 import { Bookings } from './pages/Bookings'
-import { Catalog } from './pages/Catalog'
 import { CheckIn } from './pages/CheckIn'
+import { Coaches } from './pages/Coaches'
+import { Courses } from './pages/Courses'
 import { Feedback } from './pages/Feedback'
 import { HomeContent } from './pages/HomeContent'
 import { Invoices } from './pages/Invoices'
@@ -61,7 +63,8 @@ const pages = {
   refunds: { label: '退款', icon: RollbackIcon, component: Refunds },
   invoices: { label: '发票', icon: FilePasteIcon, component: Invoices },
   reports: { label: '报表', icon: ChartBarIcon, component: Reports },
-  catalog: { label: '课程与教练', icon: CourseIcon, component: Catalog },
+  courses: { label: '课程', icon: CourseIcon, component: Courses },
+  coaches: { label: '教练', icon: UserIcon, component: Coaches },
   products: { label: '课时包', icon: CardIcon, component: Products },
   banners: { label: '首页内容', icon: ImageIcon, component: HomeContent },
   settings: { label: '设置', icon: SettingIcon, component: Settings },
@@ -76,11 +79,15 @@ const navGroups: { title?: string; keys: PageKey[] }[] = [
   { keys: ['overview'] },
   { title: '日常', keys: ['schedule', 'checkin', 'bookings', 'students', 'feedback'] },
   { title: '财务', keys: ['orders', 'refunds', 'invoices', 'reports'] },
-  { title: '课程与内容', keys: ['catalog', 'products', 'banners'] },
+  { title: '课程与内容', keys: ['courses', 'coaches', 'products', 'banners'] },
   { title: '系统', keys: ['settings', 'staff', 'actions'] },
 ]
 
 function currentPage(): PageKey {
+  // 课程与教练 became 课程 and 教练: an old link opens 课程.
+  if (/^#\/?catalog(?=[?/]|$)/.test(window.location.hash)) {
+    history.replaceState(history.state, '', '#/courses')
+  }
   // The first part names the page, as in `#/students/12`.
   const key = window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] ?? ''
   return key in pages ? (key as PageKey) : 'overview'

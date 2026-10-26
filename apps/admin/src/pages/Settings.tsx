@@ -197,7 +197,7 @@ export function Settings() {
                 {customized
                   .map((t) => `${t.name}（${ownRuleLabels(t.rules).join('、')}）`)
                   .join('，')}
-                <a className="card-intro-link" href="#/catalog">
+                <a className="card-intro-link" href="#/courses">
                   去修改
                 </a>
               </div>
@@ -411,7 +411,7 @@ export function Settings() {
           </Field>
           <Field>
             <span className="muted">
-              已结束的课程照常计入，场馆取消的课不计入。课时费标准在课程与教练的教练类别里设置。
+              已结束的课程照常计入，场馆取消的课不计入。课时费标准在教练页的教练类别里设置。
             </span>
           </Field>
         </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Card, DatePicker, Input, Loading, Space, Textarea } from 'tdesign-react'
+import { useRecordId } from '../EditPage'
 import { Field } from '../Field'
 import { isoToPicker, pickerToIso } from '../format'
 import { useApi, useIsPhone } from '../hooks'
@@ -8,7 +9,7 @@ import { EditorWithPreview } from '../preview/EditorWithPreview'
 import { SaveBar } from '../SaveBar'
 import { useSettingsDraft } from '../settingsDraft'
 import type { Banner } from '../types'
-import { Banners } from './Banners'
+import { BannerEditPage, Banners } from './Banners'
 
 /**
  * What students read: the 预约 tab's banners and notice, and the 预约须知 shown before they book,
@@ -22,6 +23,9 @@ export function HomeContent() {
   // The banner 预览 put on the preview's carousel.
   const [shown, setShown] = useState<number>()
   const linkTargets = useLinkTargets()
+  // A banner opened from the list is edited on its own page.
+  const bannerId = useRecordId()
+  if (bannerId) return <BannerEditPage key={bannerId} id={bannerId} banners={banners} />
 
   const list = (
     <Banners

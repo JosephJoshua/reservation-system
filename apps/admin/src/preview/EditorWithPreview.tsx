@@ -50,7 +50,9 @@ export function EditorWithPreview({
           onChange={(v) => setTab(v as 'edit' | 'preview')}
         />
         {/* The form stays mounted, so a pending upload or typed text is kept. */}
-        <div hidden={tab !== 'edit'}>{children}</div>
+        <div className="editor-form" hidden={tab !== 'edit'}>
+          {children}
+        </div>
         {tab === 'preview' && <MiniProgramPreview draft={draft} maxHeight={height - 280} />}
       </div>
     )

@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, type Locator, type Page, test } from '@playwright/test'
-import { dialog, field, login, useCrop } from './helpers'
+import { editForm, field, login, useCrop } from './helpers'
 
 // Every admin image upload goes through the crop dialog, which saves the cut-out itself.
 const shots = join(import.meta.dirname, '../../test-results/image-crop-shots')
@@ -74,7 +74,7 @@ async function inspect(page: Page, src: string, points: [number, number][]) {
 }
 
 const cropDialog = (page: Page) => page.locator('.crop-dialog:visible')
-const editDialog = dialog
+const editDialog = editForm
 
 async function both(page: Page, name: string) {
   for (const scheme of ['light', 'dark'] as const) {
@@ -87,7 +87,7 @@ async function both(page: Page, name: string) {
 
 async function openCoach(page: Page) {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page.getByRole('button', { name: '新建教练' }).click()
   return editDialog(page)
 }
@@ -287,7 +287,7 @@ test('inserts profile images at a chosen ratio and crops one again in place', as
   await expect(editor).toContainText('第一段')
 })
 
-test('an upload finishing after the coach dialog closed does not reach the next one', async ({
+test('an upload finishing after the coach page closed does not reach the next one', async ({
   page,
 }) => {
   const d = await openCoach(page)
@@ -299,11 +299,11 @@ test('an upload finishing after the coach dialog closed does not reach the next 
     .locator('input[type=file]')
     .setInputFiles(await picture(page, 800, 800, 'image/jpeg'))
   await cropDialog(page).getByRole('button', { name: '使用图片' }).click()
-  // The coach dialog's own close button sits under the crop dialog's mask, so this goes by route.
+  // The crop dialog's mask covers the page's links, so this goes by route.
   await page.goto('./#/banners')
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page.getByRole('button', { name: '新建教练' }).click()
   await page.waitForTimeout(1200)
   await expect(field(editDialog(page), '照片').locator('img')).toHaveCount(0)
-  await expect(dialog(page)).toHaveCount(1)
+  await expect(page.locator('.edit-page')).toHaveCount(1)
 })

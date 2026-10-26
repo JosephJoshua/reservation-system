@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ADMIN_PASSWORD, addExtraTimes, call, dialog, field, login, student } from './helpers'
+import { ADMIN_PASSWORD, addExtraTimes, call, editForm, field, login, student } from './helpers'
 
 // How front-desk payments, student cancels and coach changes show up for the desk.
 test.describe.configure({ mode: 'serial' })
@@ -99,12 +99,12 @@ test('turning a coach with booked lessons off says what happens to them', async 
     amount: 0,
   })
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page
     .getByRole('row', { name: new RegExp(coachName) })
     .getByText('编辑', { exact: true })
     .click()
-  const active = field(dialog(page), '在职')
+  const active = field(editForm(page), '在职')
   await expect(active).not.toContainText('节课未上')
   await active.locator('.t-switch').click()
   await expect(active).toContainText('还有 1 节课未上')

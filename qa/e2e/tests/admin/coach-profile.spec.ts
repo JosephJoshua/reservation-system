@@ -1,7 +1,18 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, CoachDetailDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login, student, typeNumber, useCrop } from './helpers'
+import {
+  ADMIN_PASSWORD,
+  call,
+  dialog,
+  editForm,
+  field,
+  login,
+  saveEdit,
+  student,
+  typeNumber,
+  useCrop,
+} from './helpers'
 
 // Coach categories set prices; the coach profile is tags plus rich text.
 test.describe.configure({ mode: 'serial' })
@@ -29,17 +40,13 @@ async function both(page: Page, name: string) {
 }
 
 /** Rows of the 教练类别 and 教练 tables, which mention each other's names. */
-const categoryRow = (page: Page) =>
-  page
-    .locator('.t-card')
-    .filter({ hasText: '新建类别' })
-    .getByRole('row')
-    .filter({ hasText: categoryName })
+const categoryRows = (page: Page) =>
+  page.getByRole('row').filter({ has: page.getByRole('button', { name: '删除' }) })
+const categoryRow = (page: Page) => categoryRows(page).filter({ hasText: categoryName })
 const coachRow = (page: Page) =>
   page
-    .locator('.t-card')
-    .filter({ hasText: '新建教练' })
     .getByRole('row')
+    .filter({ has: page.getByRole('button', { name: '排班' }) })
     .filter({ hasText: coachName })
 
 let lessonTypeId = 0
@@ -61,7 +68,7 @@ test('creates a category with its own price for a lesson', async ({ page, reques
   ).id
 
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches?tab=categories')
   await page.getByRole('button', { name: '新建类别' }).click()
   await field(dialog(page), '名称').locator('input').fill(categoryName)
   const row = field(dialog(page), '价格')
@@ -78,9 +85,9 @@ test('creates a category with its own price for a lesson', async ({ page, reques
 
 test('creates a coach with photo, category, tags and a rich profile', async ({ page }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page.getByRole('button', { name: '新建教练' }).click()
-  const d = dialog(page)
+  const d = editForm(page)
   await field(d, '姓名').locator('input').fill(coachName)
   await field(d, '照片')
     .locator('input[type=file]')
@@ -136,9 +143,9 @@ test('creates a coach with photo, category, tags and a rich profile', async ({ p
     .setInputFiles({ name: 'b.png', mimeType: 'image/png', buffer: png })
   await useCrop(page)
   await expect(editor.locator('img')).toHaveCount(1)
-  await both(page, 'coach-dialog')
+  await both(page, 'coach-page')
 
-  await d.getByRole('button', { name: '保存' }).click()
+  await saveEdit(page)
   await expect(page.locator('.t-message')).toContainText('已保存')
   const row = coachRow(page)
   await expect(row).toContainText(categoryName)
@@ -165,12 +172,17 @@ test('shows the category, tags, price and cleaned profile to students', async ({
 
 test('reopens the coach with the saved profile and keeps it on save', async ({ page, request }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await coachRow(page).getByRole('button', { name: '编辑' }).click()
-  const editor = field(dialog(page), '介绍').locator('.tiptap')
+  const editor = field(editForm(page), '介绍').locator('.tiptap')
   await expect(editor.locator('h3')).toHaveText('比赛成绩')
   await expect(editor.locator('img')).toHaveCount(1)
-  await dialog(page).getByRole('button', { name: '保存' }).click()
+  // Opened without a change, there is nothing to save; one more line brings the save bar.
+  await expect(page.getByRole('region', { name: '保存修改' })).toHaveCount(0)
+  await editor.locator('p').last().click()
+  await page.keyboard.press('End')
+  await page.keyboard.type('。')
+  await saveEdit(page)
   await expect(page.locator('.t-message')).toContainText('已保存')
   const t = await student(request, `profile-${run}`)
   const detail = await call<CoachDetailDto>(request, 'GET', `/coaches/${coachId}`, t)
@@ -179,9 +191,9 @@ test('reopens the coach with the saved profile and keeps it on save', async ({ p
 
 test('keeps what was typed when a photo is added', async ({ page, request }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await coachRow(page).getByRole('button', { name: '编辑' }).click()
-  const d = dialog(page)
+  const d = editForm(page)
   await field(d, '头衔').locator('input').fill('省队退役')
   await field(d, '照片')
     .locator('input[type=file]')
@@ -189,7 +201,7 @@ test('keeps what was typed when a photo is added', async ({ page, request }) => 
   await useCrop(page)
   await expect(field(d, '照片').locator('img')).toHaveAttribute('src', /\/api\/uploads\//)
   await expect(field(d, '头衔').locator('input')).toHaveValue('省队退役')
-  await d.getByRole('button', { name: '保存' }).click()
+  await saveEdit(page)
   await expect(page.locator('.t-message')).toContainText('已保存')
   const t = await student(request, `upload-${run}`)
   const detail = await call<CoachDetailDto>(request, 'GET', `/coaches/${coachId}`, t)
@@ -198,19 +210,18 @@ test('keeps what was typed when a photo is added', async ({ page, request }) => 
 
 test('saves a new category once on a double click', async ({ page }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches?tab=categories')
   await page.getByRole('button', { name: '新建类别' }).click()
   const name = `双击${run.slice(-4)}`
   await field(dialog(page), '名称').locator('input').fill(name)
   await dialog(page).getByRole('button', { name: '保存' }).dblclick()
   await expect(page.locator('.t-message')).toContainText('已保存')
-  const rows = page.locator('.t-card').filter({ hasText: '新建类别' }).getByRole('row')
-  await expect(rows.filter({ hasText: name })).toHaveCount(1)
+  await expect(categoryRows(page).filter({ hasText: name })).toHaveCount(1)
 })
 
 test('refuses to delete a category that has coaches', async ({ page }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches?tab=categories')
   await categoryRow(page).getByRole('button', { name: '删除' }).click()
   await page.locator('.t-popconfirm').getByRole('button', { name: '删除' }).click()
   await expect(page.locator('.t-message')).toContainText('还有教练属于该类别')
@@ -221,7 +232,7 @@ test("adds a whole category's coaches to a package", async ({ page }) => {
   await login(page)
   await page.goto('./#/products')
   await page.getByRole('button', { name: '新建课时包' }).click()
-  const d = dialog(page)
+  const d = editForm(page)
   await field(d, '课程').locator('.t-select').click()
   await page.locator('.t-select-option').filter({ hasText: lessonName }).click()
   // The option list fades out over the quick-pick buttons; a click during the fade lands on it.

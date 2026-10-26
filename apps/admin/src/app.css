@@ -1596,6 +1596,22 @@ a:hover {
   background: transparent;
 }
 
+.detail-tabs .t-tabs__nav-action {
+  /* The page's own button beside the tabs, not a scroll control. */
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.detail-tabs .t-tabs__operations--right {
+  background: transparent;
+}
+
+.detail-tabs .t-tabs__operations--right::before {
+  display: none;
+}
+
 .detail-tabs .t-tab-panel {
   padding-top: 16px;
 }
@@ -2025,4 +2041,31 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+/* A record edited on its own page: the form and preview below its title. */
+.edit-page {
+  /* Clears the sticky page header. */
+  --preview-sticky-top: 72px;
+}
+
+.edit-page .detail-head {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.edit-page .detail-title {
+  margin: 0;
+}
+
+.edit-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: var(--td-radius-medium);
+  background: var(--td-warning-color-1);
+  color: var(--td-text-color-primary);
 }
