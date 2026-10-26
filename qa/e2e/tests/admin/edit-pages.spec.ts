@@ -258,7 +258,7 @@ test('a banner deleted meanwhile says so on save', async ({ page, request }) => 
   await field(editForm(page), '标题').locator('input').fill('改了')
   await call(request, 'DELETE', `/admin/banners/${gone.id}`, token)
   await bar(page).getByRole('button', { name: '保存' }).click()
-  await expect(page.locator('.edit-stale')).toContainText('它可能已被删除')
+  await expect(page.locator('.edit-stale')).toContainText('这个轮播图已被其他人删除')
   await both(page, 'deleted')
 })
 

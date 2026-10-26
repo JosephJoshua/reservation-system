@@ -129,12 +129,18 @@ export function EditPage<R extends { id: number }, F>({
     if (done) window.location.replace(list.hash)
   }, [done, list.hash])
 
+  // Deleted meanwhile: there is no newer version to load.
+  const gone = stale && !row
   const set = (patch: Partial<F>) => setForm((f) => f && { ...f, ...patch })
   const dirty = !!form && !!start && !same(form, start)
 
   const save = async () => {
     if (!form) return
-    const problem = stale ? `${noun}已被其他人修改，请先载入最新内容` : check(form)
+    const problem = gone
+      ? `${noun}已被删除，不能保存`
+      : stale
+        ? `${noun}已被其他人修改，请先载入最新内容`
+        : check(form)
     if (problem) {
       void MessagePlugin.warning(problem)
       return
@@ -190,13 +196,18 @@ export function EditPage<R extends { id: number }, F>({
           </div>
           {stale && (
             <div className="edit-stale" role="alert">
-              <span>其他人刚刚修改了这个{noun}，这里的修改不能直接保存。</span>
               {row ? (
-                <Button size="small" variant="outline" onClick={() => begin(row)}>
-                  载入最新内容
-                </Button>
+                <>
+                  <span>其他人刚刚修改了这个{noun}，这里的修改不能直接保存。</span>
+                  <Button size="small" variant="outline" onClick={() => begin(row)}>
+                    载入最新内容
+                  </Button>
+                </>
               ) : (
-                <span>它可能已被删除。</span>
+                <>
+                  <span>这个{noun}已被其他人删除，这里的修改不能保存。</span>
+                  <a href={list.hash}>返回{list.label}</a>
+                </>
               )}
             </div>
           )}
@@ -213,7 +224,7 @@ export function EditPage<R extends { id: number }, F>({
             saving={saving}
             onSave={() => void save()}
             onReset={reset}
-            note={stale ? '已被其他人修改' : undefined}
+            note={gone ? '已被删除' : stale ? '已被其他人修改' : undefined}
           />
         </>
       )}
