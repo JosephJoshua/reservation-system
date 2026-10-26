@@ -1153,6 +1153,7 @@ export function adminRoutes(deps: Deps) {
               and(
                 eq(bookingMoves.fromCoachId, slot.coachId),
                 eq(bookingMoves.fromStartsAt, slot.startsAt),
+                eq(bookingMoves.fromEndsAt, slot.endsAt),
                 ne(bookings.slotId, slot.id),
               ),
             )

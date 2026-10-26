@@ -64,8 +64,8 @@ function LessonBody({
 }: {
   lesson: Lesson
   page: boolean
-  /** Shows the lesson where a private lesson was moved to. */
-  onMoved: (slotId: number) => void
+  /** Shows the lesson where a private lesson was moved to, if this one is still shown. */
+  onMoved: (to: number, from: number) => void
 }) {
   const { slot, seats, version, reload } = lesson
   const canBook = useCan('bookings')
@@ -173,9 +173,10 @@ function LessonBody({
                 这节课已改约到{' '}
                 <a
                   href={`#/lessons/${s.movedTo.slotId}`}
+                  data-overlay
                   onClick={(e) => {
                     e.preventDefault()
-                    if (s.movedTo) onMoved(s.movedTo.slotId)
+                    if (s.movedTo) onMoved(s.movedTo.slotId, s.id)
                   }}
                 >
                   {moment(s.movedTo.startsAt)}
@@ -263,7 +264,7 @@ function LessonBody({
             // A private lesson goes with its booking to the new time.
             if (!group) {
               const [b] = await api<AdminBooking[]>('GET', `/admin/bookings?id=${moved.id}`)
-              if (b && b.slotId !== s.id) onMoved(b.slotId)
+              if (b && b.slotId !== s.id) onMoved(b.slotId, s.id)
             }
           }}
         />
@@ -418,7 +419,7 @@ function LessonLog({ slotId, version }: { slotId: number; version: number }) {
           { colKey: 'summary', title: '内容', cell: ({ row }) => row.summary },
         ]}
       />
-      {more && (
+      {more && !loading && (
         <div className="load-more">
           <Button variant="outline" loading={loading} onClick={() => load(rows?.at(-1)?.id)}>
             加载更多
@@ -458,6 +459,8 @@ export function LessonDrawer({ id }: { id: number }) {
         </div>
       }
       footer={false}
+      // Esc is handled below, which leaves it to a dropdown or dialog that is open.
+      closeOnEscKeydown={false}
       onClose={closeLesson}
     >
       <LessonBody lesson={lesson} page={false} onMoved={showLesson} />
@@ -515,7 +518,8 @@ export function LessonPage() {
         <LessonPageBody
           key={id}
           id={id}
-          onMoved={(slotId) => {
+          onMoved={(slotId, from) => {
+            if (slotFromHash() !== from) return
             history.replaceState(history.state, '', `#/lessons/${slotId}`)
             window.dispatchEvent(new Event(SHOW_SECTION))
             setId(slotId)
@@ -530,7 +534,13 @@ export function LessonPage() {
   )
 }
 
-function LessonPageBody({ id, onMoved }: { id: number; onMoved: (slotId: number) => void }) {
+function LessonPageBody({
+  id,
+  onMoved,
+}: {
+  id: number
+  onMoved: (to: number, from: number) => void
+}) {
   const lesson = useLesson(id)
   return <LessonBody lesson={lesson} page onMoved={onMoved} />
 }

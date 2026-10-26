@@ -66,6 +66,7 @@ export function listActions(
           and(
             eq(bookingMoves.fromCoachId, slot.coachId),
             eq(bookingMoves.fromStartsAt, slot.startsAt),
+            eq(bookingMoves.fromEndsAt, slot.endsAt),
           ),
         )
         .all()

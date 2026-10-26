@@ -129,7 +129,9 @@ export function App() {
       // A lesson opened over the page leaves the page and its form as they are.
       if (hasUnsaved() && !takeLeave() && withoutLesson(next) !== withoutLesson(shown)) {
         const held = shown
-        history.pushState(history.state, '', shown)
+        // Without the mark of an opened lesson, which belongs to the step it was set on.
+        const { lessonOpened: _, ...state } = history.state ?? {}
+        history.pushState(state, '', shown)
         if (asked) return
         asked = true
         const leave = await confirmLeave()

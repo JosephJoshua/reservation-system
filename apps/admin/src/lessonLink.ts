@@ -34,16 +34,22 @@ export const withoutLesson = (hash: string) => {
   return `${path}${rest ? `?${rest}` : ''}`
 }
 
+// This load of the page: a mark left by an earlier load, kept by the browser over a refresh, has
+// no step of this page behind it to go back to.
+const DOC = Math.random().toString(36).slice(2)
+
 /** Opens 课程详情 over the page shown, with the lesson in the address so back closes it. */
 export function openLesson(slotId: number) {
   const opened = !hashParam('lesson')
   window.location.hash = withLesson(slotId)
   // Marks the step so closing goes back over it, rather than leaving the same address twice.
-  if (opened) history.replaceState({ ...history.state, lessonOpened: true }, '')
+  if (opened) history.replaceState({ ...history.state, lessonOpened: DOC }, '')
 }
 
 /** Shows another lesson in 课程详情, such as where a lesson was moved, without a step for back. */
-export function showLesson(slotId: number) {
+export function showLesson(slotId: number, from: number) {
+  // Only while that lesson is still the one shown.
+  if (hashParam('lesson') !== String(from)) return
   history.replaceState(history.state, '', withLesson(slotId))
   window.dispatchEvent(new Event(SHOW_SECTION))
 }
@@ -55,7 +61,7 @@ let leaving = false
 /** Closes 课程详情: back over the step that opened it, or out of the address of a link. */
 export function closeLesson() {
   if (leaving || !hashParam('lesson')) return
-  if (history.state?.lessonOpened) {
+  if (history.state?.lessonOpened === DOC) {
     leaving = true
     window.addEventListener(
       'hashchange',
