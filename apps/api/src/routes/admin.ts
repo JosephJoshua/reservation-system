@@ -24,12 +24,28 @@ import {
   venueParts,
   venueSettings,
 } from '@rs/shared'
-import { and, asc, desc, eq, gt, gte, inArray, isNull, like, lt, lte, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  like,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { immediate, type Q } from '../db/client'
 import {
   banners,
+  bookingMoves,
   bookings,
   categoryPayRates,
   categoryPrices,
@@ -1126,11 +1142,29 @@ export function adminRoutes(deps: Deps) {
           .where(eq(lessonTypes.id, slot.lessonTypeId))
           .get() ?? null)
       : null
+    // A private lesson moved elsewhere leaves its time empty: where it went.
+    const moved =
+      slot.lessonTypeId === null
+        ? db
+            .select({ slotId: bookings.slotId, startsAt: bookings.startsAt })
+            .from(bookingMoves)
+            .innerJoin(bookings, eq(bookings.id, bookingMoves.bookingId))
+            .where(
+              and(
+                eq(bookingMoves.fromCoachId, slot.coachId),
+                eq(bookingMoves.fromStartsAt, slot.startsAt),
+                ne(bookings.slotId, slot.id),
+              ),
+            )
+            .orderBy(desc(bookingMoves.id))
+            .get()
+        : undefined
     return c.json({
       ...slot,
       coach: coach ?? { id: slot.coachId, name: '' },
       lessonType,
       tableFull: slotsWithoutTable(db, [slot]).has(slot.id),
+      movedTo: moved ? { slotId: moved.slotId, startsAt: moved.startsAt.toISOString() } : null,
     })
   })
 

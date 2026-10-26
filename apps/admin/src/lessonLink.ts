@@ -25,13 +25,48 @@ function withLesson(slotId: number | null) {
   return `${path}${rest ? `?${rest}` : ''}`
 }
 
-/** Opens 课程详情 over the page shown, with the lesson in the address so back closes it. */
-export function openLesson(slotId: number) {
-  window.location.hash = withLesson(slotId)
+/** The address without an open lesson, to tell a lesson opening from a page change. */
+export const withoutLesson = (hash: string) => {
+  const [path, query] = hash.split('?')
+  const params = new URLSearchParams(query ?? '')
+  params.delete('lesson')
+  const rest = params.toString()
+  return `${path}${rest ? `?${rest}` : ''}`
 }
 
-/** Closes 课程详情, replacing the address rather than adding a step for back. */
+/** Opens 课程详情 over the page shown, with the lesson in the address so back closes it. */
+export function openLesson(slotId: number) {
+  const opened = !hashParam('lesson')
+  window.location.hash = withLesson(slotId)
+  // Marks the step so closing goes back over it, rather than leaving the same address twice.
+  if (opened) history.replaceState({ ...history.state, lessonOpened: true }, '')
+}
+
+/** Shows another lesson in 课程详情, such as where a lesson was moved, without a step for back. */
+export function showLesson(slotId: number) {
+  history.replaceState(history.state, '', withLesson(slotId))
+  window.dispatchEvent(new Event(SHOW_SECTION))
+}
+
+// Going back over the step that opened the lesson, which takes a moment: Esc reaches both the
+// drawer and the page's own listener, and only one of them may go back.
+let leaving = false
+
+/** Closes 课程详情: back over the step that opened it, or out of the address of a link. */
 export function closeLesson() {
+  if (leaving || !hashParam('lesson')) return
+  if (history.state?.lessonOpened) {
+    leaving = true
+    window.addEventListener(
+      'hashchange',
+      () => {
+        leaving = false
+      },
+      { once: true },
+    )
+    history.back()
+    return
+  }
   history.replaceState(history.state, '', withLesson(null) || '#/')
   window.dispatchEvent(new Event(SHOW_SECTION))
 }

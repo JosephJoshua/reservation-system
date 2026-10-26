@@ -28,6 +28,18 @@ const isDay = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.te
 export function Bookings() {
   const canFeedback = useCan('bookings')
   const [picked, setTab] = useState(() => hashParam('tab'))
+  // A link to the other tab, such as an old 课后点评 link, while 预约 is open.
+  useEffect(() => {
+    const on = () => {
+      if (window.location.hash.startsWith('#/bookings')) setTab(hashParam('tab'))
+    }
+    window.addEventListener('hashchange', on)
+    window.addEventListener(SHOW_SECTION, on)
+    return () => {
+      window.removeEventListener('hashchange', on)
+      window.removeEventListener(SHOW_SECTION, on)
+    }
+  }, [])
   const tab = picked === 'feedback' && canFeedback ? 'feedback' : 'bookings'
   const pick = (t: string) => {
     setTab(t)

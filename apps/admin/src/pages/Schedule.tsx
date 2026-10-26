@@ -673,6 +673,7 @@ function DetailLink({ slotId, onClose }: { slotId: number; onClose: () => void }
     <a
       href={`#/lessons/${slotId}`}
       className="lesson-link"
+      data-overlay
       onClick={(e) => {
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
         e.preventDefault()

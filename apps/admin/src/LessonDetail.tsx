@@ -1,18 +1,30 @@
 import { staffActionLabels } from '@rs/shared'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Card, Dialog, Drawer, Loading, Space, Tag, Textarea } from 'tdesign-react'
-import { api } from './api'
+import { api, RequestError } from './api'
 import { BookForStudent } from './BookForStudent'
 import { AttendanceCell, CancelBookingDialog, PaidCell, StatusCell } from './bookingCells'
 import { DataTable } from './DataTable'
 import { fmtDate, fmtDateTime, fmtTime, fmtWeekday } from './format'
-import { attempt, hashParam, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from './hooks'
+import {
+  attempt,
+  hashParam,
+  overlayShown,
+  useApi,
+  useIdempotencyKey,
+  useIsPhone,
+  useSubmitting,
+} from './hooks'
 import { bookingStatusLabel } from './labels'
-import { closeLesson, lessonChanged } from './lessonLink'
+import { closeLesson, lessonChanged, showLesson } from './lessonLink'
 import { MoveDialog } from './MoveDialog'
 import { useCan } from './me'
 import { Feedback } from './pages/Feedback'
+import { SHOW_SECTION } from './SectionNav'
 import type { ActionLogEntry, AdminBooking, LessonSlot, Slot } from './types'
+
+// The API's page of 操作记录.
+const LOG_PAGE = 50
 
 const LIVE = new Set(['pending_payment', 'confirmed', 'completed'])
 
@@ -32,16 +44,29 @@ function useLesson(id: number) {
 
 type Lesson = ReturnType<typeof useLesson>
 
-const when = (s: { startsAt: string; endsAt: string }) => {
-  const [, month, date] = fmtDate(s.startsAt).split('-')
-  return `${Number(month)}月${Number(date)}日 ${fmtWeekday(s.startsAt)} ${fmtTime(s.startsAt)}-${fmtTime(s.endsAt)}`
+/** A moment as 10月28日 周三 10:00. */
+const moment = (iso: string) => {
+  const [, month, date] = fmtDate(iso).split('-')
+  return `${Number(month)}月${Number(date)}日 ${fmtWeekday(iso)} ${fmtTime(iso)}`
 }
+
+const when = (s: { startsAt: string; endsAt: string }) =>
+  `${moment(s.startsAt)}-${fmtTime(s.endsAt)}`
 
 /**
  * 课程详情: one lesson with its students, 课后点评 and what staff did to it. A group session or a
  * private lesson; shown over a list or as a page of its own.
  */
-function LessonBody({ lesson, page }: { lesson: Lesson; page: boolean }) {
+function LessonBody({
+  lesson,
+  page,
+  onMoved,
+}: {
+  lesson: Lesson
+  page: boolean
+  /** Shows the lesson where a private lesson was moved to. */
+  onMoved: (slotId: number) => void
+}) {
   const { slot, seats, version, reload } = lesson
   const canBook = useCan('bookings')
   const canMark = useCan('attendance')
@@ -140,7 +165,26 @@ function LessonBody({ lesson, page }: { lesson: Lesson; page: boolean }) {
         <DataTable
           rowKey="id"
           data={rows}
-          empty={group ? '还没有学员报名' : '这节课的预约已改到其他时间'}
+          empty={
+            group ? (
+              '还没有学员报名'
+            ) : s.movedTo ? (
+              <span>
+                这节课已改约到{' '}
+                <a
+                  href={`#/lessons/${s.movedTo.slotId}`}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (s.movedTo) onMoved(s.movedTo.slotId)
+                  }}
+                >
+                  {moment(s.movedTo.startsAt)}
+                </a>
+              </span>
+            ) : (
+              '没有预约'
+            )
+          }
           columns={[
             {
               colKey: 'student',
@@ -198,7 +242,7 @@ function LessonBody({ lesson, page }: { lesson: Lesson; page: boolean }) {
 
       {canBook && (
         <Card title="课后点评" bordered>
-          <Feedback slotId={s.id} />
+          <Feedback slotId={s.id} onChanged={reload} />
         </Card>
       )}
 
@@ -212,9 +256,15 @@ function LessonBody({ lesson, page }: { lesson: Lesson; page: boolean }) {
         <MoveDialog
           booking={moving}
           onClose={() => setMoving(null)}
-          onDone={() => {
+          onDone={async () => {
+            const moved = moving
             setMoving(null)
-            void reload()
+            await reload()
+            // A private lesson goes with its booking to the new time.
+            if (!group) {
+              const [b] = await api<AdminBooking[]>('GET', `/admin/bookings?id=${moved.id}`)
+              if (b && b.slotId !== s.id) onMoved(b.slotId)
+            }
           }}
         />
       )}
@@ -270,7 +320,12 @@ function CallOffDialog({
     const ok = await attempt(
       () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
       '已取消整节，学员会收到全额退款或退回的课时',
-      { onStale: onDone },
+      {
+        onStale: () => {
+          onClose()
+          void onDone()
+        },
+      },
     )
     if (ok) {
       onClose()
@@ -304,39 +359,73 @@ function CallOffDialog({
 
 /** What staff did to the lesson and its bookings, newest first. */
 function LessonLog({ slotId, version }: { slotId: number; version: number }) {
-  const log = useApi<ActionLogEntry[]>(`/admin/actions?slotId=${slotId}`)
-  const { reload } = log
-  const first = useRef(version)
+  const [rows, setRows] = useState<ActionLogEntry[] | null>(null)
+  const [more, setMore] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const seq = useRef(0)
+  const load = useCallback(
+    async (before?: number) => {
+      const mine = ++seq.current
+      setLoading(true)
+      try {
+        const page = await api<ActionLogEntry[]>(
+          'GET',
+          `/admin/actions?slotId=${slotId}${before ? `&before=${before}` : ''}`,
+        )
+        if (mine !== seq.current) return
+        setRows((old) => (before ? [...(old ?? []), ...page] : page))
+        setMore(page.length === LOG_PAGE)
+        setError(null)
+      } catch (e) {
+        if (mine === seq.current) setError(e instanceof RequestError ? e.message : '加载失败')
+      } finally {
+        if (mine === seq.current) setLoading(false)
+      }
+    },
+    [slotId],
+  )
+  // From the newest again after each change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version says the lesson changed
   useEffect(() => {
-    if (version !== first.current) void reload()
-  }, [version, reload])
+    void load()
+  }, [load, version])
   return (
-    <DataTable
-      rowKey="id"
-      loading={!log.data && !log.error}
-      data={log.data ?? []}
-      empty={log.error ?? '还没有记录'}
-      columns={[
-        {
-          colKey: 'createdAt',
-          title: '时间',
-          width: 120,
-          cell: ({ row }) => <span className="nowrap">{fmtDateTime(row.createdAt)}</span>,
-        },
-        { colKey: 'staff', title: '员工', width: 100, cell: ({ row }) => row.staff.name },
-        {
-          colKey: 'action',
-          title: '操作',
-          width: 110,
-          cell: ({ row }) => (
-            <Tag variant="light" className="nowrap">
-              {staffActionLabels[row.action] ?? row.action}
-            </Tag>
-          ),
-        },
-        { colKey: 'summary', title: '内容', cell: ({ row }) => row.summary },
-      ]}
-    />
+    <>
+      <DataTable
+        rowKey="id"
+        loading={!rows && !error}
+        data={rows ?? []}
+        empty={error ?? '还没有记录'}
+        columns={[
+          {
+            colKey: 'createdAt',
+            title: '时间',
+            width: 120,
+            cell: ({ row }) => <span className="nowrap">{fmtDateTime(row.createdAt)}</span>,
+          },
+          { colKey: 'staff', title: '员工', width: 100, cell: ({ row }) => row.staff.name },
+          {
+            colKey: 'action',
+            title: '操作',
+            width: 110,
+            cell: ({ row }) => (
+              <Tag variant="light" className="nowrap">
+                {staffActionLabels[row.action] ?? row.action}
+              </Tag>
+            ),
+          },
+          { colKey: 'summary', title: '内容', cell: ({ row }) => row.summary },
+        ]}
+      />
+      {more && (
+        <div className="load-more">
+          <Button variant="outline" loading={loading} onClick={() => load(rows?.at(-1)?.id)}>
+            加载更多
+          </Button>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -350,11 +439,7 @@ export function LessonDrawer({ id }: { id: number }) {
   // Esc closes it even after a dialog over it took the focus away, but not while one is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      const open = [...document.querySelectorAll('.t-dialog__ctx, .t-popup')].some((el) =>
-        el.checkVisibility(),
-      )
-      if (!open) closeLesson()
+      if (e.key === 'Escape' && !overlayShown('.t-drawer')) closeLesson()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -368,14 +453,14 @@ export function LessonDrawer({ id }: { id: number }) {
         <div className="drawer-head">
           <span>{s ? when(s) : '课程详情'}</span>
           <Button size="small" variant="outline" href={`#/lessons/${id}`}>
-            在新页面打开
+            打开整页
           </Button>
         </div>
       }
       footer={false}
       onClose={closeLesson}
     >
-      <LessonBody lesson={lesson} page={false} />
+      <LessonBody lesson={lesson} page={false} onMoved={showLesson} />
     </Drawer>
   )
 }
@@ -407,6 +492,7 @@ export function LessonPage() {
         if (!live) return
         if (!b) return setError('没有找到这个预约')
         history.replaceState(history.state, '', `#/lessons/${b.slotId}`)
+        window.dispatchEvent(new Event(SHOW_SECTION))
         setId(b.slotId)
       })
       .catch(() => live && setError('加载失败'))
@@ -426,7 +512,15 @@ export function LessonPage() {
         <span aria-current="page">课程详情</span>
       </nav>
       {id ? (
-        <LessonPageBody key={id} id={id} />
+        <LessonPageBody
+          key={id}
+          id={id}
+          onMoved={(slotId) => {
+            history.replaceState(history.state, '', `#/lessons/${slotId}`)
+            window.dispatchEvent(new Event(SHOW_SECTION))
+            setId(slotId)
+          }}
+        />
       ) : error || !booking ? (
         <p className="muted">{error ?? '没有找到这节课'}</p>
       ) : (
@@ -436,7 +530,7 @@ export function LessonPage() {
   )
 }
 
-function LessonPageBody({ id }: { id: number }) {
+function LessonPageBody({ id, onMoved }: { id: number; onMoved: (slotId: number) => void }) {
   const lesson = useLesson(id)
-  return <LessonBody lesson={lesson} page />
+  return <LessonBody lesson={lesson} page onMoved={onMoved} />
 }

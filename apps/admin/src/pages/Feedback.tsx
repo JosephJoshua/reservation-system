@@ -8,6 +8,7 @@ import { DataTable, LoadMore } from '../DataTable'
 import { FeedbackPhotos } from '../FeedbackPhotos'
 import { addDays, fmtDateTime, today } from '../format'
 import { attempt, useApi, usePagedApi, useSubmitting } from '../hooks'
+import { useOnLessonChanged } from '../lessonLink'
 import { StudentCell } from '../StudentCell'
 import type { Coach } from '../types'
 import { undoMessage } from '../undo'
@@ -24,7 +25,16 @@ function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default
  * Coaches' 课后点评, newest lesson first, which the venue can hide from the student. With
  * `studentId`, all of one student's, as on their 学员详情; with `slotId`, one lesson's.
  */
-export function Feedback({ studentId, slotId }: { studentId?: number; slotId?: number } = {}) {
+export function Feedback({
+  studentId,
+  slotId,
+  onChanged,
+}: {
+  studentId?: number
+  slotId?: number
+  /** Called after a 隐藏 or 恢复, for views that show it too. */
+  onChanged?: () => unknown
+} = {}) {
   const [range, setRange] = useState<[string, string]>([addDays(today(), -30), today()])
   const [coachId, setCoachId] = useState<number | null>(null)
   const filtered = !!(studentId || slotId)
@@ -45,6 +55,7 @@ export function Feedback({ studentId, slotId }: { studentId?: number; slotId?: n
   // The list as filtered now, also for a 撤销 pressed after the filter changed.
   const reload = useRef(list.reload)
   reload.current = list.reload
+  useOnLessonChanged(list.reload)
 
   const setHidden = async (
     row: AdminFeedbackDto,
@@ -61,6 +72,7 @@ export function Feedback({ studentId, slotId }: { studentId?: number; slotId?: n
       { key: hideKey(row.id) },
     )
     if (!ok) return false
+    void onChanged?.()
     // Hiding takes effect at once, with 撤销 in the message instead of a confirmation.
     if (hidden && !undone)
       undoMessage('已隐藏，学员看不到这条点评', () => setHidden(row, false, true))

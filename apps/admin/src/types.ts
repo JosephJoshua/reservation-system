@@ -108,6 +108,8 @@ export type LessonSlot = Omit<Slot, 'booking' | 'bookings'> & {
   coach: { id: number; name: string }
   /** The class of a group session; null for a private lesson, whose booking names it. */
   lessonType: { id: number; name: string } | null
+  /** A private lesson moved to another time: where it is now. */
+  movedTo: { slotId: number; startsAt: string } | null
 }
 
 export interface SlotBooking {

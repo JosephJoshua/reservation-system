@@ -123,7 +123,7 @@ export function LessonTime({ slotId, children }: { slotId: number; children: Rea
     openLesson(slotId)
   }
   return (
-    <a href={`#/lessons/${slotId}`} className="lesson-link" onClick={open}>
+    <a href={`#/lessons/${slotId}`} className="lesson-link" data-overlay onClick={open}>
       {children}
     </a>
   )

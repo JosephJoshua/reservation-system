@@ -1,7 +1,16 @@
 import { type ActionLogEntryDto, formatYuan, type StaffAction, venueParts } from '@rs/shared'
 import { and, desc, eq, gte, inArray, lt, or } from 'drizzle-orm'
 import type { Q } from '../db/client'
-import { actionLog, bookings, coaches, lessonTypes, slots, staff, students } from '../db/schema'
+import {
+  actionLog,
+  bookingMoves,
+  bookings,
+  coaches,
+  lessonTypes,
+  slots,
+  staff,
+  students,
+} from '../db/schema'
 import { DELETED_NAME } from './account'
 
 export interface ActionEntry {
@@ -47,14 +56,32 @@ export function listActions(
     before?: number
   },
 ): ActionLogEntryDto[] {
+  const slot = q.slotId ? tx.select().from(slots).where(eq(slots.id, q.slotId)).get() : undefined
+  // Bookings in the lesson now, and those moved out of it, which keep their history.
+  const movedOut = slot
+    ? tx
+        .select({ id: bookingMoves.bookingId })
+        .from(bookingMoves)
+        .where(
+          and(
+            eq(bookingMoves.fromCoachId, slot.coachId),
+            eq(bookingMoves.fromStartsAt, slot.startsAt),
+          ),
+        )
+        .all()
+        .map((m) => m.id)
+    : []
   const lesson = q.slotId
     ? or(
         and(eq(actionLog.targetKind, 'slot'), eq(actionLog.targetId, q.slotId)),
         and(
           eq(actionLog.targetKind, 'booking'),
-          inArray(
-            actionLog.targetId,
-            tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.slotId, q.slotId)),
+          or(
+            inArray(
+              actionLog.targetId,
+              tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.slotId, q.slotId)),
+            ),
+            movedOut.length ? inArray(actionLog.targetId, movedOut) : undefined,
           ),
         ),
       )

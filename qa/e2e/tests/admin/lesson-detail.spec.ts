@@ -15,6 +15,8 @@ const venueDate = new Date(Date.now() + 2 * 86_400_000 + 8 * 3_600_000).toISOStr
 const day = `${Number(venueDate.slice(5, 7))}月${Number(venueDate.slice(8))}日`
 
 let admin = ''
+let coach = 0
+let singleType = 0
 let sessionId = 0
 let privateSlot = 0
 let privateBooking = 0
@@ -69,6 +71,8 @@ test('sets up a group session with two students and a private lesson', async ({ 
       ],
     })
   ).ids[0] as number
+  coach = coachId
+  singleType = single.id
   await addExtraTimes(request, admin, coachId, [
     { startsAt: `${venueDate}T14:00:00+08:00`, endsAt: `${venueDate}T15:00:00+08:00` },
   ])
@@ -122,7 +126,11 @@ test('a lesson opens over 预约 with its students, and Esc closes it', async ({
   await expect(page).toHaveURL(new RegExp(`lesson=${sessionId}`))
   await expect(drawer(page)).toContainText(`${day}`)
   await expect(drawer(page)).toContainText('已报名 2/4 人')
-  await expect(drawer(page).getByRole('row').filter({ hasText: /详情[甲乙]/ })).toHaveCount(2)
+  await expect(
+    drawer(page)
+      .getByRole('row')
+      .filter({ hasText: /详情[甲乙]/ }),
+  ).toHaveCount(2)
   await expect(drawer(page).getByRole('link', { name: names[0] })).toHaveAttribute(
     'href',
     `#/students/${ids[0]}`,
@@ -133,6 +141,19 @@ test('a lesson opens over 预约 with its students, and Esc closes it', async ({
   await expect(page).not.toHaveURL(/lesson=/)
   // The filters stay in the address.
   await expect(page).toHaveURL(new RegExp(`from=${venueDate}&to=${venueDate}`))
+})
+
+test('closing the lesson leaves no extra step for back', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/overview')
+  await bookingsOfTheDay(page)
+  await page.getByRole('row').filter({ hasText: names[0] }).locator('.lesson-link').click()
+  await expect(drawer(page)).toContainText('已报名')
+  await drawer(page).locator('.t-drawer__close-btn').click()
+  await expect(drawer(page)).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(`#/bookings\\?from=${venueDate}`))
+  await page.goBack()
+  await expect(page).toHaveURL(/#\/overview$/)
 })
 
 test('back closes the lesson, and a refresh keeps it open', async ({ page }) => {
@@ -172,7 +193,7 @@ test('代约加人 books a seat in the session', async ({ page }) => {
   const book = dialog(page).last()
   const picker = book.locator('.t-select').first().locator('input')
   await picker.click()
-  await picker.pressSequentially(names[2])
+  await picker.pressSequentially(names[2] ?? '')
   await page.locator('.t-select-option', { hasText: names[2] }).click()
   await book.getByRole('button', { name: '确认代约' }).click()
   await expect(page.getByText('已代约')).toBeVisible()
@@ -187,7 +208,7 @@ test('a private lesson offers 改约 and 取消, and opens as a page', async ({ 
   await drawer(page).getByRole('button', { name: '改约' }).click()
   await expect(dialog(page).last()).toContainText('确认改约')
   await dialog(page).last().getByRole('button', { name: '返回' }).click()
-  await drawer(page).getByRole('link', { name: '在新页面打开' }).click()
+  await drawer(page).getByRole('link', { name: '打开整页' }).click()
   await expect(page).toHaveURL(new RegExp(`#/lessons/${privateSlot}$`))
   await expect(page.locator('.admin-title-text')).toHaveText('课程详情')
   await expect(page.locator('.nav-item.active')).toHaveText('预约')
@@ -197,6 +218,41 @@ test('a private lesson offers 改约 and 取消, and opens as a page', async ({ 
   await dialog(page).getByRole('button', { name: '确认取消' }).click()
   await expect(page.locator('.lesson-facts')).toContainText('已取消')
   await expect(page.getByRole('button', { name: '改约' })).toHaveCount(0)
+})
+
+test('a moved private lesson points to its new time', async ({ page, request }) => {
+  const { bookingId } = await call<{ bookingId: number }>(
+    request,
+    'POST',
+    '/admin/bookings',
+    admin,
+    {
+      studentId: ids[0],
+      coachId: coach,
+      startsAt: `${venueDate}T16:00:00+08:00`,
+      lessonTypeId: singleType,
+      payWith: 'offline',
+      amount: 0,
+      anyTime: true,
+    },
+  )
+  const [before] = await call<{ slotId: number }[]>(
+    request,
+    'GET',
+    `/admin/bookings?id=${bookingId}`,
+    admin,
+  )
+  await call(request, 'POST', `/admin/bookings/${bookingId}/move`, admin, {
+    coachId: coach,
+    startsAt: `${venueDate}T17:00:00+08:00`,
+    anyTime: true,
+  })
+  await login(page)
+  await page.goto(`./#/bookings?lesson=${before?.slotId}`)
+  await expect(drawer(page)).toContainText('这节课已改约到')
+  await drawer(page).getByRole('link', { name: /17:00/ }).click()
+  await expect(drawer(page)).toContainText('17:00-18:00')
+  await expect(drawer(page).locator('.t-card', { hasText: '记录' })).toContainText('改约')
 })
 
 test('the 操作记录 opens the lesson a booking is in', async ({ page }) => {
@@ -229,7 +285,7 @@ test('课后点评 is a tab of 预约, and the old address opens it', async ({ p
   await page.goto('./#/feedback')
   await expect(page).toHaveURL(/#\/bookings\?tab=feedback$/)
   await expect(page.locator('.admin-title-text')).toHaveText('预约')
-  await expect(page.locator('.t-tab-panel:visible').getByText('这段时间没有课后点评')).toBeVisible()
+  await expect(page.locator('.t-tab-panel:visible').getByPlaceholder('全部教练')).toBeVisible()
   const menu = page.getByRole('navigation', { name: '主菜单' })
   await expect(menu.getByRole('link', { name: '课后点评' })).toHaveCount(0)
   await tab(page, '预约').click()

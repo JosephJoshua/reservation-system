@@ -25,7 +25,7 @@ import { api, getToken, handleUnauthorized, setToken } from './api'
 import { CommandMenu } from './CommandMenu'
 import { useApi, useIsPhone } from './hooks'
 import { LessonDrawer, LessonPage } from './LessonDetail'
-import { useLessonParam } from './lessonLink'
+import { useLessonParam, withoutLesson } from './lessonLink'
 import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
 import { Bookings } from './pages/Bookings'
@@ -94,6 +94,7 @@ function currentPage(): PageKey {
   // 课后点评 became a tab of 预约.
   if (/^#\/?feedback(?=[?/]|$)/.test(window.location.hash)) {
     history.replaceState(history.state, '', '#/bookings?tab=feedback')
+    window.dispatchEvent(new Event(SHOW_SECTION))
   }
   // The first part names the page, as in `#/students/12`.
   const key = window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] ?? ''
@@ -125,7 +126,8 @@ export function App() {
         takeLeave()
         return
       }
-      if (hasUnsaved() && !takeLeave()) {
+      // A lesson opened over the page leaves the page and its form as they are.
+      if (hasUnsaved() && !takeLeave() && withoutLesson(next) !== withoutLesson(shown)) {
         const held = shown
         history.pushState(history.state, '', shown)
         if (asked) return
@@ -145,7 +147,8 @@ export function App() {
     const onClick = (e: MouseEvent) => {
       if (!hasUnsaved() || e.defaultPrevented || e.button !== 0) return
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      const link = (e.target as Element | null)?.closest?.('a[href^="#"]')
+      // Links that open a lesson over the page keep it, and its form, as they are.
+      const link = (e.target as Element | null)?.closest?.('a[href^="#"]:not([data-overlay])')
       const href = link?.getAttribute('href')
       if (!href || href === window.location.hash) return
       // The link's own click handler (closing a dialog, say) waits for the answer too.
