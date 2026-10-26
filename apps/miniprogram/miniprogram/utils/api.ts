@@ -4,6 +4,7 @@ import type { ApiErrorBody } from '../lib/shared'
 const TOKEN_KEY = 'token'
 /** Development only: a storage key QA sets to log in as a named test student. */
 const DEV_LOGIN_KEY = 'devLogin'
+const LOGIN_TIMEOUT = 10000
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
@@ -175,9 +176,15 @@ export function wxCode(): Promise<string> {
       : ''
   if (devName) return Promise.resolve(`dev:${devName}`)
   return new Promise((resolve, reject) => {
+    const failed = () => reject(new ApiError(0, 'login_failed', '登录失败，请稍后再试'))
+    // wx.login can hang without calling back when WeChat's servers are unreachable, which would
+    // leave every page waiting on the login; give up so the page can show its error state.
+    const timer = setTimeout(failed, LOGIN_TIMEOUT + 2000)
     wx.login({
+      timeout: LOGIN_TIMEOUT,
       success: (res) => resolve(res.code),
-      fail: () => reject(new ApiError(0, 'login_failed', '登录失败，请稍后再试')),
+      fail: failed,
+      complete: () => clearTimeout(timer),
     })
   })
 }
