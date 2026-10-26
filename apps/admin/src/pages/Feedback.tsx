@@ -1,17 +1,35 @@
 import type { AdminFeedbackDto } from '@rs/shared'
 import { venueInstant } from '@rs/shared'
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { LessonTime } from '../bookingCells'
-import { DataTable, LoadMore } from '../DataTable'
+import { DataTable } from '../DataTable'
 import { FeedbackPhotos } from '../FeedbackPhotos'
 import { addDays, fmtDateTime, today } from '../format'
-import { attempt, useApi, usePagedApi, useSubmitting } from '../hooks'
+import { attempt, useApi, useSubmitting } from '../hooks'
 import { useOnLessonChanged } from '../lessonLink'
+import {
+  Filter,
+  FilterBar,
+  isDay,
+  isId,
+  oneOf,
+  Pager,
+  SearchInput,
+  useListFilters,
+  usePagedList,
+} from '../lists'
 import { StudentCell } from '../StudentCell'
-import type { Coach } from '../types'
+import type { Coach, LessonType } from '../types'
 import { undoMessage } from '../undo'
+
+const stateOptions = [
+  { label: '学员可见', value: 'visible' },
+  { label: '学员不可见', value: 'invisible' },
+  { label: '已隐藏', value: 'hidden' },
+  { label: '教练已删除', value: 'deleted' },
+]
 
 function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default'] {
   if (row.deleted) return ['教练已删除', 'default']
@@ -28,17 +46,42 @@ function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default
 export function Feedback({
   studentId,
   slotId,
+  active = true,
   onChanged,
 }: {
   studentId?: number
   slotId?: number
+  /** On 预约, while its tab is the one shown, so the filters are in the address. */
+  active?: boolean
   /** Called after a 隐藏 or 恢复, for views that show it too. */
   onChanged?: () => unknown
 } = {}) {
-  const [range, setRange] = useState<[string, string]>([addDays(today(), -30), today()])
-  const [coachId, setCoachId] = useState<number | null>(null)
   const filtered = !!(studentId || slotId)
+  const filters = useListFilters(
+    {
+      from: addDays(today(), -30),
+      to: today(),
+      q: '',
+      coach: '',
+      type: '',
+      state: '',
+    },
+    {
+      path: filtered ? undefined : '#/bookings',
+      active,
+      valid: {
+        from: isDay,
+        to: isDay,
+        coach: isId,
+        type: isId,
+        state: oneOf(...stateOptions.map((o) => o.value)),
+      },
+    },
+  )
+  const f = filters.values
+  const range: [string, string] = f.from <= f.to ? [f.from, f.to] : [f.to, f.from]
   const coaches = useApi<Coach[]>(filtered ? null : '/admin/coaches')
+  const types = useApi<LessonType[]>(filtered ? null : '/admin/lesson-types')
 
   const params = new URLSearchParams(
     slotId
@@ -50,12 +93,18 @@ export function Feedback({
             to: venueInstant(range[1], 24 * 60).toISOString(),
           },
   )
-  if (coachId && !filtered) params.set('coachId', String(coachId))
-  const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
+  if (!filtered) {
+    if (f.q) params.set('q', f.q)
+    if (f.coach) params.set('coachId', f.coach)
+    if (f.type) params.set('lessonTypeId', f.type)
+    if (f.state) params.set('state', f.state)
+  }
+  const list = usePagedList<AdminFeedbackDto>(`/admin/feedback?${params}`, filters)
   // The list as filtered now, also for a 撤销 pressed after the filter changed.
   const reload = useRef(list.reload)
   reload.current = list.reload
   useOnLessonChanged(list.reload)
+  const more = ['coach', 'type', 'state'] as const
 
   const setHidden = async (
     row: AdminFeedbackDto,
@@ -80,29 +129,73 @@ export function Feedback({
   }
 
   return (
-    <div>
+    <div className="paged-list">
       {!filtered && (
-        <div className="toolbar">
-          <DateRangePicker
-            style={{ width: 280 }}
-            value={range}
-            onChange={(v) => setRange([String(v[0] ?? today()), String(v[1] ?? today())])}
-          />
-          <Select
-            style={{ width: 140 }}
-            clearable
-            placeholder="全部教练"
-            value={coachId ?? undefined}
-            onChange={(v) => setCoachId(v ? Number(v) : null)}
-            options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
-          />
-        </div>
+        <FilterBar
+          main={
+            <>
+              <DateRangePicker
+                style={{ width: 280 }}
+                value={range}
+                onChange={(v) =>
+                  filters.set({ from: String(v[0] ?? today()), to: String(v[1] ?? today()) })
+                }
+              />
+              <SearchInput value={f.q} onChange={(q) => filters.set({ q })} />
+            </>
+          }
+          more={
+            <>
+              <Filter label="教练">
+                <Select
+                  style={{ width: 120 }}
+                  clearable
+                  filterable
+                  placeholder="全部教练"
+                  value={f.coach ? Number(f.coach) : undefined}
+                  onChange={(v) => filters.set({ coach: v ? String(v) : '' })}
+                  options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
+                />
+              </Filter>
+              <Filter label="课程">
+                <Select
+                  style={{ width: 140 }}
+                  clearable
+                  filterable
+                  placeholder="全部课程"
+                  value={f.type ? Number(f.type) : undefined}
+                  onChange={(v) => filters.set({ type: v ? String(v) : '' })}
+                  options={(types.data ?? []).map((t) => ({ label: t.name, value: t.id }))}
+                />
+              </Filter>
+              <Filter label="状态">
+                <Select
+                  style={{ width: 130 }}
+                  clearable
+                  placeholder="全部状态"
+                  value={f.state || undefined}
+                  onChange={(v) => filters.set({ state: String(v ?? '') })}
+                  options={stateOptions}
+                />
+              </Filter>
+            </>
+          }
+          set={filters.changed([...more])}
+          onClear={() => filters.reset([...more])}
+        />
       )}
       <DataTable
         rowKey="id"
-        loading={list.loading && !list.loaded}
+        loading={list.loading}
         data={list.rows}
-        empty={list.error ?? (filtered ? '还没有课后点评' : '这段时间没有课后点评')}
+        empty={
+          list.error ??
+          (filtered
+            ? '还没有课后点评'
+            : filters.changed([...more, 'q'])
+              ? '没有符合条件的课后点评'
+              : '这段时间没有课后点评')
+        }
         columns={[
           ...(slotId
             ? []
@@ -192,12 +285,7 @@ export function Feedback({
           },
         ]}
       />
-      <LoadMore
-        shown={list.rows.length}
-        more={list.more}
-        loading={list.loading}
-        onMore={list.loadMore}
-      />
+      <Pager list={list} filters={filters} />
     </div>
   )
 }

@@ -51,6 +51,6 @@ test('warns about a phone another student has and flags both', async ({ page }) 
     await page.goto('./#/students')
   }
   await expect(page.getByText('手机号与')).toBeHidden()
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(number)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(number)
   await expect(page.getByText('手机号重复')).toHaveCount(2)
 })

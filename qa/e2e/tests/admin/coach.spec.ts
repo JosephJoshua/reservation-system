@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CoachLoginResponse, CreateBookingResponse, ScheduleViewDto } from '@rs/shared'
 import { addVenueDays, venueDateKey, venueInstant } from '@rs/shared'
-import { ADMIN_PASSWORD, API, call, dialog, login, pickDate, student } from './helpers'
+import { ADMIN_PASSWORD, API, call, dialog, listFilter, login, pickDate, student } from './helpers'
 
 // The admin side of the coach mode: binding, 排班, attendance and the monthly report.
 test.describe.configure({ mode: 'serial' })
@@ -189,7 +189,7 @@ test('marks attendance and shows the coach note on bookings', async ({ page, req
   await page.clock.setFixedTime(lessonTime)
   await login(page)
   await page.goto('./#/bookings')
-  await page.locator('.toolbar .t-select').nth(1).click()
+  await listFilter(page, '教练').click()
   await page.locator('.t-select-option', { hasText: coachName }).click()
   const row = page.getByRole('row').filter({ hasText: '王小明' })
   await expect(row).toHaveCount(1)

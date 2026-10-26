@@ -13,7 +13,7 @@ import {
   type FeedbackItemDto,
   feedbackError,
 } from '@rs/shared'
-import { and, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -27,6 +27,7 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { visible } from './feedback-visibility'
+import { countAll, ofStudents } from './lists'
 import { queueStudentNotice } from './student-notices'
 
 type FeedbackRow = typeof lessonFeedback.$inferSelect
@@ -292,19 +293,63 @@ export function studentFeedback(tx: Q, studentId: number): FeedbackItemDto[] {
     }))
 }
 
+export const feedbackStates = ['visible', 'invisible', 'hidden', 'deleted'] as const
+
+export interface FeedbackFilters {
+  from?: Date
+  to?: Date
+  coachId?: number
+  lessonTypeId?: number
+  studentId?: number
+  slotId?: number
+  ids?: number[]
+  q?: string
+  /** 学员可见, 学员不可见 (on a lesson not attended), 已隐藏 or deleted by the coach. */
+  state?: (typeof feedbackStates)[number]
+}
+
+/** Feedback that matches, for a query that joins bookings and slots. */
+function feedbackWhere(q: FeedbackFilters) {
+  const live = isNull(lessonFeedback.deletedAt)
+  return and(
+    q.from ? gte(bookings.startsAt, q.from) : undefined,
+    q.to ? lt(bookings.startsAt, q.to) : undefined,
+    q.coachId ? eq(slots.coachId, q.coachId) : undefined,
+    q.lessonTypeId ? eq(bookings.lessonTypeId, q.lessonTypeId) : undefined,
+    q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
+    q.slotId ? eq(bookings.slotId, q.slotId) : undefined,
+    q.ids ? inArray(lessonFeedback.id, q.ids) : undefined,
+    ofStudents(bookings.studentId, q.q),
+    q.state === 'visible'
+      ? and(live, visible)
+      : q.state === 'invisible'
+        ? // Attendance not marked is null, which `not` alone would leave out.
+          and(live, isNull(lessonFeedback.hiddenAt), sql`not coalesce(${visible}, 0)`)
+        : q.state === 'hidden'
+          ? and(live, isNotNull(lessonFeedback.hiddenAt))
+          : q.state === 'deleted'
+            ? isNotNull(lessonFeedback.deletedAt)
+            : undefined,
+  )
+}
+
+/** How many of the admin's list match, for its page numbers. */
+export function adminFeedbackCount(tx: Q, q: FeedbackFilters) {
+  return (
+    tx
+      .select({ n: countAll })
+      .from(lessonFeedback)
+      .innerJoin(bookings, eq(bookings.id, lessonFeedback.bookingId))
+      .innerJoin(slots, eq(slots.id, bookings.slotId))
+      .where(feedbackWhere(q))
+      .get()?.n ?? 0
+  )
+}
+
 /** The admin's list, newest lesson first. */
 export function adminFeedback(
   tx: Q,
-  q: {
-    from?: Date
-    to?: Date
-    coachId?: number
-    studentId?: number
-    slotId?: number
-    ids?: number[]
-    limit?: number
-    offset?: number
-  },
+  q: FeedbackFilters & { limit?: number; offset?: number },
 ): AdminFeedbackDto[] {
   return tx
     .select({
@@ -321,16 +366,7 @@ export function adminFeedback(
     .innerJoin(coaches, eq(coaches.id, slots.coachId))
     .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
     .innerJoin(students, eq(students.id, bookings.studentId))
-    .where(
-      and(
-        q.from ? gte(bookings.startsAt, q.from) : undefined,
-        q.to ? lt(bookings.startsAt, q.to) : undefined,
-        q.coachId ? eq(slots.coachId, q.coachId) : undefined,
-        q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
-        q.slotId ? eq(bookings.slotId, q.slotId) : undefined,
-        q.ids ? inArray(lessonFeedback.id, q.ids) : undefined,
-      ),
-    )
+    .where(feedbackWhere(q))
     .orderBy(desc(bookings.startsAt), desc(lessonFeedback.id))
     .limit(Math.min(q.limit ?? FEEDBACK_LIST_LIMIT, FEEDBACK_LIST_LIMIT))
     .offset(q.offset ?? 0)

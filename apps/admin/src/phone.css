@@ -65,6 +65,12 @@
     display: none;
   }
 
+  /* Page buttons at a thumb's size. */
+  .pager-phone .t-button {
+    min-width: 88px;
+    height: 44px;
+  }
+
   /* The page's own buttons come first, sharing a row. */
   .toolbar-actions {
     order: -1;
@@ -271,6 +277,11 @@
     margin: 0;
   }
 
+  /* The filter sheet's buttons match a dialog's. */
+  .filter-sheet .t-drawer__footer .t-button {
+    height: 44px;
+  }
+
   .pick-tag {
     height: 36px;
     padding: 0 12px;
@@ -447,5 +458,41 @@
   /* A wrapped 请假 or 闭馆 row keeps its action at the end, not under the date. */
   .exception-row > :last-child {
     margin-left: auto;
+  }
+
+  /* The page's buttons, then the dates, then the search sharing a row with 筛选. */
+  .filter-bar > .toolbar-actions {
+    order: -2;
+  }
+
+  .filter-bar > .t-date-range-picker {
+    order: -1;
+  }
+
+  .filter-bar > .filter {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+
+  .filter-bar > .filter > .t-select__wrap,
+  .filter-bar > .filter > .t-select {
+    width: 100% !important;
+  }
+
+  .filter-bar > .filter-search {
+    flex: 1 1 160px;
+    width: auto !important;
+    min-width: 0;
+  }
+
+  .pager-phone {
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .filter-sheet-body .filter > .t-select__wrap,
+  .filter-sheet-body .filter > .t-select {
+    width: 100% !important;
   }
 }

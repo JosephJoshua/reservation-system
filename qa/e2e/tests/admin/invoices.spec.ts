@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { type APIRequestContext, expect, test } from '@playwright/test'
 import type { PackageDto } from '@rs/shared'
-import { ADMIN_PASSWORD, API, call, dialog, login, student } from './helpers'
+import { ADMIN_PASSWORD, API, call, dialog, listFilter, login, student } from './helpers'
 
 // Students request invoices through the API; the front desk works the queue in the admin.
 test.describe.configure({ mode: 'serial' })
@@ -122,7 +122,7 @@ test('uploads an invoice, rejects another, and exports the queue', async ({ page
   await dialog(page).getByRole('button', { name: '确认拒绝' }).click()
   await expect(company).toHaveCount(0)
 
-  await page.locator('.toolbar .t-select').click()
+  await listFilter(page, '状态').click()
   await page.locator('.t-select-option', { hasText: '已开票' }).click()
   await expect(person).toContainText('已开票')
   await expect(person.getByRole('button', { name: '查看' })).toBeVisible()
@@ -173,8 +173,8 @@ test('flags a refund on an invoiced order until it is handled', async ({ page, r
   await expect(page.getByRole('row').filter({ hasText: name })).toContainText('该订单已开票')
 
   await page.goto('./#/invoices')
-  await page.locator('.toolbar .t-select').hover()
-  await page.locator('.toolbar .t-select .t-input__suffix-clear').click()
+  await listFilter(page, '状态').hover()
+  await listFilter(page, '状态').locator('.t-input__suffix-clear').click()
   await page.locator('.toolbar .t-checkbox', { hasText: '开票后有退款' }).click()
   await expect(row).toContainText('开票后有退款')
   await row.getByRole('button', { name: '退款已处理' }).click()

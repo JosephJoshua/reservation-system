@@ -12,11 +12,23 @@ import {
   Textarea,
 } from 'tdesign-react'
 import { api, openFile, RequestError } from '../api'
-import { DataTable, LoadMore } from '../DataTable'
+import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDateTime, yuan } from '../format'
-import { attempt, useIdempotencyKey, usePagedApi, useSubmitting } from '../hooks'
+import { attempt, useIdempotencyKey, useSubmitting } from '../hooks'
+import {
+  DateFilter,
+  Filter,
+  FilterBar,
+  isDay,
+  oneOf,
+  Pager,
+  SearchInput,
+  setRange,
+  useListFilters,
+  usePagedList,
+} from '../lists'
 import { StudentCell } from '../StudentCell'
 import type { AdminInvoice } from '../types'
 
@@ -33,13 +45,39 @@ async function viewPdf(id: number) {
   }
 }
 
+const statusOptions = Object.entries(invoiceStatusLabels).map(([value, label]) => ({
+  value,
+  label,
+}))
+const titleOptions = Object.entries(invoiceTitleKindLabels).map(([value, label]) => ({
+  value,
+  label,
+}))
+
 export function Invoices() {
-  const [status, setStatus] = useState('requested')
-  const [flagged, setFlagged] = useState(false)
+  const filters = useListFilters(
+    { status: 'requested', flagged: '', from: '', to: '', q: '', title: '' },
+    {
+      path: '#/invoices',
+      valid: {
+        status: oneOf(...statusOptions.map((o) => o.value)),
+        flagged: oneOf('1'),
+        from: isDay,
+        to: isDay,
+        title: oneOf(...titleOptions.map((o) => o.value)),
+      },
+    },
+  )
+  const f = filters.values
+  const flagged = f.flagged === '1'
   const params = new URLSearchParams()
-  if (status) params.set('status', status)
+  setRange(params, f.from, f.to)
+  if (f.status) params.set('status', f.status)
   if (flagged) params.set('flagged', '1')
-  const list = usePagedApi<AdminInvoice>(`/admin/invoices?${params}`, 'offset')
+  if (f.q) params.set('q', f.q)
+  if (f.title) params.set('titleKind', f.title)
+  const list = usePagedList<AdminInvoice>(`/admin/invoices?${params}`, filters)
+  const more = ['status', 'title', 'flagged'] as const
   const { reload } = list
   const [uploading, setUploading] = useState<AdminInvoice | null>(null)
   const [rejecting, setRejecting] = useState<AdminInvoice | null>(null)
@@ -61,44 +99,81 @@ export function Invoices() {
   }
 
   return (
-    <div>
-      <div className="toolbar">
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部状态"
-          value={status || undefined}
-          onChange={(v) => setStatus(String(v ?? ''))}
-          options={Object.entries(invoiceStatusLabels).map(([value, label]) => ({
-            value,
-            label,
-          }))}
-        />
-        <Checkbox checked={flagged} onChange={(v) => setFlagged(v)}>
-          开票后有退款
-        </Checkbox>
-        <div className="toolbar-actions">
+    <div className="paged-list">
+      <FilterBar
+        main={
+          <>
+            <DateFilter
+              from={f.from}
+              to={f.to}
+              placeholder={['申请日期', '结束日期']}
+              onChange={(from, to) => filters.set({ from, to })}
+            />
+            <SearchInput value={f.q} onChange={(q) => filters.set({ q })} />
+          </>
+        }
+        more={
+          <>
+            <Filter label="状态">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部状态"
+                value={f.status || undefined}
+                onChange={(v) => filters.set({ status: String(v ?? '') })}
+                options={statusOptions}
+              />
+            </Filter>
+            <Filter label="抬头类型">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部抬头"
+                value={f.title || undefined}
+                onChange={(v) => filters.set({ title: String(v ?? '') })}
+                options={titleOptions}
+              />
+            </Filter>
+            <Filter label="">
+              <Checkbox checked={flagged} onChange={(v) => filters.set({ flagged: v ? '1' : '' })}>
+                开票后有退款
+              </Checkbox>
+            </Filter>
+          </>
+        }
+        set={filters.changed([...more])}
+        onClear={() => filters.reset([...more])}
+        actions={
           <ExportButton
             kind="invoices"
-            filters={{ status, flagged: flagged ? 1 : null }}
+            range={f.from && f.to ? [f.from, f.to] : undefined}
+            filters={{ q: f.q, status: f.status, titleKind: f.title, flagged: flagged ? 1 : null }}
             filterText={
               [
-                status && `状态：${invoiceStatusLabels[status as 'requested']}`,
+                f.q && `搜索“${f.q}”`,
+                f.status && `状态：${invoiceStatusLabels[f.status as 'requested']}`,
+                f.title && `抬头：${invoiceTitleKindLabels[f.title as 'personal']}`,
                 flagged && '开票后有退款',
               ]
                 .filter(Boolean)
                 .join('，') || undefined
             }
           />
-        </div>
-      </div>
+        }
+      />
       <DataTable
         rowKey="id"
-        loading={list.loading && !list.loaded}
+        loading={list.loading}
         data={list.rows}
         empty={
           list.error ??
-          (flagged ? '没有待处理的退款' : status === 'requested' ? '没有待开票的申请' : '没有记录')
+          (filters.changed(['from', 'q', 'title'])
+            ? '没有符合条件的发票申请'
+            : flagged
+              ? '没有待处理的退款'
+              : f.status === 'requested'
+                ? '没有待开票的申请'
+                : '没有记录')
         }
         columns={[
           {
@@ -216,12 +291,7 @@ export function Invoices() {
           },
         ]}
       />
-      <LoadMore
-        shown={list.rows.length}
-        more={list.more}
-        loading={list.loading}
-        onMore={list.loadMore}
-      />
+      <Pager list={list} filters={filters} />
       {uploading && <Upload invoice={uploading} onClose={() => setUploading(null)} onDone={done} />}
       {rejecting && <Reject invoice={rejecting} onClose={() => setRejecting(null)} onDone={done} />}
     </div>

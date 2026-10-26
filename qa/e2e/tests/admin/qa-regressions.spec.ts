@@ -1,7 +1,17 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, CreateBookingResponse, SlotDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, editForm, field, login, student, useCrop } from './helpers'
+import {
+  ADMIN_PASSWORD,
+  call,
+  dialog,
+  editForm,
+  field,
+  listFilter,
+  login,
+  student,
+  useCrop,
+} from './helpers'
 
 // Bugs found by exploratory QA of the admin app, each kept as a regression test.
 test.describe.configure({ mode: 'serial' })
@@ -127,11 +137,12 @@ test('a retry after a lost sale response records the sale once', async ({ page, 
 test('back closes a student opened from the list', async ({ page }) => {
   await login(page)
   await page.goto('./#/students')
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(studentName)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(studentName)
   // The full list may still be showing until the search answers.
   await expect(page.getByRole('button', { name: '查看' })).toHaveCount(1)
   await page.getByRole('button', { name: '查看' }).click()
-  await expect(page).toHaveURL(new RegExp(`#/students\\?id=${studentId}$`))
+  // The drawer keeps the search in the address.
+  await expect(page).toHaveURL(new RegExp(`#/students\\?q=.+&id=${studentId}$`))
   await expect(page.locator('.t-drawer')).toContainText(studentName)
   await page.goBack()
   await expect(page.locator('.t-drawer--open')).toHaveCount(0)
@@ -205,7 +216,7 @@ test('a venue cancel on a booking the student already cancelled closes and refre
 
   await login(page)
   await page.goto('./#/bookings')
-  await page.locator('.toolbar .t-select').nth(1).click()
+  await listFilter(page, '教练').click()
   await page.locator('.t-select-option', { hasText: coachName }).click()
   const rows = page.getByRole('row').filter({ hasText: studentName })
   await expect(rows).toHaveCount(2)

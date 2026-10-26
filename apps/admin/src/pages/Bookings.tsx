@@ -9,20 +9,28 @@ import {
   PaidCell,
   StatusCell,
 } from '../bookingCells'
-import { DataTable, LoadMore } from '../DataTable'
+import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { addDays, fmtDateTime, fmtTime, today } from '../format'
-import { hashParam, useApi, usePagedApi } from '../hooks'
-import { bookingStatusLabel } from '../labels'
+import { hashParam, useApi } from '../hooks'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
+import {
+  Filter,
+  FilterBar,
+  isDay,
+  isId,
+  oneOf,
+  Pager,
+  SearchInput,
+  useListFilters,
+  usePagedList,
+} from '../lists'
 import { MoveDialog } from '../MoveDialog'
 import { useCan } from '../me'
 import { SHOW_SECTION } from '../SectionNav'
 import { StudentCell } from '../StudentCell'
-import type { AdminBooking, Coach } from '../types'
+import type { AdminBooking, Coach, LessonType } from '../types'
 import { Feedback } from './Feedback'
-
-const isDay = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v)
 
 /** 预约 with its two tabs: the bookings, and the 课后点评 coaches wrote for them. */
 export function Bookings() {
@@ -43,8 +51,8 @@ export function Bookings() {
   const tab = picked === 'feedback' && canFeedback ? 'feedback' : 'bookings'
   const pick = (t: string) => {
     setTab(t)
-    // The bookings tab puts its own filters back in the address.
-    if (t === 'feedback') showParams({ tab: 'feedback' })
+    // Each tab then puts its own filters in the address.
+    showParams(t === 'feedback' ? { tab: 'feedback' } : {})
   }
   return (
     <Tabs value={tab} onChange={(v) => pick(String(v))} className="detail-tabs">
@@ -53,14 +61,14 @@ export function Bookings() {
       </Tabs.TabPanel>
       {canFeedback && (
         <Tabs.TabPanel value="feedback" label="课后点评">
-          <Feedback />
+          <Feedback active={tab === 'feedback'} />
         </Tabs.TabPanel>
       )}
     </Tabs>
   )
 }
 
-/** Puts the filters in the address for a refresh or a copied link, keeping an open lesson. */
+/** Puts the tab in the address, keeping an open lesson. */
 function showParams(values: Record<string, string>) {
   const params = new URLSearchParams(values)
   const lesson = hashParam('lesson')
@@ -72,36 +80,72 @@ function showParams(values: Record<string, string>) {
   window.dispatchEvent(new Event(SHOW_SECTION))
 }
 
+const statusOptions = [
+  { label: '待支付', value: 'pending_payment' },
+  { label: '已预约', value: 'confirmed' },
+  { label: '已完成', value: 'completed' },
+  { label: '已取消', value: 'cancelled' },
+  { label: '已超时', value: 'expired' },
+]
+const payOptions = [
+  { label: '课时包', value: 'package' },
+  { label: '微信支付', value: 'wechat' },
+  { label: '线下付款', value: 'offline' },
+]
+const sourceOptions = [
+  { label: '学员自约', value: 'student' },
+  { label: '员工代约', value: 'staff' },
+]
+const label = (options: { label: string; value: string }[], v: string) =>
+  options.find((o) => o.value === v)?.label
+
 function BookingList({ active }: { active: boolean }) {
-  const [range, setRange] = useState<[string, string]>(() => {
-    const from = hashParam('from')
-    const to = hashParam('to')
-    if (isDay(from) && isDay(to) && from <= to) return [from, to]
-    // The overview links here with `from` alone for lessons still to mark.
-    return isDay(from) && from <= today() ? [from, today()] : [today(), addDays(today(), 13)]
-  })
-  // The overview links here with the status it counted.
-  const [status, setStatus] = useState(() => hashParam('status') ?? '')
-  const [unmarked, setUnmarked] = useState(() => hashParam('unmarked') === '1')
-  const [coachId, setCoachId] = useState<number | null>(() => {
-    const id = Number(hashParam('coach'))
-    return Number.isSafeInteger(id) && id > 0 ? id : null
-  })
-  const [order, setOrder] = useState<'asc' | 'desc'>(() =>
-    hashParam('order') === 'desc' ? 'desc' : 'asc',
+  // The overview links here with `from` alone for lessons still to mark, up to today; a later
+  // `from` alone gets two weeks from it. The range is always in the address, so this only
+  // applies to such a link.
+  const from = active ? hashParam('from') : null
+  const filters = useListFilters(
+    {
+      from: today(),
+      to:
+        from && isDay(from)
+          ? from <= today()
+            ? today()
+            : addDays(from, 13)
+          : addDays(today(), 13),
+      q: '',
+      status: '',
+      coach: '',
+      type: '',
+      pay: '',
+      source: '',
+      unmarked: '',
+      order: 'asc',
+    },
+    {
+      path: '#/bookings',
+      active,
+      always: ['from', 'to'],
+      valid: {
+        from: isDay,
+        to: isDay,
+        status: oneOf(...statusOptions.map((o) => o.value)),
+        coach: isId,
+        type: isId,
+        pay: oneOf(...payOptions.map((o) => o.value)),
+        source: oneOf(...sourceOptions.map((o) => o.value)),
+        unmarked: oneOf('1'),
+        order: oneOf('asc', 'desc'),
+      },
+    },
   )
-  useEffect(() => {
-    const values: Record<string, string> = { from: range[0], to: range[1] }
-    if (status) values.status = status
-    if (coachId) values.coach = String(coachId)
-    if (unmarked) values.unmarked = '1'
-    if (order === 'desc') values.order = 'desc'
-    if (active) showParams(values)
-  }, [active, range, status, coachId, unmarked, order])
+  const f = filters.values
+  const range: [string, string] = f.from <= f.to ? [f.from, f.to] : [f.to, f.from]
   const canBook = useCan('bookings')
   const canMark = useCan('attendance')
   const money = useCan('finance')
   const coaches = useApi<Coach[]>('/admin/coaches')
+  const types = useApi<LessonType[]>('/admin/lesson-types')
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [moving, setMoving] = useState<AdminBooking | null>(null)
   const [booking, setBooking] = useState(false)
@@ -109,83 +153,159 @@ function BookingList({ active }: { active: boolean }) {
   const params = new URLSearchParams({
     from: venueInstant(range[0], 0).toISOString(),
     to: venueInstant(range[1], 24 * 60).toISOString(),
-    order,
+    order: f.order,
   })
-  if (status) params.set('status', status)
-  if (coachId) params.set('coachId', String(coachId))
-  if (unmarked) params.set('unmarked', '1')
-  const list = usePagedApi<AdminBooking>(`/admin/bookings?${params}`, 'offset')
+  if (f.q) params.set('q', f.q)
+  if (f.status) params.set('status', f.status)
+  if (f.coach) params.set('coachId', f.coach)
+  if (f.type) params.set('lessonTypeId', f.type)
+  if (f.pay) params.set('pay', f.pay)
+  if (f.source) params.set('source', f.source)
+  if (f.unmarked) params.set('unmarked', '1')
+  const list = usePagedList<AdminBooking>(`/admin/bookings?${params}`, filters)
   const { reload } = list
   useOnLessonChanged(reload)
+  const more = ['status', 'coach', 'type', 'pay', 'source', 'unmarked'] as const
+  const coachName = coaches.data?.find((c) => String(c.id) === f.coach)?.name
+  const typeName = types.data?.find((t) => String(t.id) === f.type)?.name
 
   return (
-    <div>
-      <div className="toolbar">
-        <DateRangePicker
-          style={{ width: 280 }}
-          value={range}
-          onChange={(v) => setRange([String(v[0] ?? today()), String(v[1] ?? today())])}
-        />
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部状态"
-          value={status || undefined}
-          onChange={(v) => setStatus(String(v ?? ''))}
-          options={[
-            { label: '待支付', value: 'pending_payment' },
-            { label: '已预约', value: 'confirmed' },
-            { label: '已完成', value: 'completed' },
-            { label: '已取消', value: 'cancelled' },
-            { label: '已超时', value: 'expired' },
-          ]}
-        />
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部教练"
-          value={coachId ?? undefined}
-          onChange={(v) => setCoachId(v ? Number(v) : null)}
-          options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
-        />
-        <Select
-          style={{ width: 120 }}
-          value={order}
-          onChange={(v) => setOrder(v === 'desc' ? 'desc' : 'asc')}
-          options={[
-            { label: '时间升序', value: 'asc' },
-            { label: '时间降序', value: 'desc' },
-          ]}
-        />
-        <Checkbox checked={unmarked} onChange={(v) => setUnmarked(v)}>
-          只看未签到
-        </Checkbox>
-        <div className="toolbar-actions">
-          {money && (
-            <ExportButton
-              kind="bookings"
-              range={range}
-              filters={{ status, coachId, unmarked: unmarked ? '1' : undefined }}
-              filterText={
-                [
-                  status && `状态：${bookingStatusLabel[status as 'confirmed'][0]}`,
-                  coachId && `教练：${coaches.data?.find((c) => c.id === coachId)?.name ?? ''}`,
-                  unmarked && '未签到',
-                ]
-                  .filter(Boolean)
-                  .join('，') || undefined
+    <div className="paged-list">
+      <FilterBar
+        main={
+          <>
+            <DateRangePicker
+              style={{ width: 280 }}
+              value={range}
+              onChange={(v) =>
+                filters.set({ from: String(v[0] ?? today()), to: String(v[1] ?? today()) })
               }
             />
-          )}
-          {canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
-        </div>
-      </div>
+            <SearchInput value={f.q} onChange={(q) => filters.set({ q })} />
+          </>
+        }
+        more={
+          <>
+            <Filter label="状态">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部状态"
+                value={f.status || undefined}
+                onChange={(v) => filters.set({ status: String(v ?? '') })}
+                options={statusOptions}
+              />
+            </Filter>
+            <Filter label="教练">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                filterable
+                placeholder="全部教练"
+                value={f.coach ? Number(f.coach) : undefined}
+                onChange={(v) => filters.set({ coach: v ? String(v) : '' })}
+                options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
+              />
+            </Filter>
+            <Filter label="课程">
+              <Select
+                style={{ width: 140 }}
+                clearable
+                filterable
+                placeholder="全部课程"
+                value={f.type ? Number(f.type) : undefined}
+                onChange={(v) => filters.set({ type: v ? String(v) : '' })}
+                options={(types.data ?? []).map((t) => ({ label: t.name, value: t.id }))}
+              />
+            </Filter>
+            <Filter label="支付">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部支付"
+                value={f.pay || undefined}
+                onChange={(v) => filters.set({ pay: String(v ?? '') })}
+                options={payOptions}
+              />
+            </Filter>
+            <Filter label="来源">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部来源"
+                value={f.source || undefined}
+                onChange={(v) => filters.set({ source: String(v ?? '') })}
+                options={sourceOptions}
+              />
+            </Filter>
+            <Filter label="排序">
+              <Select
+                style={{ width: 120 }}
+                value={f.order}
+                onChange={(v) => filters.set({ order: v === 'desc' ? 'desc' : 'asc' })}
+                options={[
+                  { label: '时间升序', value: 'asc' },
+                  { label: '时间降序', value: 'desc' },
+                ]}
+              />
+            </Filter>
+            <Filter label="">
+              <Checkbox
+                checked={f.unmarked === '1'}
+                onChange={(v) => filters.set({ unmarked: v ? '1' : '' })}
+              >
+                只看未签到
+              </Checkbox>
+            </Filter>
+          </>
+        }
+        set={filters.changed([...more])}
+        onClear={() => filters.reset([...more])}
+        actions={
+          (money || canBook) && (
+            <>
+              {money && (
+                <ExportButton
+                  kind="bookings"
+                  range={range}
+                  filters={{
+                    q: f.q,
+                    status: f.status,
+                    coachId: f.coach,
+                    lessonTypeId: f.type,
+                    pay: f.pay,
+                    source: f.source,
+                    unmarked: f.unmarked || undefined,
+                  }}
+                  filterText={
+                    [
+                      f.q && `搜索“${f.q}”`,
+                      f.status && `状态：${label(statusOptions, f.status)}`,
+                      f.coach && `教练：${coachName ?? ''}`,
+                      f.type && `课程：${typeName ?? ''}`,
+                      f.pay && `支付：${label(payOptions, f.pay)}`,
+                      f.source && label(sourceOptions, f.source),
+                      f.unmarked && '未签到',
+                    ]
+                      .filter(Boolean)
+                      .join('，') || undefined
+                  }
+                />
+              )}
+              {canBook && <Button onClick={() => setBooking(true)}>代约</Button>}
+            </>
+          )
+        }
+      />
       <DataTable
         rowKey="id"
         onOpen={(row) => openLesson(row.slotId)}
-        loading={list.loading && !list.loaded}
+        loading={list.loading}
         data={list.rows}
-        empty={list.error ?? '这段时间没有预约'}
+        empty={
+          list.error ??
+          (filters.changed([...more, 'q']) ? '没有符合条件的预约' : '这段时间没有预约')
+        }
         columns={[
           {
             colKey: 'startsAt',
@@ -246,12 +366,7 @@ function BookingList({ active }: { active: boolean }) {
             : []),
         ]}
       />
-      <LoadMore
-        shown={list.rows.length}
-        more={list.more}
-        loading={list.loading}
-        onMore={list.loadMore}
-      />
+      <Pager list={list} filters={filters} />
       {moving && (
         <MoveDialog
           booking={moving}

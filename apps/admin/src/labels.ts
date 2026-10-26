@@ -48,3 +48,9 @@ export const ledgerKindLabel = {
 export function refundLabel(status: RefundStatus, offline: boolean): [string, Theme] {
   return offline && status === 'pending' ? ['待线下退还', 'warning'] : refundStatusLabel[status]
 }
+
+/** 支付方式 as the 订单 and 退款 filters offer it. */
+export const providerOptions = [
+  { label: '微信支付', value: 'wechat' },
+  { label: '前台付款', value: 'offline' },
+]

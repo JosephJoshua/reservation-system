@@ -36,7 +36,7 @@ test('opens from the list, keeps its tab in the address and goes back to the sea
 }) => {
   await login(page)
   await page.goto('./#/students')
-  await page.getByPlaceholder('姓名或手机号', { exact: true }).fill(studentName)
+  await page.getByPlaceholder('姓名、手机号或编号', { exact: true }).fill(studentName)
   await page.getByRole('link', { name: studentName }).click()
   await expect(page).toHaveURL(new RegExp(`#/students/${studentId}$`))
   await expect(page.locator('.detail-title')).toContainText(studentName)
@@ -59,13 +59,15 @@ test('opens from the list, keeps its tab in the address and goes back to the sea
 
   // The list comes back with the search it had.
   await page.locator('.breadcrumb').getByRole('link', { name: '学员' }).click()
-  await expect(page.getByPlaceholder('姓名或手机号', { exact: true })).toHaveValue(studentName)
+  await expect(page.getByPlaceholder('姓名、手机号或编号', { exact: true })).toHaveValue(
+    studentName,
+  )
   await expect(page.getByRole('link', { name: studentName })).toBeVisible()
 
   // Coming to 学员 from the menu later opens the plain list.
   await page.locator('.admin-aside').getByRole('link', { name: '今日' }).click()
   await page.locator('.admin-aside').getByRole('link', { name: '学员', exact: true }).click()
-  await expect(page.getByPlaceholder('姓名或手机号', { exact: true })).toHaveValue('')
+  await expect(page.getByPlaceholder('姓名、手机号或编号', { exact: true })).toHaveValue('')
 })
 
 test('the drawer opens the full page', async ({ page }) => {

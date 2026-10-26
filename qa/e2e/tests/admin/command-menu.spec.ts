@@ -197,7 +197,7 @@ test('⌘K waits while a dialog is open, and gives the focus back when closed', 
 test('J and K move through the students and Enter opens one', async ({ page }) => {
   await login(page)
   await page.goto('./#/students')
-  const box = page.getByPlaceholder('姓名或手机号', { exact: true })
+  const box = page.getByPlaceholder('姓名、手机号或编号', { exact: true })
   await box.fill(studentName)
   await expect(page.locator('.t-table tbody tr')).toHaveCount(1)
   await expect(page.getByRole('link', { name: studentName })).toBeVisible()

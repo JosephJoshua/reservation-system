@@ -12,12 +12,24 @@ import {
   Textarea,
 } from 'tdesign-react'
 import { api } from '../api'
-import { DataTable, LoadMore } from '../DataTable'
+import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, hashParam, useIdempotencyKey, usePagedApi, useSubmitting } from '../hooks'
-import { refundLabel } from '../labels'
+import { attempt, useIdempotencyKey, useSubmitting } from '../hooks'
+import { providerOptions, refundLabel } from '../labels'
+import {
+  DateFilter,
+  Filter,
+  FilterBar,
+  isDay,
+  oneOf,
+  Pager,
+  SearchInput,
+  setRange,
+  useListFilters,
+  usePagedList,
+} from '../lists'
 import { StudentCell } from '../StudentCell'
 import type { Refund } from '../types'
 
@@ -49,8 +61,24 @@ function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
 
 export function Refunds() {
   // The overview links here with the status it counted.
-  const [status, setStatus] = useState(() => hashParam('status') ?? 'requested')
-  const list = usePagedApi<Refund>(`/admin/refunds${status ? `?status=${status}` : ''}`, 'before')
+  const filters = useListFilters(
+    { status: 'requested', from: '', to: '', q: '', provider: '' },
+    {
+      path: '#/refunds',
+      valid: {
+        status: oneOf(...statusOptions.map((o) => o.value)),
+        from: isDay,
+        to: isDay,
+        provider: oneOf(...providerOptions.map((o) => o.value)),
+      },
+    },
+  )
+  const f = filters.values
+  const params = new URLSearchParams()
+  setRange(params, f.from, f.to)
+  for (const key of ['q', 'status', 'provider'] as const) if (f[key]) params.set(key, f[key])
+  const list = usePagedList<Refund>(`/admin/refunds?${params}`, filters)
+  const more = ['status', 'provider'] as const
   const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
 
@@ -81,31 +109,71 @@ export function Refunds() {
   }
 
   return (
-    <div>
-      <div className="toolbar">
-        <Select
-          style={{ width: 140 }}
-          clearable
-          placeholder="全部状态"
-          value={status || undefined}
-          onChange={(v) => setStatus(String(v ?? ''))}
-          options={statusOptions}
-        />
-        <div className="toolbar-actions">
+    <div className="paged-list">
+      <FilterBar
+        main={
+          <>
+            <DateFilter
+              from={f.from}
+              to={f.to}
+              placeholder={['申请日期', '结束日期']}
+              onChange={(from, to) => filters.set({ from, to })}
+            />
+            <SearchInput value={f.q} onChange={(q) => filters.set({ q })} />
+          </>
+        }
+        more={
+          <>
+            <Filter label="状态">
+              <Select
+                style={{ width: 140 }}
+                clearable
+                placeholder="全部状态"
+                value={f.status || undefined}
+                onChange={(v) => filters.set({ status: String(v ?? '') })}
+                options={statusOptions}
+              />
+            </Filter>
+            <Filter label="支付方式">
+              <Select
+                style={{ width: 130 }}
+                clearable
+                placeholder="全部支付方式"
+                value={f.provider || undefined}
+                onChange={(v) => filters.set({ provider: String(v ?? '') })}
+                options={providerOptions}
+              />
+            </Filter>
+          </>
+        }
+        set={filters.changed([...more])}
+        onClear={() => filters.reset([...more])}
+        actions={
           <ExportButton
             kind="refunds"
-            filters={{ status }}
+            range={f.from && f.to ? [f.from, f.to] : undefined}
+            filters={{ q: f.q, status: f.status, provider: f.provider }}
             filterText={
-              status ? `状态：${statusOptions.find((o) => o.value === status)?.label}` : undefined
+              [
+                f.q && `搜索“${f.q}”`,
+                f.status && `状态：${statusOptions.find((o) => o.value === f.status)?.label}`,
+                f.provider &&
+                  `支付方式：${providerOptions.find((o) => o.value === f.provider)?.label}`,
+              ]
+                .filter(Boolean)
+                .join('，') || undefined
             }
           />
-        </div>
-      </div>
+        }
+      />
       <DataTable
         rowKey="id"
-        loading={list.loading && !list.loaded}
+        loading={list.loading}
         data={list.rows}
-        empty={list.error ?? '没有记录'}
+        empty={
+          list.error ??
+          (filters.changed(['from', 'q', 'provider']) ? '没有符合条件的退款' : '没有记录')
+        }
         columns={[
           { colKey: 'createdAt', title: '申请时间', cell: ({ row }) => fmtDateTime(row.createdAt) },
           {
@@ -204,12 +272,7 @@ export function Refunds() {
           },
         ]}
       />
-      <LoadMore
-        shown={list.rows.length}
-        more={list.more}
-        loading={list.loading}
-        onMore={list.loadMore}
-      />
+      <Pager list={list} filters={filters} />
       {deciding && (
         <Decide
           refund={deciding.refund}
