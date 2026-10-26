@@ -300,6 +300,7 @@ export function adminFeedback(
     to?: Date
     coachId?: number
     studentId?: number
+    slotId?: number
     ids?: number[]
     limit?: number
     offset?: number
@@ -326,6 +327,7 @@ export function adminFeedback(
         q.to ? lt(bookings.startsAt, q.to) : undefined,
         q.coachId ? eq(slots.coachId, q.coachId) : undefined,
         q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
+        q.slotId ? eq(bookings.slotId, q.slotId) : undefined,
         q.ids ? inArray(lessonFeedback.id, q.ids) : undefined,
       ),
     )
@@ -337,6 +339,7 @@ export function adminFeedback(
       ...feedbackView(r.feedback),
       id: r.feedback.id,
       bookingId: r.booking.id,
+      slotId: r.booking.slotId,
       startsAt: r.booking.startsAt.toISOString(),
       coach: r.coach,
       lessonTypeName: r.lessonTypeName,

@@ -3,10 +3,12 @@ import { venueInstant } from '@rs/shared'
 import { useRef, useState } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
+import { LessonTime } from '../bookingCells'
 import { DataTable, LoadMore } from '../DataTable'
 import { FeedbackPhotos } from '../FeedbackPhotos'
 import { addDays, fmtDateTime, today } from '../format'
 import { attempt, useApi, usePagedApi, useSubmitting } from '../hooks'
+import { useOnLessonChanged } from '../lessonLink'
 import { StudentCell } from '../StudentCell'
 import type { Coach } from '../types'
 import { undoMessage } from '../undo'
@@ -21,26 +23,39 @@ function state(row: AdminFeedbackDto): [string, 'success' | 'warning' | 'default
 
 /**
  * Coaches' 课后点评, newest lesson first, which the venue can hide from the student. With
- * `studentId`, all of one student's, as on their 学员详情.
+ * `studentId`, all of one student's, as on their 学员详情; with `slotId`, one lesson's.
  */
-export function Feedback({ studentId }: { studentId?: number } = {}) {
+export function Feedback({
+  studentId,
+  slotId,
+  onChanged,
+}: {
+  studentId?: number
+  slotId?: number
+  /** Called after a 隐藏 or 恢复, for views that show it too. */
+  onChanged?: () => unknown
+} = {}) {
   const [range, setRange] = useState<[string, string]>([addDays(today(), -30), today()])
   const [coachId, setCoachId] = useState<number | null>(null)
-  const coaches = useApi<Coach[]>(studentId ? null : '/admin/coaches')
+  const filtered = !!(studentId || slotId)
+  const coaches = useApi<Coach[]>(filtered ? null : '/admin/coaches')
 
   const params = new URLSearchParams(
-    studentId
-      ? { studentId: String(studentId) }
-      : {
-          from: venueInstant(range[0], 0).toISOString(),
-          to: venueInstant(range[1], 24 * 60).toISOString(),
-        },
+    slotId
+      ? { slotId: String(slotId) }
+      : studentId
+        ? { studentId: String(studentId) }
+        : {
+            from: venueInstant(range[0], 0).toISOString(),
+            to: venueInstant(range[1], 24 * 60).toISOString(),
+          },
   )
-  if (coachId && !studentId) params.set('coachId', String(coachId))
+  if (coachId && !filtered) params.set('coachId', String(coachId))
   const list = usePagedApi<AdminFeedbackDto>(`/admin/feedback?${params}`, 'offset')
   // The list as filtered now, also for a 撤销 pressed after the filter changed.
   const reload = useRef(list.reload)
   reload.current = list.reload
+  useOnLessonChanged(list.reload)
 
   const setHidden = async (
     row: AdminFeedbackDto,
@@ -57,6 +72,7 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
       { key: hideKey(row.id) },
     )
     if (!ok) return false
+    void onChanged?.()
     // Hiding takes effect at once, with 撤销 in the message instead of a confirmation.
     if (hidden && !undone)
       undoMessage('已隐藏，学员看不到这条点评', () => setHidden(row, false, true))
@@ -65,7 +81,7 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
 
   return (
     <div>
-      {!studentId && (
+      {!filtered && (
         <div className="toolbar">
           <DateRangePicker
             style={{ width: 280 }}
@@ -86,14 +102,22 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
         rowKey="id"
         loading={list.loading && !list.loaded}
         data={list.rows}
-        empty={list.error ?? (studentId ? '还没有课后点评' : '这段时间没有课后点评')}
+        empty={list.error ?? (filtered ? '还没有课后点评' : '这段时间没有课后点评')}
         columns={[
-          {
-            colKey: 'startsAt',
-            title: '上课时间',
-            width: 130,
-            cell: ({ row }) => <span className="nowrap">{fmtDateTime(row.startsAt)}</span>,
-          },
+          ...(slotId
+            ? []
+            : [
+                {
+                  colKey: 'startsAt',
+                  title: '上课时间',
+                  width: 130,
+                  cell: ({ row }: { row: AdminFeedbackDto }) => (
+                    <LessonTime slotId={row.slotId}>
+                      <span className="nowrap">{fmtDateTime(row.startsAt)}</span>
+                    </LessonTime>
+                  ),
+                },
+              ]),
           ...(studentId
             ? []
             : [
@@ -106,17 +130,21 @@ export function Feedback({ studentId }: { studentId?: number } = {}) {
                   ),
                 },
               ]),
-          {
-            colKey: 'coach',
-            title: '教练',
-            width: 140,
-            cell: ({ row }) => (
-              <div>
-                <div>{row.coach.name}</div>
-                <div className="muted">{row.lessonTypeName}</div>
-              </div>
-            ),
-          },
+          ...(slotId
+            ? []
+            : [
+                {
+                  colKey: 'coach',
+                  title: '教练',
+                  width: 140,
+                  cell: ({ row }: { row: AdminFeedbackDto }) => (
+                    <div>
+                      <div>{row.coach.name}</div>
+                      <div className="muted">{row.lessonTypeName}</div>
+                    </div>
+                  ),
+                },
+              ]),
           {
             colKey: 'text',
             title: '点评',

@@ -128,6 +128,7 @@ export function bookingViews(
     const deadline = freeCancelDeadline(b.startsAt, rules, moved?.lastMove)
     return {
       id: b.id,
+      slotId: b.slotId,
       status,
       startsAt: b.startsAt.toISOString(),
       endsAt: b.endsAt.toISOString(),

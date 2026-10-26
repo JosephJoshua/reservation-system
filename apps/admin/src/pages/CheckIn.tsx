@@ -10,10 +10,12 @@ import { Alert, Button, Card, Dialog, Input, Radio, Space, Tag } from 'tdesign-r
 import { renderSVG } from 'uqr'
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
+import { LessonTime } from '../bookingCells'
 import { DataTable } from '../DataTable'
 import { NewStudentDialog } from '../DeskStudent'
 import { fmtTime } from '../format'
 import { attempt, useApi } from '../hooks'
+import { useOnLessonChanged } from '../lessonLink'
 import { useCan } from '../me'
 import { StudentCell } from '../StudentCell'
 
@@ -138,6 +140,7 @@ function CodeDialog({ onClose }: { onClose: () => void }) {
 /** 今日: the front desk's day, one row per student, with 签到, 代约 and 前台建档. */
 export function CheckIn() {
   const { data, error, loading, reload } = useApi<FrontDeskLessonDto[]>('/admin/front-desk')
+  useOnLessonChanged(reload)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [showCode, setShowCode] = useState(false)
@@ -223,9 +226,11 @@ export function CheckIn() {
                 title: '时间',
                 width: 120,
                 cell: ({ row }) => (
-                  <span className="nowrap">
-                    {fmtTime(row.startsAt)}-{fmtTime(row.endsAt)}
-                  </span>
+                  <LessonTime slotId={row.slotId}>
+                    <span className="nowrap">
+                      {fmtTime(row.startsAt)}-{fmtTime(row.endsAt)}
+                    </span>
+                  </LessonTime>
                 ),
               },
               {

@@ -7,7 +7,6 @@ import {
   CalendarIcon,
   CardIcon,
   ChartBarIcon,
-  ChatMessageIcon,
   CheckCircleIcon,
   CourseIcon,
   DashboardIcon,
@@ -25,13 +24,14 @@ import zhCN from 'tdesign-react/es/locale/zh_CN'
 import { api, getToken, handleUnauthorized, setToken } from './api'
 import { CommandMenu } from './CommandMenu'
 import { useApi, useIsPhone } from './hooks'
+import { LessonDrawer, LessonPage } from './LessonDetail'
+import { useLessonParam, withoutLesson } from './lessonLink'
 import { MeContext, STAFF_CHANGED } from './me'
 import { ActionLog } from './pages/ActionLog'
 import { Bookings } from './pages/Bookings'
 import { CheckIn } from './pages/CheckIn'
 import { Coaches } from './pages/Coaches'
 import { Courses } from './pages/Courses'
-import { Feedback } from './pages/Feedback'
 import { HomeContent } from './pages/HomeContent'
 import { Invoices } from './pages/Invoices'
 import { Login } from './pages/Login'
@@ -58,7 +58,8 @@ const pages = {
   checkin: { label: '今日', icon: CheckCircleIcon, component: CheckIn },
   bookings: { label: '预约', icon: AssignmentIcon, component: Bookings },
   students: { label: '学员', icon: UsergroupIcon, component: Students },
-  feedback: { label: '课后点评', icon: ChatMessageIcon, component: Feedback },
+  // Opened from lists and links, not from the menu.
+  lessons: { label: '课程详情', icon: AssignmentIcon, component: LessonPage },
   orders: { label: '订单', icon: BillIcon, component: Orders },
   refunds: { label: '退款', icon: RollbackIcon, component: Refunds },
   invoices: { label: '发票', icon: FilePasteIcon, component: Invoices },
@@ -77,16 +78,23 @@ type PageKey = keyof typeof pages
 /** The sidebar: daily front-desk work first, then money, then setup. */
 const navGroups: { title?: string; keys: PageKey[] }[] = [
   { keys: ['overview'] },
-  { title: '日常', keys: ['schedule', 'checkin', 'bookings', 'students', 'feedback'] },
+  { title: '日常', keys: ['schedule', 'checkin', 'bookings', 'students'] },
   { title: '财务', keys: ['orders', 'refunds', 'invoices', 'reports'] },
   { title: '课程与内容', keys: ['courses', 'coaches', 'products', 'banners'] },
   { title: '系统', keys: ['settings', 'staff', 'actions'] },
 ]
 
+const inMenu = (key: PageKey) => navGroups.some((g) => g.keys.includes(key))
+
 function currentPage(): PageKey {
   // 课程与教练 became 课程 and 教练: an old link opens 课程.
   if (/^#\/?catalog(?=[?/]|$)/.test(window.location.hash)) {
     history.replaceState(history.state, '', '#/courses')
+  }
+  // 课后点评 became a tab of 预约.
+  if (/^#\/?feedback(?=[?/]|$)/.test(window.location.hash)) {
+    history.replaceState(history.state, '', '#/bookings?tab=feedback')
+    window.dispatchEvent(new Event(SHOW_SECTION))
   }
   // The first part names the page, as in `#/students/12`.
   const key = window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] ?? ''
@@ -118,9 +126,12 @@ export function App() {
         takeLeave()
         return
       }
-      if (hasUnsaved() && !takeLeave()) {
+      // A lesson opened over the page leaves the page and its form as they are.
+      if (hasUnsaved() && !takeLeave() && withoutLesson(next) !== withoutLesson(shown)) {
         const held = shown
-        history.pushState(history.state, '', shown)
+        // Without the mark of an opened lesson, which belongs to the step it was set on.
+        const { lessonOpened: _, ...state } = history.state ?? {}
+        history.pushState(state, '', shown)
         if (asked) return
         asked = true
         const leave = await confirmLeave()
@@ -138,7 +149,8 @@ export function App() {
     const onClick = (e: MouseEvent) => {
       if (!hasUnsaved() || e.defaultPrevented || e.button !== 0) return
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      const link = (e.target as Element | null)?.closest?.('a[href^="#"]')
+      // Links that open a lesson over the page keep it, and its form, as they are.
+      const link = (e.target as Element | null)?.closest?.('a[href^="#"]:not([data-overlay])')
       const href = link?.getAttribute('href')
       if (!href || href === window.location.hash) return
       // The link's own click handler (closing a dialog, say) waits for the answer too.
@@ -221,6 +233,9 @@ function SignedInApp({
   const allowed = (Object.keys(pages) as PageKey[]).filter((key) => canOpenPage(roles, key))
   // A page the roles do not cover, such as from an old link, opens the first one they do.
   const page = allowed.includes(requested) ? requested : allowed[0]
+  const lessonId = useLessonParam()
+  // 课程详情 belongs with 预约 in the menu.
+  const current = page === 'lessons' ? 'bookings' : page
   const Page = page ? pages[page].component : null
   // Groups whose pages the roles all leave out are left out too.
   const groups = navGroups
@@ -238,8 +253,8 @@ function SignedInApp({
               <a
                 key={key}
                 href={`#/${key}`}
-                className={key === page ? 'nav-item active' : 'nav-item'}
-                aria-current={key === page ? 'page' : undefined}
+                className={key === current ? 'nav-item active' : 'nav-item'}
+                aria-current={key === current ? 'page' : undefined}
                 // Closes the phone menu on every tap, the current page included.
                 onClick={() => setMenuOpen(false)}
               >
@@ -301,7 +316,7 @@ function SignedInApp({
               {allowed.includes('students') && <StudentSearch compact={phone} />}
               {!phone && (
                 <CommandMenu
-                  pages={allowed.map((key) => ({
+                  pages={allowed.filter(inMenu).map((key) => ({
                     key,
                     label: pages[key].label,
                     group: navGroups.find((g) => g.keys.includes(key))?.title,
@@ -318,6 +333,7 @@ function SignedInApp({
           <main className="admin-content">
             {Page ? <Page /> : me.error ? <p className="muted">{me.error}</p> : <Loading />}
           </main>
+          {lessonId && allowed.includes('lessons') && <LessonDrawer key={lessonId} id={lessonId} />}
         </div>
       </div>
     </MeContext.Provider>

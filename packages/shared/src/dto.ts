@@ -108,6 +108,8 @@ export type RefundStatus =
 
 export interface BookingDto {
   id: number
+  /** The lesson it is a seat in, which a move changes. */
+  slotId: number
   status: BookingStatus
   startsAt: string
   endsAt: string
@@ -177,6 +179,7 @@ export interface FeedbackItemDto extends FeedbackDto {
 export interface AdminFeedbackDto extends FeedbackDto {
   id: number
   bookingId: number
+  slotId: number
   startsAt: string
   coach: { id: number; name: string }
   lessonTypeName: string

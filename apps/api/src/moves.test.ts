@@ -1129,3 +1129,23 @@ describe('telling coaches about moved lessons', () => {
     expect(sent.map((s) => s.kind)).toEqual(['coach_moved'])
   })
 })
+
+describe('a moved lesson in 课程详情', () => {
+  it('points the old time to the new one and keeps the booking in both logs', async () => {
+    const h = setup()
+    const { coach, from, id } = await booked(h)
+    const admin = await h.admin()
+    const to = h.slot(coach.id, '2026-10-26', 10)
+    expect(
+      (await h.call('POST', `/admin/bookings/${id}/move`, { slotId: to.id }, admin)).status,
+    ).toBe(204)
+    const old = await h.call('GET', `/admin/slots/${from.id}`, undefined, admin)
+    expect(old.json.movedTo).toEqual({ slotId: to.id, startsAt: to.startsAt.toISOString() })
+    const now = await h.call('GET', `/admin/slots/${to.id}`, undefined, admin)
+    expect(now.json.movedTo).toBeNull()
+    for (const slotId of [from.id, to.id]) {
+      const log = await h.call('GET', `/admin/actions?slotId=${slotId}`, undefined, admin)
+      expect(log.json.map((e: { action: string }) => e.action)).toContain('booking.move')
+    }
+  })
+})

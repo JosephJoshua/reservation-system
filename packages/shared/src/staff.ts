@@ -125,7 +125,7 @@ export const pagePermissions = {
   checkin: 'attendance',
   bookings: 'view',
   students: 'view',
-  feedback: 'bookings',
+  lessons: 'view',
   courses: 'manage',
   coaches: 'manage',
   products: 'manage',

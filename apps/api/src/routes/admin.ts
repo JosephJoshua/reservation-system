@@ -24,12 +24,28 @@ import {
   venueParts,
   venueSettings,
 } from '@rs/shared'
-import { and, asc, desc, eq, gt, gte, inArray, isNull, like, lt, lte, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  like,
+  lt,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { immediate, type Q } from '../db/client'
 import {
   banners,
+  bookingMoves,
   bookings,
   categoryPayRates,
   categoryPrices,
@@ -395,6 +411,7 @@ export function adminRoutes(deps: Deps) {
       z.object({
         staffId: z.coerce.number().int().positive().optional(),
         studentId: z.coerce.number().int().positive().optional(),
+        slotId: z.coerce.number().int().positive().optional(),
         // Comma separated.
         actions: z
           .string()
@@ -1105,6 +1122,53 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
+  // One lesson for 课程详情: its seats come from GET /bookings?slotId=.
+  app.get('/slots/:id', need('view'), (c) => {
+    const slot = db
+      .select()
+      .from(slots)
+      .where(eq(slots.id, idParam(c)))
+      .get()
+    if (!slot) throw notFound('课程')
+    const coach = db
+      .select({ id: coaches.id, name: coaches.name })
+      .from(coaches)
+      .where(eq(coaches.id, slot.coachId))
+      .get()
+    const lessonType = slot.lessonTypeId
+      ? (db
+          .select({ id: lessonTypes.id, name: lessonTypes.name })
+          .from(lessonTypes)
+          .where(eq(lessonTypes.id, slot.lessonTypeId))
+          .get() ?? null)
+      : null
+    // A private lesson moved elsewhere leaves its time empty: where it went.
+    const moved =
+      slot.lessonTypeId === null
+        ? db
+            .select({ slotId: bookings.slotId, startsAt: bookings.startsAt })
+            .from(bookingMoves)
+            .innerJoin(bookings, eq(bookings.id, bookingMoves.bookingId))
+            .where(
+              and(
+                eq(bookingMoves.fromCoachId, slot.coachId),
+                eq(bookingMoves.fromStartsAt, slot.startsAt),
+                eq(bookingMoves.fromEndsAt, slot.endsAt),
+                ne(bookings.slotId, slot.id),
+              ),
+            )
+            .orderBy(desc(bookingMoves.id))
+            .get()
+        : undefined
+    return c.json({
+      ...slot,
+      coach: coach ?? { id: slot.coachId, name: '' },
+      lessonType,
+      tableFull: slotsWithoutTable(db, [slot]).has(slot.id),
+      movedTo: moved ? { slotId: moved.slotId, startsAt: moved.startsAt.toISOString() } : null,
+    })
+  })
+
   app.patch('/slots/:id', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
@@ -1239,6 +1303,9 @@ export function adminRoutes(deps: Deps) {
         to: instant.optional(),
         studentId: z.coerce.number().int().positive().optional(),
         coachId: z.coerce.number().int().positive().optional(),
+        // The seats of one lesson, or one booking, for 课程详情.
+        slotId: z.coerce.number().int().positive().optional(),
+        id: z.coerce.number().int().positive().optional(),
         status: z
           .enum(['pending_payment', 'confirmed', 'completed', 'cancelled', 'expired'])
           .optional(),
@@ -1269,6 +1336,8 @@ export function adminRoutes(deps: Deps) {
           q.to ? lt(bookings.startsAt, q.to) : undefined,
           q.studentId ? eq(bookings.studentId, q.studentId) : undefined,
           q.coachId ? eq(slots.coachId, q.coachId) : undefined,
+          q.slotId ? eq(bookings.slotId, q.slotId) : undefined,
+          q.id ? eq(bookings.id, q.id) : undefined,
           q.unmarked ? isNull(bookings.attendance) : undefined,
           status,
         ),
@@ -1465,6 +1534,7 @@ export function adminRoutes(deps: Deps) {
         to: instant.optional(),
         coachId: z.coerce.number().int().positive().optional(),
         studentId: z.coerce.number().int().positive().optional(),
+        slotId: z.coerce.number().int().positive().optional(),
         limit: z.coerce.number().int().min(1).max(500).optional(),
         offset: z.coerce.number().int().min(0).optional(),
       }),
