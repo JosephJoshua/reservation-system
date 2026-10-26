@@ -469,7 +469,9 @@ export function LessonDrawer({ id }: { id: number }) {
 }
 
 function slotFromHash() {
-  const id = Number(window.location.hash.split('?')[0]?.split('/')[2])
+  const [page, part] = window.location.hash.split('?')[0]?.split('/').slice(1) ?? []
+  if (page !== 'lessons') return null
+  const id = Number(part)
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
