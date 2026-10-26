@@ -153,7 +153,7 @@ export function ruleText<K extends RuleName>(name: K, value: BookingRules[K]): s
 
 export const defaultSettings: VenueSettings = {
   venue: {
-    name: '乒乓球馆',
+    name: 'Lumi乒乓',
     address: '',
     phone: '',
     latitude: null,

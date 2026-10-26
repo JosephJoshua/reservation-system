@@ -78,7 +78,7 @@ describe('student notices', () => {
           lesson: '一对一私教',
           time: '2026年10月26日 10:00~11:00',
           coach: '王教练',
-          place: '乒乓球馆',
+          place: 'Lumi乒乓',
           status: '',
           reason: '',
           refund: '',

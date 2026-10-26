@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test('asks for a staff login', async ({ page }) => {
   await page.goto('./')
-  await expect(page).toHaveTitle('球馆管理')
+  await expect(page).toHaveTitle('Lumi乒乓 管理')
   await page.getByPlaceholder('登录名').fill('admin')
   await page.getByPlaceholder('密码').fill('wrong')
   await page.getByRole('button', { name: '登录' }).click()

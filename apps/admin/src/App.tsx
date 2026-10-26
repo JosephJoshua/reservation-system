@@ -276,7 +276,7 @@ function SignedInApp({
             visible={menuOpen}
             placement="left"
             size="248px"
-            header="球馆管理"
+            header="Lumi乒乓 管理"
             footer={false}
             className="admin-menu-drawer"
             onClose={() => setMenuOpen(false)}
@@ -285,7 +285,7 @@ function SignedInApp({
           </Drawer>
         ) : (
           <aside className="admin-aside">
-            <div className="admin-brand">球馆管理</div>
+            <div className="admin-brand">Lumi乒乓 管理</div>
             {nav}
           </aside>
         )}
