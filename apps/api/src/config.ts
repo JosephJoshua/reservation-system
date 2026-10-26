@@ -11,19 +11,19 @@ function pem(value: string | undefined) {
   return value.includes('-----BEGIN') ? value.replace(/\\n/g, '\n') : readFileSync(value, 'utf8')
 }
 
-function wechatPay(): WechatPayConfig | null {
+/** WeChat Pay settings, or null for the fake gateway when no WECHAT_PAY_* key is set. */
+export function wechatPay(env: NodeJS.ProcessEnv): WechatPayConfig | null {
   const keys = [
-    'WECHAT_APPID',
     'WECHAT_PAY_MCHID',
     'WECHAT_PAY_API_V3_KEY',
     'WECHAT_PAY_MERCHANT_SERIAL',
     'WECHAT_PAY_MERCHANT_PRIVATE_KEY',
     'WECHAT_PAY_PUBLIC_KEY',
     'WECHAT_PAY_PUBLIC_KEY_ID',
-    'PUBLIC_BASE_URL',
   ] as const
-  const missing = keys.filter((k) => !env[k])
-  if (missing.length === keys.length) return null
+  // Staging sets the AppID and its address without a merchant account, so they don't count here.
+  if (keys.every((k) => !env[k])) return null
+  const missing = [...keys, 'WECHAT_APPID', 'PUBLIC_BASE_URL'].filter((k) => !env[k])
   if (missing.length > 0)
     throw new Error(`WeChat Pay config incomplete, missing ${missing.join(', ')}`)
   return {
@@ -86,7 +86,7 @@ export const config = {
   wechatLinkCheck: linkCheck(env.WECHAT_LINK_CHECK),
   /** 腾讯位置服务 key for the admin's map picker; without it admins paste links or coordinates. */
   tencentMapKey: env.TENCENT_MAP_KEY || undefined,
-  wechatPay: wechatPay(),
+  wechatPay: wechatPay(env),
   notices: notices(),
 }
 
