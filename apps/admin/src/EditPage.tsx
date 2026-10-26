@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useState } from 'react'
 import { Button, Card, Loading, MessagePlugin } from 'tdesign-react'
 import { api } from './api'
 import { type ApiData, attempt, newKey, useSubmitting } from './hooks'
@@ -91,6 +91,9 @@ export function EditPage<R extends { id: number }, F>({
   // Saved: the page goes back to the list once the save bar has let go.
   const [done, setDone] = useState(false)
   const saving = useSubmitting(key)
+  // Goes up when the form is put back, so fields that keep their own state, such as the rich
+  // text of 介绍, start again from it.
+  const [generation, setGeneration] = useState(0)
 
   const begin = (r: R) => {
     const f = toForm(r)
@@ -99,6 +102,11 @@ export function EditPage<R extends { id: number }, F>({
     setStart(f)
     setStale(false)
     setKey(newKey())
+    setGeneration((g) => g + 1)
+  }
+  const reset = () => {
+    setForm(start)
+    setGeneration((g) => g + 1)
   }
   // The record arrives with the list.
   // biome-ignore lint/correctness/useExhaustiveDependencies: starts once, when the record loads
@@ -111,8 +119,9 @@ export function EditPage<R extends { id: number }, F>({
     window.scrollTo(0, 0)
   }, [])
 
+  // Back to the list in place of this page, so the back button doesn't open it again.
   useEffect(() => {
-    if (done) window.location.hash = list.hash
+    if (done) window.location.replace(list.hash)
   }, [done, list.hash])
 
   const set = (patch: Partial<F>) => setForm((f) => f && { ...f, ...patch })
@@ -135,8 +144,9 @@ export function EditPage<R extends { id: number }, F>({
       {
         key,
         stale: ['edited_elsewhere'],
-        onStale: async () => {
-          setStale(true)
+        // Other refusals, such as a category deleted meanwhile, leave the form to correct.
+        onStale: async (e) => {
+          if (!isNew && e.code === 'edited_elsewhere') setStale(true)
           await rows.reload()
         },
       },
@@ -181,14 +191,17 @@ export function EditPage<R extends { id: number }, F>({
           )}
           <Card bordered>
             <EditorWithPreview draft={draft(form)} chrome={136}>
-              {children(form, set)}
+              {/* Nothing can be typed while saving, as the page leaves once it is saved. */}
+              <div className="edit-fields" inert={saving}>
+                <Fragment key={generation}>{children(form, set)}</Fragment>
+              </div>
             </EditorWithPreview>
           </Card>
           <SaveBar
             dirty={dirty && !done}
             saving={saving}
             onSave={() => void save()}
-            onReset={() => setForm(start)}
+            onReset={reset}
             note={stale ? '已被其他人修改' : undefined}
           />
         </>

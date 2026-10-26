@@ -119,14 +119,19 @@ export function App() {
         return
       }
       if (hasUnsaved() && !takeLeave()) {
+        const held = shown
         history.pushState(history.state, '', shown)
         if (asked) return
         asked = true
         const leave = await confirmLeave()
         asked = false
-        if (leave) history.back()
+        // The page may have moved on meanwhile, such as after a save that was on its way.
+        if (leave && window.location.hash === held) history.back()
+        else takeLeave()
         return
       }
+      // A pass to leave not needed for this move is not kept for a later one.
+      takeLeave()
       shown = next
       setPage(currentPage())
     }

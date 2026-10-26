@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, DatePicker, Input, Loading, Space, Textarea } from 'tdesign-react'
 import { useRecordId } from '../EditPage'
 import { Field } from '../Field'
@@ -25,6 +25,11 @@ export function HomeContent() {
   const linkTargets = useLinkTargets()
   // A banner opened from the list is edited on its own page.
   const bannerId = useRecordId()
+  // Leaving for a banner discarded any notice edits, which must not come back with the list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when a banner is opened
+  useEffect(() => {
+    if (bannerId) reset()
+  }, [bannerId])
   if (bannerId) return <BannerEditPage key={bannerId} id={bannerId} banners={banners} />
 
   const list = (

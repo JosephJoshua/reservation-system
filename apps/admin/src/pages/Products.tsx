@@ -273,7 +273,9 @@ function ProductEditor({
       </Field>
       <Field label="课程">
         <Select
-          value={f.lessonTypeId}
+          // A new package opened before the courses loaded has none picked yet.
+          value={types.some((t) => t.id === f.lessonTypeId) ? f.lessonTypeId : undefined}
+          placeholder="请选择课程"
           options={types.map((t) => ({ label: t.name, value: t.id }))}
           onChange={(v) => set({ lessonTypeId: Number(v), coachIds: [] })}
         />

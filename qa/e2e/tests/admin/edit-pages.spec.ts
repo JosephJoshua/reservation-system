@@ -96,6 +96,88 @@ test('leaving an edited coach asks first, and 撤销修改 puts the form back', 
   await expect(page).toHaveURL(/#\/coaches$/)
 })
 
+test('撤销修改 puts the rich 介绍 back too', async ({ page }) => {
+  await login(page)
+  await page.goto(`./#/coaches/${coachId}`)
+  const intro = field(editForm(page), '介绍').locator('.tiptap')
+  await intro.click()
+  await page.keyboard.type('不要了')
+  await expect(bar(page)).toBeVisible()
+  await bar(page).getByRole('button', { name: '撤销修改' }).click()
+  await expect(intro).not.toContainText('不要了')
+  // Typing again after 撤销修改 starts from the saved text.
+  await field(editForm(page), '介绍').locator('.tiptap').click()
+  await page.keyboard.type('新的')
+  await saveEdit(page)
+  await page.goto(`./#/coaches/${coachId}`)
+  await expect(field(editForm(page), '介绍').locator('.tiptap')).toHaveText('新的')
+})
+
+test('a category picked for a new coach and deleted meanwhile can be changed and saved', async ({
+  page,
+  request,
+}) => {
+  const { token } = await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+    username: 'admin',
+    password: ADMIN_PASSWORD,
+  })
+  const category = await call<{ id: number }>(request, 'POST', '/admin/coach-categories', token, {
+    name: `删${run.slice(-4)}`,
+  })
+  await login(page)
+  await page.goto('./#/coaches/new')
+  await field(editForm(page), '姓名').locator('input').fill(`换类别${run}`)
+  await field(editForm(page), '类别').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: `删${run.slice(-4)}` }).click()
+  await call(request, 'DELETE', `/admin/coach-categories/${category.id}`, token)
+  await bar(page).getByRole('button', { name: '保存' }).click()
+  await expect(page.locator('.t-message.t-is-error')).toBeVisible()
+  await expect(page.locator('.edit-stale')).toHaveCount(0)
+  await field(editForm(page), '类别').locator('.t-select').hover()
+  await field(editForm(page), '类别').locator('.t-input__suffix-clear').click()
+  await saveEdit(page)
+  await expect(page.getByRole('link', { name: `换类别${run}` })).toBeVisible()
+})
+
+test('新建类别 opens once, not again when the tab comes back', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/coaches?tab=categories')
+  await page.getByRole('button', { name: '新建类别' }).click()
+  await expect(page.locator('.t-dialog__header', { hasText: '新建类别' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.t-dialog__header', { hasText: '新建类别' })).toBeHidden()
+  await tab(page, '教练').click()
+  await tab(page, '教练类别').click()
+  await page.waitForTimeout(400)
+  await expect(page.locator('.t-dialog__header:visible', { hasText: '新建类别' })).toHaveCount(0)
+})
+
+test('a notice edit discarded for a banner does not come back', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/banners')
+  const notice = field(page.locator('.t-card', { hasText: '首页公告' }), '公告').locator('input')
+  const before = await notice.inputValue()
+  await notice.fill(`丢掉${run}`)
+  await page.getByRole('button', { name: '新建轮播图' }).click()
+  await page.getByRole('button', { name: '放弃修改' }).click()
+  await expect(page.locator('.edit-page')).toBeVisible()
+  await page.locator('.breadcrumb').getByRole('link', { name: '首页内容' }).click()
+  await expect(notice).toHaveValue(before)
+  await expect(bar(page)).toHaveCount(0)
+})
+
+test('back after saving goes past the edit page', async ({ page }) => {
+  await login(page)
+  await page.goto('./#/overview')
+  await page.goto('./#/coaches')
+  await page.getByRole('link', { name: coachName }).click()
+  await field(editForm(page), '头衔').locator('input').fill('二级教练')
+  await saveEdit(page)
+  await expect(page).toHaveURL(/#\/coaches$/)
+  await page.goBack()
+  await expect(page.locator('.edit-page')).toHaveCount(0)
+})
+
 test('a new course needs a name, and lands in the list once saved', async ({ page }) => {
   await login(page)
   await page.goto('./#/courses')

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Card,
@@ -351,9 +351,12 @@ function Categories({
     loaded?: CoachCategory
   } | null>(null)
   const submitting = useSubmitting()
+  // The count when the tab was shown, so coming back to it doesn't open the dialog again.
+  const handled = useRef(add)
   useEffect(() => {
-    if (add)
-      setCategory({ key: newKey(), id: null, form: { ...emptyCategory, prices: [], payRates: [] } })
+    if (add === handled.current) return
+    handled.current = add
+    setCategory({ key: newKey(), id: null, form: { ...emptyCategory, prices: [], payRates: [] } })
   }, [add])
   const move = useReorder('coach-categories', categories.setData, categories.reload)
 
