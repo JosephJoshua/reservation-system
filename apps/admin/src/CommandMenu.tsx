@@ -20,6 +20,7 @@ const STUDENTS_SHOWN = 5
 
 // Other names a page is looked for by.
 const pageWords: Record<string, string> = {
+  schedule: '排课 排班 课表',
   checkin: '签到 前台签到 点名',
   bookings: '改约 取消',
   catalog: '课程 教练 课程类型',
