@@ -108,6 +108,8 @@ export type RefundStatus =
 
 export interface BookingDto {
   id: number
+  /** The lesson it is a seat in, which a move changes. */
+  slotId: number
   status: BookingStatus
   startsAt: string
   endsAt: string

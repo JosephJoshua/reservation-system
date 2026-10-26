@@ -1,5 +1,5 @@
 import { type ActionLogEntryDto, formatYuan, type StaffAction, venueParts } from '@rs/shared'
-import { and, desc, eq, gte, inArray, lt } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, lt, or } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import { actionLog, bookings, coaches, lessonTypes, slots, staff, students } from '../db/schema'
 import { DELETED_NAME } from './account'
@@ -40,11 +40,25 @@ export function listActions(
     staffId?: number
     actions?: StaffAction[]
     studentId?: number
+    /** What was done to one lesson: to the session itself and to each of its seats. */
+    slotId?: number
     from?: Date
     to?: Date
     before?: number
   },
 ): ActionLogEntryDto[] {
+  const lesson = q.slotId
+    ? or(
+        and(eq(actionLog.targetKind, 'slot'), eq(actionLog.targetId, q.slotId)),
+        and(
+          eq(actionLog.targetKind, 'booking'),
+          inArray(
+            actionLog.targetId,
+            tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.slotId, q.slotId)),
+          ),
+        ),
+      )
+    : undefined
   const rows = tx
     .select({
       entry: actionLog,
@@ -57,6 +71,7 @@ export function listActions(
         q.staffId ? eq(actionLog.staffId, q.staffId) : undefined,
         q.actions?.length ? inArray(actionLog.action, q.actions) : undefined,
         q.studentId ? eq(actionLog.studentId, q.studentId) : undefined,
+        lesson,
         q.from ? gte(actionLog.createdAt, q.from) : undefined,
         q.to ? lt(actionLog.createdAt, q.to) : undefined,
         q.before ? lt(actionLog.id, q.before) : undefined,

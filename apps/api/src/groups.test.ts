@@ -5,6 +5,7 @@ import {
   bookings,
   coaches,
   coachLessonTypes,
+  lessonFeedback,
   lessonTypes,
   orders,
   packageProducts,
@@ -963,5 +964,61 @@ describe('session capacity', () => {
       expect.objectContaining({ id, capacity: 4, lessonTypeId: kids.id, booking: null }),
     ])
     expect(rows[0].bookings).toHaveLength(2)
+  })
+})
+
+describe('one lesson for 课程详情', () => {
+  it('shows the session, its seats, its feedback and what was done to it', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const slotId = await session(h, admin, kids.id, coach.id)
+    const other = await session(h, admin, kids.id, coach.id, 14)
+    const [a, b, c] = await students(h, '甲', '乙', '丙')
+    const first = await seat(h, a, slotId, kids.id)
+    const second = await seat(h, b, slotId, kids.id)
+    await seat(h, c, other, kids.id)
+
+    const detail = await h.call('GET', `/admin/slots/${slotId}`, undefined, admin)
+    expect(detail.status).toBe(200)
+    expect(detail.json).toMatchObject({
+      id: slotId,
+      capacity: 4,
+      coach: { id: coach.id, name: coach.name },
+      lessonType: { id: kids.id, name: '少儿小班课' },
+      cancelledAt: null,
+    })
+    expect((await h.call('GET', '/admin/slots/99999', undefined, admin)).status).toBe(404)
+
+    const seats = await h.call('GET', `/admin/bookings?slotId=${slotId}`, undefined, admin)
+    expect(seats.json.map((s: { id: number }) => s.id)).toEqual([first, second])
+    expect(seats.json[0]).toMatchObject({ slotId })
+    const one = await h.call('GET', `/admin/bookings?id=${second}`, undefined, admin)
+    expect(one.json.map((s: { id: number }) => s.id)).toEqual([second])
+
+    h.db
+      .insert(lessonFeedback)
+      .values({ bookingId: first, text: '反手进步了', updatedAt: h.clock.now })
+      .run()
+    const feedback = await h.call('GET', `/admin/feedback?slotId=${slotId}`, undefined, admin)
+    expect(feedback.json.map((f: { bookingId: number }) => f.bookingId)).toEqual([first])
+    expect((await h.call('GET', `/admin/feedback?slotId=${other}`, undefined, admin)).json).toEqual(
+      [],
+    )
+
+    expect((await h.call('PATCH', `/admin/slots/${slotId}`, { capacity: 6 }, admin)).status).toBe(
+      204,
+    )
+    expect(
+      (await h.call('POST', `/admin/bookings/${second}/cancel`, { reason: '请假' }, admin)).status,
+    ).toBe(204)
+    const log = await h.call('GET', `/admin/actions?slotId=${slotId}`, undefined, admin)
+    expect(log.json.map((e: { action: string }) => e.action)).toEqual([
+      'booking.cancel',
+      'session.update',
+      'session.create',
+    ])
+    const otherLog = await h.call('GET', `/admin/actions?slotId=${other}`, undefined, admin)
+    expect(otherLog.json.map((e: { action: string }) => e.action)).toEqual(['session.create'])
   })
 })
