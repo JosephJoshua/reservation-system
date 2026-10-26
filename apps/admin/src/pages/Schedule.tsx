@@ -33,6 +33,7 @@ import { Field } from '../Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
 import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
 import { bookingStatusLabel } from '../labels'
+import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
 import type { Coach, LessonType, Slot } from '../types'
 import { CoachScheduleDialog, spanText } from './CoachDialogs'
@@ -93,6 +94,7 @@ export function Schedule() {
     void slots.reload()
     void conflicts.reload()
   }
+  useOnLessonChanged(slots.reload)
 
   const day = plan.data?.date === date ? plan.data : null
   const categories = [
@@ -665,6 +667,24 @@ function CreateSessions({
   )
 }
 
+/** Leaves the board's dialog for 课程详情, with the payments, 课后点评 and 记录. */
+function DetailLink({ slotId, onClose }: { slotId: number; onClose: () => void }) {
+  return (
+    <a
+      href={`#/lessons/${slotId}`}
+      className="lesson-link"
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        e.preventDefault()
+        onClose()
+        openLesson(slotId)
+      }}
+    >
+      查看课程详情
+    </a>
+  )
+}
+
 /** A private lesson on the board: who, and moving, cancelling or marking attendance. */
 function LessonDialog({
   slot,
@@ -733,6 +753,7 @@ function LessonDialog({
         <span className="muted">
           {coach?.name} {lessonType?.name}
         </span>
+        <DetailLink slotId={slot.id} onClose={onClose} />
 
         {started && b.status !== 'pending_payment' && (
           <Space align="center">
@@ -906,6 +927,7 @@ function SessionDialog({
             {!slot.open && <span className="muted">，已停止报名</span>}
           </span>
         )}
+        <DetailLink slotId={slot.id} onClose={onClose} />
 
         {slot.bookings.length === 0 ? (
           <span className="muted">

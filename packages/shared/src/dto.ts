@@ -179,6 +179,7 @@ export interface FeedbackItemDto extends FeedbackDto {
 export interface AdminFeedbackDto extends FeedbackDto {
   id: number
   bookingId: number
+  slotId: number
   startsAt: string
   coach: { id: number; name: string }
   lessonTypeName: string

@@ -38,6 +38,7 @@ import {
 } from 'tdesign-react'
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
+import { LessonTime } from '../bookingCells'
 import { DataTable, LoadMore } from '../DataTable'
 import { BindWechatDialog, NewStudentDialog } from '../DeskStudent'
 import { ExportButton } from '../ExportButton'
@@ -59,6 +60,7 @@ import {
   offlineMethodLabel,
   packageStatusLabel,
 } from '../labels'
+import { useOnLessonChanged } from '../lessonLink'
 import { useCan } from '../me'
 import { leaveTo } from '../SaveBar'
 import type { LedgerEntry, PackageProduct, StudentDetail, StudentRow } from '../types'
@@ -385,6 +387,7 @@ function ExpiryCell({ expiresAt }: { expiresAt: string }) {
  */
 function useStudent(id: number, onChanged: () => void) {
   const detail = useApi<StudentDetail>(`/admin/students/${id}`)
+  useOnLessonChanged(detail.reload)
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const [selling, setSelling] = useState(false)
   const [booking, setBooking] = useState(false)
@@ -719,7 +722,13 @@ function BookingsCard({ student }: { student: Student }) {
         data={s.bookings}
         empty="没有预约"
         columns={[
-          { colKey: 'startsAt', title: '时间', cell: ({ row }) => fmtDateTime(row.startsAt) },
+          {
+            colKey: 'startsAt',
+            title: '时间',
+            cell: ({ row }) => (
+              <LessonTime slotId={row.slotId}>{fmtDateTime(row.startsAt)}</LessonTime>
+            ),
+          },
           {
             colKey: 'lesson',
             title: '课程',

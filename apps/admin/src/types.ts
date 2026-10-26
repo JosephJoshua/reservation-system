@@ -103,6 +103,13 @@ export interface Slot {
   bookings: SlotBooking[]
 }
 
+/** One lesson for 课程详情: a group session, or the time of a private lesson. */
+export type LessonSlot = Omit<Slot, 'booking' | 'bookings'> & {
+  coach: { id: number; name: string }
+  /** The class of a group session; null for a private lesson, whose booking names it. */
+  lessonType: { id: number; name: string } | null
+}
+
 export interface SlotBooking {
   id: number
   status: BookingStatus

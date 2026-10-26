@@ -2069,3 +2069,16 @@ a:hover {
   background: var(--td-warning-color-1);
   color: var(--td-text-color-primary);
 }
+
+/* 课程详情: coach, class and status under the time. */
+.lesson-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.drawer-head .lesson-facts,
+.t-drawer .detail-head {
+  margin-bottom: 0;
+}

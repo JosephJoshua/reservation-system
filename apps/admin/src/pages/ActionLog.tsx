@@ -140,7 +140,18 @@ export function ActionLog() {
               </Tag>
             ),
           },
-          { colKey: 'summary', title: '内容', cell: ({ row }) => row.summary },
+          {
+            colKey: 'summary',
+            title: '内容',
+            cell: ({ row }) =>
+              row.targetKind === 'booking' && row.targetId ? (
+                <a href={`#/lessons?booking=${row.targetId}`}>{row.summary}</a>
+              ) : row.targetKind === 'slot' && row.targetId ? (
+                <a href={`#/lessons/${row.targetId}`}>{row.summary}</a>
+              ) : (
+                row.summary
+              ),
+          },
           {
             colKey: 'student',
             title: '学员',

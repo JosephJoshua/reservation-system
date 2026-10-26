@@ -339,6 +339,7 @@ export function adminFeedback(
       ...feedbackView(r.feedback),
       id: r.feedback.id,
       bookingId: r.booking.id,
+      slotId: r.booking.slotId,
       startsAt: r.booking.startsAt.toISOString(),
       coach: r.coach,
       lessonTypeName: r.lessonTypeName,
