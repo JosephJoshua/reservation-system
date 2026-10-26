@@ -6,9 +6,11 @@ import {
   ADMIN_PASSWORD,
   call,
   dialog,
+  editForm,
   field,
   login,
   pickDate,
+  saveEdit,
   student,
   typeNumber,
 } from './helpers'
@@ -78,9 +80,9 @@ test('creates a group class with a size and a minimum', async ({ page, request }
     })
   ).token
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/courses')
   await page.getByRole('button', { name: '新建课程' }).click()
-  const form = dialog(page)
+  const form = editForm(page)
   await field(form, '名称').locator('input').fill(lessonName)
   await typeNumber(field(form, '时长').locator('input'), '90')
   await typeNumber(field(form, '标准价').locator('input'), '120')
@@ -90,8 +92,8 @@ test('creates a group class with a size and a minimum', async ({ page, request }
   await expect(form.getByText('到免费取消截止时如果人数不足，整节课会自动取消并退款')).toBeVisible()
   // A group class cannot be a trial.
   await expect(form.locator('.t-checkbox', { hasText: '体验课' })).toHaveClass(/t-is-disabled/)
-  await both(page, 'lesson-type-dialog')
-  await form.getByRole('button', { name: '保存' }).click()
+  await both(page, 'lesson-type-page')
+  await saveEdit(page)
   await expect(page.getByRole('row').filter({ hasText: lessonName })).toContainText('小班课 · 4 人')
 
   const types = await call<{ id: number; name: string; capacity: number; minStudents: number }[]>(

@@ -57,12 +57,15 @@ export async function toggle<T extends object>({
   path,
   row,
   change,
+  version = (r) => r,
   done,
   reload,
 }: {
   path: string
   row: T
   change: Partial<T>
+  /** The part of the record its version covers, when the list adds more. */
+  version?: (row: T) => unknown
   /** The message once changed, such as 已下架. */
   done: string
   reload: () => Promise<unknown>
@@ -76,7 +79,12 @@ export async function toggle<T extends object>({
   let saved: T | undefined
   const ok = await attempt(
     async () => {
-      saved = await api<T>('PUT', path, { ...row, ...change }, { ifMatch: row, key: newKey() })
+      saved = await api<T>(
+        'PUT',
+        path,
+        { ...row, ...change },
+        { ifMatch: version(row), key: newKey() },
+      )
       await reload()
     },
     undefined,
@@ -87,7 +95,7 @@ export async function toggle<T extends object>({
   undoMessage(done, () =>
     attempt(
       async () => {
-        await api('PUT', path, { ...after, ...back }, { ifMatch: after, key: newKey() })
+        await api('PUT', path, { ...after, ...back }, { ifMatch: version(after), key: newKey() })
         await reload()
       },
       '已撤销',

@@ -32,8 +32,9 @@ test('banners reorder with 上移 and by dragging, and keep the order', async ({
     .locator('tbody tr', { hasText: `甲${run}` })
     .getByRole('button', { name: '编辑' })
     .click()
-  await expect(field(page.locator('.t-dialog:visible'), '排序')).toHaveCount(0)
-  await page.keyboard.press('Escape')
+  await expect(field(page.locator('.edit-page'), '展示')).toBeVisible()
+  await expect(field(page.locator('.edit-page'), '排序')).toHaveCount(0)
+  await page.goBack()
 
   const row = (name: string) => page.locator('tbody tr', { hasText: `${name}${run}` })
   await row('丙').hover()

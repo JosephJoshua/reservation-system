@@ -30,6 +30,22 @@ export function dialog(page: Page) {
   return page.locator('.t-dialog:not(.crop-dialog):visible')
 }
 
+/** A tab of a page, such as 教练类别 on 教练. */
+export function tab(page: Page, name: string) {
+  return page.locator('.t-tabs__nav-item', { hasText: new RegExp(`^${name}$`) })
+}
+
+/** The form of a record edited on its own page, such as `#/coaches/3`. */
+export function editForm(page: Page) {
+  return page.locator('.edit-page .editor-form')
+}
+
+/** Saves the record edited on its own page, which then goes back to its list. */
+export async function saveEdit(page: Page) {
+  await page.getByRole('region', { name: '保存修改' }).getByRole('button', { name: '保存' }).click()
+  await expect(page.locator('.edit-page')).toHaveCount(0)
+}
+
 /** Accepts the crop dialog that opens after picking an image, and waits for the upload. */
 export async function useCrop(page: Page) {
   const crop = page.locator('.crop-dialog:visible')

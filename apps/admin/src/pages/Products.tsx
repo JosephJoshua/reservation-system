@@ -5,7 +5,6 @@ import {
   Card,
   Checkbox,
   DateRangePicker,
-  Dialog,
   Input,
   InputNumber,
   Select,
@@ -13,90 +12,109 @@ import {
   Switch,
   Textarea,
 } from 'tdesign-react'
-import { api } from '../api'
 import { DataTable } from '../DataTable'
+import { EditPage, useRecordId } from '../EditPage'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
-import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { type ApiData, useApi } from '../hooks'
 import { packageStatusLabel } from '../labels'
-import {
-  EditorWithPreview,
-  PREVIEW_DIALOG_WIDTH,
-  PreviewDialog,
-} from '../preview/EditorWithPreview'
+import type { ProductForm } from '../preview/data'
+import { PreviewDialog } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
+import { leaveTo } from '../SaveBar'
 import type { Coach, CoachCategory, LessonType, PackageProduct } from '../types'
 import { ListSwitch, toggle } from '../undo'
 
-type ProductForm = Omit<PackageProduct, 'id'>
+const LIST = { label: '课时包', hash: '#/products' }
 
+const productForm = ({ id: _id, ...form }: PackageProduct): ProductForm => form
+
+/** 课时包: the packages students buy, each edited on its own page at `#/products/<id>`. */
 export function Products() {
   const products = useApi<PackageProduct[]>('/admin/package-products')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const coaches = useApi<Coach[]>('/admin/coaches')
   const categories = useApi<CoachCategory[]>('/admin/coach-categories')
-  const [edit, setEdit] = useState<{
-    id: number | null
-    key: string
-    form: ProductForm
-    // The product as listed when the edit began, so a save over someone else's change is refused.
-    loaded?: PackageProduct
-  } | null>(null)
-  const [preview, setPreview] = useState<PackageProduct | null>(null)
-  const submitting = useSubmitting()
-  const move = useReorder('package-products', products.setData, products.reload)
-
+  const id = useRecordId()
   const regular = (types.data ?? []).filter((t) => !t.isTrial)
-  const typeName = (id: number) => types.data?.find((t) => t.id === id)?.name ?? ''
+  if (id)
+    return (
+      <EditPage
+        key={id}
+        id={id}
+        rows={products}
+        path="/admin/package-products"
+        list={LIST}
+        noun="课时包"
+        blank={() => ({
+          name: '',
+          description: '',
+          lessonTypeId: regular[0]?.id ?? 0,
+          coachIds: [],
+          lessonCount: 10,
+          price: 0,
+          validityDays: 180,
+          onSale: true,
+          salePrice: null,
+          saleStartsAt: null,
+          saleEndsAt: null,
+          sort: 0,
+        })}
+        toForm={productForm}
+        name={(f) => f.name.trim()}
+        check={(f) =>
+          !f.name.trim()
+            ? '请填写课时包名称'
+            : !regular.some((t) => t.id === f.lessonTypeId)
+              ? '请选择课程'
+              : f.price <= 0
+                ? '请填写价格'
+                : null
+        }
+        draft={(form) => ({ kind: 'package', id: id === 'new' ? null : id, form })}
+      >
+        {(form, set) => (
+          <ProductEditor
+            value={form}
+            types={regular}
+            coaches={coaches.data ?? []}
+            categories={categories.data ?? []}
+            onChange={set}
+          />
+        )}
+      </EditPage>
+    )
+  return (
+    <ProductList
+      products={products}
+      types={types.data ?? []}
+      coaches={coaches.data ?? []}
+      canCreate={regular.length > 0}
+    />
+  )
+}
+
+function ProductList({
+  products,
+  types,
+  coaches,
+  canCreate,
+}: {
+  products: ApiData<PackageProduct[]>
+  types: LessonType[]
+  coaches: Coach[]
+  canCreate: boolean
+}) {
+  const [preview, setPreview] = useState<PackageProduct | null>(null)
+  const move = useReorder('package-products', products.setData, products.reload)
+  const open = (row: PackageProduct) => void leaveTo(`${LIST.hash}/${row.id}`)
+
+  const typeName = (id: number) => types.find((t) => t.id === id)?.name ?? ''
   const coachNames = (ids: number[]) =>
     ids.length === 0
       ? '全部教练'
-      : ids.map((id) => coaches.data?.find((c) => c.id === id)?.name ?? '').join('，')
-
-  const save = async () => {
-    if (!edit) return
-    const ok = await attempt(
-      () =>
-        api(
-          edit.id ? 'PUT' : 'POST',
-          edit.id ? `/admin/package-products/${edit.id}` : '/admin/package-products',
-          edit.form,
-          { key: edit.key, ifMatch: edit.loaded },
-        ),
-      '已保存',
-      {
-        onStale: () => {
-          setEdit(null)
-          void products.reload()
-        },
-      },
-    )
-    if (ok) {
-      setEdit(null)
-      await products.reload()
-    }
-  }
-
-  const create = () =>
-    setEdit({
-      key: newKey(),
-      id: null,
-      form: {
-        name: '',
-        description: '',
-        lessonTypeId: regular[0]?.id ?? 0,
-        coachIds: [],
-        lessonCount: 10,
-        price: 0,
-        validityDays: 180,
-        onSale: true,
-        salePrice: null,
-        saleStartsAt: null,
-        saleEndsAt: null,
-        sort: 0,
-      },
-    })
+      : ids.map((id) => coaches.find((c) => c.id === id)?.name ?? '').join('，')
 
   const now = new Date()
 
@@ -113,7 +131,7 @@ export function Products() {
               label,
             }))}
           />
-          <Button onClick={create} disabled={regular.length === 0}>
+          <Button onClick={() => void leaveTo(`${LIST.hash}/new`)} disabled={!canCreate}>
             新建课时包
           </Button>
         </Space>
@@ -124,14 +142,18 @@ export function Products() {
         loading={products.loading}
         data={products.data ?? []}
         reorder={{ move }}
-        onOpen={(row) => setEdit({ key: newKey(), id: row.id, form: { ...row }, loaded: row })}
-        empty="还没有课时包"
+        onOpen={open}
+        empty={products.error ?? '还没有课时包'}
         columns={[
           {
             colKey: 'name',
             title: '名称',
             width: 180,
-            cell: ({ row }) => <span className="nowrap">{row.name}</span>,
+            cell: ({ row }) => (
+              <a className="nowrap" href={`${LIST.hash}/${row.id}`}>
+                {row.name}
+              </a>
+            ),
           },
           { colKey: 'lessonTypeId', title: '课程', cell: ({ row }) => typeName(row.lessonTypeId) },
           { colKey: 'coachIds', title: '适用教练', cell: ({ row }) => coachNames(row.coachIds) },
@@ -190,13 +212,7 @@ export function Products() {
             width: 150,
             cell: ({ row }) => (
               <Space size={0}>
-                <Button
-                  variant="text"
-                  theme="primary"
-                  onClick={() =>
-                    setEdit({ key: newKey(), id: row.id, form: { ...row }, loaded: row })
-                  }
-                >
+                <Button variant="text" theme="primary" onClick={() => open(row)}>
                   编辑
                 </Button>
                 <Button variant="text" theme="primary" onClick={() => setPreview(row)}>
@@ -207,27 +223,6 @@ export function Products() {
           },
         ]}
       />
-      {edit && (
-        <Dialog
-          visible
-          width={PREVIEW_DIALOG_WIDTH}
-          top={24}
-          header={edit.id ? '编辑课时包' : '新建课时包'}
-          confirmBtn={{ content: '保存', loading: submitting }}
-          onConfirm={save}
-          onClose={() => setEdit(null)}
-        >
-          <EditorWithPreview draft={{ kind: 'package', id: edit.id, form: edit.form }}>
-            <ProductEditor
-              value={edit.form}
-              types={regular}
-              coaches={coaches.data ?? []}
-              categories={categories.data ?? []}
-              onChange={(form) => setEdit({ ...edit, form })}
-            />
-          </EditorWithPreview>
-        </Dialog>
-      )}
       {preview && (
         <PreviewDialog
           title={`预览：${preview.name}`}
@@ -250,9 +245,9 @@ function ProductEditor({
   types: LessonType[]
   coaches: Coach[]
   categories: CoachCategory[]
-  onChange: (v: ProductForm) => void
+  onChange: (patch: Partial<ProductForm>) => void
 }) {
-  const set = (patch: Partial<ProductForm>) => onChange({ ...f, ...patch })
+  const set = onChange
   const teaching = coaches.filter((c) => c.lessonTypeIds.includes(f.lessonTypeId))
   // A package usually matches one price level, so offer each category's coaches in one click.
   const groups = categories.flatMap((cat) => {
@@ -278,7 +273,9 @@ function ProductEditor({
       </Field>
       <Field label="课程">
         <Select
-          value={f.lessonTypeId}
+          // A new package opened before the courses loaded has none picked yet.
+          value={types.some((t) => t.id === f.lessonTypeId) ? f.lessonTypeId : undefined}
+          placeholder="请选择课程"
           options={types.map((t) => ({ label: t.name, value: t.id }))}
           onChange={(v) => set({ lessonTypeId: Number(v), coachIds: [] })}
         />

@@ -2,7 +2,16 @@
 // on its own, and goes back to it with 恢复默认.
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, LessonTypeDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login, student, typeNumber } from './helpers'
+import {
+  ADMIN_PASSWORD,
+  call,
+  editForm,
+  field,
+  login,
+  saveEdit,
+  student,
+  typeNumber,
+} from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -32,9 +41,9 @@ function lessonRow(page: Page) {
 }
 
 async function openEditor(page: Page) {
-  await page.goto('./#/catalog')
+  await page.goto('./#/courses')
   await lessonRow(page).getByRole('button', { name: '编辑' }).click()
-  await expect(dialog(page).getByText('预约规则', { exact: true })).toBeVisible()
+  await expect(editForm(page).getByText('预约规则', { exact: true })).toBeVisible()
 }
 
 test.beforeAll(async ({ request }) => {
@@ -54,10 +63,11 @@ test('a new lesson type follows every default', async ({ page, request }) => {
   await login(page)
   await openEditor(page)
   for (const label of ['可提前预约', '最晚预约', '免费取消', '晚于此时取消', '学员改约']) {
-    await expect(field(dialog(page), label)).toContainText('跟随默认')
+    await expect(field(editForm(page), label)).toContainText('跟随默认')
   }
-  await expect(field(dialog(page), '免费取消')).toContainText('开课前 24 小时以上')
-  await dialog(page).getByRole('button', { name: '取消' }).click()
+  await expect(field(editForm(page), '免费取消')).toContainText('开课前 24 小时以上')
+  // Nothing changed, so going back to the list asks nothing.
+  await page.locator('.breadcrumb').getByRole('link', { name: '课程' }).click()
   await expect(lessonRow(page)).toContainText('默认')
   expect(await rulesSeenByStudents(request)).toMatchObject({ cancelDeadlineHours: 24 })
 })
@@ -68,7 +78,7 @@ test('sets two rules on their own and shows them in the list and settings', asyn
 }) => {
   await login(page)
   await openEditor(page)
-  const d = dialog(page)
+  const d = editForm(page)
   await field(d, '免费取消').getByRole('button', { name: '单独设置' }).click()
   // Odd input stays in range.
   const hours = field(d, '免费取消').locator('input')
@@ -91,7 +101,7 @@ test('sets two rules on their own and shows them in the list and settings', asyn
   await field(d, '学员改约').getByRole('button', { name: '恢复默认' }).click()
   await expect(field(d, '学员改约')).toContainText('跟随默认')
 
-  await d.getByRole('button', { name: '保存' }).click()
+  await saveEdit(page)
   await expect(page.getByText('已保存').last()).toBeVisible()
   await expect(lessonRow(page)).toContainText('单独设置 2 项')
   expect(await rulesSeenByStudents(request)).toEqual({
@@ -114,11 +124,11 @@ test('sets two rules on their own and shows them in the list and settings', asyn
 test('恢复默认 puts every rule back', async ({ page, request }) => {
   await login(page)
   await openEditor(page)
-  const d = dialog(page)
+  const d = editForm(page)
   for (const label of ['免费取消', '晚于此时取消']) {
     await field(d, label).getByRole('button', { name: '恢复默认' }).click()
   }
-  await d.getByRole('button', { name: '保存' }).click()
+  await saveEdit(page)
   await expect(page.getByText('已保存').last()).toBeVisible()
   await expect(lessonRow(page)).toContainText('默认')
   expect(await rulesSeenByStudents(request)).toMatchObject({

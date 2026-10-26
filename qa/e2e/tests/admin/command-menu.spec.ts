@@ -180,18 +180,18 @@ test('⌘K gives the focus back after an item that stays on the page', async ({ 
 
 test('⌘K waits while a dialog is open, and gives the focus back when closed', async ({ page }) => {
   await login(page)
-  await page.goto('./#/products')
-  await page.getByRole('button', { name: '新建课时包' }).click()
-  await expect(page.locator('.t-dialog__header', { hasText: '新建课时包' })).toBeVisible()
+  await page.goto('./#/coaches?tab=categories')
+  await page.getByRole('button', { name: '新建类别' }).click()
+  await expect(page.locator('.t-dialog__header', { hasText: '新建类别' })).toBeVisible()
   await page.keyboard.press('ControlOrMeta+k')
   await expect(menu(page)).toHaveCount(0)
   await page.keyboard.press('Escape')
-  await expect(page.locator('.t-dialog__header', { hasText: '新建课时包' })).toBeHidden()
+  await expect(page.locator('.t-dialog__header', { hasText: '新建类别' })).toBeHidden()
 
-  await page.getByRole('button', { name: '导出' }).focus()
+  await page.getByRole('button', { name: '新建类别' }).focus()
   await openMenu(page)
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: '导出' })).toBeFocused()
+  await expect(page.getByRole('button', { name: '新建类别' })).toBeFocused()
 })
 
 test('J and K move through the students and Enter opens one', async ({ page }) => {

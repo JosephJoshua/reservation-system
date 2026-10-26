@@ -79,7 +79,7 @@ test('binds a coach to WeChat with a code', async ({ page, request }) => {
   ).id
 
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   const row = page.getByRole('row').filter({ hasText: coachName })
   await expect(row).toContainText('未绑定')
   await row.getByRole('button', { name: '绑定', exact: true }).click()
@@ -100,7 +100,7 @@ test('binds a coach to WeChat with a code', async ({ page, request }) => {
 
 test('sets weekly hours and a 请假 for the coach', async ({ page, request }) => {
   await login(page)
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page
     .getByRole('row')
     .filter({ hasText: coachName })

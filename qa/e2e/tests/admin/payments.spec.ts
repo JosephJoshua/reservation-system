@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { CatalogDto, CreateBookingResponse, PackageDto, SlotDto } from '@rs/shared'
-import { call, dialog, field, login, student, typeNumber } from './helpers'
+import { call, dialog, editForm, field, login, saveEdit, student, tab, typeNumber } from './helpers'
 
 // One venue setup driven through the admin UI, then used by students through the API.
 test.describe.configure({ mode: 'serial' })
@@ -16,13 +16,14 @@ test('sets up a lesson, a coach category with its own price, a package and 排�
 }) => {
   await login(page)
 
-  await page.goto('./#/catalog')
+  await page.goto('./#/courses')
   await page.getByRole('button', { name: '新建课程' }).click()
-  await field(dialog(page), '名称').locator('input').fill(lessonName)
-  await typeNumber(field(dialog(page), '标准价').locator('input'), '200')
-  await dialog(page).getByRole('button', { name: '保存' }).click()
-  await expect(page.getByRole('cell', { name: lessonName })).toBeVisible()
+  await field(editForm(page), '名称').locator('input').fill(lessonName)
+  await typeNumber(field(editForm(page), '标准价').locator('input'), '200')
+  await saveEdit(page)
+  await expect(page.getByRole('cell', { name: lessonName, exact: true })).toBeVisible()
 
+  await page.goto('./#/coaches?tab=categories')
   await page.getByRole('button', { name: '新建类别' }).click()
   await field(dialog(page), '名称').locator('input').fill(categoryName)
   const price = field(dialog(page), '价格').locator('.nowrap').filter({ hasText: lessonName })
@@ -31,38 +32,34 @@ test('sets up a lesson, a coach category with its own price, a package and 排�
   await dialog(page).getByRole('button', { name: '保存' }).click()
   await expect(page.getByRole('cell', { name: `${lessonName} ¥300` })).toBeVisible()
 
+  await tab(page, '教练').click()
   await page.getByRole('button', { name: '新建教练' }).click()
-  await field(dialog(page), '姓名').locator('input').fill(coachName)
-  await field(dialog(page), '类别').locator('.t-select').click()
+  await field(editForm(page), '姓名').locator('input').fill(coachName)
+  await field(editForm(page), '类别').locator('.t-select').click()
   await page.locator('.t-select-option', { hasText: categoryName }).click()
-  await dialog(page)
+  await editForm(page)
     .locator('.t-checkbox', { hasText: new RegExp(`^${lessonName}$`) })
     .click()
-  await dialog(page).getByRole('button', { name: '保存' }).click()
-  await expect(
-    page
-      .locator('.t-card')
-      .filter({ hasText: '新建教练' })
-      .getByRole('cell', { name: `${lessonName} ¥300` }),
-  ).toBeVisible()
+  await saveEdit(page)
+  await expect(page.getByRole('cell', { name: `${lessonName} ¥300` })).toBeVisible()
 
   await page.goto('./#/products')
   await page.getByRole('button', { name: '新建课时包' }).click()
-  await field(dialog(page), '名称').locator('input').fill(productName)
-  await field(dialog(page), '课程').locator('.t-select').click()
+  await field(editForm(page), '名称').locator('input').fill(productName)
+  await field(editForm(page), '课程').locator('.t-select').click()
   await page.locator('.t-select-option', { hasText: lessonName }).click()
-  await typeNumber(field(dialog(page), '价格').locator('input'), '2800')
-  await dialog(page)
+  await typeNumber(field(editForm(page), '价格').locator('input'), '2800')
+  await editForm(page)
     .locator('.t-checkbox', { hasText: /^设置限时价$/ })
     .click()
-  await typeNumber(field(dialog(page), '限时价').locator('.t-input-number input'), '2500')
-  await dialog(page).getByRole('button', { name: '保存' }).click()
+  await typeNumber(field(editForm(page), '限时价').locator('.t-input-number input'), '2500')
+  await saveEdit(page)
   const row = page.getByRole('row').filter({ hasText: productName })
   await expect(row).toContainText('¥2500')
   await expect(row.locator('.strike')).toHaveText('¥2800')
 
   // The coach takes lessons on Wednesday mornings.
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page
     .getByRole('row')
     .filter({ hasText: coachName })

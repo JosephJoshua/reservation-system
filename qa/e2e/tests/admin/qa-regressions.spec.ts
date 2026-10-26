@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, CreateBookingResponse, SlotDto } from '@rs/shared'
-import { ADMIN_PASSWORD, call, dialog, field, login, student, useCrop } from './helpers'
+import { ADMIN_PASSWORD, call, dialog, editForm, field, login, student, useCrop } from './helpers'
 
 // Bugs found by exploratory QA of the admin app, each kept as a regression test.
 test.describe.configure({ mode: 'serial' })
@@ -150,7 +150,7 @@ test('the schedule fits the screen and 排班 saves once on a double click', asy
   await expect(page.getByRole('button', { name: '退出登录' })).toBeInViewport()
   await page.screenshot({ path: `${shots}/schedule-1024.png` })
 
-  await page.goto('./#/catalog')
+  await page.goto('./#/coaches')
   await page
     .getByRole('row')
     .filter({ hasText: coachName })
@@ -235,8 +235,8 @@ test('a banner title typed before the image survives the upload', async ({ page 
   await login(page)
   await page.goto('./#/banners')
   await page.getByRole('button', { name: '新建轮播图' }).click()
-  await field(dialog(page), '标题').locator('input').fill('双十一')
-  await dialog(page)
+  await field(editForm(page), '标题').locator('input').fill('双十一')
+  await editForm(page)
     .locator('input[type=file]')
     .setInputFiles({
       name: 'banner.png',
@@ -244,9 +244,9 @@ test('a banner title typed before the image survives the upload', async ({ page 
       buffer: Buffer.from(PNG_1X1, 'base64'),
     })
   await useCrop(page)
-  await expect(dialog(page).locator('img.banner-thumb')).toBeVisible()
-  await expect(field(dialog(page), '标题').locator('input')).toHaveValue('双十一')
-  await expect(dialog(page).getByRole('button', { name: '更换图片' })).toBeVisible()
+  await expect(editForm(page).locator('img.banner-thumb')).toBeVisible()
+  await expect(field(editForm(page), '标题').locator('input')).toHaveValue('双十一')
+  await expect(editForm(page).getByRole('button', { name: '更换图片' })).toBeVisible()
 })
 
 test('a settings save from a stale tab is refused and keeps what was typed', async ({
@@ -279,26 +279,31 @@ test('a lesson edit from a stale tab is refused and keeps what was typed', async
 }) => {
   await login(page)
   const other = await context.newPage()
-  const description = (p: Page) => field(dialog(p), '简介').locator('textarea')
+  const description = (p: Page) => field(editForm(p), '简介').locator('textarea')
+  const save = (p: Page) =>
+    p.getByRole('region', { name: '保存修改' }).getByRole('button', { name: '保存' }).click()
   for (const p of [page, other]) {
-    await p.goto('./#/catalog')
-    // The lesson list is the first card; coach rows mention the lesson too.
+    await p.goto('./#/courses')
     await p
-      .locator('.t-card')
-      .first()
       .locator('tbody tr', { hasText: lessonName })
       .getByRole('button', { name: '编辑' })
       .click()
     await expect(description(p)).toBeVisible()
   }
   await description(page).fill(`第一个标签页${run}`)
-  await dialog(page).locator('.t-dialog__confirm').click()
+  await save(page)
   await expect(page.getByText('已保存')).toBeVisible()
 
   await description(other).fill(`第二个标签页${run}`)
-  await dialog(other).locator('.t-dialog__confirm').click()
+  await save(other)
   await expect(other.getByText('已被其他人修改，请刷新后再改')).toBeVisible()
   await expect(description(other)).toHaveValue(`第二个标签页${run}`)
+  // Saving again can't go over the other change; loading it replaces what was typed.
+  await save(other)
+  await expect(other.getByText('课程已被其他人修改，请先载入最新内容')).toBeVisible()
+  await other.getByRole('button', { name: '载入最新内容' }).click()
+  await expect(description(other)).toHaveValue(`第一个标签页${run}`)
+  await expect(other.getByRole('region', { name: '保存修改' })).toHaveCount(0)
 })
 
 test('an expired session says so on the login page', async ({ page }) => {

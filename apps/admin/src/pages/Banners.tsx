@@ -1,31 +1,34 @@
 import { useState } from 'react'
-import {
-  Button,
-  Card,
-  DateRangePicker,
-  Dialog,
-  Input,
-  Popconfirm,
-  Space,
-  Switch,
-} from 'tdesign-react'
+import { Button, Card, DateRangePicker, Input, Popconfirm, Space, Switch } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
+import { EditPage } from '../EditPage'
 import { Field } from '../Field'
 import { fmtDate, isoToPicker, pickerToIso } from '../format'
-import { type ApiData, attempt, newKey, useSubmitting } from '../hooks'
+import { type ApiData, attempt } from '../hooks'
 import { BANNER_IMAGE, useImageUpload } from '../ImageCrop'
 import { LinkPicker, type LinkTargets, useLinkTargets } from '../LinkPicker'
-import {
-  EditorWithPreview,
-  PREVIEW_DIALOG_WIDTH,
-  PreviewDialog,
-} from '../preview/EditorWithPreview'
+import type { BannerForm } from '../preview/data'
+import { PreviewDialog } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
+import { leaveTo } from '../SaveBar'
 import type { Banner } from '../types'
 import { ListSwitch, toggle } from '../undo'
 
-type BannerForm = Omit<Banner, 'id'>
+const LIST = { label: '首页内容', hash: '#/banners' }
+
+const blankBanner = (): BannerForm => ({
+  imageUrl: '',
+  title: '',
+  linkKind: 'none',
+  linkId: null,
+  startsAt: null,
+  endsAt: null,
+  active: true,
+  sort: 0,
+})
+
+const bannerForm = ({ id: _id, ...form }: Banner): BannerForm => form
 
 /** The 首页轮播图 list of 首页内容, which loads the banners so its preview shows them too. */
 export function Banners({
@@ -37,64 +40,22 @@ export function Banners({
   onPreview?: (banner: Banner) => void
 }) {
   const targets = useLinkTargets()
-  const [edit, setEdit] = useState<{
-    id: number | null
-    form: BannerForm
-    loaded?: Banner
-    key: string
-  } | null>(null)
   const [preview, setPreview] = useState<Banner | null>(null)
-  const submitting = useSubmitting()
   const move = useReorder('banners', banners.setData, banners.reload)
-
-  const save = async () => {
-    if (!edit) return
-    const ok = await attempt(
-      () =>
-        api(
-          edit.id ? 'PUT' : 'POST',
-          edit.id ? `/admin/banners/${edit.id}` : '/admin/banners',
-          edit.form,
-          { ifMatch: edit.loaded, key: edit.key },
-        ),
-      '已保存',
-    )
-    if (ok) {
-      setEdit(null)
-      await banners.reload()
-    }
-  }
+  const open = (row: Banner) => void leaveTo(`${LIST.hash}/${row.id}`)
 
   const remove = async (id: number) => {
-    if (await attempt(() => api('DELETE', `/admin/banners/${id}`), '已删除')) await banners.reload()
+    if (
+      await attempt(() => api('DELETE', `/admin/banners/${id}`), '已删除', { key: `banner-${id}` })
+    )
+      await banners.reload()
   }
 
   return (
     <Card
       title="首页轮播图"
       bordered
-      actions={
-        <Button
-          onClick={() =>
-            setEdit({
-              id: null,
-              form: {
-                imageUrl: '',
-                title: '',
-                linkKind: 'none',
-                linkId: null,
-                startsAt: null,
-                endsAt: null,
-                active: true,
-                sort: 0,
-              },
-              key: newKey(),
-            })
-          }
-        >
-          新建轮播图
-        </Button>
-      }
+      actions={<Button onClick={() => void leaveTo(`${LIST.hash}/new`)}>新建轮播图</Button>}
     >
       <p className="muted" style={{ marginTop: 0 }}>
         图片会按轮播图的比例裁剪。
@@ -104,14 +65,18 @@ export function Banners({
         loading={banners.loading}
         data={banners.data ?? []}
         reorder={{ move }}
-        onOpen={(row) => setEdit({ id: row.id, form: { ...row }, loaded: row, key: newKey() })}
+        onOpen={open}
         empty={banners.error ?? '还没有轮播图'}
         columns={[
           {
             colKey: 'imageUrl',
             title: '图片',
             width: 104,
-            cell: ({ row }) => <img className="banner-thumb" src={row.imageUrl} alt={row.title} />,
+            cell: ({ row }) => (
+              <a href={`${LIST.hash}/${row.id}`} aria-label={`编辑 ${row.title || '无标题'}`}>
+                <img className="banner-thumb" src={row.imageUrl} alt={row.title} />
+              </a>
+            ),
           },
           {
             colKey: 'title',
@@ -156,13 +121,7 @@ export function Banners({
             width: 204,
             cell: ({ row }) => (
               <Space size={0}>
-                <Button
-                  variant="text"
-                  theme="primary"
-                  onClick={() =>
-                    setEdit({ id: row.id, form: { ...row }, loaded: row, key: newKey() })
-                  }
-                >
+                <Button variant="text" theme="primary" onClick={() => open(row)}>
                   编辑
                 </Button>
                 <Button
@@ -188,26 +147,6 @@ export function Banners({
           },
         ]}
       />
-      {edit && (
-        <Dialog
-          visible
-          width={PREVIEW_DIALOG_WIDTH}
-          top={24}
-          header={edit.id ? '编辑轮播图' : '新建轮播图'}
-          confirmBtn={{ content: '保存', disabled: !edit.form.imageUrl, loading: submitting }}
-          onConfirm={save}
-          onClose={() => setEdit(null)}
-        >
-          <EditorWithPreview draft={{ kind: 'banner', id: edit.id, form: edit.form }}>
-            <BannerEditor
-              value={edit.form}
-              targets={targets}
-              // Merged into the latest form, so an upload finishing later keeps what was typed meanwhile.
-              onChange={(patch) => setEdit((e) => e && { ...e, form: { ...e.form, ...patch } })}
-            />
-          </EditorWithPreview>
-        </Dialog>
-      )}
       {preview && (
         <PreviewDialog
           title={`预览：${preview.title || '轮播图'}`}
@@ -216,6 +155,33 @@ export function Banners({
         />
       )}
     </Card>
+  )
+}
+
+/** A banner on its own page, `#/banners/<id>` or `#/banners/new`, with the home tab beside it. */
+export function BannerEditPage({
+  id,
+  banners,
+}: {
+  id: number | 'new'
+  banners: ApiData<Banner[]>
+}) {
+  const targets = useLinkTargets()
+  return (
+    <EditPage
+      id={id}
+      rows={banners}
+      path="/admin/banners"
+      list={LIST}
+      noun="轮播图"
+      blank={blankBanner}
+      toForm={bannerForm}
+      name={(f) => f.title.trim()}
+      check={(f) => (f.imageUrl ? null : '请选择图片')}
+      draft={(form) => ({ kind: 'banner', id: id === 'new' ? null : id, form })}
+    >
+      {(form, set) => <BannerEditor value={form} targets={targets} onChange={set} />}
+    </EditPage>
   )
 }
 
