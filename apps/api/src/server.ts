@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { CHECK_IN_PATH } from '@rs/shared'
@@ -46,24 +48,37 @@ const deps: Deps = {
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')
 const stopSweeper = startSweeper(deps)
 
-// In a deployment the API also serves the built admin app, so one container holds one environment.
+// In a deployment the API also serves the built admin app and the 使用手册, so one container holds
+// one environment.
 const root = new Hono()
-if (config.adminDir) {
-  const adminDir = config.adminDir
-  root.get('/admin', (c) => c.redirect('/admin/'))
-  // Hashed bundles are cached for good; index.html is checked on every load.
+
+/**
+ * Serves a built site under `prefix`. Hashed bundles are cached for good; pages are checked on
+ * every load; anything else (the manual's screenshots and videos) for an hour.
+ */
+const serveBuilt = (prefix: string, dir: string) => {
+  root.get(prefix, (c) => c.redirect(`${prefix}/`))
   root.use(
-    '/admin/*',
+    `${prefix}/*`,
     serveStatic({
-      root: adminDir,
-      rewriteRequestPath: (path) => path.replace(/^\/admin/, ''),
+      root: dir,
+      rewriteRequestPath: (path) => path.slice(prefix.length),
       onFound: (path, c) =>
         c.header(
           'Cache-Control',
-          path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+          path.includes('/assets/')
+            ? 'public, max-age=31536000, immutable'
+            : path.endsWith('.html')
+              ? 'no-cache'
+              : 'public, max-age=3600',
         ),
     }),
   )
+}
+
+if (config.adminDir) {
+  const adminDir = config.adminDir
+  serveBuilt('/admin', adminDir)
   // Any other page path gets the app; a missing bundle (an old one after a deploy) stays a 404.
   const index = serveStatic({
     path: 'index.html',
@@ -76,27 +91,13 @@ if (config.adminDir) {
   })
   root.get('/', (c) => c.redirect('/admin/'))
 }
-// The 使用手册, a static VitePress site. Pages link to each other as .html files, so no fallback.
+// The 使用手册, a static VitePress site. Pages link to each other as .html files, so a missing
+// path gets the site's own 404 page.
 if (config.helpDir) {
-  const helpDir = config.helpDir
-  root.get('/help', (c) => c.redirect('/help/'))
-  root.use(
-    '/help/*',
-    serveStatic({
-      root: helpDir,
-      rewriteRequestPath: (path) => path.replace(/^\/help/, ''),
-      onFound: (path, c) =>
-        c.header(
-          'Cache-Control',
-          path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-        ),
-    }),
-  )
-  const missing = serveStatic({ path: '404.html', root: helpDir })
-  root.use('/help/*', async (c, next) => {
-    const page = await missing(c, next)
-    return page ? new Response(page.body, { status: 404, headers: page.headers }) : c.notFound()
-  })
+  serveBuilt('/help', config.helpDir)
+  const notFoundFile = join(config.helpDir, '404.html')
+  const notFound = existsSync(notFoundFile) ? readFileSync(notFoundFile, 'utf8') : null
+  root.use('/help/*', (c) => (notFound ? c.html(notFound, 404) : c.notFound()))
 }
 // The venue's printed 签到码 links here. WeChat opens the mini program for it once the link is set
 // up under 扫普通链接二维码打开小程序; any other scanner lands on this note.

@@ -8,11 +8,12 @@
 // Shots are written as WebP to apps/docs/public/img/admin, recordings as MP4 to
 // apps/docs/public/video. Needs ffmpeg. Pass ids to retake only some of them.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Browser, chromium, type Locator, type Page } from '@playwright/test'
+import { venueDateKey } from '@rs/shared'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const docs = resolve(here, '../../../apps/docs/public')
@@ -25,8 +26,11 @@ const ADMIN = process.env.ADMIN_URL ?? 'http://localhost:5173/admin/'
 const only = new Set(process.argv.slice(2))
 const wanted = (id: string) => only.size === 0 || only.has(id)
 
+// The cloud sandbox has Chromium at a fixed path; elsewhere Playwright's own browser is used.
+const sandboxChromium = '/opt/pw-browsers/chromium'
 const browser: Browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium',
+  executablePath:
+    process.env.CHROMIUM ?? (existsSync(sandboxChromium) ? sandboxChromium : undefined),
 })
 
 const desktop = { viewport: { width: 1280, height: 760 }, deviceScaleFactor: 2 }
@@ -69,6 +73,9 @@ addEventListener('DOMContentLoaded', () => {
   addEventListener('mouseup', () => { dot.style.transform = '' }, true)
 })`
 
+/** Contexts still open, so a failed step can close its own without keeping a half-made recording. */
+const unfinished = new Set<() => Promise<void>>()
+
 async function open(
   options: { phone?: boolean; record?: string; user?: [string, string] } = {},
 ): Promise<{ page: Page; done: () => Promise<void> }> {
@@ -88,7 +95,17 @@ async function open(
   await first.getByPlaceholder('密码').fill(password)
   await first.getByRole('button', { name: '登录' }).click()
   await first.getByRole('button', { name: '退出登录' }).waitFor()
-  if (!options.record) return { page: first, done: () => login.close() }
+  if (!options.record) {
+    const close = () => login.close()
+    unfinished.add(close)
+    return {
+      page: first,
+      done: async () => {
+        unfinished.delete(close)
+        await close()
+      },
+    }
+  }
   const storageState = await login.storageState()
   await login.close()
 
@@ -102,9 +119,15 @@ async function open(
   })
   await context.addInitScript(pointerScript)
   const page = await context.newPage()
+  const discard = async () => {
+    await context.close()
+    rmSync(recordDir, { recursive: true, force: true })
+  }
+  unfinished.add(discard)
   return {
     page,
     done: async () => {
+      unfinished.delete(discard)
       await context.close()
       const file = readdirSync(recordDir).find((f) => f.endsWith('.webm'))
       if (file) {
@@ -156,8 +179,7 @@ async function shot(page: Page, id: string, target?: Locator) {
 const dialog = (page: Page) => page.locator('.t-dialog:visible').last()
 
 /** The venue date some days from today. */
-const dayFromToday = (days: number) =>
-  new Date(Date.now() + 8 * 3_600_000 + days * 86_400_000).toISOString().slice(0, 10)
+const dayFromToday = (days: number) => venueDateKey(new Date(Date.now() + days * 86_400_000))
 
 /** Picks a date in a TDesign date picker by clicking its day in the open calendar. */
 async function typeDate(scope: Locator, date: string) {
@@ -219,11 +241,20 @@ if (wanted('today-qr')) {
 /** Runs one part of the capture; a failure is reported and the rest goes on. */
 async function step(ids: string[], fn: () => Promise<void>) {
   if (!ids.some(wanted)) return
+  const before = new Set(unfinished)
   try {
     await fn()
   } catch (e) {
     console.error(`FAILED ${ids.join(', ')}: ${(e as Error).message.split('\n')[0]}`)
-    await page.keyboard.press('Escape').catch(() => {})
+    for (const close of unfinished) {
+      if (before.has(close)) continue
+      unfinished.delete(close)
+      await close().catch(() => {})
+    }
+    if (!page.isClosed()) {
+      await page.setViewportSize(desktop.viewport)
+      await page.keyboard.press('Escape').catch(() => {})
+    }
   }
 }
 

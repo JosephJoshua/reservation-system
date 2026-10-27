@@ -15,6 +15,11 @@ const here = dirname(fileURLToPath(import.meta.url))
 const apiDir = resolve(here, '../../../apps/api')
 const dbPath = resolve(apiDir, process.env.DATABASE_PATH ?? 'data/manual.db')
 const uploadsDir = resolve(apiDir, process.env.UPLOADS_DIR ?? 'data/manual-uploads')
+// Both are wiped below, so refuse anything that is not the manual's own data.
+if (!/manual/.test(dbPath) || !/manual/.test(uploadsDir)) {
+  console.error(`Not a manual database or uploads folder: ${dbPath}, ${uploadsDir}`)
+  process.exit(1)
+}
 for (const file of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) rmSync(file, { force: true })
 rmSync(uploadsDir, { recursive: true, force: true })
 mkdirSync(uploadsDir, { recursive: true })
@@ -257,7 +262,11 @@ async function book(s: Student, date: string, lessonTypeId: number) {
   // People book evenings and weekend mornings more than weekday mornings.
   const open = slots.filter((t) => t.available)
   if (!open.length) return null
-  const evening = open.filter((t) => new RealDate(t.startsAt).getUTCHours() + 8 >= 17)
+  const evening = open.filter(
+    (t) =>
+      Date.parse(t.startsAt) >=
+      venueInstant(venueDateKey(new RealDate(t.startsAt)), 17 * 60).getTime(),
+  )
   const slot = pick(evening.length && chance(0.6) ? evening : open)
   const target = slot.id ? { slotId: slot.id } : { coachId: slot.coachId, startsAt: slot.startsAt }
   const res = await tryCall(

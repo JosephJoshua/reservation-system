@@ -83,6 +83,11 @@ step "admin app is served"
 [ "$(status_of /admin/some/page)" = 200 ] || die "admin page paths do not get the app"
 [ "$(status_of /admin/assets/gone-1234.js)" = 404 ] || die "a missing bundle is not a 404"
 
+step "user manual is served"
+[ "$(status_of /help/)" = 200 ] || die "/help/ not served"
+[ "$(status_of /help/admin/settings.html)" = 200 ] || die "manual pages not served"
+[ "$(status_of /help/gone.html)" = 404 ] || die "a missing manual page is not a 404"
+
 step "backup while the app runs"
 run_backup
 backup $p-data /app/api/backup/restore.sh list | grep -q 'app-.*\.db\.gz' || die "no backup listed"
