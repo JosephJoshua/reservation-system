@@ -1,6 +1,6 @@
-# One image per release: the API, which also serves the built admin app at /admin/. The API is
-# bundled except for better-sqlite3, which ships prebuilt binaries in its npm package, so install
-# scripts (its node-gyp fallback needs a compiler) are skipped.
+# One image per release: the API, which also serves the built admin app at /admin/ and the
+# 使用手册 at /help/. The API is bundled except for better-sqlite3, which ships prebuilt binaries
+# in its npm package, so install scripts (its node-gyp fallback needs a compiler) are skipped.
 # Build from the repo root: docker build -f deploy/Dockerfile --target app|backup .
 
 # Mainland servers cannot reach the default registries reliably, so each source can be swapped
@@ -21,8 +21,9 @@ WORKDIR /src
 COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc package.json ./
 RUN pnpm fetch --ignore-scripts
 COPY . .
-RUN pnpm install --offline --frozen-lockfile --ignore-scripts --filter "@rs/api..." --filter "@rs/admin..." \
+RUN pnpm install --offline --frozen-lockfile --ignore-scripts --filter "@rs/api..." --filter "@rs/admin..." --filter "@rs/docs" \
  && pnpm --filter @rs/admin build \
+ && pnpm --filter @rs/docs build \
  && pnpm --filter @rs/api build \
  && mkdir -p /out/node_modules \
  && cp -r apps/api/package.json apps/api/dist apps/api/drizzle /out/ \
@@ -34,10 +35,12 @@ ENV NODE_ENV=production \
     PORT=8787 \
     DATABASE_PATH=/data/app.db \
     UPLOADS_DIR=/data/uploads \
-    ADMIN_DIR=/app/admin
+    ADMIN_DIR=/app/admin \
+    HELP_DIR=/app/help
 WORKDIR /app/api
 COPY --from=build /out ./
 COPY --from=build /src/apps/admin/dist /app/admin
+COPY --from=build /src/apps/docs/.vitepress/dist /app/help
 RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data

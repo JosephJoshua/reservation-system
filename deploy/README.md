@@ -194,7 +194,7 @@ students scan from 课程 → 扫码签到.
 
 Template values: `student`, `lesson`, `time`, `oldTime` (moved lesson, student and coach), `status` (`已取消` or `已改约`, so one 课程变动 template with a status field can serve as both `WECHAT_NOTICE_STUDENT_CANCELLED` and `WECHAT_NOTICE_STUDENT_MOVED`; set the same template ID in both, each with its own field mapping, and the booking prompt asks for it once), `coach`, `place` (venue name), `reason` (cancelled), `refund` (cancelled, such as `¥200 原路退回` or `课时已退回课时包`), `note` (feedback, or a line on the package for the package message), `package` (package name), `left` (lessons left, such as `3节`; a `number` field gets `3`), `expiry` (last day it can be used, such as `2026年11月22日`). Without `WECHAT_APP_SECRET` (development), the API logs each message instead of sending it.
 
-The image sets `PORT`, `DATABASE_PATH`, `UPLOADS_DIR` and `ADMIN_DIR`; leave them alone. All the
+The image sets `PORT`, `DATABASE_PATH`, `UPLOADS_DIR`, `ADMIN_DIR` and `HELP_DIR` (the 使用手册 at `/help/`); leave them alone. All the
 WeChat Pay variables go together: setting some but not all stops the API at start.
 
 `/srv/rs/backup.env`:

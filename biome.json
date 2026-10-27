@@ -19,6 +19,14 @@
     {
       "includes": ["apps/admin/src/phone.css"],
       "linter": { "rules": { "complexity": { "noImportantStyles": "off" } } }
+    },
+    {
+      "includes": ["**/*.vue"],
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedImports": "off", "noUnusedVariables": "off" }
+        }
+      }
     }
   ]
 }

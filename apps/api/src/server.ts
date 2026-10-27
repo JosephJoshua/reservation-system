@@ -76,6 +76,28 @@ if (config.adminDir) {
   })
   root.get('/', (c) => c.redirect('/admin/'))
 }
+// The 使用手册, a static VitePress site. Pages link to each other as .html files, so no fallback.
+if (config.helpDir) {
+  const helpDir = config.helpDir
+  root.get('/help', (c) => c.redirect('/help/'))
+  root.use(
+    '/help/*',
+    serveStatic({
+      root: helpDir,
+      rewriteRequestPath: (path) => path.replace(/^\/help/, ''),
+      onFound: (path, c) =>
+        c.header(
+          'Cache-Control',
+          path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+        ),
+    }),
+  )
+  const missing = serveStatic({ path: '404.html', root: helpDir })
+  root.use('/help/*', async (c, next) => {
+    const page = await missing(c, next)
+    return page ? new Response(page.body, { status: 404, headers: page.headers }) : c.notFound()
+  })
+}
 // The venue's printed 签到码 links here. WeChat opens the mini program for it once the link is set
 // up under 扫普通链接二维码打开小程序; any other scanner lands on this note.
 root.get(CHECK_IN_PATH, (c) =>
