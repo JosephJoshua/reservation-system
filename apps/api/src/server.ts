@@ -97,7 +97,7 @@ if (config.helpDir) {
   serveBuilt('/help', config.helpDir)
   const notFoundFile = join(config.helpDir, '404.html')
   const notFound = existsSync(notFoundFile) ? readFileSync(notFoundFile, 'utf8') : null
-  root.use('/help/*', (c) => (notFound ? c.html(notFound, 404) : c.notFound()))
+  root.use('/help/*', async (c) => (notFound ? c.html(notFound, 404) : c.notFound()))
 }
 // The venue's printed 签到码 links here. WeChat opens the mini program for it once the link is set
 // up under 扫普通链接二维码打开小程序; any other scanner lands on this note.
