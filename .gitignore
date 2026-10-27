@@ -17,3 +17,4 @@ apps/miniprogram/miniprogram/lib/
 apps/miniprogram/project.private.config.json
 apps/api/data/
 qa/miniprogram/screenshots/
+apps/docs/.vitepress/cache/

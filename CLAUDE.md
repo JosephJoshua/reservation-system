@@ -13,6 +13,9 @@ unused abstractions.
   live in the `coach/` subpackage and use their own coach session.
 - `packages/shared`: zod schemas, types, booking rules, venue time helpers. Used by every app.
 - `packages/theme`: brand tokens. Edit `tokens.json`, then `pnpm --filter @rs/theme generate`.
+- `apps/docs`: the 使用手册, a VitePress site served at `/help/`, written in formal Chinese (您).
+  Admin shots and recordings come from `qa/manual` (`data`, then `capture`); keep the shot ids
+  when a UI change needs them retaken.
 - `qa/e2e`: Playwright specs for admin. `qa/miniprogram`: automator scripts.
 - `deploy/`: Docker image, compose, Caddy, backups to COS and the runbook (`deploy/README.md`).
   New env vars go in `deploy/README.md` and `deploy/env/*.example`.

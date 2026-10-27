@@ -76,6 +76,8 @@ export const config = {
   uploadsDir: env.UPLOADS_DIR ?? 'data/uploads',
   /** Built admin app to serve at /admin/; unset in development, where Vite serves it. */
   adminDir: env.ADMIN_DIR,
+  /** Built 使用手册 (apps/docs) to serve at /help/; unset in development, where VitePress serves it. */
+  helpDir: env.HELP_DIR,
   adminPassword: adminPassword(),
   wechatAppId: env.WECHAT_APPID,
   wechatAppSecret: env.WECHAT_APP_SECRET,

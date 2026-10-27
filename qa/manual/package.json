@@ -1,0 +1,16 @@
+{
+  "name": "@rs/qa-manual",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "data": "tsx src/data.ts",
+    "capture": "tsx src/capture.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@rs/shared": "workspace:*",
+    "@types/node": "22.20.5",
+    "tsx": "4.23.15"
+  }
+}
