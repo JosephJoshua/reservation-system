@@ -1,3 +1,4 @@
+import { instantString } from '@rs/shared'
 import { z } from 'zod'
 import type { SlotTarget } from '../services/schedule'
 
@@ -24,7 +25,7 @@ export const monthKey = z.string().regex(/^2\d{3}-(0[1-9]|1[0-2])$/, '月份无�
 export const targetFields = {
   slotId: id.optional(),
   coachId: id.optional(),
-  startsAt: z.iso.datetime({ offset: true }).optional(),
+  startsAt: instantString.optional(),
 }
 
 /** Refines a schema that has `targetFields`: exactly one of the two forms. */

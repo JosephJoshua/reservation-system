@@ -5,6 +5,7 @@ import {
   addVenueDays,
   can,
   groupSettingsError,
+  instantString,
   isGroup,
   LINK_TARGET_MESSAGE,
   linkShape,
@@ -181,7 +182,7 @@ import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { exceptionBody, weeklyHoursBody } from './coach'
 import { dateKey, monthKey, oneTarget, targetFields, toTarget } from './target'
 
-const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
+const instant = instantString.transform((s) => new Date(s))
 const id = z.coerce.number().int().positive().optional()
 // A query parameter that only some kinds of a request take; the others refuse it.
 const only = <T extends z.ZodType>(allowed: boolean, schema: T) =>

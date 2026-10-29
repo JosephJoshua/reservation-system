@@ -1647,3 +1647,66 @@ describe('admin booking list', () => {
     expect(await list('status=confirmed')).toEqual([second, later])
   })
 })
+
+describe('instants out of range', () => {
+  it('refuses times outside 2000-2999 with 400 everywhere a time is sent', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    h.hours(coach.id, [{ weekday: 1, from: '09:00', to: '14:00' }])
+    const t = await h.student('a')
+    const admin = await h.admin()
+    const slot = h.slot(coach.id, '2026-10-26', 10)
+    const ok = await book(h, t, slot.id, lesson.id)
+    await pay(h, ok.json.orderId)
+    const id = ok.json.bookingId
+    const studentId = h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.studentId
+    for (const startsAt of [
+      '9999-12-31T20:00:00Z',
+      '0000-01-01T00:00:00Z',
+      '1970-01-01T00:00:00Z',
+      '2999-12-31T16:00:00Z', // 3000-01-01 at the venue
+    ]) {
+      const target = { coachId: coach.id, startsAt }
+      const q = new URLSearchParams({ ...target, coachId: String(coach.id), lessonTypeId: '1' })
+      const span = { startsAt, endsAt: '2999-12-31T15:55:00Z' }
+      const calls = [
+        h.call('POST', '/bookings', { ...target, lessonTypeId: lesson.id }, t),
+        h.call('GET', `/bookings/quote?${q}`, undefined, t),
+        h.call('POST', `/bookings/${id}/move`, target, t),
+        h.call(
+          'POST',
+          '/admin/bookings/quote',
+          { ...target, studentId, lessonTypeId: lesson.id, anyTime: true },
+          admin,
+        ),
+        h.call(
+          'POST',
+          '/admin/bookings',
+          { ...target, studentId, lessonTypeId: lesson.id, anyTime: true, payWith: 'offline' },
+          admin,
+        ),
+        h.call('POST', `/admin/bookings/${id}/move`, target, admin),
+        h.call('POST', '/admin/closures', span, admin),
+        h.call('POST', `/admin/coaches/${coach.id}/exceptions`, { ...span, kind: 'off' }, admin),
+        h.call(
+          'POST',
+          '/admin/sessions',
+          { lessonTypeId: lesson.id, capacity: 2, sessions: [{ coachId: coach.id, ...span }] },
+          admin,
+        ),
+      ]
+      for (const res of await Promise.all(calls)) {
+        expect(res.status, startsAt).toBe(400)
+        expect(res.json.error.code, startsAt).toMatch(/^invalid_(body|query)$/)
+      }
+    }
+    // The ends of the range still parse, and are refused for what they are.
+    const last = await h.call(
+      'POST',
+      '/bookings',
+      { coachId: coach.id, startsAt: '2999-12-31T15:00:00Z', lessonTypeId: lesson.id },
+      t,
+    )
+    expect(last.status).toBe(409)
+  })
+})
