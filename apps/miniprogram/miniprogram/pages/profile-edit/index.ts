@@ -1,9 +1,12 @@
-import { api, showError } from '../../utils/api'
+import { api, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, getMe } from '../../utils/data'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
 
 Page({
   data: {
+    state: 'loading' as 'loading' | 'ready' | 'error',
+    error: '',
+    errorIcon: { name: 'error-circle', size: '112rpx' },
     name: '',
     phone: '',
     showAgreement: false,
@@ -11,19 +14,37 @@ Page({
     saving: false,
   },
 
+  // Set once the student types, so a late profile answer never replaces what they typed.
+  edited: false,
+
   onLoad() {
-    getMe()
-      .then((me) =>
-        this.setData({ name: me.name, phone: me.phone, showAgreement: !me.agreedPolicies }),
-      )
-      .catch(showError)
+    this.load()
+  },
+
+  // The form shows only once the profile is in, so a student who has not agreed yet sees the
+  // agreement instead of having every save refused.
+  async load() {
+    try {
+      const me = await getMe()
+      const fields = this.edited ? {} : { name: me.name, phone: me.phone }
+      this.setData({ state: 'ready', ...fields, showAgreement: !me.agreedPolicies })
+    } catch (e) {
+      this.setData({ state: 'error', error: errorMessage(e) })
+    }
+  },
+
+  retry() {
+    this.setData({ state: 'loading' })
+    this.load()
   },
 
   onName(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    this.edited = true
     this.setData({ name: e.detail.value })
   },
 
   onPhone(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
+    this.edited = true
     this.setData({ phone: e.detail.value })
   },
 
@@ -32,7 +53,7 @@ Page({
   },
 
   async save() {
-    if (this.data.saving) return
+    if (this.data.saving || this.data.state !== 'ready') return
     const name = this.data.name.trim()
     const phone = this.data.phone.trim()
     if (!name) {

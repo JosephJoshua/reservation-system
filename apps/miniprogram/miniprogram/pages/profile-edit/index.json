@@ -3,6 +3,8 @@
   "usingComponents": {
     "t-button": "tdesign-miniprogram/button/button",
     "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
-    "t-input": "tdesign-miniprogram/input/input"
+    "t-empty": "tdesign-miniprogram/empty/empty",
+    "t-input": "tdesign-miniprogram/input/input",
+    "t-loading": "tdesign-miniprogram/loading/loading"
   }
 }
