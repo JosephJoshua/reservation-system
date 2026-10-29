@@ -78,7 +78,7 @@ describe('refunding a package sold at the front desk', () => {
     ])
     const logged = h.db.select().from(actionLog).where(eq(actionLog.action, 'package.refund')).all()
     expect(logged).toHaveLength(1)
-    expect(logged[0]?.summary).toBe('课时包「十节课」前台退款 ¥1500')
+    expect(logged[0]?.summary).toBe('课时包「十节课」前台退款 ¥1,500')
     // Counted as money back in the month, as other offline refunds are.
     const month = monthlyReport(h.deps, '2026-10')
     expect(month.revenue).toMatchObject({ refunded: 150000 })

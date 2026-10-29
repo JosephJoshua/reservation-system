@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { formatYuan, lessonPrice, packagePrice, suggestedPackageRefund } from './pricing'
+import {
+  formatMoney,
+  formatYuan,
+  lessonPrice,
+  packagePrice,
+  suggestedPackageRefund,
+} from './pricing'
 
 const now = new Date('2026-10-23T02:00:00Z')
 const sale = {
@@ -51,6 +57,19 @@ describe('formatYuan', () => {
     expect(formatYuan(12000)).toBe('120')
     expect(formatYuan(12050)).toBe('120.50')
     expect(formatYuan(1)).toBe('0.01')
+  })
+})
+
+describe('formatMoney', () => {
+  it('groups thousands and shows cents only when there are any, always two of them', () => {
+    expect(formatMoney(280_000)).toBe('¥2,800')
+    expect(formatMoney(964_010)).toBe('¥9,640.10')
+    expect(formatMoney(123_456_789_00)).toBe('¥123,456,789')
+    expect(formatMoney(99_900)).toBe('¥999')
+    expect(formatMoney(5)).toBe('¥0.05')
+    expect(formatMoney(0)).toBe('¥0')
+    expect(formatMoney(-200_000)).toBe('¥-2,000')
+    expect(formatMoney(123_456.6)).toBe('¥1,234.57')
   })
 })
 

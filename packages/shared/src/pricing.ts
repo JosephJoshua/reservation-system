@@ -58,6 +58,17 @@ export function formatYuan(fen: Fen): string {
 }
 
 /**
+ * Money as staff read it, in the admin and its 操作记录: with thousands separators, and two
+ * decimals unless whole, as ¥9,640, ¥9,640.10 and ¥-20. A part of a fen, as from an average, is
+ * rounded.
+ */
+export function formatMoney(fen: Fen): string {
+  const [whole = '', cents] = formatYuan(Math.round(fen)).split('.')
+  const grouped = whole.replace(/\B(?=(\d{3})+$)/g, ',')
+  return `¥${grouped}${cents ? `.${cents}` : ''}`
+}
+
+/**
  * Suggested refund for the unused part of a package: what was paid minus the paid lessons used,
  * each charged at the single-class price of the coach it was taken with (their category's price,
  * else the list price), never below zero.
