@@ -10,7 +10,7 @@ import {
 import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
-import { isTop, navigateOnce } from '../../utils/nav'
+import { backOr, isTop, navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
@@ -267,6 +267,8 @@ Page({
       return
     }
     this.setData({ submitting: true })
+    // Going back now would leave a booking made out of sight, so WeChat asks first.
+    wx.enableAlertBeforeUnload({ message: '正在预约，确定离开吗？' })
     try {
       // Asked first, while the tap still counts as the user's action for WeChat. WeChat asks for
       // three at most: news the student cannot see coming goes first (cancels and moves usually
@@ -286,6 +288,8 @@ Page({
         this.setData({ showAgreement: false })
       }
       await this.saveProfile()
+      // Gone back before the booking was sent: nothing is booked.
+      if (this.left) return
       const res = await api<CreateBookingResponse>('POST', '/bookings', {
         ...this.target(),
         lessonTypeId: this.data.lessonTypeId,
@@ -302,11 +306,16 @@ Page({
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
-        await payOrder(res.orderId, this.data.price, res.payment, () => !this.left).catch(showError)
-        this.finish(res.bookingId)
+        const paid = await payOrder(res.orderId, this.data.price, res.payment, () => !this.left)
+          .then((result) => result === 'paid')
+          .catch((e) => {
+            showError(e)
+            return false
+          })
+        this.finish(res.bookingId, '', paid ? '预约成功' : '已预约，请尽快支付')
         return
       }
-      this.finish(res.bookingId, res.existing ? '你已预约这节课' : '')
+      this.finish(res.bookingId, res.existing ? '你已预约这节课' : '', '预约成功')
     } catch (e) {
       // Gone back while it was booking: nothing here to reload or ask about.
       if (this.left) return
@@ -360,27 +369,39 @@ Page({
           await getCatalog(true).catch(() => undefined)
         }
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
-        if (isTop(this)) wx.navigateBack()
+        if (isTop(this)) {
+          const { lessonTypeId, coachId } = this.data
+          backOr(`/pages/book/index?lessonTypeId=${lessonTypeId}&coachId=${coachId}`)
+        }
         return
       }
       showError(e)
     } finally {
+      wx.disableAlertBeforeUnload()
       this.setData({ submitting: false })
     }
   },
 
   /**
    * Replaces this page with the booking, so going back lands on the time picker. If the student
-   * left while it was booking, the booking opens on top of where they are now. A toast is shown
-   * after the switch, which would otherwise swallow it.
+   * left while it was booking, the booking opens on top of where they are now, and `away` says
+   * what became of it in a toast in case it cannot open there. A toast is shown after the
+   * switch, which would otherwise swallow it.
    */
-  finish(bookingId: number, toast = '') {
+  finish(bookingId: number, toast: string, away: string) {
+    wx.disableAlertBeforeUnload()
     const url = `/pages/booking-detail/index?id=${bookingId}`
     const success = () => {
       if (toast) wx.showToast({ title: toast, icon: 'none' })
     }
     if (isTop(this)) wx.redirectTo({ url, success })
-    else if (this.left) wx.navigateTo({ url, success })
+    else if (this.left) {
+      wx.navigateTo({
+        url,
+        success,
+        fail: () => wx.showToast({ title: toast || away, icon: 'none', duration: 2500 }),
+      })
+    }
   },
 
   onUnload() {

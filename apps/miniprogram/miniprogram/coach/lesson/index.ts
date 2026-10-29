@@ -11,7 +11,7 @@ import { navigateOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
 import { openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
-import { askForNotices, coachApi } from '../utils/coach-api'
+import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
 import { confirmDeleteFeedback } from '../utils/feedback'
 import { ATTENDANCE, lessonTag, profileEdited, type Tag } from '../utils/labels'
 
@@ -137,6 +137,7 @@ Page({
     try {
       this.show(await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`))
     } catch (e) {
+      if (bindInstead(e, this)) return
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },

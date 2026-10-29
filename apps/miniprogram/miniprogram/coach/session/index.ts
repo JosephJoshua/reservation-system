@@ -2,7 +2,7 @@ import type { Attendance, CoachSessionDto } from '../../lib/shared'
 import { errorMessage, showError } from '../../utils/api'
 import { lessonTime } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
-import { askForNotices, coachApi } from '../utils/coach-api'
+import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
 import { ATTENDANCE, lessonTag } from '../utils/labels'
 
 interface StudentView {
@@ -52,6 +52,7 @@ Page({
     try {
       this.show(await coachApi<CoachSessionDto>('GET', `/sessions/${this.id}`))
     } catch (e) {
+      if (bindInstead(e, this)) return
       if (this.data.state === 'ready') showError(e)
       else this.setData({ state: 'error', error: errorMessage(e) })
     }

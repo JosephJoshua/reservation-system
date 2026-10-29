@@ -9,6 +9,7 @@ import {
   upload,
   wxCode,
 } from '../../utils/api'
+import { isTop } from '../../utils/nav'
 
 // Separate from the student token: one WeChat user can be both, with different sessions.
 const TOKEN_KEY = 'coachToken'
@@ -98,6 +99,16 @@ export function profileClosed(e: unknown): e is ApiError {
 
 export function isNotBound(e: unknown): boolean {
   return e instanceof ApiError && e.code === 'not_bound'
+}
+
+/**
+ * Opened by a WeChat user who is not a coach (yet): goes on to 绑定 instead of an error with a
+ * retry that cannot help. True when it did, so the page shows nothing else.
+ */
+export function bindInstead(e: unknown, page: unknown): boolean {
+  if (!isNotBound(e)) return false
+  if (isTop(page)) wx.redirectTo({ url: '/coach/bind/index' })
+  return true
 }
 
 let templateIds: string[] = []

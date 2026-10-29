@@ -7,7 +7,7 @@ import {
 import { ApiError, errorMessage } from '../../utils/api'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { leaveMove, submitMove } from '../../utils/move'
-import { askForNotices, coachApi } from '../utils/coach-api'
+import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
 
 interface DayView {
   key: string
@@ -96,6 +96,7 @@ Page({
       })
       this.showDay()
     } catch (e) {
+      if (bindInstead(e, this)) return
       // Not this coach's lesson any more: reloading would not help.
       const gone = e instanceof ApiError && e.status === 404
       this.setData({ state: 'error', fixed: gone, error: errorMessage(e) })

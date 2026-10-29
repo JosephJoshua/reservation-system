@@ -13,7 +13,7 @@ import {
 import { errorMessage, showError } from '../../utils/api'
 import { dateText, time } from '../../utils/format'
 import { modalDangerColor } from '../../utils/theme'
-import { coachApi } from '../utils/coach-api'
+import { bindInstead, coachApi } from '../utils/coach-api'
 import { hhmm, spanText, WEEKDAYS } from '../utils/labels'
 
 // Monday first, the way a coach plans a week.
@@ -182,6 +182,7 @@ Page({
         this.setFrom(!hoursOn(view.periods, today).length && next ? next.from : today)
       }
     } catch (e) {
+      if (bindInstead(e, this)) return
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },

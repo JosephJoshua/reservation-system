@@ -46,3 +46,20 @@ export function navigateBackOnce(delta = 1): boolean {
 export function switchTabOnce(url: string): void {
   once(`tab:${url}`, (complete) => wx.switchTab({ url, complete }))
 }
+
+/**
+ * Leaves a page after a save: back to the page beneath, or onto `fallback` when it was opened
+ * with nothing beneath (a shared link, a notice, a relaunch), where going back does nothing.
+ * `done` runs once the next page is showing, for a toast.
+ */
+export function backOr(fallback: string, done?: () => void): void {
+  const go = (complete: () => void) => {
+    const settle = () => {
+      complete()
+      done?.()
+    }
+    if (getCurrentPages().length > 1) wx.navigateBack({ complete: settle })
+    else wx.reLaunch({ url: fallback, complete: settle })
+  }
+  if (!once(`leave:${fallback}`, go)) done?.()
+}
