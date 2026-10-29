@@ -2,6 +2,12 @@ import { defineConfig, devices } from '@playwright/test'
 
 const ci = !!process.env.CI
 
+const admin = { ...devices['Desktop Chrome'], baseURL: 'http://localhost:5173/admin/' }
+
+// Specs that save 设置 or 首页内容, or read rules another of them changes. They run one at a time.
+const settingsSpecs =
+  /admin\/(booking-rules|edit-pages|links|moves|qa-regressions|settings-sections|tables|venue-location)\.spec\.ts/
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -21,7 +27,15 @@ export default defineConfig({
     {
       name: 'admin',
       testMatch: /admin\/.*\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:5173/admin/' },
+      testIgnore: settingsSpecs,
+      use: admin,
+    },
+    {
+      // A settings save carries the version it was loaded at, so two at once refuse each other.
+      name: 'admin-settings',
+      testMatch: settingsSpecs,
+      workers: 1,
+      use: admin,
     },
   ],
   webServer: [

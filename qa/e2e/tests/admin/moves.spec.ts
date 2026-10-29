@@ -61,7 +61,8 @@ test('sets up a booked lesson through the API', async ({ request }) => {
 
 test('moves the lesson from the bookings page', async ({ page, request }) => {
   await login(page)
-  await page.goto('./#/bookings')
+  // Searched for, as other specs fill the first pages with lessons of their own.
+  await page.goto(`./#/bookings?q=${encodeURIComponent(studentName)}`)
   const row = page.getByRole('row').filter({ hasText: studentName })
   await expect(row).toContainText('10:00-11:00')
   await row.getByRole('button', { name: '改约' }).click()
@@ -100,7 +101,8 @@ test('logs the move once in the action log', async ({ page }) => {
 
 test('says when a day has no free time', async ({ page }) => {
   await login(page)
-  await page.goto('./#/bookings')
+  // Searched for, as other specs fill the first pages with lessons of their own.
+  await page.goto(`./#/bookings?q=${encodeURIComponent(studentName)}`)
   const row = page.getByRole('row').filter({ hasText: studentName })
   await row.getByRole('button', { name: '改约' }).click()
   // The day after has no time for this coach.
