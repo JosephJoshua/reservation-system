@@ -586,11 +586,18 @@ describe('GET /admin/summary', () => {
     }
     await book('2026-10-26')
     await book('2026-11-06')
+    await book('2026-10-28')
     // Past the two weeks the tile opens.
     h.db
       .update(bookings)
       .set({ startsAt: at('2026-11-07', 10) })
       .where(eq(bookings.id, 2))
+      .run()
+    // Earlier today, already over: no longer to come, as in the list the tile opens.
+    h.db
+      .update(bookings)
+      .set({ startsAt: at('2026-10-24', 10), endsAt: at('2026-10-24', 11) })
+      .where(eq(bookings.id, 3))
       .run()
     const s = (await h.call('GET', '/admin/summary', undefined, admin)).json
     expect(s.upcomingBookings).toBe(1)

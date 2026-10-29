@@ -2636,10 +2636,12 @@ export function adminRoutes(deps: Deps) {
     const { revenue, ...today } = dashboard(deps)
     // Money is left out for staff without finance, who could not act on it anyway.
     const money = can(c.get('roles'), 'finance')
-    // 待上课 opens 预约 on its default range, today and the next 13 days, so it counts those.
+    // 待上课 opens 预约 on today and the next 13 days with 待上课, which leaves out lessons
+    // already over, so it counts those the same way.
     const day = venueDateKey(now)
     const upcoming = and(
       eq(bookings.status, 'confirmed'),
+      gt(bookings.endsAt, now),
       gte(bookings.startsAt, venueInstant(day, 0)),
       lt(bookings.startsAt, venueInstant(addVenueDays(day, 13), 24 * 60)),
     )
