@@ -1,4 +1,9 @@
-import { REFUND_PAID_TWICE, type RefundSettleWay } from '@rs/shared'
+import {
+  REFUND_PAID_TWICE,
+  REFUND_UNDONE_AFTER_SETTLE,
+  type RefundSettleWay,
+  settledRefundWarning,
+} from '@rs/shared'
 import { and, eq, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { orders, refunds } from '../db/schema'
@@ -66,7 +71,7 @@ const OVER_REFUNDED_NOTE = '该退款实际已成功，与其他退款合计超�
 
 // Shown to staff on a refund WeChat Pay reports as ABNORMAL (the card the money goes back to was
 // cancelled or frozen); it settles once handled on the merchant platform.
-const ABNORMAL_NOTE = '退款异常：原路退回失败，请在微信支付商户平台处理'
+export const ABNORMAL_NOTE = '退款异常：原路退回失败，请在微信支付商户平台处理'
 
 /** The row update for a refund state WeChat Pay reported. */
 function stateUpdate(result: RefundState): Partial<typeof refunds.$inferInsert> {
@@ -177,6 +182,7 @@ function applyRefundState(
  */
 export function settleRefund(deps: Deps, outRefundNo: string, result: RefundState) {
   if (result.status === 'succeeded') recordPaidTwice(deps, outRefundNo, result.refundId)
+  else recordUndoneAfterSettle(deps, outRefundNo, result)
   applyRefundState(
     deps,
     outRefundNo,
@@ -360,6 +366,9 @@ export async function settleFailedRefund(
         status: 'succeeded',
         settledNote: note,
         settledHow: how,
+        // Kept as what WeChat Pay last said, so a later report that differs can be told apart
+        // from a repeat. Readers show it as history, not as something to handle.
+        failure: state ? stateUpdate(state).failure : current.failure,
         abnormal: false,
         updatedAt: now,
       })
@@ -401,6 +410,46 @@ function recordPaidTwice(deps: Deps, outRefundNo: string, refundId: string) {
       and(settled, or(isNull(refunds.providerRefundId), ne(refunds.providerRefundId, refundId))),
     )
     .run()
+}
+
+/**
+ * WeChat Pay reports a refund closed or 退款异常 that staff had settled outside the system, when
+ * it said otherwise when they settled it (a repeat of what it said then is no news). The refund
+ * stays settled, but staff are warned to check the student got the money. A warning that it was
+ * also refunded through WeChat Pay is kept, as is the refund's time.
+ */
+function recordUndoneAfterSettle(deps: Deps, outRefundNo: string, result: RefundState) {
+  if (result.status === 'succeeded' || (result.status === 'processing' && !result.abnormal)) return
+  const reported = stateUpdate(result).failure ?? null
+  const row = deps.db
+    .select({ id: refunds.id, failure: refunds.failure })
+    .from(refunds)
+    .where(
+      and(
+        eq(refunds.outRefundNo, outRefundNo),
+        eq(refunds.status, 'succeeded'),
+        isNotNull(refunds.settledNote),
+      ),
+    )
+    .get()
+  if (!row || row.failure === reported || settledRefundWarning(row.failure)) return
+  const warned = deps.db
+    .update(refunds)
+    .set({ failure: REFUND_UNDONE_AFTER_SETTLE })
+    .where(
+      and(
+        eq(refunds.id, row.id),
+        row.failure === null ? isNull(refunds.failure) : eq(refunds.failure, row.failure),
+      ),
+    )
+    .run()
+  if (warned.changes > 0) {
+    deps.log('refund settled by staff later reported not done by wechat', {
+      refundId: row.id,
+      outRefundNo,
+      status: result.status === 'failed' ? result.reason : 'ABNORMAL',
+    })
+  }
 }
 
 /**

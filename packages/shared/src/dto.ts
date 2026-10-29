@@ -114,11 +114,21 @@ export type RefundStatus =
 export const REFUND_SETTLE_WAYS = { platform: '商户平台处理', offline: '线下另付' } as const
 export type RefundSettleWay = keyof typeof REFUND_SETTLE_WAYS
 
-/**
- * The failure note on a refund staff paid back 线下另付 that WeChat Pay then reports done too.
- * Any other failure note on a settled refund is why WeChat Pay failed before it was settled.
- */
+/** The failure note on a refund staff paid back 线下另付 that WeChat Pay then reports done too. */
 export const REFUND_PAID_TWICE = '微信支付也报告退款成功，如已线下另付请核对是否重复'
+
+/**
+ * The failure note on a refund staff settled outside the system that WeChat Pay then reports
+ * closed or 退款异常, when it had said otherwise before the settle.
+ */
+export const REFUND_UNDONE_AFTER_SETTLE = '微信支付随后报告退款关闭或异常，请核对学员是否已收到退款'
+
+/**
+ * Whether the failure note on a settled refund is a warning for staff. Any other note is what
+ * WeChat Pay last said before it was settled, which no longer needs handling.
+ */
+export const settledRefundWarning = (failure: string | null) =>
+  failure === REFUND_PAID_TWICE || failure === REFUND_UNDONE_AFTER_SETTLE
 
 export interface BookingDto {
   id: number

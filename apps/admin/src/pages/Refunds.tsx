@@ -1,8 +1,8 @@
 import {
-  REFUND_PAID_TWICE,
   REFUND_SETTLE_WAYS,
   type RefundSettleWay,
   type RefundStatus,
+  settledRefundWarning,
 } from '@rs/shared'
 import { useState } from 'react'
 import {
@@ -256,9 +256,9 @@ export function Refunds() {
                     </div>
                   )}
                   {/* On a success, a warning that the order was refunded more than paid. Once
-                  settled outside the system, WeChat Pay's earlier failure no longer applies. */}
+                  settled outside the system, only a warning raised after the settle applies. */}
                   {row.failure &&
-                    (row.settledNote === null || row.failure === REFUND_PAID_TWICE) && (
+                    (row.settledNote === null || settledRefundWarning(row.failure)) && (
                       <div className="muted">{row.failure}</div>
                     )}
                   {row.order.provider === 'offline' && (
