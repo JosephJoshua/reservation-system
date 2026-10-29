@@ -161,7 +161,8 @@ export function studentCheckIn(deps: Deps, studentId: number): CheckInLessonDto[
     const done = marked.filter((r) => !disrupted.has(r.booking.id))
     const why = marked[0] ? disrupted.get(marked[0].booking.id) : undefined
     if (done.length === 0 && why) {
-      throw new ApiError(409, 'lesson_unavailable', `${DISRUPTION_TEXT[why]}，无法签到`)
+      // Shown under a 无法签到 title, so only the reason.
+      throw new ApiError(409, 'lesson_unavailable', DISRUPTION_TEXT[why])
     }
     for (const r of done) {
       if (r.booking.attendance === 'attended') continue
