@@ -35,6 +35,7 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { isVisible, visible } from './feedback-visibility'
+import { stripImageMetadata } from './image-meta'
 import { countAll, ofStudents } from './lists'
 import { queueStudentNotice } from './student-notices'
 
@@ -238,9 +239,11 @@ export function checkPhotoUpload(deps: Deps, bookingId: number, coachId: number)
  */
 export async function savePhoto(deps: Deps, bookingId: number, coachId: number, file: File) {
   if (file.size > MAX_PHOTO_BYTES) throw new ApiError(400, 'too_large', '图片不能超过 5MB')
-  const data = Buffer.from(await file.arrayBuffer())
-  const ext = imageType(data)
+  const sent = Buffer.from(await file.arrayBuffer())
+  const ext = imageType(sent)
   if (!ext) throw new ApiError(400, 'bad_type', '只支持 JPG、PNG、WebP 图片')
+  // Served to anyone with the link: no GPS position or camera details go with it.
+  const data = stripImageMetadata(sent, ext)
   const name = `fb${bookingId}-${randomBytes(6).toString('hex')}.${ext}`
   checkPhotoUpload(deps, bookingId, coachId)
   // Account deletion removes photos after its own commit, so one written here is not left over.

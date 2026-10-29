@@ -1,4 +1,9 @@
-import type { RefundStatus } from '@rs/shared'
+import {
+  REFUND_PAID_TWICE,
+  REFUND_SETTLE_WAYS,
+  type RefundSettleWay,
+  type RefundStatus,
+} from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
@@ -7,6 +12,7 @@ import {
   InputNumber,
   MessagePlugin,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Tag,
@@ -88,6 +94,7 @@ export function Refunds() {
   const more = ['status', 'provider', 'abnormal'] as const
   const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
+  const [settling, setSettling] = useState<Refund | null>(null)
   const keys = useActionKeys()
 
   const paidBack = async (r: Refund) => {
@@ -242,8 +249,18 @@ export function Refunds() {
                   <Tag theme={theme} variant="light">
                     {label}
                   </Tag>
-                  {/* On a success, a warning that the order was refunded more than paid. */}
-                  {row.failure && <div className="muted">{row.failure}</div>}
+                  {row.settledNote !== null && (
+                    <div className="muted">
+                      {row.settledHow ? REFUND_SETTLE_WAYS[row.settledHow] : '另行退款'}：
+                      {row.settledNote}
+                    </div>
+                  )}
+                  {/* On a success, a warning that the order was refunded more than paid. Once
+                  settled outside the system, WeChat Pay's earlier failure no longer applies. */}
+                  {row.failure &&
+                    (row.settledNote === null || row.failure === REFUND_PAID_TWICE) && (
+                      <div className="muted">{row.failure}</div>
+                    )}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
                   )}
@@ -291,14 +308,34 @@ export function Refunds() {
                   </Button>
                 </Popconfirm>
               ) : row.status === 'failed' ? (
-                <Button variant="text" theme="primary" onClick={() => retry(row)}>
-                  重试
+                <Space size={0}>
+                  <Button variant="text" theme="primary" onClick={() => retry(row)}>
+                    重试
+                  </Button>
+                  <Button variant="text" theme="primary" onClick={() => setSettling(row)}>
+                    已另行退款
+                  </Button>
+                </Space>
+              ) : row.status === 'processing' && row.abnormal ? (
+                // 退款异常: staff handle it on the merchant platform, or hand the money back.
+                <Button variant="text" theme="primary" onClick={() => setSettling(row)}>
+                  已另行退款
                 </Button>
               ) : null,
           },
         ]}
       />
       <Pager list={list} filters={filters} />
+      {settling && (
+        <Settle
+          refund={settling}
+          onClose={() => setSettling(null)}
+          onDone={() => {
+            setSettling(null)
+            void reload()
+          }}
+        />
+      )}
       {deciding && (
         <Decide
           refund={deciding.refund}
@@ -401,6 +438,86 @@ function Decide({
           onChange={(v) => setNote(String(v))}
         />
       )}
+    </Dialog>
+  )
+}
+
+/** A failed WeChat Pay refund handed back outside the system, in cash or on the merchant platform. */
+function Settle({
+  refund,
+  onClose,
+  onDone,
+}: {
+  refund: Refund
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [how, setHow] = useState<RefundSettleWay | null>(null)
+  const [note, setNote] = useState('')
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+
+  const submit = async () => {
+    let outcome: (RefundOutcome & { settled: boolean; message: string | null }) | undefined
+    const ok = await attempt(
+      async () => {
+        outcome = await api<RefundOutcome & { settled: boolean; message: string | null }>(
+          'POST',
+          `/admin/refunds/${refund.id}/settled`,
+          { how, note },
+          { key },
+        )
+      },
+      undefined,
+      { onStale: onDone },
+    )
+    if (!ok) return
+    if (outcome?.settled === false) {
+      void MessagePlugin.info(outcome.message ?? '退款状态已变更，请刷新后查看', 5000)
+    } else {
+      void MessagePlugin.success('已标为另行退款')
+    }
+    onDone()
+  }
+
+  return (
+    <Dialog
+      visible
+      header="标为已另行退款"
+      confirmBtn={{
+        content: '确认',
+        theme: 'primary',
+        disabled: !how || !note.trim(),
+        loading: submitting,
+      }}
+      cancelBtn="返回"
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <div className="fields">
+        <p className="muted">
+          {yuan(refund.amount)}{' '}
+          已在微信支付商户平台处理，或已通过现金、转账退给学员后再确认。确认后计为已退款，不再重试。
+        </p>
+        <Radio.Group
+          value={how ?? undefined}
+          onChange={(v) => setHow(v as RefundSettleWay)}
+          options={(Object.keys(REFUND_SETTLE_WAYS) as RefundSettleWay[]).map((value) => ({
+            value,
+            label: REFUND_SETTLE_WAYS[value],
+          }))}
+        />
+        <Textarea
+          placeholder={
+            how === 'platform'
+              ? '处理说明，例如：已在商户平台重新退款'
+              : '处理说明，例如：已现金退还'
+          }
+          value={note}
+          maxlength={100}
+          onChange={(v) => setNote(String(v))}
+        />
+      </div>
     </Dialog>
   )
 }

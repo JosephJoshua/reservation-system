@@ -46,6 +46,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
+import { personColumns } from './account'
 import { onePerSession } from './coach-pay'
 import { workingTime } from './schedule'
 
@@ -165,9 +166,7 @@ export function dashboard(deps: Deps) {
       lessonType: lessonTypes.name,
       group: slots.lessonTypeId,
       capacity: slots.capacity,
-      studentId: students.id,
-      name: students.name,
-      phone: students.phone,
+      student: personColumns,
     })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
@@ -177,6 +176,8 @@ export function dashboard(deps: Deps) {
     .where(
       and(
         eq(bookings.status, 'confirmed'),
+        // A seat left live in a session the venue called off is not a lesson.
+        isNull(slots.cancelledAt),
         gte(bookings.startsAt, dayStart),
         lt(bookings.startsAt, venueInstant(today, 24 * 60)),
       ),
@@ -200,7 +201,7 @@ export function dashboard(deps: Deps) {
     }
     s.students.push({
       bookingId: r.bookingId,
-      student: { id: r.studentId, name: r.name, phone: r.phone },
+      student: r.student,
       attendance: r.attendance,
     })
   }
@@ -220,9 +221,12 @@ export function dashboard(deps: Deps) {
   const unmarked = db
     .select({ id: bookings.id })
     .from(bookings)
+    .innerJoin(slots, eq(slots.id, bookings.slotId))
     .where(
       and(
         eq(bookings.status, 'confirmed'),
+        // Nothing to mark for a session the venue called off, as for the 月报 and pay.
+        isNull(slots.cancelledAt),
         isNull(bookings.attendance),
         lte(bookings.endsAt, now),
         gte(bookings.startsAt, venueInstant(addVenueDays(today, -UNMARKED_DAYS), 0)),
@@ -366,6 +370,9 @@ export function statsReport(deps: Deps, from: string, requestedTo: string): Stat
         lt(bookings.startsAt, end),
         lte(bookings.endsAt, now),
         inArray(bookings.status, ['confirmed', 'cancelled']),
+        // A session the venue called off was neither taught nor taken, whatever its seats say,
+        // as for the 月报 and pay.
+        isNull(slots.cancelledAt),
       ),
     )
     .all()

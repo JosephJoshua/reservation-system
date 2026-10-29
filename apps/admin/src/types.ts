@@ -5,6 +5,7 @@ import type {
   FeedbackItemDto,
   LinkKind,
   PackageDto,
+  RefundSettleWay,
   RefundStatus,
   RuleOverrides,
   StudentProfileDto,
@@ -191,6 +192,12 @@ export interface Refund {
   reason: string
   status: RefundStatus
   failure: string | null
+  /** A failed refund staff settled outside the system: how, in their words. */
+  settledNote: string | null
+  /** With settledNote: put right on the merchant platform, or paid back another way. */
+  settledHow: RefundSettleWay | null
+  /** WeChat Pay could not send it back (退款异常), for staff to handle. */
+  abnormal: boolean
   createdAt: string
   updatedAt: string
   order: {

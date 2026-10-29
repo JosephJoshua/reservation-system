@@ -3,6 +3,7 @@ import { immediate, type Q } from '../db/client'
 import {
   actionLog,
   bookings,
+  idempotencyKeys,
   invoices,
   orders,
   packageNotices,
@@ -190,6 +191,11 @@ export function linkDeskStudent(
     retrySkippedNotices(tx, desk.id)
     keepNewerProfile(tx, own.id, desk.id)
     tx.update(sessions).set({ studentId: desk.id }).where(eq(sessions.studentId, own.id)).run()
+    // Answers kept for the WeChat account's repeats go with it, so erasing the student drops them.
+    tx.update(idempotencyKeys)
+      .set({ studentId: desk.id })
+      .where(eq(idempotencyKeys.studentId, own.id))
+      .run()
     // The openid is unique, so the WeChat account's row is removed before the desk row takes it.
     tx.delete(students).where(eq(students.id, own.id)).run()
     tx.update(students)

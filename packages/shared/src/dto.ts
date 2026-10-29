@@ -106,6 +106,20 @@ export type RefundStatus =
   | 'failed'
   | 'rejected'
 
+/**
+ * How staff settled a WeChat Pay refund outside the system: 商户平台处理 (the same refund, put
+ * right on the merchant platform) or 线下另付 (the money handed back another way, in cash or by
+ * transfer).
+ */
+export const REFUND_SETTLE_WAYS = { platform: '商户平台处理', offline: '线下另付' } as const
+export type RefundSettleWay = keyof typeof REFUND_SETTLE_WAYS
+
+/**
+ * The failure note on a refund staff paid back 线下另付 that WeChat Pay then reports done too.
+ * Any other failure note on a settled refund is why WeChat Pay failed before it was settled.
+ */
+export const REFUND_PAID_TWICE = '微信支付也报告退款成功，如已线下另付请核对是否重复'
+
 export interface BookingDto {
   id: number
   /** The lesson it is a seat in, which a move changes. */

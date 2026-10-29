@@ -48,7 +48,10 @@ const groups: { label: string; actions: StaffAction[] }[] = [
     ],
   },
   { label: '点评', actions: ['feedback.hide', 'feedback.show'] },
-  { label: '课时包', actions: ['package.sell', 'package.grant', 'package.extend'] },
+  {
+    label: '课时包',
+    actions: ['package.sell', 'package.grant', 'package.extend', 'package.refund'],
+  },
   {
     label: '退款',
     actions: [
@@ -57,6 +60,7 @@ const groups: { label: string; actions: StaffAction[] }[] = [
       'refund.retry',
       'refund.synced',
       'refund.paid_back',
+      'refund.settled',
     ],
   },
   { label: '发票', actions: ['invoice.issue', 'invoice.reject', 'invoice.refund_seen'] },

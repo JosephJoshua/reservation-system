@@ -27,6 +27,7 @@ import { ApiError, notFound } from '../errors'
 import type { PaymentParams } from '../pay/gateway'
 import { accountDeleted, refuseDeletedOwner } from './account'
 import { newOutRefundNo, newOutTradeNo } from './ids'
+import { closeRefundedRequests } from './invoices'
 import { createPackageFromOrder, startPaymentOrRelease } from './orders'
 import { refundedSoFar, submitRefund } from './refunds'
 import { getSettings } from './settings'
@@ -192,6 +193,49 @@ function usedLessonPrices(tx: Q, pkg: { id: number; lessonTypeId: number }, list
     .map((b) => b.categoryPrice ?? listPrice)
 }
 
+type PackageRow = typeof packages.$inferSelect
+
+/**
+ * Checks that a package has lessons left that can be refunded, and the amount suggested for
+ * them: what was paid less the lessons taken at the single-class price.
+ */
+function refundablePackage(tx: Q, pkg: PackageRow, now: Date, inUse: string) {
+  if (pkg.expiresAt <= now) throw new ApiError(409, 'package_expired', '课时包已过期')
+  if (pkg.lessonsRemaining <= 0) throw new ApiError(409, 'package_empty', '课时包已用完')
+  const upcoming = tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.packageId, pkg.id),
+        eq(bookings.status, 'confirmed'),
+        // A lesson in progress still counts: the venue may yet cancel it and return the lesson.
+        gt(bookings.endsAt, now),
+      ),
+    )
+    .get()
+  if (upcoming) throw new ApiError(409, 'package_in_use', inUse)
+  const order = tx.select().from(orders).where(eq(orders.id, pkg.orderId)).get()
+  if (!order) throw notFound('订单')
+  const listPrice =
+    tx
+      .select({ price: lessonTypes.price })
+      .from(lessonTypes)
+      .where(eq(lessonTypes.id, pkg.lessonTypeId))
+      .get()?.price ?? 0
+  const left = order.amount - refundedSoFar(tx, order.id)
+  const amount = suggestedPackageRefund({
+    pricePaid: pkg.pricePaid,
+    alreadyRefunded: refundedSoFar(tx, order.id),
+    lessonsPurchased: pkg.lessonsPurchased,
+    lessonsGranted: grantedLessons(tx, [pkg.id]).get(pkg.id) ?? 0,
+    lessonsRemaining: pkg.lessonsRemaining,
+    usedLessonPrices: usedLessonPrices(tx, pkg, listPrice),
+    listPrice,
+  })
+  return { order, amount, left }
+}
+
 /** A student asks for the unused part of a package back. The admin decides the amount. */
 export function requestPackageRefund(deps: Deps, studentId: number, packageId: number) {
   const now = deps.now()
@@ -208,38 +252,7 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
       if (waiting) return waiting.id
     }
     if (pkg.status !== 'active') throw new ApiError(409, 'package_not_active', '该课时包已申请退款')
-    if (pkg.expiresAt <= now) throw new ApiError(409, 'package_expired', '课时包已过期')
-    if (pkg.lessonsRemaining <= 0) throw new ApiError(409, 'package_empty', '课时包已用完')
-    const upcoming = tx
-      .select({ id: bookings.id })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.packageId, pkg.id),
-          eq(bookings.status, 'confirmed'),
-          // A lesson in progress still counts: the venue may yet cancel it and return the lesson.
-          gt(bookings.endsAt, now),
-        ),
-      )
-      .get()
-    if (upcoming) throw new ApiError(409, 'package_in_use', '请先取消使用该课时包的预约')
-    const order = tx.select().from(orders).where(eq(orders.id, pkg.orderId)).get()
-    if (!order) throw notFound('订单')
-    const listPrice =
-      tx
-        .select({ price: lessonTypes.price })
-        .from(lessonTypes)
-        .where(eq(lessonTypes.id, pkg.lessonTypeId))
-        .get()?.price ?? 0
-    const amount = suggestedPackageRefund({
-      pricePaid: pkg.pricePaid,
-      alreadyRefunded: refundedSoFar(tx, order.id),
-      lessonsPurchased: pkg.lessonsPurchased,
-      lessonsGranted: grantedLessons(tx, [pkg.id]).get(pkg.id) ?? 0,
-      lessonsRemaining: pkg.lessonsRemaining,
-      usedLessonPrices: usedLessonPrices(tx, pkg, listPrice),
-      listPrice,
-    })
+    const { order, amount } = refundablePackage(tx, pkg, now, '请先取消使用该课时包的预约')
     tx.update(packages).set({ status: 'refund_requested' }).where(eq(packages.id, pkg.id)).run()
     // A zero suggestion still goes to the admin, who may decide to refund something anyway.
     return tx
@@ -311,6 +324,92 @@ export function rejectPackageRefund(deps: Deps, refundId: number, note: string) 
       .where(and(eq(packages.id, refund.packageId), eq(packages.status, 'refund_requested')))
       .run()
     return true
+  })
+}
+
+// The refund staff make themselves for a package sold at the front desk.
+const DESK_REFUND_REASON = '前台退课时包'
+
+/** A package sold at the front desk that staff can refund themselves, with the amounts. */
+function deskRefundable(tx: Q, packageId: number, now: Date) {
+  refuseDeletedOwner(tx, packageId)
+  const pkg = tx.select().from(packages).where(eq(packages.id, packageId)).get()
+  if (!pkg) throw notFound('课时包')
+  const order = tx
+    .select({ provider: orders.provider })
+    .from(orders)
+    .where(eq(orders.id, pkg.orderId))
+    .get()
+  // One bought in the mini program goes back through WeChat Pay, from the student's request.
+  if (order?.provider !== 'offline') {
+    throw new ApiError(409, 'package_not_offline', '微信支付购买的课时包，请学员在小程序申请退款')
+  }
+  if (pkg.status === 'refund_requested') {
+    throw new ApiError(409, 'package_not_active', '学员已申请退款，请在退款页处理')
+  }
+  if (pkg.status !== 'active') throw new ApiError(409, 'package_not_active', '该课时包已退款')
+  return { pkg, ...refundablePackage(tx, pkg, now, '请先取消使用该课时包的预约') }
+}
+
+/** What refunding a front-desk package would hand back: the suggestion, and at most. */
+export function deskRefundQuote(deps: Deps, packageId: number) {
+  const { amount, left, pkg } = deskRefundable(deps.db, packageId, deps.now())
+  return { suggested: Math.min(amount, left), max: left, lessonsRemaining: pkg.lessonsRemaining }
+}
+
+/**
+ * Staff refund the unused lessons of a package sold at the front desk and hand the money back
+ * there at once: the package ends, and the refund is recorded as paid back, as an offline refund
+ * marked 已退还 is. `check` sees the package as staff saw it. A repeat of a refund already made
+ * returns it with `repeat`.
+ */
+export function refundDeskPackage(
+  deps: Deps,
+  packageId: number,
+  amount: number,
+  check: (current: PackageRow) => void,
+): { refundId: number; repeat: boolean } {
+  const now = deps.now()
+  return immediate(deps.db, (tx) => {
+    const done = tx
+      .select({ id: refunds.id, amount: refunds.amount })
+      .from(refunds)
+      .where(
+        and(
+          eq(refunds.packageId, packageId),
+          eq(refunds.reason, DESK_REFUND_REASON),
+          eq(refunds.status, 'succeeded'),
+        ),
+      )
+      .get()
+    if (done && done.amount === amount) return { refundId: done.id, repeat: true }
+    const { pkg, order, left } = deskRefundable(tx, packageId, now)
+    check(pkg)
+    if (amount < 1 || amount > left) {
+      throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
+    }
+    tx.update(packages)
+      .set({ status: 'refunded', lessonsRemaining: 0 })
+      .where(eq(packages.id, pkg.id))
+      .run()
+    tx.insert(packageLedger)
+      .values({ packageId: pkg.id, delta: -pkg.lessonsRemaining, kind: 'refund', actor: 'admin' })
+      .run()
+    const refundId = tx
+      .insert(refunds)
+      .values({
+        outRefundNo: newOutRefundNo(now),
+        orderId: order.id,
+        amount,
+        reason: DESK_REFUND_REASON,
+        status: 'succeeded',
+        packageId: pkg.id,
+        updatedAt: now,
+      })
+      .returning({ id: refunds.id })
+      .get().id
+    closeRefundedRequests(tx, order.id)
+    return { refundId, repeat: false }
   })
 }
 

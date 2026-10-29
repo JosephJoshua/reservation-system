@@ -288,6 +288,12 @@ export async function createBooking(
   studentId: number,
   input: CreateBookingInput,
 ): Promise<CreateBookingResult> {
+  // The student's own hold of this time whose payment time is up, which the sweeper closes only
+  // a couple of minutes later, would come back below as the booking already made, with an order
+  // that can no longer be paid. It is closed first, so this books afresh. A payment that landed
+  // meanwhile confirms it instead, and it comes back as made.
+  const lapsed = lapsedHoldOrder(deps, studentId, input.target)
+  if (lapsed !== null) await closeOrder(deps, lapsed)
   const now = deps.now()
   const created = immediate(deps.db, (tx) => {
     const settings = getSettings(tx)
@@ -453,6 +459,24 @@ export async function createBooking(
   if (result.orderId === null) return { ...result, payment: null, existing: repeat }
   const payment = await startPaymentOrRelease(deps, result.orderId, studentId, { release: !repeat })
   return { ...result, payment, existing: repeat }
+}
+
+/** The pending order of the student's unpaid hold at a target, once its payment time is up. */
+function lapsedHoldOrder(deps: Deps, studentId: number, target: SlotTarget) {
+  let own: ReturnType<typeof heldAt>
+  try {
+    own = heldAt(deps.db, studentId, target)
+  } catch {
+    // A slot that is gone: the booking itself says so.
+    return null
+  }
+  if (own?.status !== 'pending_payment') return null
+  const order = deps.db
+    .select({ id: orders.id, expiresAt: orders.expiresAt })
+    .from(orders)
+    .where(and(eq(orders.bookingId, own.id), eq(orders.status, 'pending')))
+    .get()
+  return order?.expiresAt && order.expiresAt <= deps.now() ? order.id : null
 }
 
 /** Whether a booking was already cancelled by this same request: same side, same reason. */
