@@ -1,5 +1,5 @@
 import type { CatalogDto, LateCancelRule, MeDto } from '../lib/shared'
-import { api, publicApi } from './api'
+import { ApiError, api, publicApi } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
 
@@ -59,8 +59,40 @@ export function cancelRuleText(hours: number, rule: LateCancelRule): string {
   return hours === 0 ? '开课前随时可以免费取消。' : `开课前 ${hours} 小时以上可免费取消；${late}。`
 }
 
-/** Records that the student agreed to the policies now in force, as the policy page shows them. */
-export async function agreePolicies(): Promise<void> {
-  const { version } = await publicApi<CatalogDto['policies']>('GET', '/policies')
+/** The version of the policies in force, which an agreement row offers from when it is shown. */
+export async function policyVersion(): Promise<string> {
+  return (await publicApi<CatalogDto['policies']>('GET', '/policies')).version
+}
+
+/**
+ * The version a page's agreement row offers: null when the student has agreed to the policies in
+ * force already, so the page shows no row.
+ */
+export function agreementFor(me: MeDto): Promise<string | null> {
+  return me.agreedPolicies ? Promise.resolve(null) : policyVersion()
+}
+
+/**
+ * Records that the student agreed to the policies at `version`, the one the page offered when it
+ * showed the agreement. The server refuses an older one with policy_changed.
+ */
+export async function agreePolicies(version: string): Promise<void> {
   await api<void>('POST', '/me/consent', { version })
+}
+
+export const isPolicyChanged = (e: unknown): boolean =>
+  e instanceof ApiError && e.code === 'policy_changed'
+
+/**
+ * After policy_changed: says the texts were updated and answers the version now in force, for
+ * the student to read and agree to again, or null when it could not be loaded.
+ */
+export async function askToAgreeAgain(): Promise<string | null> {
+  const version = await policyVersion().catch(() => null)
+  await wx.showModal({
+    title: '条款已更新',
+    content: '请重新阅读用户协议和隐私政策，同意后再提交。',
+    showCancel: false,
+  })
+  return version
 }

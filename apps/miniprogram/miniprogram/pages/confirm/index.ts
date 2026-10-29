@@ -8,10 +8,19 @@ import {
   type StudentDto,
 } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, RESULT_UNKNOWN, showError } from '../../utils/api'
-import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
+import {
+  agreementFor,
+  agreePolicies,
+  askForNotices,
+  askToAgreeAgain,
+  cancelRuleText,
+  getCatalog,
+  getMe,
+  isPolicyChanged,
+} from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
-import { PAY_PENDING, payOrder } from '../../utils/pay'
+import { PAY_PENDING, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
 
@@ -75,6 +84,8 @@ Page({
   left: false,
   /** The cancel and move rules shown, which the booking must still be made under. */
   terms: null as BookingTerms | null,
+  /** The version of the policies the agreement row offers. */
+  policyVersion: '',
   /** Set after the first onShow, so coming back to the page can be told apart. */
   shown: false,
   /** Counts quotes asked for, so only the latest one is shown. */
@@ -165,6 +176,8 @@ Page({
     try {
       const { lessonTypeId } = this.data
       const [catalog, quote, me] = await Promise.all([getCatalog(), this.quote(), getMe()])
+      const version = await agreementFor(me)
+      this.policyVersion = version ?? ''
       const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
       const coach = catalog.coaches.find((c) => c.id === this.data.coachId)
       if (!lessonType || !coach) {
@@ -202,7 +215,7 @@ Page({
         needName: !me.name,
         needPhone: !me.phone,
         hasBookingPolicy: Boolean(catalog.policies.booking),
-        showAgreement: !me.agreedPolicies,
+        showAgreement: version !== null,
         noticeTemplates: me.noticeTemplates,
       })
     } catch (e) {
@@ -293,7 +306,7 @@ Page({
       ])
       // Consent comes before the contact details, which the API refuses without it.
       if (this.data.showAgreement) {
-        await agreePolicies()
+        await agreePolicies(this.policyVersion)
         this.setData({ showAgreement: false })
       }
       await this.saveProfile()
@@ -329,9 +342,9 @@ Page({
           this.finish(res.bookingId, PAY_PENDING, PAY_PENDING)
           return
         }
-        // Closed while the cashier was open, say past its time limit: the booking says what is left.
-        if (result === 'closed') {
-          this.finish(res.bookingId, '订单已关闭', '订单已关闭')
+        // Paid at the cashier on an order the server closed: never invite paying again.
+        if (result === 'unclear') {
+          this.finish(res.bookingId, PAY_UNCLEAR, PAY_UNCLEAR)
           return
         }
         this.finish(res.bookingId, '', result === 'paid' ? '预约成功' : '已预约，请尽快支付')
@@ -341,6 +354,11 @@ Page({
     } catch (e) {
       // Gone back while it was booking: nothing here to reload or ask about.
       if (this.left) return
+      if (isPolicyChanged(e)) {
+        this.setData({ agreed: false })
+        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+        return
+      }
       if (e instanceof ApiError && e.code === 'price_changed') {
         const { payWith } = this.data
         await this.load()

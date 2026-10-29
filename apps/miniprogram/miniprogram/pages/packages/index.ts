@@ -6,7 +6,15 @@ import {
   type PaymentParamsDto,
 } from '../../lib/shared'
 import { ApiError, api, errorMessage, showError } from '../../utils/api'
-import { agreePolicies, askForNotices, getCatalog, getMe } from '../../utils/data'
+import {
+  agreementFor,
+  agreePolicies,
+  askForNotices,
+  askToAgreeAgain,
+  getCatalog,
+  getMe,
+  isPolicyChanged,
+} from '../../utils/data'
 import { yuan } from '../../utils/format'
 import { isTop } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
@@ -48,6 +56,8 @@ Page({
   templates: {} as MeDto['noticeTemplates'],
   prompting: false,
   catalog: null as CatalogDto | null,
+  /** The version of the policies the agreement row offers. */
+  policyVersion: '',
   /** Set once the student has gone back from this page. */
   left: false,
 
@@ -60,6 +70,8 @@ Page({
   async load() {
     try {
       const [catalog, me] = await Promise.all([getCatalog(true), getMe()])
+      const version = await agreementFor(me)
+      this.policyVersion = version ?? ''
       this.catalog = catalog
       this.templates = me.noticeTemplates
       const typeNames = new Map(catalog.lessonTypes.map((t) => [t.id, t.name]))
@@ -97,7 +109,7 @@ Page({
       this.setData({
         state: 'ready',
         products,
-        showAgreement: !me.agreedPolicies,
+        showAgreement: version !== null,
       })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -134,7 +146,7 @@ Page({
     this.setData({ buying: product.id })
     try {
       if (this.data.showAgreement) {
-        await agreePolicies()
+        await agreePolicies(this.policyVersion)
         this.setData({ showAgreement: false })
       }
       const res = await api<{ orderId: number; payment: PaymentParamsDto | null }>(
@@ -160,12 +172,21 @@ Page({
           content: '如已完成支付，课时包稍后会出现在“我的课时包”中。',
           showCancel: false,
         })
-      } else if (result === 'closed') {
-        wx.showToast({ title: '订单已关闭，请重新购买', icon: 'none', duration: 2500 })
-        this.load()
+      } else if (result === 'unclear') {
+        // The money may have been taken: never invite buying again.
+        wx.showModal({
+          title: '支付结果确认中',
+          content: '如已扣款但课时包未出现在“我的课时包”中，请联系场馆处理。',
+          showCancel: false,
+        })
       }
     } catch (err) {
       if (this.left) return
+      if (isPolicyChanged(err)) {
+        this.setData({ agreed: false })
+        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+        return
+      }
       if (err instanceof ApiError && err.code === 'package_changed') {
         await this.load()
         wx.showToast({ title: '课时包内容已变动，请重新确认', icon: 'none' })

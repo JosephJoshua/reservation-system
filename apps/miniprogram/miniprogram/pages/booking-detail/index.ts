@@ -20,7 +20,7 @@ import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
-import { PAY_PENDING, payOrder } from '../../utils/pay'
+import { PAY_PENDING, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 import { previewPhotos } from '../../utils/photos'
 import { ask, openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
@@ -256,8 +256,8 @@ Page({
       await this.refresh()
       if (result === 'pending' && this.data.booking?.status === 'pending_payment') {
         wx.showToast({ title: PAY_PENDING, icon: 'none', duration: 2500 })
-      } else if (result === 'closed') {
-        wx.showToast({ title: '订单已关闭', icon: 'none', duration: 2500 })
+      } else if (result === 'unclear') {
+        wx.showToast({ title: PAY_UNCLEAR, icon: 'none', duration: 2500 })
       }
     } catch (e) {
       if (this.left) return

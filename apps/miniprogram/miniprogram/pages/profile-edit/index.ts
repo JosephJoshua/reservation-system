@@ -1,5 +1,11 @@
 import { api, errorMessage, showError } from '../../utils/api'
-import { agreePolicies, getMe } from '../../utils/data'
+import {
+  agreementFor,
+  agreePolicies,
+  askToAgreeAgain,
+  getMe,
+  isPolicyChanged,
+} from '../../utils/data'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
 
 Page({
@@ -16,6 +22,8 @@ Page({
 
   // Set once the student types, so a late profile answer never replaces what they typed.
   edited: false,
+  /** The version of the policies the agreement row offers. */
+  policyVersion: '',
 
   onLoad() {
     this.load()
@@ -26,8 +34,10 @@ Page({
   async load() {
     try {
       const me = await getMe()
+      const version = await agreementFor(me)
+      this.policyVersion = version ?? ''
       const fields = this.edited ? {} : { name: me.name, phone: me.phone }
-      this.setData({ state: 'ready', ...fields, showAgreement: !me.agreedPolicies })
+      this.setData({ state: 'ready', ...fields, showAgreement: version !== null })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
     }
@@ -71,7 +81,7 @@ Page({
     this.setData({ saving: true })
     try {
       if (this.data.showAgreement) {
-        await agreePolicies()
+        await agreePolicies(this.policyVersion)
         this.setData({ showAgreement: false })
       }
       await api('PUT', '/me', { name, phone })
@@ -79,6 +89,11 @@ Page({
       if (isTop(this)) backOr('/pages/profile/index', done)
       else done()
     } catch (e) {
+      if (isPolicyChanged(e)) {
+        this.setData({ agreed: false })
+        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+        return
+      }
       showError(e)
     } finally {
       this.setData({ saving: false })
