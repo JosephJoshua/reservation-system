@@ -885,6 +885,7 @@ describe('slots', () => {
         lessonTypeId: null,
         capacity: 1,
         seatsLeft: 1,
+        mine: null,
       },
     ])
   })
@@ -1825,7 +1826,7 @@ describe('lessons the venue cannot give', () => {
     expect(again.status).toBe(409)
     expect(again.json.error).toEqual({
       code: 'lesson_unavailable',
-      message: '这节课的时间场馆闭馆，请取消后重新预约',
+      message: '场馆在这节课的时间闭馆，请取消后重新预约',
     })
     // A cashier opened before the 闭馆 was added still takes the money.
     await pay(h, res.json.orderId)
@@ -1836,14 +1837,14 @@ describe('lessons the venue cannot give', () => {
       .from(refunds)
       .where(eq(refunds.bookingId, b?.id ?? 0))
       .get()
-    expect(refund).toMatchObject({ amount: b?.price, reason: '这节课的时间场馆闭馆，自动退款' })
+    expect(refund).toMatchObject({ amount: b?.price, reason: '场馆在这节课的时间闭馆，自动退款' })
     // The student is told the lesson cannot go ahead, not that they paid late.
     const status = await h.call('GET', `/orders/${res.json.orderId}`, undefined, t)
     expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired', refunded: true })
     const view = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
     expect(view.json).toMatchObject({
       status: 'expired',
-      expiredWhy: '这节课的时间场馆闭馆',
+      expiredWhy: '场馆在这节课的时间闭馆',
       disruption: null,
       refund: { amount: b?.price },
       canCancel: false,
@@ -1853,7 +1854,15 @@ describe('lessons the venue cannot give', () => {
     h.db.delete(scheduleExceptions).run()
     await stopped(h, coach.id, 'off')
     const later = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
-    expect(later.json).toMatchObject({ expiredWhy: '这节课的时间场馆闭馆', disruption: null })
+    expect(later.json).toMatchObject({ expiredWhy: '场馆在这节课的时间闭馆', disruption: null })
+    // A refund recorded before the wording changed keeps its own words.
+    h.db
+      .update(refunds)
+      .set({ reason: '这节课的时间场馆闭馆，自动退款' })
+      .where(eq(refunds.id, refund?.id ?? 0))
+      .run()
+    const old = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(old.json).toMatchObject({ expiredWhy: '这节课的时间场馆闭馆', disruption: null })
   })
 
   it('says nothing is refunded for a paid lesson cancelled late with no refund', async () => {
@@ -1921,7 +1930,7 @@ describe('lessons the venue cannot give', () => {
     expect(scan.status).toBe(409)
     expect(scan.json.error).toEqual({
       code: 'lesson_unavailable',
-      message: '这节课的时间场馆闭馆',
+      message: '场馆在这节课的时间闭馆',
     })
     expect(before.json.cancelDeadline).toBe('2026-10-26T02:00:00.000Z')
     // Under way: still flagged, no longer cancellable, and free to cancel until it started.
@@ -1988,7 +1997,7 @@ describe('lessons the venue cannot give', () => {
       .get()
     expect(refund).toMatchObject({
       amount: order?.amount,
-      reason: '教练这节课的时间请假，自动退款',
+      reason: '教练在这节课的时间请假，自动退款',
     })
   })
 })

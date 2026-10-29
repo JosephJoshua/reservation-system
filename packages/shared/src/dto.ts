@@ -95,6 +95,11 @@ export interface SlotDto {
   capacity: number
   /** Seats nobody holds yet. */
   seatsLeft: number
+  /**
+   * The student's own booking in this group session, unpaid or booked, which makes it not
+   * available to them; null otherwise and for a private time.
+   */
+  mine: { bookingId: number; status: 'pending_payment' | 'confirmed' } | null
 }
 
 export type BookingStatus = 'pending_payment' | 'confirmed' | 'completed' | 'cancelled' | 'expired'
@@ -113,6 +118,16 @@ export type RefundStatus =
  */
 export const REFUND_SETTLE_WAYS = { platform: '商户平台处理', offline: '线下另付' } as const
 export type RefundSettleWay = keyof typeof REFUND_SETTLE_WAYS
+
+/** A refund of a booking or package, as the student sees it. */
+export interface RefundDto {
+  amount: number
+  status: RefundStatus
+  /** Settled by staff outside WeChat Pay: 线下另付 is not paid back to where it came from. */
+  settledHow: RefundSettleWay | null
+  /** WeChat Pay could not pay it back to where it came from (退款异常); staff handle it. */
+  abnormal: boolean
+}
 
 /** The failure note on a refund staff paid back 线下另付 that WeChat Pay then reports done too. */
 export const REFUND_PAID_TWICE = '微信支付也报告退款成功，如已线下另付请核对是否重复'
@@ -199,7 +214,7 @@ export interface BookingDto {
   /** Why the venue or coach cancelled it, written for the student; empty when not given. */
   cancelReason: string
   late: boolean
-  refund: { amount: number; status: RefundStatus } | null
+  refund: RefundDto | null
   /** Marked by the coach or the venue, or by the student scanning the venue's 签到码. */
   attendance: Attendance | null
   /** The student can scan the venue's 签到码 for this lesson now. */
@@ -262,7 +277,7 @@ export interface PackageDto {
   pricePaid: number
   /** Bought at the front desk, so any refund is handed back there. */
   paidOffline: boolean
-  refund: { amount: number; status: RefundStatus } | null
+  refund: RefundDto | null
   /** Invoicing of the purchase; null when nothing was paid. */
   invoice: OrderInvoiceDto | null
 }
@@ -336,7 +351,8 @@ export interface AccountDeletionDto {
 }
 
 export interface ApiErrorBody {
-  error: { code: string; message: string }
+  /** `bookingId`: the booking the error is about, as with already_booked. */
+  error: { code: string; message: string; bookingId?: number }
 }
 
 /** One lesson the student checked in to by scanning the venue's 签到码. */

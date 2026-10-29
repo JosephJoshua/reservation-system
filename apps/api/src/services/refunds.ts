@@ -87,6 +87,9 @@ export function createRefund(
 // of the order that add up to more than was paid.
 const OVER_REFUNDED_NOTE = '该退款实际已成功，与其他退款合计超过实付金额，请核对'
 
+/** The failure WeChat Pay reports for a refund it closed, which is final there. */
+const REFUND_CLOSED = 'CLOSED'
+
 // Shown to staff on a refund WeChat Pay reports as ABNORMAL (the card the money goes back to was
 // cancelled or frozen); it settles once handled on the merchant platform.
 export const ABNORMAL_NOTE = '退款异常：原路退回失败，请在微信支付商户平台处理'
@@ -483,10 +486,12 @@ function recordUndoneAfterSettle(deps: Deps, outRefundNo: string, result: Refund
       ),
     )
     .get()
-  // A success is WeChat Pay's last word: anything after it is an older report sent again.
+  // A success is WeChat Pay's last word, and so is CLOSED: anything after either is an older
+  // report sent again (a 退款异常 it got no answer to, say). A later success is handled as one.
   if (
     !row ||
     row.failure === reported ||
+    row.failure === REFUND_CLOSED ||
     row.failure === REFUND_WECHAT_CONFIRMED ||
     settledRefundWarning(row.failure)
   ) {

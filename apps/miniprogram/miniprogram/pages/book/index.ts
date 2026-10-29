@@ -30,6 +30,9 @@ interface SlotView {
   closed: boolean
   /** Seats left in a group session; null for a private slot. */
   seatsLeft: number | null
+  /** The student's own booking in this session: 待支付 or 已报名, opened on a tap. */
+  mine: string
+  bookingId: number | null
 }
 
 Page({
@@ -58,6 +61,8 @@ Page({
     slotsState: 'loading' as 'loading' | 'ready' | 'error',
     slots: [] as SlotView[],
     availableCount: 0,
+    /** Sessions that day the student has a seat in, so the header does not say none is left. */
+    mineCount: 0,
   },
 
   /** The lesson type's notice: a time closer than this to now cannot be booked. */
@@ -172,6 +177,8 @@ Page({
           // Too close to start to book online, as opposed to booked by someone else.
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
           seatsLeft: s.lessonTypeId === null ? null : s.seatsLeft,
+          mine: s.mine ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
+          bookingId: s.mine?.bookingId ?? null,
         }))
       const availableCount = slots.filter((s) => s.available).length
       if (openDays && availableCount === 0) {
@@ -186,7 +193,8 @@ Page({
           return
         }
       }
-      this.setData({ slotsState: 'ready', slots, availableCount })
+      const mineCount = slots.filter((s) => s.mine).length
+      this.setData({ slotsState: 'ready', slots, availableCount, mineCount })
       const day = this.data.days.find((d) => d.key === date)
       if (moved && day && availableCount > 0) {
         wx.showToast({ title: `当天没有可约时段，已跳到 ${day.date}`, icon: 'none' })
@@ -252,6 +260,11 @@ Page({
 
   pickSlot(e: WechatMiniprogram.TouchEvent) {
     const slot = this.data.slots[e.currentTarget.dataset.index as number]
+    // Booked already: open that booking, to pay for or cancel it there.
+    if (slot?.bookingId) {
+      navigateOnce(`/pages/booking-detail/index?id=${slot.bookingId}`)
+      return
+    }
     if (!slot?.available) return
     const query = [
       ...(slot.id === null ? [] : [`slotId=${slot.id}`]),

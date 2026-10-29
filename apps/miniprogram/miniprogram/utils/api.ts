@@ -12,6 +12,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** The booking the error is about, as with already_booked. */
+    readonly bookingId?: number,
   ) {
     super(message)
   }
@@ -60,7 +62,12 @@ export function actionHeaders(
 /** The API's error from a failed response, or `fallback` when the body does not say. */
 function responseError(statusCode: number, body: unknown, fallback: string): ApiError {
   const error = (body as Partial<ApiErrorBody> | undefined)?.error
-  return new ApiError(statusCode, error?.code ?? 'http_error', error?.message ?? fallback)
+  return new ApiError(
+    statusCode,
+    error?.code ?? 'http_error',
+    error?.message ?? fallback,
+    typeof error?.bookingId === 'number' ? error.bookingId : undefined,
+  )
 }
 
 export function request<T>(

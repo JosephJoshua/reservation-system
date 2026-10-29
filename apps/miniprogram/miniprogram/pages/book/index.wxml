@@ -88,7 +88,7 @@
   </view>
   <view wx:else>
     <view wx:if="{{capacity > 1}}" class="section-title">
-      {{availableCount ? '可报名 ' + availableCount + ' 节，每节 ' + duration + ' 分钟' : '这一天已无可报名的课'}}
+      {{availableCount ? '可报名 ' + availableCount + ' 节，每节 ' + duration + ' 分钟' : mineCount ? '你已预约这一天的课' : '这一天已无可报名的课'}}
     </view>
     <view wx:else class="section-title">
       {{availableCount ? '可预约 ' + availableCount + ' 个时段，每节 ' + duration + ' 分钟' : '这一天已无可约时段'}}
@@ -97,8 +97,8 @@
       <view
         wx:for="{{slots}}"
         wx:key="key"
-        class="slot {{item.available ? '' : 'slot-full'}}"
-        hover-class="{{item.available ? 'slot-hover' : 'none'}}"
+        class="slot {{item.mine ? 'slot-mine' : item.available ? '' : 'slot-full'}}"
+        hover-class="{{item.available || item.mine ? 'slot-hover' : 'none'}}"
         data-index="{{index}}"
         bind:tap="pickSlot"
       >
@@ -106,7 +106,7 @@
         <view wx:if="{{item.seatsLeft === null}}" class="slot-sub">{{item.available ? (coachId ? '可约' : item.coachName) : item.closed ? '已截止' : '已约满'}}</view>
         <block wx:else>
           <view wx:if="{{!coachId}}" class="slot-sub">{{item.coachName}}</view>
-          <view class="slot-sub">{{item.available ? '剩 ' + item.seatsLeft + ' 位' : item.closed ? '已截止' : item.seatsLeft === 0 ? '已满员' : '已约满'}}</view>
+          <view class="slot-sub">{{item.mine ? item.mine : item.available ? '剩 ' + item.seatsLeft + ' 位' : item.closed ? '已截止' : item.seatsLeft === 0 ? '已满员' : '已约满'}}</view>
         </block>
       </view>
     </view>

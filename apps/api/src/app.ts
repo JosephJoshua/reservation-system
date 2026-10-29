@@ -25,7 +25,11 @@ export function createApp(deps: Deps) {
 
   app.onError((err, c) => {
     if (err instanceof ApiError) {
-      return c.json({ error: { code: err.code, message: err.message } }, err.status)
+      const { code, message, bookingId } = err
+      return c.json(
+        { error: bookingId === undefined ? { code, message } : { code, message, bookingId } },
+        err.status,
+      )
     }
     deps.log('unhandled error', { path: c.req.path, error: err.stack ?? err.message })
     return c.json({ error: { code: 'internal', message: '服务出错，请稍后再试' } }, 500)

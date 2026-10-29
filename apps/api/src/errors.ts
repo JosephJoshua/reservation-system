@@ -9,6 +9,8 @@ export class ApiError extends Error {
     readonly status: ContentfulStatusCode,
     readonly code: string,
     message: string,
+    /** The booking the error is about, for the client to open (already_booked). */
+    readonly bookingId?: number,
   ) {
     super(message)
   }
