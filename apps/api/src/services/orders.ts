@@ -47,9 +47,19 @@ export async function startPayment(
     order = deps.db.select().from(orders).where(eq(orders.id, orderId)).get() ?? order
   }
   if (order.status === 'paid') throw orderPaid()
-  if (order.status !== 'pending' || !order.expiresAt || order.expiresAt <= deps.now()) {
+  if (order.status === 'pending' && order.expiresAt && order.expiresAt <= deps.now()) {
+    // Past its time but not yet closed by the sweeper: closed now, so its slot is free for the
+    // booking made again.
+    let closed: 'closed' | 'paid' = 'closed'
+    try {
+      closed = await closeOrder(deps, orderId)
+    } catch (e) {
+      deps.log('close expired order failed', { orderId, error: (e as Error).message })
+    }
+    if (closed === 'paid') throw orderPaid()
     throw orderNotPayable()
   }
+  if (order.status !== 'pending' || !order.expiresAt) throw orderNotPayable()
   let prepayId = order.prepayId
   if (!prepayId) {
     try {
@@ -81,6 +91,9 @@ export async function startPayment(
 }
 
 const orderNotPayable = () => new ApiError(409, 'order_not_payable', '订单已关闭，请重新下单')
+
+const paymentUnavailable = () =>
+  new ApiError(502, 'payment_unavailable', '微信支付暂时不可用，请稍后再试')
 
 /**
  * Closes an order at WeChat Pay that is closed here already, so it can never be paid. If it was
@@ -430,7 +443,15 @@ export async function closeOrder(
   if (!order) throw notFound('订单')
   if (order.status === 'paid') return 'paid'
   if (order.status === 'pending' && order.prepayId) {
-    const state = await deps.gateway.closeOrder(order.outTradeNo)
+    let state: Awaited<ReturnType<typeof deps.gateway.closeOrder>>
+    try {
+      state = await deps.gateway.closeOrder(order.outTradeNo)
+    } catch (e) {
+      // Not closed here either: a payment may still land, so the slot stays held until WeChat
+      // Pay answers.
+      deps.log('close order failed', { orderId, error: (e as Error).message })
+      throw paymentUnavailable()
+    }
     if (state.state === 'paid') {
       applyPayment(deps, order.outTradeNo, state)
       // A payment flagged for staff instead (see applyPayment) left the order closed and its
