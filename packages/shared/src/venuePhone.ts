@@ -7,11 +7,15 @@
 export const VENUE_PHONE_MESSAGE =
   '电话格式不对：请填写电话号码，可写分机号（如“转 8”），两个号码用“/”隔开'
 
-/** Full-width letters, digits and signs as their half-width forms, as typed with a Chinese IME. */
+/**
+ * Full-width letters, digits and signs as their half-width forms, as typed with a Chinese IME,
+ * and dashes as hyphens.
+ */
 function halfWidth(text: string) {
   return text
     .replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/　/g, ' ')
+    .replace(/[–—−]/g, '-')
 }
 
 // A note at the end, such as （微信同号）: brackets holding something besides a number.
@@ -46,5 +50,16 @@ export function dialablePhone(phone: string): string | null {
   const first = numbers(phone)?.[0]
   if (!first) return null
   const digits = first.replace(/\D/g, '')
-  return /^\(?\+/.test(first) ? `+${digits}` : digits
+  if (!/^\(?\+/.test(first)) return digits
+  // The trunk 0 some write after the country code, as in +86 (0)10 6234 5678, is not dialled.
+  return `+${digits.replace(/^860/, '86')}`
+}
+
+/**
+ * What the mini program dials for the venue phone: the first number, or the phone as saved when
+ * it can't be read, such as one saved before phones were checked; the phone app makes what it
+ * can of it. Null when there is no phone.
+ */
+export function phoneToDial(phone: string): string | null {
+  return dialablePhone(phone) ?? (phone.trim() || null)
 }

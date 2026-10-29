@@ -1,9 +1,9 @@
 import {
   type CatalogDto,
-  dialablePhone,
   type HomeDto,
   type MeDto,
   type PackageDto,
+  phoneToDial,
 } from '../../lib/shared'
 import { api, publicApi, showError } from '../../utils/api'
 import { getCatalog, getMe } from '../../utils/data'
@@ -140,8 +140,8 @@ Page({
   },
 
   call() {
-    // The first number, as digits: the phone may hold an extension, a second number or a note.
-    const phone = dialablePhone(this.data.venue?.phone ?? '')
+    // The first number: the phone may hold an extension, a second number or a note.
+    const phone = phoneToDial(this.data.venue?.phone ?? '')
     if (phone) openOnce((complete) => wx.makePhoneCall({ phoneNumber: phone, complete }))
   },
 })

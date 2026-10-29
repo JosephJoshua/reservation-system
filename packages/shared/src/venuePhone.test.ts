@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dialablePhone, venuePhoneValid } from './venuePhone'
+import { dialablePhone, phoneToDial, venuePhoneValid } from './venuePhone'
 
 describe('venuePhoneValid', () => {
   it('takes phones as people write them', () => {
@@ -54,10 +54,27 @@ describe('dialablePhone', () => {
     expect(dialablePhone('+86 139-0000-0001')).toBe('+8613900000001')
     expect(dialablePhone('０１０－６２３４５６７８ / 13900000001（微信同号）')).toBe('01062345678')
     expect(dialablePhone('(010) 6234.5678#8')).toBe('01062345678')
+    expect(dialablePhone('+86 (0)10 6234 5678')).toBe('+861062345678')
+    expect(dialablePhone('0755—12345678')).toBe('075512345678')
   })
 
   it('has nothing to dial when there is no phone', () => {
     expect(dialablePhone('')).toBe(null)
     expect(dialablePhone('前台')).toBe(null)
+  })
+})
+
+describe('phoneToDial', () => {
+  it('dials a phone it can read by its first number', () => {
+    expect(phoneToDial('010-6234 5678 转 8')).toBe('01062345678')
+  })
+
+  it('dials an odd phone saved before the check as it is', () => {
+    expect(phoneToDial(' 前台 010-62345678 ')).toBe('前台 010-62345678')
+  })
+
+  it('has nothing to dial without a phone', () => {
+    expect(phoneToDial('')).toBe(null)
+    expect(phoneToDial('  ')).toBe(null)
   })
 })
