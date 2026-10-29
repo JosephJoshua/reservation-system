@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { instantString } from './api'
 import { LINK_KINDS, LINK_TARGET_MESSAGE, linkTargetValid } from './links'
 
 /** Fields of a banner or notice link; refine the object with `linkTargetValid`. */
@@ -75,7 +76,7 @@ export const venueSettings = z.object({
   notice: z
     .object({
       text: z.string().max(60),
-      endsAt: z.iso.datetime({ offset: true }).nullable(),
+      endsAt: instantString.nullable(),
       // Where a tap on the notice goes.
       ...linkShape,
     })

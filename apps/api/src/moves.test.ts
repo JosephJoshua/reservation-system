@@ -1169,3 +1169,74 @@ describe('a moved lesson in 课程详情', () => {
     }
   })
 })
+
+describe('attendance on a moved lesson', () => {
+  it('drops a check-in made for the old time', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const slot = h.slot(coach.id, '2026-10-26', 10)
+    h.slot(coach.id, '2026-10-28', 10)
+    const student = await h.student('a')
+    await h.call('PUT', '/me', { name: '小明', phone: '13800138000' }, student)
+    const id = await book(h, student, slot.id, lesson.id)
+    h.clock.now = new Date('2026-10-26T01:40:00Z')
+    const code = 'https://yuyue.example.com/checkin'
+    expect((await h.call('POST', '/check-in', { code }, student)).status).toBe(200)
+    const mv = await h.call(
+      'POST',
+      `/admin/bookings/${id}/move`,
+      { coachId: coach.id, startsAt: '2026-10-28T02:00:00.000Z' },
+      await h.admin(),
+    )
+    expect(mv.status).toBe(204)
+    const b = h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+    expect(b?.attendance).toBeNull()
+    expect(b?.attendanceAt).toBeNull()
+    expect(b?.attendanceBy).toBeNull()
+    expect(b?.attendanceStaffId).toBeNull()
+  })
+
+  it('lets the coach mark 缺席 at the new time after the desk marked the old one', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const coachToken = await bindCoach(h, coach.id)
+    const slot = h.slot(coach.id, '2026-10-26', 10)
+    h.slot(coach.id, '2026-10-28', 10)
+    const student = await h.student('a')
+    const id = await book(h, student, slot.id, lesson.id)
+    h.clock.now = new Date('2026-10-26T01:45:00Z')
+    const admin = await h.admin()
+    const mark = { attendance: 'attended' }
+    expect((await h.call('PUT', `/admin/bookings/${id}/attendance`, mark, admin)).status).toBe(204)
+    const target = { coachId: coach.id, startsAt: '2026-10-28T02:00:00.000Z' }
+    expect((await h.call('POST', `/admin/bookings/${id}/move`, target, admin)).status).toBe(204)
+    h.clock.now = new Date('2026-10-28T02:20:00Z')
+    const absent = { attendance: 'no_show' }
+    const res = await h.call('PUT', `/coach/lessons/${id}/attendance`, absent, coachToken)
+    expect(res.status).toBe(200)
+    const b = h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+    expect(b?.attendance).toBe('no_show')
+    expect(b?.attendanceBy).toBe('coach')
+    expect(b?.attendanceStaffId).toBeNull()
+  })
+
+  it('keeps the mark when only the coach changes', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const other = otherCoach(h, lesson.id)
+    const slot = h.slot(coach.id, '2026-10-26', 10)
+    h.slot(other.id, '2026-10-26', 10)
+    const student = await h.student('a')
+    const id = await book(h, student, slot.id, lesson.id)
+    h.clock.now = new Date('2026-10-26T01:45:00Z')
+    const admin = await h.admin()
+    const mark = { attendance: 'attended' }
+    expect((await h.call('PUT', `/admin/bookings/${id}/attendance`, mark, admin)).status).toBe(204)
+    const target = { coachId: other.id, startsAt: '2026-10-26T02:00:00.000Z' }
+    const mv = await h.call('POST', `/admin/bookings/${id}/move`, target, admin)
+    expect(mv.status).toBe(204)
+    const b = h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+    expect(b?.attendance).toBe('attended')
+    expect(b?.attendanceBy).toBe('staff')
+  })
+})

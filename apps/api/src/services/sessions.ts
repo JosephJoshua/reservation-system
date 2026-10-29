@@ -5,6 +5,7 @@ import {
   MAX_CAPACITY,
   minCheckDue,
   minCheckHours,
+  SCHEDULE_STEP,
   venueParts,
 } from '@rs/shared'
 import { and, eq, gt, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
@@ -63,6 +64,11 @@ export function createSessions(tx: Q, now: Date, input: NewSessions) {
     const coach = tx.select().from(coaches).where(eq(coaches.id, s.coachId)).get()
     if (!coach) throw notFound('教练')
     if (s.startsAt <= now) throw new ApiError(400, 'slot_in_past', '不能给已过去的时间排课')
+    // Private times are offered on the same marks, so a session off them leaves odd times free.
+    const step = SCHEDULE_STEP * 60_000
+    if (s.startsAt.getTime() % step || s.endsAt.getTime() % step) {
+      throw new ApiError(400, 'invalid_time', `时间需为 ${SCHEDULE_STEP} 分钟的整数倍`)
+    }
     if (s.endsAt.getTime() - s.startsAt.getTime() !== lessonType.durationMinutes * 60_000) {
       throw new ApiError(400, 'duration_mismatch', `每节需为 ${lessonType.durationMinutes} 分钟`)
     }

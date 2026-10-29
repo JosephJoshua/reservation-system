@@ -1,4 +1,4 @@
-import { type CancelledBy, validityEnd } from '@rs/shared'
+import { type CancelledBy, DISRUPTION_TEXT, validityEnd } from '@rs/shared'
 import { and, eq, gt, inArray, isNotNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -16,6 +16,7 @@ import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { OrderState, PaymentParams } from '../pay/gateway'
 import { seatFor } from './bookings'
 import { priceFor, trialsUsed, visibleTo } from './catalog'
+import { assertNotDisrupted, disruptionOf } from './disruption'
 import { createRefund, submitRefund } from './refunds'
 import { assertPrivateTime, exceptionsFor } from './schedule'
 import { getSettings } from './settings'
@@ -50,6 +51,11 @@ export async function startPayment(
   if (order.status !== 'pending' || !order.expiresAt || order.expiresAt <= deps.now()) {
     throw orderNotPayable()
   }
+  // A 闭馆 or 请假 added, or the coach stopped, while the student was paying.
+  const held = order.bookingId
+    ? deps.db.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
+    : undefined
+  if (held?.status === 'pending_payment') assertNotDisrupted(deps.db, held)
   let prepayId = order.prepayId
   if (!prepayId) {
     try {
@@ -193,7 +199,19 @@ export function applyPayment(
     if (!order.bookingId) return []
     const booking = tx.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
     if (!booking) return []
-    if (
+    let reason = '时段已被预约，自动退款'
+    // The venue cannot give the lesson any more (闭馆, 请假, the coach stopped): a hold ends, one
+    // already over is not revived, and the payment goes back, saying why.
+    const disruption =
+      booking.status === 'pending_payment' || booking.status === 'expired'
+        ? disruptionOf(tx, booking)
+        : null
+    if (disruption) {
+      if (booking.status === 'pending_payment') {
+        tx.update(bookings).set({ status: 'expired' }).where(eq(bookings.id, booking.id)).run()
+      }
+      reason = `${DISRUPTION_TEXT[disruption]}，自动退款`
+    } else if (
       booking.status === 'pending_payment' ||
       (booking.status === 'expired' && revivable(tx, booking, deps.now()))
     ) {
@@ -219,7 +237,7 @@ export function applyPayment(
       createRefund(tx, deps.now(), {
         orderId: order.id,
         amount: order.amount,
-        reason: '时段已被预约，自动退款',
+        reason,
         bookingId: booking.id,
       }),
     ]
