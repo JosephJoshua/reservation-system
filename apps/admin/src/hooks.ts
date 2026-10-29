@@ -148,6 +148,39 @@ export function useIdempotencyKey() {
   return useState(newKey)[0]
 }
 
+// One per page load, so this tab's keys never match another's.
+const pageKey = newKey()
+
+/**
+ * The Idempotency-Key for an action that can only happen once to a record, such as
+ * `cancel-booking-12` or `delete-slot-3`: every try of it from this page is the same action.
+ */
+export function onceKey(action: string) {
+  return `${pageKey}-${action}`
+}
+
+/**
+ * Idempotency-Keys for actions that can be done again later, such as switching 测试学员 or
+ * retrying a refund: `get(name)` gives the same key until `done(name)` is called once the action
+ * went through, so a retry after a lost response is a repeat and the next action is new.
+ */
+export function useActionKeys() {
+  const keys = useRef(new Map<string, string>())
+  return useState(() => ({
+    get(name: string) {
+      let key = keys.current.get(name)
+      if (!key) {
+        key = newKey()
+        keys.current.set(name, key)
+      }
+      return key
+    },
+    done(name: string) {
+      keys.current.delete(name)
+    },
+  }))[0]
+}
+
 /** A query parameter of the current page, as in `#/refunds?status=failed`. */
 export function hashParam(name: string) {
   return new URLSearchParams(window.location.hash.split('?')[1] ?? '').get(name)

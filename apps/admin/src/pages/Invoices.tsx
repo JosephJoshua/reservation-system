@@ -16,7 +16,7 @@ import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDateTime, yuan } from '../format'
-import { attempt, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, onceKey, useIdempotencyKey, useSubmitting } from '../hooks'
 import {
   DateFilter,
   Filter,
@@ -84,10 +84,14 @@ export function Invoices() {
 
   const refundSeen = async (row: AdminInvoice) => {
     if (
-      await attempt(() => api('POST', `/admin/invoices/${row.id}/refund-seen`), '已标记处理', {
-        onStale: reload,
-        key: `refund-seen-${row.id}`,
-      })
+      await attempt(
+        () =>
+          api('POST', `/admin/invoices/${row.id}/refund-seen`, undefined, {
+            key: onceKey(`refund-seen-${row.id}`),
+          }),
+        '已标记处理',
+        { onStale: reload, key: `refund-seen-${row.id}` },
+      )
     )
       await reload()
   }

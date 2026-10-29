@@ -41,12 +41,21 @@ import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { LessonTime } from '../bookingCells'
 import { DataTable } from '../DataTable'
-import { BindWechatDialog, NewStudentDialog } from '../DeskStudent'
+import { BindWechatDialog, EditStudentDialog, NewStudentDialog } from '../DeskStudent'
 import { ExportButton } from '../ExportButton'
 import { FeedbackPhotos } from '../FeedbackPhotos'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, hashParam, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
+import {
+  attempt,
+  hashParam,
+  onceKey,
+  useActionKeys,
+  useApi,
+  useIdempotencyKey,
+  useIsPhone,
+  useSubmitting,
+} from '../hooks'
 import {
   bookingStatusLabel,
   ledgerKindLabel,
@@ -428,6 +437,7 @@ function useStudent(id: number, onChanged: () => void) {
   const [selling, setSelling] = useState(false)
   const [booking, setBooking] = useState(false)
   const [binding, setBinding] = useState(false)
+  const [editingInfo, setEditingInfo] = useState(false)
   // The profile as it was when the editor opened, which the save is checked against.
   const [editingProfile, setEditingProfile] = useState<StudentProfileEdit | null>(null)
   const [action, setAction] = useState<PackageActionKind | null>(null)
@@ -443,6 +453,18 @@ function useStudent(id: number, onChanged: () => void) {
           onClose={() => setEditingProfile(null)}
           onDone={() => {
             setEditingProfile(null)
+            reload()
+          }}
+        />
+      )}
+      {editingInfo && (
+        <EditStudentDialog
+          student={s}
+          onClose={() => setEditingInfo(false)}
+          onDone={() => {
+            setEditingInfo(false)
+            // The list shows the name and phone too.
+            onChanged()
             reload()
           }}
         />
@@ -471,7 +493,7 @@ function useStudent(id: number, onChanged: () => void) {
         <OfflineSale
           studentId={s.id}
           products={products.data ?? []}
-          onProductsChanged={() => void products.reload()}
+          reloadProducts={products.reload}
           onClose={() => setSelling(false)}
           onDone={() => {
             setSelling(false)
@@ -501,9 +523,14 @@ function useStudent(id: number, onChanged: () => void) {
     s,
     dialogs,
     onChanged,
-    sell: () => setSelling(true),
+    sell: () => {
+      // Prices and what is on sale may have changed since the page loaded.
+      void products.reload()
+      setSelling(true)
+    },
     book: () => setBooking(true),
     bind: () => setBinding(true),
+    editInfo: () => setEditingInfo(true),
     editProfile: () => s && setEditingProfile(profileEdit(s.profile)),
     packageAction: setAction,
   }
@@ -514,8 +541,10 @@ type Student = ReturnType<typeof useStudent>
 
 /** The student's phone, when they joined, the 测试学员 switch, or that they were deleted. */
 function StudentFacts({ student }: { student: Student }) {
-  const { s, detail } = student
+  const { s, detail, editInfo } = student
   const canManage = useCan('manage')
+  const canEdit = useCan('students')
+  const keys = useActionKeys()
   if (!s) return null
   if (s.deletedAt) {
     return (
@@ -528,6 +557,11 @@ function StudentFacts({ student }: { student: Student }) {
   return (
     <Space align="center" breakLine>
       <span>{s.phone || '未填写手机号'}</span>
+      {canEdit && (
+        <Button size="small" variant="text" theme="primary" onClick={editInfo}>
+          修改姓名和手机号
+        </Button>
+      )}
       <span className="muted">
         {s.deletedAt ? '建档于' : s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
       </span>
@@ -538,8 +572,13 @@ function StudentFacts({ student }: { student: Student }) {
             size="small"
             value={s.tester}
             onChange={async (v) => {
-              if (await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v })))
+              const key = keys.get(`tester-${v}`)
+              if (
+                await attempt(() => api('PATCH', `/admin/students/${s.id}`, { tester: v }, { key }))
+              ) {
+                keys.done(`tester-${v}`)
                 await detail.reload()
+              }
             }}
           />
         </Space>
@@ -587,7 +626,13 @@ function StudentNotices({ student }: { student: Student }) {
                 confirmBtn={{ content: '删除', theme: 'danger' }}
                 cancelBtn="返回"
                 onConfirm={async () => {
-                  if (await attempt(() => api('DELETE', `/admin/students/${s.id}`), '已删除')) {
+                  const key = onceKey(`delete-student-${s.id}`)
+                  if (
+                    await attempt(
+                      () => api('DELETE', `/admin/students/${s.id}`, undefined, { key }),
+                      '已删除',
+                    )
+                  ) {
                     onChanged()
                     await detail.reload()
                   }
@@ -1221,17 +1266,19 @@ function priceNow(p: PackageProduct) {
   ).price
 }
 
+// Refusals that mean the price or the package changed since the list loaded.
+const SALE_CHANGED = ['listed_price_only', 'product_off_sale', 'package_changed']
+
 function OfflineSale({
   studentId,
   products,
-  onProductsChanged,
+  reloadProducts,
   onClose,
   onDone,
 }: {
   studentId: number
   products: PackageProduct[]
-  /** Another admin changed what a package grants: load the products again and stay open. */
-  onProductsChanged: () => void
+  reloadProducts: () => Promise<void>
   onClose: () => void
   onDone: () => void
 }) {
@@ -1245,7 +1292,18 @@ function OfflineSale({
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
-  const fen = toFen(amount)
+  const listed = product?.onSale ? priceNow(product) : undefined
+  // Others charge the listed price as it stands, which follows the list when it reloads.
+  const fen = canPrice ? toFen(amount) : (listed ?? null)
+
+  // The list reloaded: a package taken off sale meanwhile gives way to one still on sale.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the list changes
+  useEffect(() => {
+    if (onSale.some((p) => p.id === productId)) return
+    const first = onSale[0]
+    setProductId(first?.id)
+    setAmount(toYuan(first && priceNow(first)))
+  }, [products])
 
   const submit = async () => {
     if (!productId || fen === null) return
@@ -1272,8 +1330,9 @@ function OfflineSale({
         ),
       '已记录',
       {
-        onStale: (e) => (e.code === 'package_changed' ? onProductsChanged() : onDone()),
-        stale: ['package_changed'],
+        stale: SALE_CHANGED,
+        // A changed price or package reloads the list and keeps the dialog, to check and confirm.
+        onStale: (e) => (SALE_CHANGED.includes(e.code) ? reloadProducts() : onDone()),
       },
     )
     if (ok) onDone()
@@ -1285,7 +1344,7 @@ function OfflineSale({
       header="前台售卖课时包"
       confirmBtn={{
         content: '确认收款',
-        disabled: !productId || fen === null,
+        disabled: !productId || fen === null || fen > 10_000_000,
         loading: submitting,
       }}
       onConfirm={submit}
@@ -1307,10 +1366,20 @@ function OfflineSale({
             }}
           />
         </Field>
-        <Field label="实收金额" help={canPrice ? undefined : '按标价收款，改价请联系管理员'}>
+        <Field
+          label="实收金额"
+          help={
+            !canPrice
+              ? '按标价收款，改价请联系管理员'
+              : fen === null || fen > 10_000_000
+                ? '请填写 0 到 100000 元之间的金额'
+                : undefined
+          }
+        >
           <InputNumber
             theme="normal"
-            value={amount}
+            status={canPrice && (fen === null || fen > 10_000_000) ? 'error' : 'default'}
+            value={canPrice ? amount : toYuan(listed)}
             disabled={!canPrice}
             min={0}
             decimalPlaces={2}

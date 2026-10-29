@@ -125,3 +125,18 @@ export function SaveBar({
     </section>
   )
 }
+
+/**
+ * Says the record was saved elsewhere since the form was loaded, so the form can't be saved over
+ * it, and offers to load the newer version in its place.
+ */
+export function StaleNotice({ what, onLoad }: { what: string; onLoad: () => void }) {
+  return (
+    <div className="edit-stale" role="alert">
+      <span>其他人刚刚修改了{what}，这里的修改不能直接保存。</span>
+      <Button size="small" variant="outline" onClick={onLoad}>
+        载入最新内容
+      </Button>
+    </div>
+  )
+}

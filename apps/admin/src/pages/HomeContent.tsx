@@ -6,7 +6,7 @@ import { isoToPicker, pickerToIso } from '../format'
 import { useApi, useIsPhone } from '../hooks'
 import { LinkPicker, useLinkTargets } from '../LinkPicker'
 import { EditorWithPreview } from '../preview/EditorWithPreview'
-import { SaveBar } from '../SaveBar'
+import { SaveBar, StaleNotice } from '../SaveBar'
 import { useSettingsDraft } from '../settingsDraft'
 import type { Banner } from '../types'
 import { BannerEditPage, Banners } from './Banners'
@@ -17,7 +17,7 @@ import { BannerEditPage, Banners } from './Banners'
  * saved with the bar; banners save one by one as before.
  */
 export function HomeContent() {
-  const { error, s, set, reset, save, saving, changed } = useSettingsDraft()
+  const { error, s, set, reset, save, saving, stale, changed } = useSettingsDraft()
   const banners = useApi<Banner[]>('/admin/banners')
   const phone = useIsPhone()
   // The banner 预览 put on the preview's carousel.
@@ -70,6 +70,7 @@ export function HomeContent() {
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           {list}
+          {stale && <StaleNotice what="首页公告或预约须知" onLoad={reset} />}
 
           <Card title="首页公告" bordered>
             <div className="fields form-narrow">
@@ -129,7 +130,13 @@ export function HomeContent() {
           </Card>
         </Space>
       </EditorWithPreview>
-      <SaveBar dirty={dirty} saving={saving} onSave={() => void save()} onReset={reset} />
+      <SaveBar
+        dirty={dirty}
+        saving={saving}
+        onSave={() => void save()}
+        onReset={reset}
+        note={stale ? '已被其他人修改' : undefined}
+      />
     </div>
   )
 }

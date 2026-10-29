@@ -1,5 +1,6 @@
 import type { VenueSettings } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
+import { MessagePlugin } from 'tdesign-react'
 import { api } from './api'
 import { attempt, newKey, useApi } from './hooks'
 
@@ -19,13 +20,20 @@ export function useSettingsDraft() {
   const discarded = useRef(false)
   // One per loaded version, so a retry after a lost response is not saved twice.
   const [key, setKey] = useState(newKey)
+  // Someone else saved the settings meanwhile: the form keeps what was typed, but can't be saved
+  // over their change until the newer settings are loaded.
+  const [stale, setStale] = useState(false)
+  // A refused save reloads the settings without replacing the form.
+  const keep = useRef(false)
 
   useEffect(() => {
     if (!data) return
     const typed = sent.current
     sent.current = null
+    const kept = keep.current
+    keep.current = false
     setS((prev) =>
-      prev && typed && JSON.stringify(prev) !== JSON.stringify(typed)
+      prev && (kept || (typed && JSON.stringify(prev) !== JSON.stringify(typed)))
         ? prev
         : structuredClone(data),
     )
@@ -40,14 +48,20 @@ export function useSettingsDraft() {
       return next
     })
 
+  /** Puts the form back to the settings as last loaded, the newest after a refused save. */
   const reset = () => {
     if (busy.current) discarded.current = true
     if (data) setS(structuredClone(data))
+    setStale(false)
   }
 
   /** Saves `body`, or the form as it is; true once saved and loaded again. */
   const save = async (body: VenueSettings | null = s) => {
     if (busy.current || !body) return false
+    if (stale) {
+      void MessagePlugin.warning('设置已被其他人修改，请先载入最新内容')
+      return false
+    }
     busy.current = true
     setSaving(true)
     const form = s
@@ -56,7 +70,15 @@ export function useSettingsDraft() {
     const ok = await attempt(
       () => api('PUT', '/admin/settings', body, { ifMatch: data, key }),
       '已保存',
-      { key: 'settings' },
+      {
+        key: 'settings',
+        stale: ['edited_elsewhere'],
+        onStale: async (e) => {
+          if (e.code === 'edited_elsewhere') setStale(true)
+          keep.current = true
+          await reload()
+        },
+      },
     )
     if (ok) {
       sent.current = discarded.current ? null : form
@@ -75,6 +97,8 @@ export function useSettingsDraft() {
     reset,
     save,
     saving,
+    /** Saved elsewhere since loading: `reset` loads the newer settings. */
+    stale,
     /** True from the moment a save starts, before `saving` renders. */
     isSaving: () => busy.current,
     /** True once the parts named by `pick` differ from the saved settings. */
