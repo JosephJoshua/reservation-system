@@ -569,6 +569,33 @@ describe('WeChat Pay reporting on a refund staff already settled', () => {
     expect(await refundsCsv(h)).toContain('线下另付；已现金退还；微信支付退款失败：CLOSED')
   })
 
+  it('takes CLOSED as final: a 退款异常 sent again after it raises no warning', async () => {
+    const h = setup()
+    const { admin, refundId, outRefundNo } = await abnormalRefund(h)
+    // The 退款异常 notice got no answer; WeChat Pay then closed the refund.
+    settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
+    vi.spyOn(h.gateway, 'queryRefund').mockResolvedValue({ status: 'failed', reason: 'CLOSED' })
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { how: 'offline', note: '已现金退还' },
+      admin,
+    )
+    expect(res.json.settled).toBe(true)
+    settleRefund(h.deps, outRefundNo, { status: 'processing', refundId: 'wx-1', abnormal: true })
+    settleRefund(h.deps, outRefundNo, { status: 'processing', refundId: 'wx-1' })
+    expect(h.db.select().from(refunds).get()).toMatchObject({
+      status: 'succeeded',
+      failure: 'CLOSED',
+    })
+    const check = await h.call('GET', '/admin/refunds?check=1', undefined, admin)
+    expect(JSON.stringify(check.json)).not.toContain(String(outRefundNo))
+    expect(h.logs.filter((l) => l.message.includes('later reported not done'))).toHaveLength(0)
+    // A success after it still says the money may have gone back twice.
+    settleRefund(h.deps, outRefundNo, { status: 'succeeded', refundId: 'wx-2' })
+    expect(h.db.select().from(refunds).get()?.failure).toBe(REFUND_PAID_TWICE)
+  })
+
   it('clears the warning once WeChat Pay reports one put right 商户平台处理 done', async () => {
     const h = setup()
     const { admin, refundId, outRefundNo } = await abnormalRefund(h)
