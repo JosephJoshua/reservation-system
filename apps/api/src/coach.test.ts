@@ -62,6 +62,22 @@ describe('binding a coach to WeChat', () => {
     expect(again.json.error.code).toBe('bad_bind_code')
   })
 
+  it('refuses a repeated bind whose first answer was lost, while the coach can log in', async () => {
+    // The mini program falls back to logging in when its bind code is refused.
+    const h = setup()
+    const { coach } = h.seed()
+    const admin = await h.admin()
+    const { code } = (await h.call('POST', `/admin/coaches/${coach.id}/bind-code`, {}, admin)).json
+    expect(
+      (await h.call('POST', '/coach/bind', { code: 'dev:coach', bindCode: code })).status,
+    ).toBe(200)
+    const again = await h.call('POST', '/coach/bind', { code: 'dev:coach', bindCode: code })
+    expect(again.json.error.code).toBe('bad_bind_code')
+    const login = await h.call('POST', '/coach/login', { code: 'dev:coach' })
+    expect(login.status).toBe(200)
+    expect(login.json.coach.id).toBe(coach.id)
+  })
+
   it('refuses an expired code', async () => {
     const h = setup()
     const { coach } = h.seed()
@@ -348,6 +364,32 @@ describe('the coach schedule and lessons', () => {
     expect(note.json.error.code).toBe('not_live')
     const empty = await h.call('POST', `/coach/lessons/${bookingId}/cancel`, { reason: '' }, token)
     expect(empty.status).toBe(400)
+  })
+
+  it('tells the coach which lessons were paid at the front desk', async () => {
+    const h = setup()
+    const { token, coach, admin, bookingId } = await bookedLesson(h)
+    const online = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, token)
+    expect(online.json).toMatchObject({ paidWith: 'order', paidOffline: false })
+
+    const student = await h.student('b')
+    const studentId = (await h.call('GET', '/me', undefined, student)).json.id as number
+    const desk = await h.call(
+      'POST',
+      '/admin/bookings',
+      {
+        studentId,
+        slotId: h.slot(coach.id, '2026-10-26', 11).id,
+        lessonTypeId: 1,
+        payWith: 'offline',
+        amount: 20000,
+        method: 'cash',
+      },
+      admin,
+    )
+    expect(desk.status).toBe(201)
+    const offline = await h.call('GET', `/coach/lessons/${desk.json.bookingId}`, undefined, token)
+    expect(offline.json).toMatchObject({ paidWith: 'order', price: 20000, paidOffline: true })
   })
 
   it('still announces a student cancel that beat the coach cancel', async () => {

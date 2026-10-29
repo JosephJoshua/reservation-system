@@ -84,6 +84,8 @@ export interface CoachLessonDto {
   profile: StudentProfileDto | null
   paidWith: 'order' | 'package'
   price: number
+  /** Paid at the front desk, so a refund is handed back there. */
+  paidOffline: boolean
   packageName: string | null
   attendance: Attendance | null
   coachNote: string

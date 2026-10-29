@@ -1,9 +1,9 @@
 import { type CoachLessonDto, FEEDBACK_PHOTOS } from '../../lib/shared'
 import { ApiError, assetUrl, errorMessage, showError } from '../../utils/api'
 import { lessonTime } from '../../utils/format'
-import { isTop, navigateBackOnce } from '../../utils/nav'
+import { backOr, isTop } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
-import { askForNotices, coachApi, coachUpload } from '../utils/coach-api'
+import { askForNotices, bindInstead, coachApi, coachUpload } from '../utils/coach-api'
 import { confirmDeleteFeedback } from '../utils/feedback'
 
 interface PhotoView {
@@ -94,6 +94,7 @@ Page({
       })
       this.refresh()
     } catch (e) {
+      if (bindInstead(e, this)) return
       this.setData({ state: 'error', canRetry: true, error: errorMessage(e) })
     }
   },
@@ -279,8 +280,9 @@ Page({
   done(lesson: CoachLessonDto, message: string) {
     wx.disableAlertBeforeUnload()
     this.getOpenerEventChannel().emit?.('saved', lesson)
-    if (isTop(this)) navigateBackOnce()
-    wx.showToast({ title: message, icon: 'success' })
+    const toast = () => wx.showToast({ title: message, icon: 'success' })
+    if (isTop(this)) backOr(`/coach/lesson/index?id=${this.id}`, toast)
+    else toast()
   },
 
   async failed(err: unknown) {
@@ -291,6 +293,6 @@ Page({
     this.getOpenerEventChannel().emit?.('stale')
     wx.disableAlertBeforeUnload()
     await wx.showModal({ title: '无法保存', content: err.message, showCancel: false })
-    if (isTop(this)) navigateBackOnce()
+    if (isTop(this)) backOr(`/coach/lesson/index?id=${this.id}`)
   },
 })

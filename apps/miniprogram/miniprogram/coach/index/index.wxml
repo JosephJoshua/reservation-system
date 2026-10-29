@@ -30,7 +30,15 @@
     </scroll-view>
   </view>
 
-  <view wx:if="{{slotsState === 'error'}}" class="slots-status muted">{{error}}</view>
+  <view wx:if="{{slotsState === 'loading'}}" class="slots-status">
+    <t-loading theme="circular" size="40rpx" />
+  </view>
+  <view wx:elif="{{slotsState === 'error'}}" class="slots-status">
+    <view>
+      <view class="muted">{{error}}</view>
+      <view class="retry"><t-button theme="primary" variant="outline" size="small" bind:tap="retrySchedule">重新加载</t-button></view>
+    </view>
+  </view>
   <view wx:elif="{{!rows.length}}" class="slots-empty">
     <t-empty icon="{{emptyIcon}}" description="{{dayEmpty}}" />
   </view>

@@ -1,5 +1,15 @@
 import type { CoachLoginResponse, CoachMeDto } from '../../lib/shared'
-import { ApiError, type Method, request, upload, wxCode } from '../../utils/api'
+import {
+  ApiError,
+  actionHeaders,
+  type Method,
+  newKey,
+  request,
+  requestKeyed,
+  upload,
+  wxCode,
+} from '../../utils/api'
+import { isTop } from '../../utils/nav'
 
 // Separate from the student token: one WeChat user can be both, with different sessions.
 const TOKEN_KEY = 'coachToken'
@@ -21,7 +31,10 @@ function login(): Promise<string> {
   return loggingIn
 }
 
-/** Runs a call with the coach token, logging in again once when the saved one has expired. */
+/**
+ * Runs a call with the coach token, logging in again once when the saved one has expired. Only
+ * the refused token is forgotten: a parallel call may have saved a newer one, which is used.
+ */
 async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
   const saved = wx.getStorageSync(TOKEN_KEY) as string
   const token = saved || (await login())
@@ -29,7 +42,9 @@ async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
     return await call(token)
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e
-    wx.removeStorageSync(TOKEN_KEY)
+    const current = wx.getStorageSync(TOKEN_KEY) as string
+    if (current && current !== token) return call(current)
+    if (current) wx.removeStorageSync(TOKEN_KEY)
     return call(await login())
   }
 }
@@ -41,17 +56,36 @@ export function coachApi<T>(
   data?: unknown,
   headers?: Record<string, string>,
 ): Promise<T> {
-  return withToken((token) => request<T>(method, `/coach${path}`, data, token, headers))
+  // One key for this action, on every attempt.
+  const keyed = actionHeaders(method, headers)
+  return withToken((token) => requestKeyed<T>(method, `/coach${path}`, data, token, keyed))
 }
 
 /** Uploads a local file to the coach API, like coachApi. */
 export function coachUpload<T>(path: string, filePath: string): Promise<T> {
-  return withToken((token) => upload<T>(`/coach${path}`, filePath, token))
+  const key = newKey()
+  return withToken((token) => upload<T>(`/coach${path}`, filePath, token, key))
 }
 
-export async function bind(bindCode: string): Promise<CoachMeDto> {
+/**
+ * Binds this WeChat user with a bind code. `lostBefore` is true when an earlier try of the same
+ * code got no answer: it may have bound, and a bind code works only once.
+ */
+export async function bind(bindCode: string, lostBefore: boolean): Promise<CoachMeDto> {
   const code = await wxCode()
-  const res = await request<CoachLoginResponse>('POST', '/coach/bind', { code, bindCode })
+  let res: CoachLoginResponse
+  try {
+    res = await request<CoachLoginResponse>('POST', '/coach/bind', { code, bindCode })
+  } catch (e) {
+    // Refused after a lost answer: if logging in works now, the earlier try bound this WeChat.
+    // Without one, a refused code is a wrong code, even for a WeChat bound to a coach already.
+    if (!lostBefore || !(e instanceof ApiError) || e.code !== 'bad_bind_code') throw e
+    const bound = await wxCode()
+      .then((again) => request<CoachLoginResponse>('POST', '/coach/login', { code: again }))
+      .catch(() => null)
+    if (!bound) throw e
+    res = bound
+  }
   wx.setStorageSync(TOKEN_KEY, res.token)
   remember(res.coach)
   return res.coach
@@ -69,6 +103,17 @@ export function profileClosed(e: unknown): e is ApiError {
 
 export function isNotBound(e: unknown): boolean {
   return e instanceof ApiError && e.code === 'not_bound'
+}
+
+/**
+ * Opened by a WeChat user who is not a coach (yet): goes on to 绑定 instead of an error with a
+ * retry that cannot help. True when it did, so the page shows nothing else; false when the page
+ * is no longer on screen, which then shows its error state.
+ */
+export function bindInstead(e: unknown, page: unknown): boolean {
+  if (!isNotBound(e) || !isTop(page)) return false
+  wx.redirectTo({ url: '/coach/bind/index' })
+  return true
 }
 
 let templateIds: string[] = []

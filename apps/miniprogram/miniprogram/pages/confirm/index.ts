@@ -7,10 +7,10 @@ import {
   minCheckHours,
   type StudentDto,
 } from '../../lib/shared'
-import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
+import { ApiError, api, assetUrl, errorMessage, RESULT_UNKNOWN, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
-import { isTop, navigateOnce } from '../../utils/nav'
+import { backOr, isTop, navigateOnce } from '../../utils/nav'
 import { payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
@@ -75,6 +75,10 @@ Page({
   left: false,
   /** The cancel and move rules shown, which the booking must still be made under. */
   terms: null as BookingTerms | null,
+  /** Set after the first onShow, so coming back to the page can be told apart. */
+  shown: false,
+  /** Counts quotes asked for, so only the latest one is shown. */
+  quotes: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -90,24 +94,77 @@ Page({
     this.load()
   },
 
+  onShow() {
+    if (!this.shown) {
+      this.shown = true
+      return
+    }
+    // Back from buying a package (or from the coach or a policy page): the package to use and
+    // the price may have changed meanwhile.
+    if (this.data.state === 'ready' && !this.data.submitting) this.requote()
+  },
+
   /** Where the booking goes: the session, or the coach and start time. */
   target() {
     const { slotId, coachId, startsAt } = this.data
     return slotId ? { slotId } : { coachId, startsAt }
   },
 
+  /** The API says which package it will use and what it will charge. */
+  quote(): Promise<BookingQuoteDto> {
+    const target = Object.entries(this.target())
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join('&')
+    return api<BookingQuoteDto>(
+      'GET',
+      `/bookings/quote?${target}&lessonTypeId=${this.data.lessonTypeId}`,
+    )
+  },
+
+  /**
+   * Asks for the quote again and shows it, keeping the rest of the page. A package that is new
+   * since the last quote is picked; a student who chose WeChat Pay over the same package keeps it.
+   */
+  async requote() {
+    const asked = ++this.quotes
+    let quote: BookingQuoteDto
+    try {
+      quote = await this.quote()
+    } catch {
+      // The quote on screen stays; the booking is still checked against it.
+      return
+    }
+    if (asked !== this.quotes || this.data.submitting || this.left) return
+    const { price, package: pkg, perClassEnabled } = quote
+    const before = this.data.pkg
+    const usePackage =
+      pkg !== null &&
+      (!before || before.id !== pkg.id || this.data.payWith === 'package' || !perClassEnabled)
+    const payWith: PayWith = usePackage ? 'package' : 'wechat'
+    const switched = payWith !== this.data.payWith
+    this.setData({
+      price: price.price,
+      priceText: yuan(price.price),
+      originalText: price.originalPrice == null ? '' : yuan(price.originalPrice),
+      pkg: pkg ? { id: pkg.id, name: pkg.name, remaining: pkg.lessonsRemaining } : null,
+      perClassEnabled,
+      payWith,
+    })
+    // Said out loud, so the way to pay never changes unseen.
+    if (switched && perClassEnabled) {
+      wx.showToast({
+        title: payWith === 'package' ? '已改用课时包支付' : '课时包不可用，已改用微信支付',
+        icon: 'none',
+      })
+    }
+  },
+
   async load() {
+    // A quote still on its way would show over this one.
+    this.quotes++
     try {
       const { lessonTypeId } = this.data
-      const target = Object.entries(this.target())
-        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
-        .join('&')
-      const [catalog, quote, me] = await Promise.all([
-        getCatalog(),
-        // The API says which package it will use and what it will charge.
-        api<BookingQuoteDto>('GET', `/bookings/quote?${target}&lessonTypeId=${lessonTypeId}`),
-        getMe(),
-      ])
+      const [catalog, quote, me] = await Promise.all([getCatalog(), this.quote(), getMe()])
       const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
       const coach = catalog.coaches.find((c) => c.id === this.data.coachId)
       if (!lessonType || !coach) {
@@ -219,6 +276,8 @@ Page({
       return
     }
     this.setData({ submitting: true })
+    // Going back now would leave a booking made out of sight, so WeChat asks first.
+    wx.enableAlertBeforeUnload({ message: '正在预约，确定离开吗？' })
     try {
       // Asked first, while the tap still counts as the user's action for WeChat. WeChat asks for
       // three at most: news the student cannot see coming goes first (cancels and moves usually
@@ -238,6 +297,8 @@ Page({
         this.setData({ showAgreement: false })
       }
       await this.saveProfile()
+      // Gone back before the booking was sent: nothing is booked.
+      if (this.left) return
       const res = await api<CreateBookingResponse>('POST', '/bookings', {
         ...this.target(),
         lessonTypeId: this.data.lessonTypeId,
@@ -254,11 +315,16 @@ Page({
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
-        if (!this.left) await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
-        this.finish(res.bookingId)
+        const paid = await payOrder(res.orderId, this.data.price, res.payment, () => !this.left)
+          .then((result) => result === 'paid')
+          .catch((e) => {
+            showError(e)
+            return false
+          })
+        this.finish(res.bookingId, '', paid ? '预约成功' : '已预约，请尽快支付')
         return
       }
-      this.finish(res.bookingId, res.existing ? '你已预约这节课' : '')
+      this.finish(res.bookingId, res.existing ? '你已预约这节课' : '', '预约成功')
     } catch (e) {
       // Gone back while it was booking: nothing here to reload or ask about.
       if (this.left) return
@@ -306,33 +372,55 @@ Page({
         }
         return
       }
+      if (e instanceof ApiError && (e.code === 'in_progress' || e.code === RESULT_UNKNOWN)) {
+        // The booking may have been made: the lessons list shows it if so.
+        await wx.showModal({
+          title: '预约结果确认中',
+          content: '请在“课程”中查看是否已预约成功，未成功可重新预约。',
+          showCancel: false,
+        })
+        if (isTop(this)) wx.switchTab({ url: '/pages/lessons/index' })
+        return
+      }
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {
         // A coach or lesson turned off: the time picker reloads with the venue's current list.
         if (e.code === 'not_found' || e.code === 'coach_not_teaching') {
           await getCatalog(true).catch(() => undefined)
         }
         await wx.showModal({ title: e.message, content: '请选择其他时间', showCancel: false })
-        if (isTop(this)) wx.navigateBack()
+        if (isTop(this)) {
+          const { lessonTypeId, coachId } = this.data
+          backOr(`/pages/book/index?lessonTypeId=${lessonTypeId}&coachId=${coachId}`)
+        }
         return
       }
       showError(e)
     } finally {
+      wx.disableAlertBeforeUnload()
       this.setData({ submitting: false })
     }
   },
 
   /**
    * Replaces this page with the booking, so going back lands on the time picker. If the student
-   * left while it was booking, the booking opens on top of where they are now. A toast is shown
-   * after the switch, which would otherwise swallow it.
+   * left while it was booking, the booking opens on top of where they are now, and `away` says
+   * what became of it in a toast in case it cannot open there. A toast is shown after the
+   * switch, which would otherwise swallow it.
    */
-  finish(bookingId: number, toast = '') {
+  finish(bookingId: number, toast: string, away: string) {
+    wx.disableAlertBeforeUnload()
     const url = `/pages/booking-detail/index?id=${bookingId}`
     const success = () => {
       if (toast) wx.showToast({ title: toast, icon: 'none' })
     }
     if (isTop(this)) wx.redirectTo({ url, success })
-    else if (this.left) wx.navigateTo({ url, success })
+    else if (this.left) {
+      wx.navigateTo({
+        url,
+        success,
+        fail: () => wx.showToast({ title: toast || away, icon: 'none', duration: 2500 }),
+      })
+    }
   },
 
   onUnload() {

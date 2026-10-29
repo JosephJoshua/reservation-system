@@ -63,11 +63,14 @@ function paidNow(orderId: number): Promise<boolean> {
 /**
  * Opens the cashier for an order and waits for the server to confirm it. An order paid already,
  * say before the app was closed or on another phone, comes back as paid without a cashier.
+ * `stillHere` is asked right before the cashier opens: a student who went back while the order
+ * was on its way gets 'cancelled' and no cashier over the page they went back to.
  */
 export async function payOrder(
   orderId: number,
   amount: number,
-  params?: PaymentParamsDto | null,
+  params: PaymentParamsDto | null | undefined,
+  stillHere: () => boolean,
 ): Promise<PayResult> {
   let payment: PaymentParamsDto
   try {
@@ -76,6 +79,7 @@ export async function payOrder(
     if (e instanceof ApiError && e.code === 'order_paid') return 'paid'
     throw e
   }
+  if (!stillHere()) return 'cancelled'
   let outcome: 'ok' | 'cancelled'
   try {
     outcome = payment.fake ? await fakePayment(orderId, amount) : await requestPayment(payment)

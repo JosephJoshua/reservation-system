@@ -16,8 +16,8 @@ import {
   versionOf,
 } from '../../lib/shared'
 import { ApiError, errorMessage, showError } from '../../utils/api'
-import { isTop, navigateBackOnce } from '../../utils/nav'
-import { coachApi, profileClosed } from '../utils/coach-api'
+import { backOr, isTop } from '../../utils/nav'
+import { bindInstead, coachApi, profileClosed } from '../utils/coach-api'
 import { profileEdited } from '../utils/labels'
 
 const FIELD_NAMES = { level: '水平', grip: '握拍', tags: '标签', note: '备注' } as const
@@ -89,6 +89,7 @@ Page({
       })
       this.fill(this.loaded)
     } catch (e) {
+      if (bindInstead(e, this)) return
       const closed = profileClosed(e)
       if (closed) this.getOpenerEventChannel().emit?.('stale')
       this.setData({ state: 'error', canRetry: !closed, error: errorMessage(e) })
@@ -248,8 +249,9 @@ Page({
       })
       wx.disableAlertBeforeUnload()
       this.getOpenerEventChannel().emit?.('saved', lesson)
-      if (isTop(this)) navigateBackOnce()
-      wx.showToast({ title: '已保存', icon: 'success' })
+      const done = () => wx.showToast({ title: '已保存', icon: 'success' })
+      if (isTop(this)) backOr(`/coach/lesson/index?id=${this.id}`, done)
+      else done()
     } catch (err) {
       // The spinner stops before any dialog; busy still holds until the dialog is closed.
       this.setData({ saving: false })
@@ -283,6 +285,6 @@ Page({
     this.getOpenerEventChannel().emit?.('stale')
     wx.disableAlertBeforeUnload()
     await wx.showModal({ title: '无法保存', content: err.message, showCancel: false })
-    if (isTop(this)) navigateBackOnce()
+    if (isTop(this)) backOr(`/coach/lesson/index?id=${this.id}`)
   },
 })

@@ -1,6 +1,6 @@
 import { api, showError } from '../../utils/api'
 import { agreePolicies, getMe } from '../../utils/data'
-import { isTop, navigateOnce } from '../../utils/nav'
+import { backOr, isTop, navigateOnce } from '../../utils/nav'
 
 Page({
   data: {
@@ -55,7 +55,7 @@ Page({
       }
       await api('PUT', '/me', { name, phone })
       const done = () => wx.showToast({ title: '已保存', icon: 'success' })
-      if (isTop(this)) wx.navigateBack({ success: done })
+      if (isTop(this)) backOr('/pages/profile/index', done)
       else done()
     } catch (e) {
       showError(e)

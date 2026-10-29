@@ -77,8 +77,11 @@
   <view wx:if="{{slotsState === 'loading'}}" class="slots-status">
     <t-loading theme="circular" size="40rpx" />
   </view>
-  <view wx:elif="{{slotsState === 'error'}}" class="slots-status muted">
-    {{error}}
+  <view wx:elif="{{slotsState === 'error'}}" class="slots-status">
+    <view>
+      <view class="muted">{{error}}</view>
+      <view class="retry"><t-button theme="light" size="small" bind:tap="retrySlots">重新加载</t-button></view>
+    </view>
   </view>
   <view wx:elif="{{!slots.length}}" class="slots-empty">
     <t-empty icon="{{emptyIcon}}" description="{{capacity > 1 ? '这一天没有排课' : '这一天没有可预约的时段'}}" />

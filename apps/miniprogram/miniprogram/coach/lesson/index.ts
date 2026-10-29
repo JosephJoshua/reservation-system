@@ -11,9 +11,12 @@ import { navigateOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
 import { openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
-import { askForNotices, coachApi } from '../utils/coach-api'
+import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
 import { confirmDeleteFeedback } from '../utils/feedback'
 import { ATTENDANCE, lessonTag, profileEdited, type Tag } from '../utils/labels'
+
+/** The longest 取消原因 the API takes. */
+const CANCEL_REASON_MAX = 100
 
 interface HistoryView {
   id: number
@@ -134,6 +137,7 @@ Page({
     try {
       this.show(await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`))
     } catch (e) {
+      if (bindInstead(e, this)) return
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
@@ -318,13 +322,21 @@ Page({
       wx.showToast({ title: '请填写取消原因', icon: 'none' })
       return
     }
+    // The API takes 100 characters at most.
+    if (reason.length > CANCEL_REASON_MAX) {
+      wx.showToast({ title: `取消原因不能超过 ${CANCEL_REASON_MAX} 个字`, icon: 'none' })
+      return
+    }
     const refund =
       lesson.paidWith === 'package'
         ? '课时将退回学员的课时包。'
         : lesson.status === 'pending_payment'
           ? '学员还未付款，订单会关闭。'
           : lesson.price > 0
-            ? '已付的款项会全额退回。'
+            ? // Paid at the front desk, so the money is handed back there.
+              lesson.paidOffline
+              ? '已付的款项会全额到店退还。'
+              : '已付的款项会全额原路退回。'
             : ''
     const { confirm } = await wx.showModal({
       title: '取消这节课？',

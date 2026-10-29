@@ -103,7 +103,7 @@ Page({
     days: [] as DayView[],
     date: '',
     dayAnchor: '',
-    slotsState: 'ready' as 'ready' | 'error',
+    slotsState: 'ready' as 'loading' | 'ready' | 'error',
     rows: [] as RowView[],
     summary: '',
     dayEmpty: '',
@@ -194,6 +194,12 @@ Page({
       if (this.data.state === 'ready') this.setData({ slotsState: 'error', error: errorMessage(e) })
       else throw e
     }
+  },
+
+  retrySchedule() {
+    if (this.data.slotsState === 'loading') return
+    this.setData({ slotsState: 'loading' })
+    this.loadSchedule()
   },
 
   showDay() {

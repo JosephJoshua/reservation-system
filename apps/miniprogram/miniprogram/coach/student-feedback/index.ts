@@ -2,7 +2,7 @@ import { FEEDBACK_RECORD_LIMIT, type FeedbackItemDto } from '../../lib/shared'
 import { assetUrl, errorMessage } from '../../utils/api'
 import { fullDate } from '../../utils/format'
 import { previewPhotos } from '../../utils/photos'
-import { coachApi, profileClosed } from '../utils/coach-api'
+import { bindInstead, coachApi, profileClosed } from '../utils/coach-api'
 
 interface ItemView {
   bookingId: number
@@ -59,6 +59,7 @@ Page({
       })
     } catch (e) {
       if (request !== this.request) return
+      if (bindInstead(e, this)) return
       const closed = profileClosed(e)
       // A list already on screen stays; only a first load, or a lesson now closed, shows the error.
       if (this.loaded && !closed) wx.showToast({ title: errorMessage(e), icon: 'none' })
