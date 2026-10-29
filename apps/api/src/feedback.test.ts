@@ -624,3 +624,29 @@ describe('lesson photo files', () => {
     expect(served.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
   })
 })
+
+describe('photo upload repeats', () => {
+  it('answers a repeat of the upload that filled the cap with its first answer', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    for (let i = 0; i < 23; i++) expect((await upload(h, ct, id)).status).toBe(201)
+    const send = () => {
+      const form = new FormData()
+      form.append('file', new Blob([JPEG], { type: 'image/jpeg' }), 'photo.jpg')
+      return h.app.request(`/api/coach/lessons/${id}/photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ct}`, 'Idempotency-Key': 'last' },
+        body: form,
+      })
+    }
+    const first = await send()
+    expect(first.status).toBe(201)
+    const url = ((await first.json()) as { url: string }).url
+    // The cap is full now, but a repeat is not a new upload.
+    const again = await send()
+    expect(again.status).toBe(201)
+    expect(((await again.json()) as { url: string }).url).toBe(url)
+    expect((await upload(h, ct, id)).json.error.code).toBe('too_many_photos')
+    expect(files(h)).toHaveLength(24)
+  })
+})

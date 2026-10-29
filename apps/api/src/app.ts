@@ -9,7 +9,7 @@ import { ApiError } from './errors'
 import { idempotency } from './idempotency'
 import { FakeGateway } from './pay/fake'
 import { adminRoutes } from './routes/admin'
-import { coachRoutes } from './routes/coach'
+import { coachRoutes, photoUploadGuard } from './routes/coach'
 import { devPayRoutes, payRoutes } from './routes/pay'
 import { studentRoutes } from './routes/student'
 import { isLessonPhoto, readLessonPhoto } from './services/feedback'
@@ -65,6 +65,7 @@ export function createApp(deps: Deps) {
     }
   })
 
+  app.post('/coach/lessons/:id/photos', photoUploadGuard(deps))
   // The largest body is an invoice PDF (10MB). Checked before anything reads a body, so a huge
   // request is turned away instead of being held in memory.
   app.use(
