@@ -120,13 +120,18 @@ describe('a failed WeChat Pay refund settled outside the system', () => {
       { how: 'offline', note: '已现金退还' },
       admin,
     )
+    // Settled already, as another staff member would find it from a stale page.
     const other = await h.call(
       'POST',
       `/admin/refunds/${refundId}/settled`,
       { how: 'offline', note: '另一种说法' },
       admin,
     )
-    expect(other.json.error.code).toBe('refund_not_failed')
+    expect(other.status).toBe(200)
+    expect(other.json).toMatchObject({ settled: false, message: '该退款已标为另行退款' })
+    expect(h.db.select().from(refunds).get()?.settledNote).toBe('已现金退还')
+    const logged = h.db.select().from(actionLog).where(eq(actionLog.action, 'refund.settled')).all()
+    expect(logged).toHaveLength(1)
   })
 
   it('records a refund WeChat Pay had done after all instead of settling it', async () => {
@@ -363,7 +368,50 @@ describe('a failed WeChat Pay refund settled outside the system', () => {
       { how: 'offline', note: '已现金退还' },
       other.admin,
     )
-    expect(refused.json.error.code).toBe('refund_not_failed')
+    expect(refused.json).toMatchObject({
+      status: 'processing',
+      settled: false,
+      message: '退款已在微信支付处理中，无需另行退款',
+    })
+    expect(h2.db.select().from(refunds).get()).toMatchObject({
+      status: 'processing',
+      settledNote: null,
+    })
+  })
+
+  it('answers a settle from a stale page after another tab retried it', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    const settle = () =>
+      h.call(
+        'POST',
+        `/admin/refunds/${refundId}/settled`,
+        { how: 'offline', note: '已现金退还' },
+        admin,
+      )
+    // Retried into WeChat Pay's queue: still on its way.
+    h.gateway.refundMode = 'processing'
+    expect((await h.call('POST', `/admin/refunds/${refundId}/retry`, {}, admin)).status).toBe(200)
+    const onItsWay = await settle()
+    expect(onItsWay.status).toBe(200)
+    expect(onItsWay.json).toMatchObject({
+      status: 'processing',
+      settled: false,
+      message: '退款已在微信支付处理中，无需另行退款',
+    })
+    // Then done.
+    const row = h.db.select().from(refunds).get()
+    settleRefund(h.deps, row?.outRefundNo ?? '', { status: 'succeeded', refundId: 'wx-retry' })
+    const done = await settle()
+    expect(done.status).toBe(200)
+    expect(done.json).toMatchObject({
+      status: 'succeeded',
+      settled: false,
+      message: '微信支付已退款，无需另行退款',
+    })
+    expect(h.db.select().from(refunds).get()).toMatchObject({ settledNote: null })
+    const actions = h.db.select({ action: actionLog.action }).from(actionLog).all()
+    expect(actions.map((a) => a.action)).not.toContain('refund.settled')
   })
 })
 

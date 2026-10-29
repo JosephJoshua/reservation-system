@@ -304,8 +304,8 @@ const settleable = (r: { status: string; abnormal: boolean }) =>
  * that failed, or one WeChat Pay reports as 退款异常. The venue no longer owes it, so it counts as
  * refunded from now, with their note. WeChat Pay is asked about it first, as for a retry: one
  * that went through after all is recorded as such instead, so the money is not handed back
- * twice. `repeat` is a settle already recorded with this note; `overtaken` means a retry or
- * WeChat Pay got there first, and the refund is as the caller then finds it.
+ * twice. `repeat` is a settle already recorded with this note; `overtaken` means a retry, WeChat
+ * Pay or another settle got there first, and the refund is as the caller then finds it.
  */
 export async function settleFailedRefund(
   deps: Deps,
@@ -326,6 +326,15 @@ export async function settleFailedRefund(
     row.refund.settledHow === how
   ) {
     return 'repeat'
+  }
+  // Another tab retried it, or WeChat Pay or another staff member settled it, meanwhile: the
+  // caller says how it now stands instead of refusing.
+  if (
+    row.provider === 'wechat' &&
+    !settleable(row.refund) &&
+    ['pending', 'processing', 'succeeded'].includes(row.refund.status)
+  ) {
+    return 'overtaken'
   }
   if (!settleable(row.refund) || row.provider !== 'wechat') {
     throw new ApiError(409, 'refund_not_failed', '只能处理退款失败或退款异常的微信支付退款')

@@ -2444,7 +2444,9 @@ export function adminRoutes(deps: Deps) {
       message: settled
         ? null
         : now?.status === 'succeeded'
-          ? '微信支付已退款，无需另行退款'
+          ? now.note !== null
+            ? '该退款已标为另行退款'
+            : '微信支付已退款，无需另行退款'
           : now?.status === 'pending' || now?.status === 'processing'
             ? '退款已在微信支付处理中，无需另行退款'
             : '退款状态已变更，请刷新后查看',
