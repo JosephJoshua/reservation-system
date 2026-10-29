@@ -1023,7 +1023,12 @@ function StudentPage({ id }: { id: number }) {
   const fellBack = picked !== null && picked !== tab
   // biome-ignore lint/correctness/useExhaustiveDependencies: `named` runs it again for each link
   useEffect(() => {
-    if (fellBack) history.replaceState(history.state, '', `#/students/${id}`)
+    if (!fellBack) return
+    // Only the tab: the rest, such as a lesson open over the page, stays.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
+    params.delete('tab')
+    const rest = params.toString()
+    history.replaceState(history.state, '', `#/students/${id}${rest ? `?${rest}` : ''}`)
   }, [fellBack, id, named])
 
   const now = Date.now()
