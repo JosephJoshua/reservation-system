@@ -94,8 +94,8 @@ export function request<T>(
 }
 
 /**
- * The first send of a change was lost and its resend was refused for the session, so it may have
- * gone through. Not a 401: logging in again would send it afresh under a new session.
+ * The first send of a change was lost and its resend was lost too or refused for the session, so it
+ * may have gone through. Not a 401: logging in again would send it afresh under a new session.
  */
 export const RESULT_UNKNOWN = 'result_unknown'
 
@@ -118,7 +118,8 @@ export async function requestKeyed<T>(
   try {
     return await request<T>(method, path, data, token, headers)
   } catch (e) {
-    if (e instanceof ApiError && e.status === 401) {
+    // Refused for the session, or lost again: either way the first send may have gone through.
+    if (e instanceof ApiError && (e.status === 401 || e.status === 0)) {
       throw new ApiError(0, RESULT_UNKNOWN, '网络不佳，请刷新后查看是否已成功')
     }
     throw e

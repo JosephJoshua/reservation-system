@@ -25,7 +25,8 @@ Page({
     this.load()
   },
 
-  async load() {
+  /** Answers true when it found the account already gone and left the page. */
+  async load(): Promise<boolean> {
     try {
       const path = '/me/deletion'
       const { blockers } = this.maybeDeleted
@@ -37,10 +38,11 @@ Page({
     } catch (e) {
       if (this.maybeDeleted && isSignedOut(e)) {
         this.deleted()
-        return
+        return true
       }
       this.setData({ state: 'error', error: errorMessage(e) })
     }
+    return false
   },
 
   /** The account is gone: start again signed out, on the home tab. */
@@ -82,9 +84,9 @@ Page({
       }
       this.deleted()
     } catch (e) {
-      showError(e)
       // Something changed meanwhile, such as a new booking; show what now stands in the way.
-      this.load()
+      // After a lost answer the reload finds out whether the 注销 went through, so check first.
+      if (!(await this.load())) showError(e)
     } finally {
       this.setData({ deleting: false })
     }
