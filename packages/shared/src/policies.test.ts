@@ -18,6 +18,6 @@ describe('privacyPolicyText', () => {
   })
 
   it('says erased data stays in backups for a while', () => {
-    expect(text).toContain('已删除的信息在数据备份中最多保留 30 天')
+    expect(text).toContain('已删除的信息还会在数据备份中保留约 30 天')
   })
 })
