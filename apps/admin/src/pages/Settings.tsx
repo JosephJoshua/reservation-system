@@ -2,7 +2,9 @@ import {
   CHECK_IN_EARLY_MINUTES,
   ownRuleLabels,
   ruleLabels,
+  VENUE_PHONE_MESSAGE,
   type VenueSettings,
+  venuePhoneValid,
   venueSettings,
 } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
@@ -100,15 +102,18 @@ function settingsProblem(
           ? (top as SettingsSection)
           : 'venue'
   const message =
-    issue.code === 'too_big' && issue.origin === 'string'
-      ? `${label}太长`
-      : issue.code === 'too_small' || issue.code === 'too_big'
-        ? `${label}超出允许范围`
-        : issue.code === 'invalid_type' && issue.expected === 'int'
-          ? `${label}需为整数`
-          : issue.code === 'not_multiple_of'
-            ? `${label}需为 ${issue.divisor} 的倍数`
-            : `${label}格式不对`
+    // Checks of their own say what is wrong in words.
+    issue.code === 'custom'
+      ? issue.message
+      : issue.code === 'too_big' && issue.origin === 'string'
+        ? `${label}太长`
+        : issue.code === 'too_small' || issue.code === 'too_big'
+          ? `${label}超出允许范围`
+          : issue.code === 'invalid_type' && issue.expected === 'int'
+            ? `${label}需为整数`
+            : issue.code === 'not_multiple_of'
+              ? `${label}需为 ${issue.divisor} 的倍数`
+              : `${label}格式不对`
   return { message, section }
 }
 const sectionKeys = sections.map((x) => x.key)
@@ -161,6 +166,8 @@ export function Settings() {
       .map((x) => x.key),
   )
   const dirty = dirtySections.size > 0
+  // Checked once changed, so a phone saved before the check does not block the rest.
+  const phoneWrong = s.venue.phone !== data?.venue.phone && !venuePhoneValid(s.venue.phone)
 
   const save = async () => {
     if (isSaving()) return
@@ -179,6 +186,11 @@ export function Settings() {
     const body = structuredClone(s)
     body.venue.latitude = lat ? Number(lat) : null
     body.venue.longitude = lng ? Number(lng) : null
+    if (phoneWrong) {
+      void MessagePlugin.warning(VENUE_PHONE_MESSAGE)
+      nav.scrollTo('venue')
+      return
+    }
     const problem = settingsProblem(body)
     if (problem) {
       void MessagePlugin.warning(problem.message)
@@ -221,10 +233,11 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="电话">
+          <Field label="电话" help={phoneWrong ? VENUE_PHONE_MESSAGE : undefined}>
             <Input
               value={s.venue.phone}
-              maxlength={30}
+              maxlength={60}
+              status={phoneWrong ? 'error' : 'default'}
               onChange={(v) =>
                 set((d) => {
                   d.venue.phone = String(v)

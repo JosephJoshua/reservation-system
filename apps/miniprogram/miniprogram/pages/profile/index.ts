@@ -1,4 +1,10 @@
-import type { CatalogDto, HomeDto, MeDto, PackageDto } from '../../lib/shared'
+import {
+  type CatalogDto,
+  type HomeDto,
+  type MeDto,
+  type PackageDto,
+  phoneToDial,
+} from '../../lib/shared'
 import { api, publicApi, showError } from '../../utils/api'
 import { getCatalog, getMe } from '../../utils/data'
 import { maskPhone } from '../../utils/format'
@@ -134,7 +140,8 @@ Page({
   },
 
   call() {
-    const phone = this.data.venue?.phone
+    // The first number: the phone may hold an extension, a second number or a note.
+    const phone = phoneToDial(this.data.venue?.phone ?? '')
     if (phone) openOnce((complete) => wx.makePhoneCall({ phoneNumber: phone, complete }))
   },
 })

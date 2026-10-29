@@ -4,9 +4,73 @@ import { Button, DialogPlugin } from 'tdesign-react'
 // Forms with changes not saved yet, by the id of the component that holds them.
 const unsaved = new Set<string>()
 
-/** True while some form on the page has changes that are not saved. */
+// Dialogs of the page typed into since they opened, such as 代约 or 修改姓名和手机号: what was
+// typed is lost when the page changes under them, so they count as unsaved until they close.
+// Dialogs opened from the header, such as 修改我的密码, stay open whatever the page and are not
+// counted. A dialog that keeps its own count, with useLeaveGuard, has the class
+// `own-leave-guard`. Each is kept with where it was opened: the page, or a lesson opened over it,
+// which closing the lesson alone also throws away.
+type TypedIn = 'page' | 'lesson'
+const typedIn = new Map<Element, TypedIn>()
+
+/**
+ * Notes typing in a dialog of the page or of the lesson open over it. Their content passes its
+ * input events here: React hands them up from a dialog to what opened it, though the dialog
+ * sits elsewhere.
+ */
+export function markTyped(target: EventTarget, where: TypedIn = 'page') {
+  const el = target as Element | null
+  if (!el?.closest || el.closest('.own-leave-guard')) return
+  const dialog = el.closest('.t-dialog__ctx')
+  if (dialog) typedIn.set(dialog, where)
+}
+
+/** Drops the dialogs closed or gone since they were typed into, and counts the rest. */
+function openTyped(where?: TypedIn) {
+  let count = 0
+  for (const [dialog, at] of typedIn) {
+    const shown = dialog.isConnected && dialog.getClientRects().length > 0
+    if (!shown) typedIn.delete(dialog)
+    else if (!where || at === where) count++
+  }
+  return count
+}
+
+/** True while a dialog of the lesson open over the page holds typing not saved. */
+export function lessonHasUnsaved() {
+  return openTyped('lesson') > 0
+}
+
+// What the admin last clicked or pressed a key on, so a save can tell which dialog it came from.
+let pressed: Element | null = null
+
+/** The element the admin last clicked or pressed a key on. */
+export function lastPressed() {
+  return pressed
+}
+
+/**
+ * Forgets what was typed into the dialog `from` is in, once it was saved there: it is closing,
+ * and the page change that may follow, such as opening the student just added, is not asked
+ * about.
+ */
+export function settleDialog(from: Element | null) {
+  const dialog = from?.closest?.('.t-dialog__ctx')
+  if (dialog) typedIn.delete(dialog)
+}
+
+if (typeof window !== 'undefined') {
+  for (const type of ['pointerdown', 'keydown']) {
+    document.addEventListener(type, (e) => (pressed = e.target as Element | null), true)
+  }
+  window.addEventListener('beforeunload', (e) => {
+    if (openTyped() > 0) e.preventDefault()
+  })
+}
+
+/** True while some form or dialog on the page has changes that are not saved. */
 export function hasUnsaved() {
-  return unsaved.size > 0
+  return unsaved.size > 0 || openTyped() > 0
 }
 
 // The question on screen, so a second back press while it is open does not ask twice.
@@ -38,6 +102,14 @@ export function confirmLeave(): Promise<boolean> {
     })
   })
   return asking
+}
+
+/**
+ * Lets the next page change through without asking, for a move that follows a save, such as
+ * opening the student a dialog just added while the dialog is still closing.
+ */
+export function passLeave() {
+  leaving = true
 }
 
 /** True once right after the admin chose to leave, for the page change that follows. */

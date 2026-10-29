@@ -198,7 +198,7 @@ test('refuses files it cannot read', async ({ page }) => {
     /t-is-disabled/,
   )
   await expect(crop.locator('.t-button[aria-label=向右旋转]')).toHaveClass(/t-is-disabled/)
-  await crop.getByRole('button', { name: '取消' }).click()
+  await crop.getByRole('button', { name: '返回' }).click()
   await expect(crop).toHaveCount(0)
   await expect(field(d, '照片').locator('img')).toHaveCount(0)
 })

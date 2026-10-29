@@ -87,7 +87,7 @@ test('refuses a save on top of another staff member’s change', async ({ page, 
 
   await field(dialog(other), '水平').getByText('高级').click()
   await dialog(other).getByRole('button', { name: '保存' }).click()
-  await expect(other.getByText('已被其他人修改，请刷新后再改')).toBeVisible()
+  await expect(other.getByText('已被其他人修改，已显示最新档案，请核对后再改')).toBeVisible()
   // The dialog closes and the page shows what was saved.
   await expect(dialog(other)).toHaveCount(0)
   await expect(otherCard.locator('.profile-note')).toHaveText('第一位员工')

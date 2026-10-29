@@ -488,6 +488,7 @@ function Categories({
           visible
           width={560}
           header={category.id ? '编辑类别' : '新建类别'}
+          cancelBtn="返回"
           confirmBtn={{
             content: '保存',
             disabled: !category.form.name.trim(),

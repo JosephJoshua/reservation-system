@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { MessagePlugin } from 'tdesign-react'
 import { api, RequestError } from './api'
+import { lastPressed, settleDialog } from './SaveBar'
 
 /** Loads a GET endpoint; `reload` fetches again. */
 export function useApi<T>(path: string | null) {
@@ -116,8 +117,11 @@ export async function attempt(
 ): Promise<boolean> {
   if (inFlight.has(key)) return false
   setInFlight(key, true)
+  // The dialog the change was made in, if any, whose typing it saves.
+  const from = lastPressed()
   try {
     await fn()
+    settleDialog(from)
     if (success) void MessagePlugin.success(success)
     return true
   } catch (e) {

@@ -51,7 +51,8 @@ export const venueSettings = z.object({
     // Named in the mini program and, without an operator, in the privacy policy.
     name: z.string().trim().min(1).max(40),
     address: z.string().max(120),
-    phone: z.string().max(30),
+    // Checked with venuePhoneValid when it changes, so one saved before the check still saves.
+    phone: z.string().max(60),
     latitude: z.number().min(-90).max(90).nullable(),
     longitude: z.number().min(-180).max(180).nullable(),
     openingHours: z.string().max(60),

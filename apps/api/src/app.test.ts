@@ -1,4 +1,10 @@
-import { defaultSettings, healthResponse, type VenueSettings, versionOf } from '@rs/shared'
+import {
+  defaultSettings,
+  healthResponse,
+  VENUE_PHONE_MESSAGE,
+  type VenueSettings,
+  versionOf,
+} from '@rs/shared'
 import { describe, expect, it } from 'vitest'
 import { settings } from './db/schema'
 import { getSettings } from './services/settings'
@@ -52,6 +58,45 @@ describe('stored settings', () => {
     h.db.update(settings).set({ data: stored }).run()
     expect(getSettings(h.db).venue.name).toBe(defaultSettings.venue.name)
     expect(getSettings(h.db).payment.perClassEnabled).toBe(false)
+  })
+})
+
+describe('venue phone', () => {
+  it('refuses a phone that is not one and keeps one stored before the check', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const loaded = (await h.call('GET', '/admin/settings', undefined, admin)).json
+    const emoji = structuredClone(loaded)
+    emoji.venue.phone = '😀😀😀'
+    const refused = await h.call('PUT', '/admin/settings', emoji, admin)
+    expect(refused.status).toBe(400)
+    expect(refused.json.error.message).toBe(VENUE_PHONE_MESSAGE)
+    for (const phone of [
+      '',
+      '010-62345678',
+      '+86 (010) 6234 5678 转 8',
+      '010-62345678 / 13900000001（微信同号）',
+    ]) {
+      const ok = structuredClone(loaded)
+      ok.venue.phone = phone
+      const res = await h.call('PUT', '/admin/settings', ok, admin)
+      expect(res.status).toBe(200)
+      expect(res.json.venue.phone).toBe(phone)
+    }
+    // Saved before phones were checked: still shown, to be put right on the next save.
+    const stored = structuredClone(defaultSettings)
+    stored.venue.phone = '前台 010-62345678'
+    h.db.update(settings).set({ data: stored }).run()
+    expect(getSettings(h.db).venue.phone).toBe('前台 010-62345678')
+    const read = (await h.call('GET', '/admin/settings', undefined, admin)).json
+    expect(read.venue.phone).toBe('前台 010-62345678')
+    // Left as it is, it does not block saving the rest; changed, it is checked.
+    read.venue.openingHours = '每天 10:00-22:00'
+    const other = await h.call('PUT', '/admin/settings', read, admin)
+    expect(other.status).toBe(200)
+    expect(other.json.venue.phone).toBe('前台 010-62345678')
+    other.json.venue.phone = '前台 010-62345679'
+    expect((await h.call('PUT', '/admin/settings', other.json, admin)).status).toBe(400)
   })
 })
 
