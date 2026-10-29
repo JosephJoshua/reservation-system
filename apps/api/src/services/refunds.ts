@@ -23,7 +23,11 @@ export function refundedSoFar(tx: Q, orderId: number): number {
   return row?.total ?? 0
 }
 
-/** Ends the reason of a refund made because a payment landed but could not confirm its booking. */
+/**
+ * Ends the reason of a refund made because a payment landed but could not confirm its booking.
+ * BookingDto.expiredWhy is read back from this suffix (autoRefundWhy), so only those on-arrival
+ * refunds may use it; any other reason ending in it would be shown to the student as why.
+ */
 export const AUTO_REFUND = '，自动退款'
 /** The refund reason for a lesson the venue cancelled. */
 export const VENUE_CANCEL_REFUND = '场馆取消课程'

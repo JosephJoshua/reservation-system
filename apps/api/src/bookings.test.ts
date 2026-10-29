@@ -109,7 +109,12 @@ describe('pay per class', () => {
 
     expect((await pay(h, orderId)).status).toBe(204)
     const status = await h.call('GET', `/orders/${orderId}`, undefined, t)
-    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'confirmed', amount: 20000 })
+    expect(status.json).toMatchObject({
+      status: 'paid',
+      bookingStatus: 'confirmed',
+      amount: 20000,
+      refunded: false,
+    })
     // A repeated callback changes nothing.
     expect((await pay(h, orderId)).status).toBe(204)
     expect(h.db.select().from(refunds).all()).toHaveLength(0)
@@ -1830,7 +1835,7 @@ describe('lessons the venue cannot give', () => {
     expect(refund).toMatchObject({ amount: b?.price, reason: '这节课的时间场馆闭馆，自动退款' })
     // The student is told the lesson cannot go ahead, not that they paid late.
     const status = await h.call('GET', `/orders/${res.json.orderId}`, undefined, t)
-    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired' })
+    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired', refunded: true })
     const view = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
     expect(view.json).toMatchObject({
       status: 'expired',
@@ -1845,6 +1850,28 @@ describe('lessons the venue cannot give', () => {
     await stopped(h, coach.id, 'off')
     const later = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
     expect(later.json).toMatchObject({ expiredWhy: '这节课的时间场馆闭馆', disruption: null })
+  })
+
+  it('says nothing is refunded for a paid lesson cancelled late with no refund', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    forfeit(h)
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id, lessonDay, 10).id, lesson.id)
+    await pay(h, res.json.orderId)
+    const c = await h.call(
+      'POST',
+      `/bookings/${res.json.bookingId}/cancel`,
+      { acceptLate: true },
+      t,
+    )
+    expect(c.status).toBe(200)
+    const status = await h.call('GET', `/orders/${res.json.orderId}`, undefined, t)
+    expect(status.json).toMatchObject({
+      status: 'paid',
+      bookingStatus: 'cancelled',
+      refunded: false,
+    })
   })
 
   it('says a late payment was refunded because the time was taken, not a later 请假', async () => {

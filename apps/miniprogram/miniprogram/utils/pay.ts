@@ -73,12 +73,12 @@ export async function waitForOrder(orderId: number): Promise<OrderStatusDto | nu
 
 /**
  * A paid order's result: its lesson booking was not confirmed (expired, or cancelled by the venue
- * for a session it called off), so the money goes back.
+ * for a session it called off) and the money is going back. A cancel with nothing refunded, say a
+ * late one on another phone, is not said to refund.
  */
 function paidAs(order: OrderStatusDto): 'paid' | 'refunded' {
-  return order.bookingStatus === 'expired' || order.bookingStatus === 'cancelled'
-    ? 'refunded'
-    : 'paid'
+  const lost = order.bookingStatus === 'expired' || order.bookingStatus === 'cancelled'
+  return lost && order.refunded ? 'refunded' : 'paid'
 }
 
 /** The paid order's result, asking the server once; null when unpaid or it cannot be reached. */

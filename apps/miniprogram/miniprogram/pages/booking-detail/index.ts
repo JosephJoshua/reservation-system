@@ -56,7 +56,11 @@ function subtitle(b: BookingDto, now: number): string {
       // Paid or on a package, but the venue cannot give it: the student should not come. Once it
       // has started it can no longer be cancelled here.
       if (b.disruption) {
-        const next = !b.canCancel ? '请联系场馆' : b.canMove ? '请取消或改约' : '请取消后重新预约'
+        const next = !b.canCancel
+          ? '如有疑问请联系前台'
+          : b.canMove
+            ? '请取消或改约'
+            : '请取消后重新预约'
         return `${DISRUPTION_TEXT[b.disruption]}，${next}`
       }
       return '请按时到场上课'

@@ -946,7 +946,11 @@ describe('calling off a session', () => {
       expect.objectContaining({ amount: 8000, reason: '场馆取消课程' }),
     ])
     const status = await h.call('GET', `/orders/${held.json.orderId}`, undefined, a)
-    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'cancelled' })
+    expect(status.json).toMatchObject({
+      status: 'paid',
+      bookingStatus: 'cancelled',
+      refunded: true,
+    })
     const view = await h.call('GET', `/bookings/${held.json.bookingId}`, undefined, a)
     expect(view.json).toMatchObject({ cancelledBy: 'venue', cancelReason: '场地维修' })
     // The student is told, as for the other seats.

@@ -279,6 +279,8 @@ export interface OrderStatusDto {
   amount: number
   bookingId: number | null
   bookingStatus: BookingStatus | null
+  /** Money paid on it is being or has been given back (a refund not turned down). */
+  refunded: boolean
 }
 
 export interface StudentDto {
