@@ -201,6 +201,12 @@
     min-width: 0;
   }
 
+  /* 报表 › 教练课时 has longer labels, such as 时长（小时）, kept on one line. */
+  .coach-hours.card-table tbody td[data-label]::before {
+    flex-basis: 84px;
+    white-space: nowrap;
+  }
+
   .card-table tbody td[data-label=""]::before,
   .card-table tbody td:first-child::before,
   .card-table tbody td[data-actions]::before {

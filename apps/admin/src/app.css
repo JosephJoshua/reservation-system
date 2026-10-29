@@ -2180,3 +2180,10 @@ a:hover {
 .coach-hours thead th {
   white-space: nowrap;
 }
+
+/* The pay column keeps room for its lines, such as 一对一私教 114 节 × ¥100, beside the counts. */
+@media (min-width: 768px) {
+  .coach-hours .coach-pay {
+    min-width: 200px;
+  }
+}

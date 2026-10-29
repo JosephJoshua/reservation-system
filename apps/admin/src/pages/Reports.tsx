@@ -273,6 +273,7 @@ function Monthly() {
               colKey: 'pay',
               title: '课时费',
               width: 240,
+              className: 'coach-pay',
               cell: ({ row }) => <PayCell row={row} />,
             },
           ]}
