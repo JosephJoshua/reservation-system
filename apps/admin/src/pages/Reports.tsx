@@ -392,6 +392,7 @@ function PayMonth({
           header={`确认 ${r.month} 课时费`}
           // The second click of a double click on 确认本月 would land on the overlay.
           closeOnOverlayClick={false}
+          className="own-close"
           confirmBtn={{ content: '确认', loading: submitting }}
           cancelBtn="返回"
           onConfirm={confirm}

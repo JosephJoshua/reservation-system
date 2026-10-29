@@ -15,17 +15,21 @@ const unsaved = new Set<string>()
 type TypedIn = 'page' | 'lesson' | 'header'
 const typedIn = new Map<Element, TypedIn>()
 
-// Picking from a dropdown or a calendar, or flipping a switch, fires no input event.
+// Picking from a dropdown or a calendar, confirming a time, or flipping a switch, fires no input
+// event. A time scrolled to is not picked until 确定.
 const CHOICE = [
   '.t-select-option',
   '.t-date-picker__cell',
   '.t-date-range-picker__cell',
-  '.t-time-picker__panel-body-scroll-item',
+  '.t-time-picker__panel-section-footer .t-button',
   '.t-cascader__item',
   '.t-switch',
 ].join(', ')
-// Fields whose choice Enter confirms from the keyboard.
-const CHOOSER = '.t-select, .t-date-picker, .t-date-range-picker, .t-time-picker, .t-cascader'
+// What can't be picked.
+const DISABLED =
+  '.t-is-disabled, .t-date-picker__cell--disabled, .t-date-range-picker__cell--disabled'
+// Dropdowns, calendars and time panels, which sit outside the dialog they belong to.
+const DROPDOWN = `${CHOICE}, .t-date-picker__panel, .t-time-picker__panel, .t-select__dropdown`
 
 const isShown = (dialog: Element) => dialog.isConnected && dialog.getClientRects().length > 0
 
@@ -45,23 +49,37 @@ function topDialog() {
   return top
 }
 
-/** The dialog an input, a choice or Enter on a dropdown at `target` changes, if any. */
+/** A dropdown or calendar open on the page, which Esc should close alone. */
+function openDropdown() {
+  return [...document.querySelectorAll('.t-popup')].some(
+    (popup) => isShown(popup) && popup.querySelector(DROPDOWN),
+  )
+}
+
+/**
+ * The dialog `el` belongs to: the one it is in, or for a dropdown, which sits outside it, or
+ * nothing focused while a dropdown is open, the dialog on top.
+ */
+function ownerDialog(el: Element) {
+  const dialog = el.closest('.t-dialog__ctx')
+  if (dialog) return dialog
+  return el.closest('.t-popup') || openDropdown() ? topDialog() : null
+}
+
+/** The dialog an input or a choice at the event's target changes, if any. */
 function changedDialog(e: Event) {
   const el = e.target as Element | null
   if (!el?.closest) return null
   if (e.type === 'click') {
-    if (!el.closest(CHOICE) || el.closest('.t-is-disabled')) return null
+    if (!el.closest(CHOICE) || el.closest(DISABLED)) return null
     return el.closest('.t-dialog__ctx') ?? (el.closest('.t-popup') ? topDialog() : null)
-  }
-  if (e.type === 'keydown') {
-    if ((e as KeyboardEvent).key !== 'Enter' || !el.closest(CHOOSER)) return null
   }
   return el.closest('.t-dialog__ctx')
 }
 
 /**
  * Notes typing, or a choice, in a dialog of the page or of the lesson open over it. Their content
- * passes its input, click and keydown events here: React hands them up from a dialog, and from
+ * passes its input and click events here: React hands them up from a dialog, and from
  * its dropdowns, to what opened it, though they sit elsewhere.
  */
 export function markTyped(e: Event, where: TypedIn = 'page') {
@@ -103,29 +121,40 @@ export function settleDialog(from: Element | null) {
 }
 
 /**
- * The dialog that Esc or a click on its backdrop at `target` would close with changes in it, or
- * null. A dialog that closes on neither, or handles them itself, has the class `own-close`.
+ * Whether Esc or a click on its backdrop would drop changes in `dialog`. A dialog that closes on
+ * neither, or handles them itself, has the class `own-close` and is not asked about.
  */
-function closingUnsaved(target: Element) {
-  const dialog = target.closest?.('.t-dialog__ctx')
-  if (!dialog || dialog.matches('.own-close') || !isShown(dialog)) return null
-  const unsaved = dialog.matches('.own-leave-guard')
-    ? dialog.matches('.has-unsaved')
-    : typedIn.has(dialog)
-  return unsaved ? dialog : null
+function hasChanges(dialog: Element) {
+  return dialog.matches('.own-leave-guard') ? dialog.matches('.has-unsaved') : typedIn.has(dialog)
 }
 
-// The question on screen, so pressing Esc again while it is open does not ask twice.
+// The question on screen, so pressing Esc again while it is open does not ask twice, and how to
+// answer it 继续填写 when something else, such as leaving the page, asks over it.
 let askingClose: Promise<boolean> | null = null
+let keepEditing: (() => void) | null = null
 
-/** Asks before closing a dialog with what was typed in it, and resolves true to close it. */
-function confirmClose(): Promise<boolean> {
+/** Answers an open 放弃填写的内容？ as 继续填写, before another question takes its place. */
+export function dismissClose() {
+  keepEditing?.()
+}
+
+/**
+ * Asks before closing `typed` with what was typed in it, and resolves true to close it. The
+ * question goes, as 继续填写, if the dialog closes or goes meanwhile.
+ */
+function confirmClose(typed: Element): Promise<boolean> {
   askingClose ??= new Promise((resolve) => {
+    const gone = window.setInterval(() => {
+      if (!isShown(typed)) answer(false)
+    }, 300)
     const answer = (close: boolean) => {
+      window.clearInterval(gone)
       dialog.destroy()
       askingClose = null
+      keepEditing = null
       resolve(close)
     }
+    keepEditing = () => answer(false)
     const dialog = DialogPlugin.confirm({
       header: '放弃填写的内容？',
       body: '关闭后，这次填写的内容不会保存。',
@@ -145,23 +174,27 @@ function confirmClose(): Promise<boolean> {
  */
 function guardQuickClose(e: Event, again: () => Event) {
   const target = e.target as Element
-  const dialog = closingUnsaved(target)
-  if (!dialog) return
+  if (!target?.closest) return
+  const dialog = ownerDialog(target)
+  if (!dialog || dialog.matches('.own-close') || !isShown(dialog)) return
+  // Esc with a dropdown of the dialog open closes the dropdown alone, as a press outside it does,
+  // whether or not anything was typed.
+  if (e.type === 'keydown' && openDropdown()) {
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    for (const type of ['mousedown', 'mouseup']) {
+      document.body.dispatchEvent(new MouseEvent(type, { bubbles: true }))
+    }
+    // Focus left in the dropdown goes back to its dialog, so the next Esc reaches the dialog.
+    if (!dialog.contains(document.activeElement)) (dialog as HTMLElement).focus()
+    return
+  }
+  if (!hasChanges(dialog)) return
   e.preventDefault()
   e.stopImmediatePropagation()
   // A drag that began in the dialog, such as selecting its text, ending on the backdrop.
   if (e.type === 'click' && pressed !== target) return
-  // Esc with a dropdown of the dialog open closes the dropdown alone, as a press outside it does.
-  const dropdown = [...document.querySelectorAll('.t-popup')].some(
-    (popup) => isShown(popup) && popup.querySelector(CHOICE),
-  )
-  if (e.type === 'keydown' && dropdown) {
-    for (const type of ['mousedown', 'mouseup']) {
-      document.body.dispatchEvent(new MouseEvent(type, { bubbles: true }))
-    }
-    return
-  }
-  void confirmClose().then((close) => {
+  void confirmClose(dialog).then((close) => {
     if (!close || !isShown(dialog)) return
     typedIn.delete(dialog)
     ;(target.isConnected ? target : dialog).dispatchEvent(again())
@@ -173,7 +206,7 @@ if (typeof window !== 'undefined') {
     document.addEventListener(type, (e) => (pressed = e.target as Element | null), true)
   }
   // Typing and choices in any dialog, those of the header too, which the page does not count.
-  for (const type of ['input', 'click', 'keydown']) {
+  for (const type of ['input', 'click']) {
     document.addEventListener(
       type,
       (e) => {
@@ -226,6 +259,8 @@ let leaving = false
  */
 export function confirmLeave(): Promise<boolean> {
   if (!hasUnsaved()) return Promise.resolve(true)
+  // Asked whether to close a dialog: this question takes its place.
+  dismissClose()
   asking ??= new Promise((resolve) => {
     const answer = (leave: boolean) => {
       dialog.destroy()

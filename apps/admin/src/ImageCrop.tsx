@@ -190,6 +190,8 @@ function CropDialog({
     <Dialog
       visible
       dialogClassName="crop-dialog"
+      // Not closed by the backdrop, nor asked about.
+      className="own-close"
       width={640}
       header="裁剪图片"
       cancelBtn="返回"
