@@ -95,7 +95,7 @@ function ExportDialog({
       visible
       header="导出 CSV"
       confirmBtn={{ content: '导出', loading: submitting, disabled: !dates[0] || !dates[1] }}
-      cancelBtn="取消"
+      cancelBtn="返回"
       onConfirm={submit}
       onClose={onClose}
     >
