@@ -4,6 +4,29 @@ import { MessagePlugin } from 'tdesign-react'
 import { api } from './api'
 import { attempt, newKey, useApi } from './hooks'
 
+/** The same value, whatever order its keys come in. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const ka = Object.keys(a)
+  const kb = Object.keys(b)
+  return (
+    ka.length === kb.length &&
+    ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]))
+  )
+}
+
+/**
+ * After a refused save, whether the form must not be saved over the settings now stored: true
+ * unless they are exactly what was sent, as when an earlier try of the same save went through.
+ * The form's If-Match then matches the newer settings, so saving it would put back fields
+ * another admin changed meanwhile.
+ */
+export function staleAfterRefusal(stored: unknown, sent: unknown) {
+  return !sameValue(stored, sent)
+}
+
 /**
  * The venue settings as a form: 设置 and 首页内容 each edit their own part of them and save the
  * whole, guarded by If-Match, so a change saved elsewhere meanwhile is not overwritten.
@@ -73,9 +96,14 @@ export function useSettingsDraft() {
       {
         key: 'settings',
         stale: ['edited_elsewhere'],
-        onStale: async (e) => {
-          if (e.code === 'edited_elsewhere') setStale(true)
-          keep.current = true
+        // Refused as saved elsewhere, as a repeat with other content, or while a first try is
+        // still running: what is stored now decides whether this form may still be saved.
+        onStale: async () => {
+          const stored = await api<VenueSettings>('GET', '/admin/settings').catch(() => null)
+          if (staleAfterRefusal(stored, body)) {
+            setStale(true)
+            keep.current = true
+          } else sent.current = discarded.current ? null : form
           await reload()
         },
       },
