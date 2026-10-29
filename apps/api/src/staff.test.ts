@@ -115,6 +115,23 @@ describe('staff logins', () => {
       admin,
     )
     expect(short.json.error.message).toBe('密码需为 8 到 100 位')
+    // Eight spaces, or a password padded with them, is refused.
+    for (const spaced of ['        ', ' pass-word-1', 'pass-word-1 ']) {
+      const res = await h.call(
+        'POST',
+        '/admin/staff',
+        { name: '某', username: 'mou', password: spaced, roles: ['admin'] },
+        admin,
+      )
+      expect(res.json.error.message).toBe('密码不能以空格开头或结尾')
+    }
+    const noRoles = await h.call(
+      'POST',
+      '/admin/staff',
+      { name: '某', username: 'mou', password: PASSWORD, roles: [] },
+      admin,
+    )
+    expect(noRoles.json.error.message).toBe('请选择角色')
   })
 
   it('locks out a deactivated login at once and keeps it in the list', async () => {
@@ -125,12 +142,39 @@ describe('staff logins', () => {
     expect((await h.call('GET', '/admin/me', undefined, token)).status).toBe(200)
     const off = await h.call('PATCH', `/admin/staff/${li.id}`, { active: false }, admin)
     expect(off.json.active).toBe(false)
-    expect((await h.call('GET', '/admin/me', undefined, token)).status).toBe(401)
+    // Refused at once, saying why, so the app does not just ask for the password again.
+    const refused = await h.call('GET', '/admin/me', undefined, token)
+    expect([refused.status, refused.json.error.code]).toEqual([401, 'account_disabled'])
+    // Login answers as for a wrong password, so it never confirms that a password was right.
     const again = await h.call('POST', '/admin/login', { username: 'xiaoli', password: PASSWORD })
-    expect(again.status).toBe(401)
-    expect(h.db.select().from(sessions).where(eq(sessions.staffId, li.id)).all()).toHaveLength(0)
+    expect([again.status, again.json.error.code]).toEqual([401, 'bad_password'])
+    const guess = await h.call('POST', '/admin/login', {
+      username: 'xiaoli',
+      password: 'wrong-pass',
+    })
+    expect([guess.status, guess.json.error.code]).toEqual([401, 'bad_password'])
     await h.call('PATCH', `/admin/staff/${li.id}`, { active: true }, admin)
+    // Enabled again, the old session stays ended; a new login works.
+    expect(h.db.select().from(sessions).where(eq(sessions.staffId, li.id)).all()).toHaveLength(0)
+    expect((await h.call('GET', '/admin/me', undefined, token)).json.error.code).toBe(
+      'unauthorized',
+    )
     expect((await h.admin('xiaoli', PASSWORD)).length).toBeGreaterThan(10)
+  })
+
+  it('counts logins of a deactivated account as failures, right password or not', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const li = await addStaff(h, admin)
+    await h.call('PATCH', `/admin/staff/${li.id}`, { active: false }, admin)
+    const codes: string[] = []
+    for (let i = 0; i < 11; i++) {
+      const res = await h.call('POST', '/admin/login', { username: 'xiaoli', password: PASSWORD })
+      codes.push(res.json.error.code)
+    }
+    // The right password never clears the count, so the name still backs off.
+    expect(codes.slice(0, 10)).toEqual(Array(10).fill('bad_password'))
+    expect(codes[10]).toBe('too_many_attempts')
   })
 
   it('does not let staff deactivate themselves', async () => {
@@ -361,6 +405,26 @@ describe('action log', () => {
       },
       admin,
     )
+    // A sale ending before it starts says so, not that the dates are missing.
+    const backwards = await h.call(
+      'PUT',
+      `/admin/lesson-types/${lesson.id}`,
+      {
+        ...body,
+        salePercent: 90,
+        saleStartsAt: venueInstant('2026-11-08', 0).toISOString(),
+        saleEndsAt: venueInstant('2026-11-01', 0).toISOString(),
+      },
+      admin,
+    )
+    expect(backwards.json.error.message).toBe('结束时间要晚于开始时间')
+    const undated = await h.call(
+      'PUT',
+      `/admin/lesson-types/${lesson.id}`,
+      { ...body, salePercent: 90 },
+      admin,
+    )
+    expect(undated.json.error.message).toBe('折扣需要设置开始和结束时间')
     const category = await h.call(
       'POST',
       '/admin/coach-categories',

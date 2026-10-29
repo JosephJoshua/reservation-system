@@ -193,6 +193,7 @@ const PAGE_SIZE = 50
 const password = z
   .string()
   .refine((v) => v.length >= 8 && v.length <= 100, { message: '密码需为 8 到 100 位' })
+  .refine((v) => v.trim() === v, { message: '密码不能以空格开头或结尾' })
 const username = z
   .string()
   .trim()
@@ -203,7 +204,8 @@ const username = z
 const staffName = z.string().trim().min(1).max(20)
 const roles = z
   .array(z.enum(staffRoles))
-  .min(1, '请选择角色')
+  // A refinement, so the message is shown as written.
+  .refine((v) => v.length > 0, { message: '请选择角色' })
   .max(staffRoles.length)
   .transform((r) => staffRoles.filter((role) => r.includes(role)))
 const rolesText = (r: readonly StaffRole[]) => r.map((role) => staffRoleLabels[role]).join('、')
@@ -273,9 +275,7 @@ const lessonTypeBody = z
     // A rule left out follows the venue's 默认预约规则. Left out altogether, an edit keeps them.
     rules: ruleOverrides.optional(),
   })
-  .refine((v) => saleDatesValid(v.salePercent, v.saleStartsAt, v.saleEndsAt), {
-    message: '折扣需要设置开始和结束时间',
-  })
+  .superRefine((v, ctx) => saleDatesCheck(ctx, '折扣', v.salePercent, v.saleStartsAt, v.saleEndsAt))
   .superRefine((v, ctx) => {
     const error = groupSettingsError(v)
     if (error) ctx.addIssue({ code: 'custom', message: error, path: ['capacity'] })
@@ -295,9 +295,7 @@ const productBody = z
     saleStartsAt: nullableInstant.default(null),
     saleEndsAt: nullableInstant.default(null),
   })
-  .refine((v) => saleDatesValid(v.salePrice, v.saleStartsAt, v.saleEndsAt), {
-    message: '限时价需要设置开始和结束时间',
-  })
+  .superRefine((v, ctx) => saleDatesCheck(ctx, '限时价', v.salePrice, v.saleStartsAt, v.saleEndsAt))
 
 const bannerBody = z
   .object({
@@ -321,9 +319,20 @@ const bannerBody = z
 
 const orderBody = z.object({ ids: z.array(z.number().int().positive()).max(500) })
 
-function saleDatesValid(value: number | null, startsAt: Date | null, endsAt: Date | null) {
-  if (value === null) return true
-  return startsAt !== null && endsAt !== null && startsAt < endsAt
+/** A sale needs a start and an end, the end after the start. */
+function saleDatesCheck(
+  ctx: z.RefinementCtx,
+  what: string,
+  value: number | null,
+  startsAt: Date | null,
+  endsAt: Date | null,
+) {
+  if (value === null) return
+  if (startsAt === null || endsAt === null) {
+    ctx.addIssue({ code: 'custom', message: `${what}需要设置开始和结束时间` })
+  } else if (startsAt >= endsAt) {
+    ctx.addIssue({ code: 'custom', message: '结束时间要晚于开始时间' })
+  }
 }
 
 export function adminRoutes(deps: Deps) {
