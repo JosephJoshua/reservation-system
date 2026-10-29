@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it, vi } from 'vitest'
 import { actionLog, refunds } from './db/schema'
 import { GatewayError } from './pay/gateway'
-import { settleRefund } from './services/refunds'
+import { ABNORMAL_NOTE, settleRefund } from './services/refunds'
 import { type Harness, setup } from './test/harness'
 
 /** A paid lesson the venue cancelled, whose WeChat Pay refund failed for good. */
@@ -453,21 +453,26 @@ describe('WeChat Pay reporting on a refund staff already settled', () => {
     )
     expect(res.json.settled).toBe(true)
     const before = h.db.select().from(refunds).get()
+    const toCheck = async () =>
+      (await h.call('GET', '/admin/refunds?check=1', undefined, await h.admin())).json
+    expect(await toCheck()).toHaveLength(0)
     h.clock.now = new Date('2026-11-05T02:00:00Z')
     settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
     settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
+    // Found with 待核对.
+    expect(await toCheck()).toHaveLength(1)
     expect(h.db.select().from(refunds).get()).toMatchObject({
       status: 'succeeded',
       settledHow: 'platform',
-      failure: REFUND_UNDONE_AFTER_SETTLE,
+      failure: REFUND_UNDONE_AFTER_SETTLE.closed,
       updatedAt: before?.updatedAt,
     })
     expect(h.logs.filter((l) => l.message.includes('later reported not done'))).toHaveLength(1)
     // Shown in the refunds list and the export.
     const list = await h.call('GET', '/admin/refunds', undefined, await h.admin())
-    expect(JSON.stringify(list.json)).toContain(REFUND_UNDONE_AFTER_SETTLE)
+    expect(JSON.stringify(list.json)).toContain(REFUND_UNDONE_AFTER_SETTLE.closed)
     const csv = await refundsCsv(h)
-    expect(csv).toContain(`商户平台处理；已在商户平台处理；${REFUND_UNDONE_AFTER_SETTLE}`)
+    expect(csv).toContain(`商户平台处理；已在商户平台处理；${REFUND_UNDONE_AFTER_SETTLE.closed}`)
     expect(csv).not.toContain('请在微信支付商户平台处理')
   })
 
@@ -489,7 +494,7 @@ describe('WeChat Pay reporting on a refund staff already settled', () => {
     settleRefund(h.deps, no, { status: 'processing', refundId: 'wx-1', abnormal: true })
     expect(h.db.select().from(refunds).get()).toMatchObject({
       status: 'succeeded',
-      failure: REFUND_UNDONE_AFTER_SETTLE,
+      failure: REFUND_UNDONE_AFTER_SETTLE.abnormal,
     })
   })
 
@@ -541,6 +546,50 @@ describe('WeChat Pay reporting on a refund staff already settled', () => {
     settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
     expect(h.db.select().from(refunds).get()?.failure).toBe('CLOSED')
     expect(await refundsCsv(h)).toContain('线下另付；已现金退还；微信支付退款失败：CLOSED')
+  })
+
+  it('clears the warning once WeChat Pay reports one put right 商户平台处理 done', async () => {
+    const h = setup()
+    const { admin, refundId, outRefundNo } = await abnormalRefund(h)
+    await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { how: 'platform', note: '已在商户平台处理' },
+      admin,
+    )
+    settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
+    expect(h.db.select().from(refunds).get()?.failure).toBe(REFUND_UNDONE_AFTER_SETTLE.closed)
+    settleRefund(h.deps, outRefundNo, { status: 'succeeded', refundId: 'wx-fixed' })
+    expect(h.db.select().from(refunds).get()).toMatchObject({
+      status: 'succeeded',
+      providerRefundId: 'wx-fixed',
+      failure: null,
+    })
+  })
+
+  it('warns for a refund settled before warnings existed, and for one with no note', async () => {
+    const h = setup()
+    const { refundId, outRefundNo } = await abnormalRefund(h)
+    // As an earlier version left a settled 退款异常: the note kept, the flag cleared.
+    const settledBefore = {
+      status: 'succeeded' as const,
+      settledNote: '已在商户平台处理',
+      settledHow: 'platform' as const,
+      abnormal: false,
+    }
+    h.db.update(refunds).set(settledBefore).where(eq(refunds.id, refundId)).run()
+    expect(h.db.select().from(refunds).get()?.failure).toBe(ABNORMAL_NOTE)
+    settleRefund(h.deps, outRefundNo, { status: 'processing', refundId: 'wx-1', abnormal: true })
+    expect(h.db.select().from(refunds).get()?.failure).toBe(ABNORMAL_NOTE)
+    settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
+    expect(h.db.select().from(refunds).get()?.failure).toBe(REFUND_UNDONE_AFTER_SETTLE.closed)
+
+    h.db.update(refunds).set({ failure: null }).where(eq(refunds.id, refundId)).run()
+    settleRefund(h.deps, outRefundNo, { status: 'processing', refundId: 'wx-1', abnormal: true })
+    expect(h.db.select().from(refunds).get()?.failure).toBe(REFUND_UNDONE_AFTER_SETTLE.abnormal)
+    expect(await refundsCsv(h)).toContain(
+      `商户平台处理；已在商户平台处理；${REFUND_UNDONE_AFTER_SETTLE.abnormal}`,
+    )
   })
 
   it('does not settle over a CLOSED report that lands while WeChat Pay is asked', async () => {

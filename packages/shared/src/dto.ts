@@ -119,16 +119,26 @@ export const REFUND_PAID_TWICE = '微信支付也报告退款成功，如已线�
 
 /**
  * The failure note on a refund staff settled outside the system that WeChat Pay then reports
- * closed or 退款异常, when it had said otherwise before the settle.
+ * closed (CLOSED) or 退款异常 (ABNORMAL), when it had said otherwise before the settle.
  */
-export const REFUND_UNDONE_AFTER_SETTLE = '微信支付随后报告退款关闭或异常，请核对学员是否已收到退款'
+export const REFUND_UNDONE_AFTER_SETTLE = {
+  closed: '微信支付随后报告退款关闭，请核对学员是否已收到退款',
+  abnormal: '微信支付随后报告退款异常，请核对学员是否已收到退款',
+} as const
+
+/** Failure notes on a settled refund that are warnings for staff to check. */
+export const REFUND_SETTLED_WARNINGS: readonly string[] = [
+  REFUND_PAID_TWICE,
+  REFUND_UNDONE_AFTER_SETTLE.closed,
+  REFUND_UNDONE_AFTER_SETTLE.abnormal,
+]
 
 /**
  * Whether the failure note on a settled refund is a warning for staff. Any other note is what
  * WeChat Pay last said before it was settled, which no longer needs handling.
  */
 export const settledRefundWarning = (failure: string | null) =>
-  failure === REFUND_PAID_TWICE || failure === REFUND_UNDONE_AFTER_SETTLE
+  failure !== null && REFUND_SETTLED_WARNINGS.includes(failure)
 
 export interface BookingDto {
   id: number

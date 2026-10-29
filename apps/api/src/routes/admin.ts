@@ -2254,6 +2254,8 @@ export function adminRoutes(deps: Deps) {
         q: searchParam,
         // 退款异常: WeChat Pay could not send the money back, as the overview counts them.
         abnormal: flag,
+        // 待核对: settled outside the system, then reported otherwise by WeChat Pay.
+        check: flag,
         ...pageParams,
         before: z.coerce.number().int().positive().optional(),
       }),
