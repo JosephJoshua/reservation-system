@@ -7,6 +7,7 @@ import {
   bookings,
   idempotencyKeys,
   invoices,
+  lessonFeedback,
   orders,
   packages,
   refunds,
@@ -180,6 +181,8 @@ export function eraseStudent(
 ) {
   const blockers = deletionBlockers(tx, studentId, now, who)
   if (blockers.length) throw new ApiError(409, 'account_in_use', blockers[0] as string)
+  // Read before it is cleared below.
+  const traces = tracesOf(tx, studentId)
   tx.update(students)
     .set({
       // Unique and never a real openid, so the next login by this WeChat user is a new account.
@@ -202,12 +205,22 @@ export function eraseStudent(
   // Responses kept for repeats of their requests hold their name and phone.
   tx.delete(idempotencyKeys).where(eq(idempotencyKeys.studentId, studentId)).run()
   // Staff's and coaches' answers kept for repeats may show them too (a lesson, a booking, their
-  // 档案), and which ones is not recorded, so all of those lose their answer. Each keeps its
-  // status, so a repeat is still not run again; one still running drops its answer when done.
-  tx.update(idempotencyKeys)
-    .set({ body: null, contentType: null })
-    .where(and(isNull(idempotencyKeys.studentId), isNotNull(idempotencyKeys.status)))
-    .run()
+  // 档案): those lose their answer. Each keeps its status, so a repeat is still not run again.
+  // One still running drops its answer when done (see idempotency.ts), as it cannot be told
+  // apart once the name is gone.
+  const about = tx
+    .select({ id: idempotencyKeys.id, body: idempotencyKeys.body })
+    .from(idempotencyKeys)
+    .where(and(isNull(idempotencyKeys.studentId), isNotNull(idempotencyKeys.body)))
+    .all()
+    .filter((r) => traces.some((t) => r.body?.includes(t)))
+    .map((r) => r.id)
+  if (about.length) {
+    tx.update(idempotencyKeys)
+      .set({ body: null, contentType: null })
+      .where(inArray(idempotencyKeys.id, about))
+      .run()
+  }
   // Invoices stay for the accounts, without the email. One made out to the student by name
   // loses the name and its PDF; a company's title is not personal data.
   const personal = tx
@@ -225,6 +238,48 @@ export function eraseStudent(
     files: personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : [])),
     lessons: deleteStudentFeedback(tx, studentId),
   }
+}
+
+/**
+ * Text by which a kept answer shows a student: their name and phone, their 档案, the coach's notes
+ * and feedback on their lessons, those lessons' photos, their invoices' email and title, and
+ * their id where an answer names it. An answer holding none of these says nothing about them.
+ */
+function tracesOf(tx: Q, studentId: number) {
+  const student = tx.select().from(students).where(eq(students.id, studentId)).get()
+  const profile = tx
+    .select()
+    .from(studentProfiles)
+    .where(eq(studentProfiles.studentId, studentId))
+    .get()
+  const lessons = tx
+    .select({ id: bookings.id, note: bookings.coachNote, feedback: lessonFeedback.text })
+    .from(bookings)
+    .leftJoin(lessonFeedback, eq(lessonFeedback.bookingId, bookings.id))
+    .where(eq(bookings.studentId, studentId))
+    .all()
+  const billed = tx
+    .select({ email: invoices.email, title: invoices.title })
+    .from(invoices)
+    .where(eq(invoices.studentId, studentId))
+    .all()
+  // JSON escapes some characters, so a text is also looked for as it appears in JSON.
+  const texts = [
+    student?.name,
+    student?.phone,
+    profile?.note,
+    ...(profile?.tags ?? []),
+    ...lessons.flatMap((l) => [l.note, l.feedback]),
+    ...billed.flatMap((b) => [b.email, b.title]),
+  ].flatMap((t) => (t ? [t, JSON.stringify(t).slice(1, -1)] : []))
+  return [
+    ...new Set([
+      ...texts,
+      ...lessons.map((l) => `fb${l.id}-`),
+      `"studentId":${studentId},`,
+      `"studentId":${studentId}}`,
+    ]),
+  ]
 }
 
 /** Removes the files of an erased student once the deletion has committed. */

@@ -80,10 +80,11 @@ function liveSession(deps: Deps, token: string, now: Date) {
   return null
 }
 
-// Logins, coach binding and password changes: their answers hold a new session token, which is
-// otherwise kept only as a hash, and their bodies a password. Repeating one is harmless anyway.
+// Logins, coach binding, new staff logins and password changes: their answers hold a new session
+// token, which is otherwise kept only as a hash, or their bodies a password, which no repeat should
+// be compared against. Repeating a login is harmless; a repeated new login is refused as taken.
 const CREDENTIAL_PATHS =
-  /^\/api\/(?:admin\/login|auth\/student|coach\/login|coach\/bind|admin\/me\/password|admin\/staff\/[^/]+\/password)\/?$/
+  /^\/api\/(?:admin\/login|auth\/student|coach\/login|coach\/bind|admin\/me\/password|admin\/staff|admin\/staff\/[^/]+\/password)\/?$/
 
 /**
  * The key a request is kept under, for a signed-in caller's mutating request that carries an
@@ -189,10 +190,12 @@ export function idempotency(deps: Deps): MiddlewareHandler {
       // again on top of work already done.
       try {
         if (ok) {
+          const text = await c.res.clone().text()
           // A staff member's or coach's answer may show a student whose account was erased
-          // while this ran, after eraseStudent dropped the answers kept so far.
+          // while this ran, after eraseStudent dropped the answers kept so far. Checked after the
+          // last await, so an erasure cannot land between the check and the write.
           const drop = studentId === null && erasedSince(deps, now)
-          const body = drop ? null : await c.res.clone().text()
+          const body = drop ? null : text
           db.update(idempotencyKeys)
             .set({
               status: c.res.status,

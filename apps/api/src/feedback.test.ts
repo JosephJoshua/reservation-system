@@ -665,4 +665,29 @@ describe('photo upload repeats', () => {
     expect((await upload(h, ct, id)).json.error.code).toBe('too_many_photos')
     expect(files(h)).toHaveLength(24)
   })
+
+  it('still answers a repeat after another student deletes their account', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const send = () => {
+      const form = new FormData()
+      form.append('file', new Blob([JPEG], { type: 'image/jpeg' }), 'photo.jpg')
+      return h.app.request(`/api/coach/lessons/${id}/photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ct}`, 'Idempotency-Key': 'p1' },
+        body: form,
+      })
+    }
+    const first = await send()
+    expect(first.status).toBe(201)
+    const url = ((await first.json()) as { url: string }).url
+    const other = await h.student('b')
+    await h.call('PUT', '/me', { name: '乙某某', phone: '13800000002' }, other)
+    h.clock.now = new Date(h.clock.now.getTime() + 60_000)
+    expect((await h.call('DELETE', '/me', undefined, other)).status).toBe(204)
+    const again = await send()
+    expect(again.status).toBe(201)
+    expect(((await again.json()) as { url: string }).url).toBe(url)
+    expect(files(h)).toHaveLength(1)
+  })
 })

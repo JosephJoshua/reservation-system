@@ -1,5 +1,8 @@
+import { eq } from 'drizzle-orm'
+import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
-import { idempotencyKeys } from './db/schema'
+import { idempotencyKeys, students } from './db/schema'
+import { idempotency } from './idempotency'
 import { startCoachSession } from './services/auth'
 import { MAX_PHOTO_BYTES } from './services/feedback'
 import { ADMIN_PASSWORD, type Harness, setup } from './test/harness'
@@ -117,7 +120,8 @@ describe('answers kept for repeats and erased students', () => {
     })
     expect(del.status).toBe(204)
     const rows = h.db.select().from(idempotencyKeys).all()
-    expect(rows.every((r) => !r.body)).toBe(true)
+    // The 档案 answer showed them; the new student's id alone says nothing about them.
+    expect(rows.map((r) => r.body)).toEqual(['{"id":1}', null, null])
     expect(JSON.stringify(rows)).not.toMatch(/独特名字|13912345678|膝盖旧伤/)
     // The deletion's own repeat still answers as it did.
     const again = await h.call('DELETE', `/admin/students/${id}`, undefined, a, {
@@ -155,6 +159,44 @@ describe('answers kept for repeats and erased students', () => {
   })
 })
 
+describe('a student erased while a staff answer is still being sent', () => {
+  it('drops that answer, even when the erasure lands while its body is read', async () => {
+    const h = setup()
+    const s = await h.student('A')
+    const studentId = (await h.call('GET', '/me', undefined, s)).json.id as number
+    const admin = await h.admin()
+    const app = new Hono()
+    app.use('/api/*', idempotency(h.deps))
+    app.post('/api/slow', () => {
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            // The student deletes their account while the answer is read out.
+            h.db
+              .update(students)
+              .set({ deletedAt: h.deps.now() })
+              .where(eq(students.id, studentId))
+              .run()
+            controller.enqueue(new TextEncoder().encode('{"name":"甲某某"}'))
+            controller.close()
+          },
+          // Nothing is pulled before the answer is read.
+        },
+        { highWaterMark: 0 },
+      )
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    const res = await app.request('/api/slow', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin}`, 'Idempotency-Key': 'slow-1' },
+    })
+    expect(await res.text()).toBe('{"name":"甲某某"}')
+    expect(h.db.select().from(idempotencyKeys).all()).toMatchObject([
+      { status: 200, body: null, contentType: null },
+    ])
+  })
+})
+
 describe('credential endpoints are never kept for repeats', () => {
   it('keeps no row for a login sent with a session and a key', async () => {
     const h = setup()
@@ -178,6 +220,15 @@ describe('credential endpoints are never kept for repeats', () => {
     expect(changed.status).toBeLessThan(500)
     const s = await h.student('A')
     await h.call('POST', '/auth/student', { code: 'dev:A' }, s, { 'Idempotency-Key': 'st-1' })
+    // A new staff login carries its password.
+    const staffMade = await h.call(
+      'POST',
+      '/admin/staff',
+      { name: '前台小王', username: 'desk1', password: 'desk-password-1', roles: ['front_desk'] },
+      a,
+      { 'Idempotency-Key': 'staff-1' },
+    )
+    expect(staffMade.status).toBe(201)
     expect(h.db.select().from(idempotencyKeys).all()).toEqual([])
   })
 })
