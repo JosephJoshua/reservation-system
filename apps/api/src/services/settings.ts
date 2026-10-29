@@ -6,8 +6,8 @@ import {
   type RuleOverrides,
   ruleNames,
   rulesFor,
-  storedVenueSettings,
   type VenueSettings,
+  venueSettings,
 } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import type { Q } from '../db/client'
@@ -21,10 +21,10 @@ export function getSettings(db: Q): VenueSettings {
   const row = db.select().from(settings).where(eq(settings.id, 1)).get()
   if (!row) return defaultSettings
   const merged = mergeDefaults(row.data) as Record<string, unknown>
-  const parsed = storedVenueSettings.safeParse(merged)
+  const parsed = venueSettings.safeParse(merged)
   if (parsed.success) return parsed.data
   const out: Record<string, unknown> = {}
-  for (const key of Object.keys(storedVenueSettings.shape) as (keyof VenueSettings)[]) {
+  for (const key of Object.keys(venueSettings.shape) as (keyof VenueSettings)[]) {
     out[key] = validSection(key, merged[key])
   }
   return out as VenueSettings
@@ -40,7 +40,7 @@ function warn(field: string) {
 
 /** One section of the settings, with each invalid field replaced by its default. */
 function validSection<K extends keyof VenueSettings>(key: K, value: unknown): VenueSettings[K] {
-  const schema = storedVenueSettings.shape[key]
+  const schema = venueSettings.shape[key]
   const whole = schema.safeParse(value)
   if (whole.success) return whole.data as VenueSettings[K]
   const base = defaultSettings[key] as Record<string, unknown>

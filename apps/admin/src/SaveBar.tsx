@@ -4,17 +4,21 @@ import { Button, DialogPlugin } from 'tdesign-react'
 // Forms with changes not saved yet, by the id of the component that holds them.
 const unsaved = new Set<string>()
 
-// Dialogs typed into since they opened, such as 代约 or 修改姓名和手机号: what was typed is lost
-// when the page changes under them, so they count as unsaved until they close. A dialog that
-// keeps its own count, with useLeaveGuard, has the class `own-leave-guard`; the login and
-// search dialogs hold nothing to keep.
+// Dialogs of the page typed into since they opened, such as 代约 or 修改姓名和手机号: what was
+// typed is lost when the page changes under them, so they count as unsaved until they close.
+// Dialogs opened from the header, such as 修改我的密码, stay open whatever the page and are not
+// counted. A dialog that keeps its own count, with useLeaveGuard, has the class
+// `own-leave-guard`.
 const typedIn = new Set<Element>()
-const NOT_TRACKED = '.own-leave-guard, .relogin-dialog, .command-menu'
 
-function onTyped(e: Event) {
-  const target = e.target as Element | null
-  if (!target?.closest || target.closest(NOT_TRACKED)) return
-  const dialog = target.closest('.t-dialog__ctx')
+/**
+ * Notes typing in a dialog of the page. The page's content passes its input events here: React
+ * hands them up from a dialog to the page that opened it, though the dialog sits elsewhere.
+ */
+export function markTyped(target: EventTarget) {
+  const el = target as Element | null
+  if (!el?.closest || el.closest('.own-leave-guard')) return
+  const dialog = el.closest('.t-dialog__ctx')
   if (dialog) typedIn.add(dialog)
 }
 
@@ -27,20 +31,28 @@ function openTyped() {
   return typedIn.size
 }
 
-/**
- * Forgets what was typed into the dialog on top, once it was saved: it is closing, and the page
- * change that may follow, such as opening the student just added, is not asked about.
- */
-export function settleDialog() {
-  const open = [...document.querySelectorAll('.t-dialog__ctx')].filter(
-    (d) => d.getClientRects().length > 0,
-  )
-  const top = open.at(-1)
-  if (top) typedIn.delete(top)
+// What the admin last clicked or pressed a key on, so a save can tell which dialog it came from.
+let pressed: Element | null = null
+
+/** The element the admin last clicked or pressed a key on. */
+export function lastPressed() {
+  return pressed
 }
 
-if (typeof document !== 'undefined') {
-  document.addEventListener('input', onTyped, true)
+/**
+ * Forgets what was typed into the dialog `from` is in, once it was saved there: it is closing,
+ * and the page change that may follow, such as opening the student just added, is not asked
+ * about.
+ */
+export function settleDialog(from: Element | null) {
+  const dialog = from?.closest?.('.t-dialog__ctx')
+  if (dialog) typedIn.delete(dialog)
+}
+
+if (typeof window !== 'undefined') {
+  for (const type of ['pointerdown', 'keydown']) {
+    document.addEventListener(type, (e) => (pressed = e.target as Element | null), true)
+  }
   window.addEventListener('beforeunload', (e) => {
     if (openTyped() > 0) e.preventDefault()
   })
