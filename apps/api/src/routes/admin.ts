@@ -25,8 +25,10 @@ import {
   staffActions,
   staffRoleLabels,
   staffRoles,
+  VENUE_PHONE_MESSAGE,
   venueDateKey,
   venueInstant,
+  venuePhoneValid,
   venueSettings,
 } from '@rs/shared'
 import {
@@ -526,6 +528,10 @@ export function adminRoutes(deps: Deps) {
     const { before, after } = immediate(db, (tx) => {
       const before = getSettings(tx)
       checkVersion(c, before)
+      // Only a changed phone is checked, so one saved before the check does not block the rest.
+      if (body.venue.phone !== before.venue.phone && !venuePhoneValid(body.venue.phone)) {
+        throw new ApiError(400, 'invalid_body', VENUE_PHONE_MESSAGE)
+      }
       checkLinkTarget(tx, body.notice)
       saveSettings(tx, body, deps.now())
       return { before, after: getSettings(tx) }

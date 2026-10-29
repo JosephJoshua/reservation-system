@@ -408,7 +408,7 @@ export function Schedule() {
         </div>
       )}
       <p className="muted">
-        浅色为教练排班时间，斜线为请假或闭馆。点空白处代约，点教练名查看和修改排班。
+        绿色底为教练排班时间，斜线为请假或闭馆。点空白处代约，点教练名查看和修改排班。
       </p>
 
       {booking && (
@@ -652,6 +652,7 @@ function CreateSessions({
       visible
       width={560}
       header="排小班课"
+      cancelBtn="返回"
       confirmBtn={{
         content: `创建 ${count} 节`,
         loading: submitting,

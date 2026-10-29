@@ -291,6 +291,7 @@ function AnomalyHandled({
     <Dialog
       visible
       header="标为已处理"
+      cancelBtn="返回"
       confirmBtn={{ content: '确认', disabled: !note.trim(), loading: submitting }}
       onConfirm={submit}
       onClose={onClose}

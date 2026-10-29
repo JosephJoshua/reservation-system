@@ -24,6 +24,8 @@ import {
 import { api, RequestError } from '../api'
 import { addDays, fmtDate, fmtDateTime, fmtTime, fmtWeekday, today, venueIso } from '../format'
 import { attempt, newKey, onceKey, useActionKeys, useApi, useIsPhone } from '../hooks'
+import { useCan } from '../me'
+import { useLeaveGuard } from '../SaveBar'
 import type { Coach } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -192,6 +194,8 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
     setTouched(new Set([...touched, ...weekdays]))
     setDirty(true)
   }
+  useLeaveGuard(dirty)
+  const canManage = useCan('manage')
   const timeWidth = useIsPhone() ? 88 : 104
   const [conflicts, setConflicts] = useState<{ list: ScheduleConflictDto[]; what: string } | null>(
     null,
@@ -324,6 +328,8 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
       visible
       width={800}
       header={`${coach.name} 的排班`}
+      // Stays open after a save, so it counts its own changes rather than what was typed.
+      className="own-leave-guard"
       confirmBtn={{ content: '保存每周时间', disabled: !!invalid || !hours || !dirty }}
       cancelBtn="关闭"
       onConfirm={save}
@@ -444,7 +450,8 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
                           .join(' · ')}
                       </span>
                       {e.coachId === null ? (
-                        <span className="muted">在设置里管理</span>
+                        // 闭馆 is kept in 设置, which only some roles open.
+                        canManage && <span className="muted">在设置里管理</span>
                       ) : (
                         <Popconfirm
                           theme="warning"

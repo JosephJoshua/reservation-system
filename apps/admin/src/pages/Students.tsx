@@ -37,7 +37,7 @@ import {
   TagInput,
   Textarea,
 } from 'tdesign-react'
-import { api } from '../api'
+import { api, RequestError } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { LessonTime } from '../bookingCells'
 import { DataTable } from '../DataTable'
@@ -1193,7 +1193,11 @@ function ProfileDialog({
           `/admin/students/${studentId}/profile`,
           { ...form, tags },
           { key, ifMatch: loaded },
-        ),
+        ).catch((e) => {
+          throw e instanceof RequestError && e.code === 'edited_elsewhere'
+            ? new RequestError(e.status, e.code, '已被其他人修改，已显示最新档案，请核对后再改')
+            : e
+        }),
       '已保存',
       // Someone else saved it, or the student deleted their account: show it as it is now.
       { onStale: onDone, stale: ['edited_elsewhere', 'account_deleted'] },
@@ -1206,6 +1210,7 @@ function ProfileDialog({
       visible
       width={560}
       header="编辑学员档案"
+      cancelBtn="返回"
       confirmBtn={{ content: '保存', loading: submitting }}
       onConfirm={submit}
       onClose={onClose}
@@ -1364,6 +1369,7 @@ function OfflineSale({
     <Dialog
       visible
       header="前台售卖课时包"
+      cancelBtn="返回"
       confirmBtn={{
         content: '确认收款',
         disabled: !productId || fen === null || fen > 10_000_000,
@@ -1459,6 +1465,7 @@ function PackageAction({
     <Dialog
       visible
       header={kind === 'grant' ? '赠送课时' : '延长有效期'}
+      cancelBtn="返回"
       confirmBtn={{
         content: '确认',
         disabled: !valid || (kind === 'grant' && !note.trim()),

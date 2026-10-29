@@ -38,6 +38,35 @@ export function onTokenChange(fn: (token: string | null) => void) {
   return () => window.removeEventListener('storage', onStorage)
 }
 
+// While this tab asks who it acts as, such as after another tab logged out or in as someone
+// else, requests wait instead of going out with a login that may not be this tab's. Logging in
+// itself goes through.
+let held: { turn: Promise<boolean>; release: (send: boolean) => void } | null = null
+
+/** Holds requests until `releaseRequests`. */
+export function holdRequests() {
+  if (held) return
+  let release: (send: boolean) => void = () => {}
+  const turn = new Promise<boolean>((resolve) => {
+    release = resolve
+  })
+  held = { turn, release }
+}
+
+/** Lets held requests go, or with `send` false fails them, as after signing out or switching account. */
+export function releaseRequests(send: boolean) {
+  const was = held
+  held = null
+  was?.release(send)
+}
+
+async function waitTurn(path: string) {
+  if (path.startsWith('/admin/login')) return
+  while (held) {
+    if (!(await held.turn)) throw new RequestError(401, 'signed_out', '登录已变更，请重新操作')
+  }
+}
+
 // Asks the signed-in staff member to log in again, resolving true once they have. Requests
 // turned away meanwhile all wait on the one question.
 let onUnauthorized: () => Promise<boolean> = async () => false
@@ -85,6 +114,7 @@ async function request<T>(
   { key, ifMatch }: { key?: string; ifMatch?: unknown } = {},
   retried = false,
 ): Promise<{ data: T; res: Response }> {
+  await waitTurn(path)
   const token = getToken()
   const isForm = body instanceof FormData
   let res: Response
@@ -139,6 +169,7 @@ export async function fetchFile(
   path: string,
   retried = false,
 ): Promise<{ blob: Blob; name: string }> {
+  await waitTurn(path)
   const token = getToken()
   let res: Response
   try {

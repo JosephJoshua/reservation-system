@@ -262,18 +262,18 @@ function Monthly() {
           loading={loading}
           data={r ? coachRows(r) : []}
           empty="这个月没有课程"
+          // Columns as wide as their headings, which a fixed layout cut off, as 学员逾时取消.
+          tableLayout="auto"
+          className="coach-hours"
           columns={[
             ...coachColumns
               .filter(([key]) => key !== 'payAmount' && key !== 'unrated')
-              // Headings on one line, as 时长（小时） otherwise breaks inside its brackets.
-              .map(([colKey, title]) => ({
-                colKey,
-                title: <span className="nowrap">{title}</span>,
-              })),
+              .map(([colKey, title]) => ({ colKey, title })),
             {
               colKey: 'pay',
               title: '课时费',
               width: 240,
+              className: 'coach-pay',
               cell: ({ row }) => <PayCell row={row} />,
             },
           ]}
