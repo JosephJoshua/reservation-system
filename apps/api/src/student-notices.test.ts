@@ -41,6 +41,29 @@ const notices = (h: Harness, bookingId: number) =>
     .map((n) => ({ kind: n.kind, result: n.result }))
 
 describe('student notices', () => {
+  it('waits longer after each failed send, up to an hour', async () => {
+    const h = setup()
+    let tries = 0
+    h.deps.notifier = {
+      template: (kind) => ({ id: `tpl_${kind}`, fields: { thing1: 'lesson' } }),
+      async send() {
+        tries++
+        throw new Error('subscribe send: 47003 argument invalid')
+      },
+    }
+    const { coach, lesson } = h.seed()
+    const student = await h.student('a')
+    const id = await book(h, student, h.slot(coach.id, '2026-11-05', 10).id, lesson.id)
+    const start = h.clock.now.getTime()
+    for (let t = 0; t <= 48 * 60; t += 5) {
+      h.clock.now = new Date(start + t * 60_000)
+      await notifyStudents(h.deps)
+    }
+    // Tried at 0, 5, 10, 20, 40 and 80 minutes, then hourly: 52 times in two days, not 577.
+    expect(tries).toBe(52)
+    expect(notices(h, id)).toEqual([{ kind: 'booked', result: null }])
+  })
+
   it('confirms paid bookings once, not unpaid holds or other kinds', async () => {
     const h = setup()
     const sent = withNotifier(h, 'sent', 'student_feedback')

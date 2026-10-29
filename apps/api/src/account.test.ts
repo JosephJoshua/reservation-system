@@ -1,7 +1,15 @@
 import { POLICY_VERSION } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings, orders, packageProducts, packages, sessions, students } from './db/schema'
+import {
+  bookings,
+  idempotencyKeys,
+  orders,
+  packageProducts,
+  packages,
+  sessions,
+  students,
+} from './db/schema'
 import { type Harness, setup } from './test/harness'
 
 async function pay(h: Harness, orderId: number) {
@@ -105,7 +113,28 @@ describe('account deletion', () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const t = await h.student('a')
-    await h.call('PUT', '/me', { name: '张三', phone: '13800000000' }, t)
+    // Kept for repeats of the request, with their name and phone in it.
+    const saved = await h.call('PUT', '/me', { name: '张三', phone: '13800000000' }, t, {
+      'Idempotency-Key': 'k1',
+    })
+    expect(saved.status).toBe(200)
+    const kept = () =>
+      h.db
+        .select()
+        .from(idempotencyKeys)
+        .all()
+        .map((k) => k.body ?? '')
+    expect(kept().some((b) => b.includes('13800000000'))).toBe(true)
+    const admin = await h.admin()
+    await h.call(
+      'POST',
+      '/admin/lesson-types',
+      { name: '团课', durationMinutes: 60, price: 1 },
+      admin,
+      {
+        'Idempotency-Key': 'k2',
+      },
+    )
     const booked = await h.call(
       'POST',
       '/bookings',
@@ -121,11 +150,16 @@ describe('account deletion', () => {
     expect((await h.call('DELETE', '/me', undefined, t, key)).status).toBe(204)
     // A repeat after a lost answer finds the session gone, which the mini program reads as done.
     expect((await h.call('DELETE', '/me', undefined, t, key)).status).toBe(401)
+    // Logged outside the database, for redoing it after a restore.
+    expect(h.logs).toContainEqual({ message: 'account erased', detail: { studentId: 1 } })
 
     const row = h.db.select().from(students).where(eq(students.id, 1)).get()
     expect(row).toMatchObject({ name: '', phone: '', policyVersion: null, deletedAt: h.deps.now() })
     expect(row?.openid).toMatch(/^deleted:1:[0-9a-f]{64}$/)
     expect(h.db.select().from(sessions).where(eq(sessions.studentId, 1)).all()).toHaveLength(0)
+    // Their kept responses go too; staff's stay.
+    expect(kept().some((b) => b.includes('13800000000'))).toBe(false)
+    expect(kept().some((b) => b.includes('团课'))).toBe(true)
     // The lesson and its payment stay for the accounts, without the coach's note.
     expect(h.db.select().from(bookings).get()).toMatchObject({ studentId: 1, coachNote: '' })
     expect(h.db.select().from(orders).get()).toMatchObject({ studentId: 1, status: 'paid' })
@@ -136,11 +170,13 @@ describe('account deletion', () => {
     expect(me).toMatchObject({ id: 2, name: '', phone: '', agreedPolicies: false })
     expect((await h.call('GET', '/bookings?scope=past', undefined, again)).json).toEqual([])
 
-    const admin = await h.admin()
     const [listed] = (await h.call('GET', '/admin/students?q=张三', undefined, admin)).json
     expect(listed).toBeUndefined()
     const detail = (await h.call('GET', '/admin/students/1', undefined, admin)).json
-    expect(detail).toMatchObject({ name: '', deletedAt: expect.any(String) })
+    expect(detail).toMatchObject({ name: '', deletedAt: expect.any(String), wechatBound: false })
+    const all = (await h.call('GET', '/admin/students', undefined, admin)).json
+    expect(all.find((s: { id: number }) => s.id === 1)).toMatchObject({ wechatBound: false })
+    expect(all.find((s: { id: number }) => s.id === 2)).toMatchObject({ wechatBound: true })
     expect(detail.bookings).toHaveLength(1)
     const patch = await h.call('PATCH', '/admin/students/1', { name: '李四' }, admin)
     expect(patch.json.error.code).toBe('account_deleted')

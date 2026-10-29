@@ -37,6 +37,18 @@ async function bodyHashOf(req: Request) {
 }
 
 /**
+ * The unexpired session of a bearer token, with the student it belongs to, if any. The one place
+ * here that knows how sessions store their token.
+ */
+function liveSession(deps: Deps, token: string, now: Date) {
+  return deps.db
+    .select({ studentId: sessions.studentId })
+    .from(sessions)
+    .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, now)))
+    .get()
+}
+
+/**
  * Makes a signed-in caller's mutating request safe to repeat when it carries an Idempotency-Key:
  * the first request runs, and a repeat with the same key and body to the same endpoint gets the
  * first successful response back instead of running again, waiting for it if the first is still
@@ -55,16 +67,7 @@ export function idempotency(deps: Deps): MiddlewareHandler {
     if (key.length > 100) throw new ApiError(400, 'invalid_idempotency_key', '请求格式错误')
     const { db } = deps
     const now = deps.now()
-    const signedIn = db
-      .select({ tokenHash: sessions.tokenHash })
-      .from(sessions)
-      .where(
-        and(
-          eq(sessions.tokenHash, hashToken(auth.replace(/^Bearer /, ''))),
-          gt(sessions.expiresAt, now),
-        ),
-      )
-      .get()
+    const signedIn = liveSession(deps, auth.replace(/^Bearer /, ''), now)
     // The route's own auth answers this one.
     if (!signedIn) return next()
     const id = sha256([auth, c.req.method, c.req.path, key].join('\n'))
@@ -73,7 +76,7 @@ export function idempotency(deps: Deps): MiddlewareHandler {
     for (let wait = 0; ; wait++) {
       const claimed = db
         .insert(idempotencyKeys)
-        .values({ id, bodyHash, createdAt: now })
+        .values({ id, bodyHash, studentId: signedIn.studentId, createdAt: now })
         .onConflictDoNothing()
         .run()
       if (claimed.changes === 1) break

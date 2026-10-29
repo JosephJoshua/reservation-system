@@ -25,6 +25,18 @@ export const REMINDER_MS = 2 * 3_600_000
 const STALE_MS = 24 * 3_600_000
 const RETRY_MS = 5 * 60_000
 
+const RETRY_MAX_MS = 3_600_000
+
+/**
+ * When to try a failed send again: after RETRY_MS, then after as long as the message has waited,
+ * up to an hour, so one WeChat keeps failing is not tried every few minutes all day. Student and
+ * package messages both use it.
+ */
+export function retryAfterFailure(now: Date, createdAt: Date) {
+  const waited = now.getTime() - createdAt.getTime()
+  return new Date(now.getTime() + Math.min(Math.max(RETRY_MS, waited), RETRY_MAX_MS))
+}
+
 /** A lesson's coach and time, as the student knows it. */
 export interface KnownLesson {
   coachId: number
@@ -421,7 +433,7 @@ async function sendPending(deps: Deps) {
             return
           }
           tx.update(studentNotices)
-            .set({ doneAt: null, retryAt: new Date(now.getTime() + RETRY_MS) })
+            .set({ doneAt: null, retryAt: retryAfterFailure(now, n.createdAt) })
             .where(eq(studentNotices.id, n.id))
             .run()
           if (n.kind === 'moved') foldMoved(tx, n.bookingId, deps.now())

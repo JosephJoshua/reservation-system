@@ -2,7 +2,7 @@ import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { actionLog, bookings, studentNotices } from './db/schema'
+import { actionLog, bookings, studentNotices, students } from './db/schema'
 import { removeStrayPhotos } from './services/feedback'
 import { notifyStudents } from './services/student-notices'
 import { type Harness, setup } from './test/harness'
@@ -513,5 +513,114 @@ describe('lesson feedback', () => {
     const admin = await h.admin()
     expect((await h.call('GET', '/admin/feedback', undefined, admin)).json).toEqual([])
     expect((await write(h, ct, id, '好')).json.error.code).toBe('account_deleted')
+  })
+})
+
+describe('lesson photo files', () => {
+  const get = (h: Harness, url: string, token?: string) =>
+    h.app.request(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
+
+  it('stops serving photos of hidden feedback, except to staff, and caches them privately', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const { url } = (await upload(h, ct, id)).json
+    // Shown in the editor before it is saved.
+    const unsaved = await get(h, url)
+    expect(unsaved.status).toBe(200)
+    expect(unsaved.headers.get('cache-control')).toBe('private, max-age=3600')
+    await write(h, ct, id, '好', [url])
+    expect((await get(h, url)).status).toBe(200)
+
+    const admin = await h.admin()
+    const [item] = (await h.call('GET', '/admin/feedback', undefined, admin)).json
+    await h.call('PUT', `/admin/feedback/${item.id}/hidden`, { hidden: true }, admin)
+    expect((await get(h, url)).status).toBe(404)
+    const staffUrl = url.replace('/api/uploads/', '/api/admin/feedback-photos/')
+    const staff = await get(h, staffUrl, admin)
+    expect(staff.status).toBe(200)
+    expect(staff.headers.get('content-type')).toBe('image/jpeg')
+    expect(staff.headers.get('cache-control')).toBe('private, no-store')
+    expect((await get(h, staffUrl)).status).toBe(401)
+    expect((await get(h, staffUrl, ct)).status).toBe(401)
+    // Staff who do not moderate feedback (财务) see what students see, and are not turned away
+    // with a 403, which would reload their roles.
+    const created = await h.call(
+      'POST',
+      '/admin/staff',
+      { name: '财务', username: 'caiwu', password: 'finance-123', roles: ['finance'] },
+      admin,
+    )
+    expect(created.status).toBe(201)
+    const finance = await h.admin('caiwu', 'finance-123')
+    expect((await get(h, staffUrl, finance)).status).toBe(404)
+    // The coach's lesson page no longer lists them.
+    const lesson = (await h.call('GET', `/coach/lessons/${id}`, undefined, ct)).json
+    expect(lesson.feedback).toMatchObject({ hidden: true, photos: [] })
+
+    await h.call('PUT', `/admin/feedback/${item.id}/hidden`, { hidden: false }, admin)
+    expect((await get(h, url)).status).toBe(200)
+    const shown = await get(h, staffUrl, finance)
+    expect(shown.status).toBe(200)
+    expect(shown.headers.get('cache-control')).toBe('private, max-age=3600')
+  })
+
+  it('stops serving photos the student no longer sees, as after a no-show', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const { url } = (await upload(h, ct, id)).json
+    await write(h, ct, id, '好', [url])
+    const marked = await h.call(
+      'PUT',
+      `/coach/lessons/${id}/attendance`,
+      { attendance: 'no_show' },
+      ct,
+    )
+    expect(marked.status).toBe(200)
+    expect((await get(h, url)).status).toBe(404)
+    const lesson = (await h.call('GET', `/coach/lessons/${id}`, undefined, ct)).json
+    expect(lesson.feedback).toMatchObject({ visible: false, photos: [] })
+    const admin = await h.admin()
+    const staff = await get(h, url.replace('/api/uploads/', '/api/admin/feedback-photos/'), admin)
+    expect(staff.status).toBe(200)
+    expect(staff.headers.get('cache-control')).toBe('private, no-store')
+  })
+
+  it('stops serving photos once the student deleted their account', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const { url } = (await upload(h, ct, id)).json
+    await write(h, ct, id, '好', [url])
+    // A file left behind, say by a restore, still does not show.
+    const name = url.replace('/api/uploads/', '')
+    h.db.update(students).set({ deletedAt: h.clock.now }).where(eq(students.id, 1)).run()
+    expect((await get(h, url)).status).toBe(404)
+    expect(existsSync(join(h.deps.uploadsDir, name))).toBe(true)
+    const admin = await h.admin()
+    const staffUrl = url.replace('/api/uploads/', '/api/admin/feedback-photos/')
+    expect((await get(h, staffUrl, admin)).status).toBe(404)
+  })
+
+  it('keeps other images public, and checks what an admin upload really is', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const post = (data: Buffer, type: string) => {
+      const form = new FormData()
+      form.append('file', new Blob([data], { type }), 'x.png')
+      return h.app.request('/api/admin/uploads', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${admin}` },
+        body: form,
+      })
+    }
+    const html = await post(Buffer.from('<html><script>alert(1)</script>'), 'image/png')
+    expect(html.status).toBe(400)
+    // A JPEG sent as PNG is stored as what it is.
+    const res = await post(JPEG, 'image/png')
+    expect(res.status).toBe(201)
+    const { url } = (await res.json()) as { url: string }
+    expect(url).toMatch(/\.jpg$/)
+    const served = await get(h, url)
+    expect(served.status).toBe(200)
+    expect(served.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
   })
 })

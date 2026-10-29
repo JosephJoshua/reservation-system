@@ -243,6 +243,33 @@ on the database it had. If it fails in the middle of the swap (it says so), prod
 stopped: look at `/data` and rerun the restore with the commands the message prints. The replaced
 database and its WAL files are kept either way.
 
+**Deleted accounts come back with a restore.** A student who deleted their account (注销), or a
+front-desk student staff removed, after the copy was taken is back in the restored database with
+their name and phone, and their lesson photos are copied back with it. The deletion has to be done
+again; nothing does it for you. After every restore:
+
+1. Find them. The replaced database is kept as `app.db.before-restore-<time>`; students deleted in it
+   but not in the restored one are the ones to delete again. `<tag>` is the release production runs,
+   as `rs.sh restore` printed:
+
+   ```sh
+   cd /srv/rs && APP_TAG=<tag> docker compose -f compose.yml run --rm --no-deps backup node -e '
+     const D = require("better-sqlite3"), [o, n] = process.argv.slice(1).map((f) => new D(f, { readonly: true }))
+     const q = "select id, created_at as c, deleted_at as d from students where deleted_at is "
+     const live = new Map(n.prepare(q + "null").all().map((r) => [r.id, r.c]))
+     // Same id and creation time: the same person, not a student created after the copy.
+     for (const r of o.prepare(q + "not null").all())
+       if (live.get(r.id) === r.c) console.log(r.id, "deleted", new Date(r.d).toISOString())
+   ' /data/app.db.before-restore-<time> /data/app.db
+   ```
+
+   If that file is lost or unreadable, the app logs each deletion as `account erased {studentId}`:
+   `docker compose -f compose.yml logs app | grep 'account erased'` (the logs keep about 100MB). Check
+   that each of those ids was created before the copy was taken: ids given out after it can be given
+   out again to someone else.
+2. Delete them again: ask the developer to run the account deletion for those ids. Then run
+   `rs.sh backup --allow-removals`, so the backup does not count their photos as lost.
+
 **Moving to a new server**, or after losing the old one: do the first setup, ship a release, then
 `rs.sh restore latest <tag>` with the tag `ship.sh` printed. That restores the newest copy and
 starts production on it.

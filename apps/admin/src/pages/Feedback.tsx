@@ -248,7 +248,7 @@ export function Feedback({
                 ) : (
                   <div className="feedback-text">{row.text}</div>
                 )}
-                <FeedbackPhotos photos={row.photos} />
+                <FeedbackPhotos photos={row.photos} restricted={row.hidden || !row.visible} />
                 {!row.deleted && row.updatedAt !== row.createdAt && (
                   <div className="muted">修改于 {fmtDateTime(row.updatedAt)}</div>
                 )}

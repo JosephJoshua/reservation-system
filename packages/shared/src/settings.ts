@@ -47,7 +47,8 @@ export const bookingTermsSchema = bookingRules.pick({
 
 export const venueSettings = z.object({
   venue: z.object({
-    name: z.string().max(40),
+    // Named in the mini program and, without an operator, in the privacy policy.
+    name: z.string().trim().min(1).max(40),
     address: z.string().max(120),
     phone: z.string().max(30),
     latitude: z.number().min(-90).max(90).nullable(),
@@ -96,8 +97,8 @@ export const venueSettings = z.object({
   }),
   // Who runs the mini program, as named in the privacy policy and the mini program console.
   legal: z.object({
-    operator: z.string().max(60),
-    contact: z.string().max(60),
+    operator: z.string().trim().max(60),
+    contact: z.string().trim().max(60),
   }),
 })
 

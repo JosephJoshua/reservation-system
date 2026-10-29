@@ -12,6 +12,7 @@ import { adminRoutes } from './routes/admin'
 import { coachRoutes } from './routes/coach'
 import { devPayRoutes, payRoutes } from './routes/pay'
 import { studentRoutes } from './routes/student'
+import { isLessonPhoto, readLessonPhoto } from './services/feedback'
 
 const imageTypes: Record<string, string> = {
   jpg: 'image/jpeg',
@@ -41,6 +42,17 @@ export function createApp(deps: Deps) {
     const name = c.req.param('name')
     const ext = /^[\w-]+\.(jpg|png|webp)$/.exec(name)?.[1]
     if (!ext) return c.notFound()
+    // Lesson photos stop showing once the student no longer sees their feedback, or deleted their
+    // account, so they are cached briefly and only by the viewer's own app.
+    if (isLessonPhoto(name)) {
+      const photo = readLessonPhoto(deps, name, 'anyone')
+      if (!photo) return c.notFound()
+      return c.body(photo.data, 200, {
+        'Content-Type': photo.type,
+        'Cache-Control': 'private, max-age=3600',
+        'X-Content-Type-Options': 'nosniff',
+      })
+    }
     try {
       const data = readFileSync(join(deps.uploadsDir, name))
       return c.body(data, 200, {

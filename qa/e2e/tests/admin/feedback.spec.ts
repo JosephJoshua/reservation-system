@@ -24,6 +24,7 @@ const PNG = Buffer.from(
 let studentToken = ''
 let coachToken = ''
 let bookingId = 0
+let photoUrl = ''
 
 /** Moves a booked lesson to the last two hours, so attendance and feedback are open. */
 function moveIntoPast(id: number) {
@@ -100,6 +101,7 @@ test('a coach writes feedback with a photo through the API', async ({ request })
   })
   expect(uploaded.status()).toBe(201)
   const { url } = await uploaded.json()
+  photoUrl = url
   await call(request, 'PUT', `/coach/lessons/${bookingId}/feedback`, coachToken, {
     text,
     photos: [url],
@@ -130,6 +132,16 @@ test('lists the feedback and hides it from the student', async ({ page, request 
   await expect(row).toContainText('已隐藏')
   const hidden = await call<BookingDto>(request, 'GET', `/bookings/${bookingId}`, studentToken)
   expect(hidden.feedback).toBeNull()
+  // The photo is no longer served to anyone else, but the venue still sees it.
+  expect((await request.get(`${API.replace(/\/api$/, '')}${photoUrl}`)).status()).toBe(404)
+  await page.reload()
+  await expect(row).toContainText('已隐藏')
+  await expect
+    .poll(() =>
+      row.locator('.feedback-photos img').evaluate((img: HTMLImageElement) => img.naturalWidth),
+    )
+    .toBe(1)
+  await both(page, 'feedback-hidden')
 
   await row.getByRole('button', { name: '恢复' }).click()
   await expect(row).toContainText('学员可见')

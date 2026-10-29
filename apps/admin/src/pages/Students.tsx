@@ -528,7 +528,7 @@ function StudentFacts({ student }: { student: Student }) {
     <Space align="center" breakLine>
       <span>{s.phone || '未填写手机号'}</span>
       <span className="muted">
-        {s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
+        {s.deletedAt ? '建档于' : s.wechatBound ? '注册于' : '前台建档于'} {fmtDate(s.createdAt)}
       </span>
       {canManage && (
         <Space size={6} align="center">

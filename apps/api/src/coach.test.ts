@@ -2,7 +2,8 @@ import { venueInstant } from '@rs/shared'
 import { and, eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { bookings, coaches, packageProducts, refunds } from './db/schema'
-import { notifyCoaches } from './services/coach-notices'
+import { MAX_NOTICE_FAILURES, notifyCoaches } from './services/coach-notices'
+import { sweep } from './sweeper'
 import { type Harness, setup } from './test/harness'
 import { fieldValue, type NoticeTemplate, type Notifier, parseTemplate } from './wx-notify'
 
@@ -235,6 +236,32 @@ describe('the coach schedule and lessons', () => {
     expect(slot.lesson.studentName).toBe('已注销学员')
     const note = await h.call('PUT', `/coach/lessons/${bookingId}/note`, { note: '反手' }, token)
     expect(note.json.error.code).toBe('account_deleted')
+  })
+
+  it('shows the phone only while the 学员档案 is open', async () => {
+    const h = setup()
+    const { coach, lesson, token, student, bookingId } = await bookedLesson(h)
+    const phoneOf = async (id: number) =>
+      (await h.call('GET', `/coach/lessons/${id}`, undefined, token)).json.student.phone
+    expect(await phoneOf(bookingId)).toBe('13800138000')
+    // A hold not paid yet, and one cancelled.
+    const held = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id, '2026-10-27', 10).id, lessonTypeId: lesson.id },
+      student,
+    )
+    const hold = h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get()
+    expect(hold?.status).toBe('pending_payment')
+    expect(await phoneOf(held.json.bookingId)).toBe('')
+    const cancelled = await book(h, student, h.slot(coach.id, '2026-10-28', 10).id, lesson.id)
+    await h.call('POST', `/bookings/${cancelled}/cancel`, {}, student)
+    expect(await phoneOf(cancelled)).toBe('')
+    // Until a week after the lesson ends (11:00 venue time is 03:00 UTC).
+    h.clock.now = new Date('2026-11-02T02:59:00Z')
+    expect(await phoneOf(bookingId)).toBe('13800138000')
+    h.clock.now = new Date('2026-11-02T03:01:00Z')
+    expect(await phoneOf(bookingId)).toBe('')
   })
 
   it('shows a lesson with the student and earlier lessons together', async () => {
@@ -525,6 +552,174 @@ describe('coach notices', () => {
     h.clock.now = new Date('2026-10-26T02:00:00Z')
     await notifyCoaches(h.deps)
     expect(told()).not.toBeNull()
+  })
+
+  it('waits longer after each failed send and gives up after the last', async () => {
+    const h = setup()
+    let tries = 0
+    h.deps.notifier = {
+      template: (kind) => ({ id: kind, fields: { thing1: 'student' } }),
+      async send() {
+        tries++
+        throw new Error('subscribe send: 47003 argument invalid')
+      },
+    }
+    const { coach, lesson } = await withCoach(h)
+    const id = await book(h, await h.student('a'), h.slot(coach.id, '2026-11-03', 10).id, lesson.id)
+    const row = () => h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+    const start = h.clock.now.getTime()
+    const waits: number[] = []
+    for (let i = 1; i < MAX_NOTICE_FAILURES; i++) {
+      await notifyCoaches(h.deps)
+      expect(tries).toBe(i)
+      expect(row()).toMatchObject({ coachNoticeFailures: i, coachToldBookedAt: null })
+      // Not tried again before its time.
+      await notifyCoaches(h.deps)
+      expect(tries).toBe(i)
+      const retryAt = row()?.coachNoticeRetryAt as Date
+      waits.push((retryAt.getTime() - h.clock.now.getTime()) / 60_000)
+      h.clock.now = retryAt
+    }
+    expect(waits).toEqual([1, 2, 4, 8, 16, 32, 60])
+    await notifyCoaches(h.deps)
+    expect(tries).toBe(MAX_NOTICE_FAILURES)
+    expect(row()).toMatchObject({ coachNoticeFailures: 0, coachNoticeRetryAt: null })
+    expect(row()?.coachToldBookedAt).not.toBeNull()
+    expect(h.logs.some((l) => l.message === 'coach notice given up')).toBe(true)
+    await notifyCoaches(h.deps)
+    expect(tries).toBe(MAX_NOTICE_FAILURES)
+    expect(h.clock.now.getTime() - start).toBe(123 * 60_000)
+  })
+
+  it('starts afresh for the next message about a lesson', async () => {
+    const h = setup()
+    const sent: string[] = []
+    const down = true
+    h.deps.notifier = {
+      template: (kind) =>
+        kind.startsWith('coach_') ? { id: kind, fields: { thing1: 'student' } } : undefined,
+      async send(_openid, template) {
+        if (down && template.id === 'coach_moved') throw new Error('offline')
+        sent.push(template.id)
+        return 'sent'
+      },
+    }
+    const { coach, lesson, admin } = await withCoach(h)
+    const student = await h.student('a')
+    const id = await book(h, student, h.slot(coach.id, '2026-10-26', 10).id, lesson.id)
+    await notifyCoaches(h.deps)
+    const to = h.slot(coach.id, '2026-10-27', 10)
+    expect(
+      (await h.call('POST', `/admin/bookings/${id}/move`, { slotId: to.id }, admin)).status,
+    ).toBe(204)
+    // The move message fails a few times, an 8 minute wait building up.
+    for (let i = 0; i < 4; i++) {
+      await notifyCoaches(h.deps)
+      const row = h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+      if (row?.coachNoticeRetryAt) h.clock.now = row.coachNoticeRetryAt
+    }
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()).toMatchObject({
+      coachNoticeFailures: 4,
+      coachNoticeKind: 'moved',
+    })
+    // The student cancels: the coach hears it at once, not after the move message's wait.
+    expect((await h.call('POST', `/bookings/${id}/cancel`, {}, student)).status).toBe(200)
+    await notifyCoaches(h.deps)
+    expect(sent).toEqual(['coach_booked', 'coach_cancelled'])
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()).toMatchObject({
+      coachNoticeFailures: 0,
+      coachNoticeKind: null,
+      coachNoticeRetryAt: null,
+    })
+  })
+
+  it('does not tell a coach about changes to a lesson they never heard of', async () => {
+    const h = setup()
+    const sent: string[] = []
+    let down = true
+    h.deps.notifier = {
+      template: (kind) =>
+        kind.startsWith('coach_') ? { id: kind, fields: { thing1: 'student' } } : undefined,
+      async send(_openid, template) {
+        if (down) throw new Error('offline')
+        sent.push(template.id)
+        return 'sent'
+      },
+    }
+    const { coach, lesson } = await withCoach(h)
+    const student = await h.student('a')
+    const id = await book(h, student, h.slot(coach.id, '2026-10-30', 10).id, lesson.id)
+    for (let i = 0; i < MAX_NOTICE_FAILURES; i++) {
+      await notifyCoaches(h.deps)
+      const row = h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+      if (row?.coachNoticeRetryAt) h.clock.now = row.coachNoticeRetryAt
+    }
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()).toMatchObject({
+      coachNoticeKind: 'given_up',
+    })
+    down = false
+    expect((await h.call('POST', `/bookings/${id}/cancel`, {}, student)).status).toBe(200)
+    await notifyCoaches(h.deps)
+    expect(sent).toEqual([])
+    expect(
+      h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.coachToldCancelledAt,
+    ).not.toBeNull()
+  })
+
+  it('does not let failing messages hold up the others', async () => {
+    const h = setup()
+    const sent: string[] = []
+    h.deps.notifier = {
+      template: (kind) => ({ id: kind, fields: { thing1: 'student' } }),
+      async send(_openid, _template, _page, values) {
+        if (values.student !== 'GOOD') throw new Error('subscribe send: 47003 argument invalid')
+        sent.push(values.student)
+        return 'sent'
+      },
+    }
+    const { coach, lesson } = await withCoach(h)
+    const bad = await h.student('bad')
+    await h.call('PUT', '/me', { name: 'BAD' }, bad)
+    // More failing lessons than one run looks at, all before the good one.
+    for (let i = 0; i < 60; i++) {
+      const day = `2026-10-${25 + (i % 6)}`
+      await book(h, bad, h.slot(coach.id, day, 8 + Math.floor(i / 6)).id, lesson.id)
+    }
+    const good = await h.student('good')
+    await h.call('PUT', '/me', { name: 'GOOD' }, good)
+    await book(h, good, h.slot(coach.id, '2026-11-04', 10).id, lesson.id)
+    const confirmed = h.db.select().from(bookings).where(eq(bookings.status, 'confirmed')).all()
+    expect(confirmed).toHaveLength(61)
+    await notifyCoaches(h.deps)
+    expect(sent).toEqual([])
+    await notifyCoaches(h.deps)
+    expect(sent).toEqual(['GOOD'])
+  })
+
+  it('closes expired orders before sending coach messages', async () => {
+    const h = setup()
+    const order: string[] = []
+    const { coach, lesson } = await withCoach(h)
+    const student = await h.student('a')
+    await book(h, student, h.slot(coach.id, '2026-10-26', 10).id, lesson.id)
+    const hold = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id, '2026-10-27', 10).id, lessonTypeId: lesson.id },
+      student,
+    )
+    h.clock.now = new Date(h.clock.now.getTime() + 30 * 60_000)
+    h.deps.notifier = {
+      template: (kind) =>
+        kind.startsWith('coach_') ? { id: kind, fields: { thing1: 'student' } } : undefined,
+      async send() {
+        const held = h.db.select().from(bookings).where(eq(bookings.id, hold.json.bookingId)).get()
+        order.push(`send with hold ${held?.status}`)
+        return 'sent'
+      },
+    }
+    await sweep(h.deps)
+    expect(order).toEqual(['send with hold expired'])
   })
 
   it('marks bookings as handled when no template is set up', async () => {
