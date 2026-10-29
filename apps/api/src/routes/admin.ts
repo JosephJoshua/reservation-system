@@ -1547,13 +1547,8 @@ export function adminRoutes(deps: Deps) {
       z.object({ attendance: z.enum(['attended', 'no_show']).nullable() }),
     )
     const id = idParam(c)
-    const before = db
-      .select({ attendance: bookings.attendance })
-      .from(bookings)
-      .where(eq(bookings.id, id))
-      .get()
-    setAttendance(deps, id, attendance, { staffId: c.get('staffId') })
-    if (before && before.attendance !== attendance) {
+    // Also logged when the desk takes over the student's or coach's own mark.
+    if (setAttendance(deps, id, attendance, { staffId: c.get('staffId') })) {
       const { what, studentId } = describeBooking(db, id, deps.now())
       const label = { attended: '到课', no_show: '缺席' }
       log(c.get('staffId'), {

@@ -50,15 +50,17 @@ export function studentCanCheckIn(b: Booking, now: Date, selfCheckIn: boolean) {
 
 /**
  * The coach or the front desk marks whether the student came; null clears the mark. A repeat
- * keeps who marked it first and when, which the feedback window counts from.
+ * keeps who marked it first and when, which the feedback window counts from, except that the
+ * front desk takes over a mark the student or coach made, so the coach can no longer change it.
+ * Returns whether anything was written.
  */
 export function setAttendance(
   deps: Deps,
   bookingId: number,
   attendance: Attendance | null,
   by: { coachId: number } | { staffId: number },
-) {
-  immediate(deps.db, (tx) => {
+): boolean {
+  return immediate(deps.db, (tx) => {
     const row = tx
       .select({ booking: bookings, coachId: slots.coachId })
       .from(bookings)
@@ -72,7 +74,15 @@ export function setAttendance(
     const now = deps.now()
     const error = attendanceError(row.booking, now, 'coachId' in by ? 'coach' : 'admin', attendance)
     if (error) throw new ApiError(409, error, messages[error])
-    if (row.booking.attendance === attendance) return
+    if (row.booking.attendance === attendance) {
+      if (!attendance || !('staffId' in by) || row.booking.attendanceBy === 'staff') return false
+      // Kept as marked and when, now the desk's.
+      tx.update(bookings)
+        .set({ attendanceBy: 'staff', attendanceStaffId: by.staffId })
+        .where(eq(bookings.id, bookingId))
+        .run()
+      return true
+    }
     tx.update(bookings)
       .set({
         attendance,
@@ -82,6 +92,7 @@ export function setAttendance(
       })
       .where(eq(bookings.id, bookingId))
       .run()
+    return true
   })
 }
 
