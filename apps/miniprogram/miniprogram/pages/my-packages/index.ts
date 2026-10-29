@@ -44,7 +44,7 @@ function view(p: PackageDto): PackageView {
       p.status === 'active' ? 'primary' : p.status === 'refund_requested' ? 'warning' : 'default',
     active: p.status === 'active',
     refund: p.refund
-      ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund.status, p.paidOffline)}`
+      ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund, p.paidOffline)}`
       : '',
     paidOffline: p.paidOffline,
     // Free packages (gifts) have nothing to refund.

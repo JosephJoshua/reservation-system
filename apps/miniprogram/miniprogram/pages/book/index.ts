@@ -30,6 +30,9 @@ interface SlotView {
   closed: boolean
   /** Seats left in a group session; null for a private slot. */
   seatsLeft: number | null
+  /** The student's own booking in this session: 待支付 or 已报名, opened on a tap. */
+  mine: string
+  bookingId: number | null
 }
 
 Page({
@@ -172,6 +175,8 @@ Page({
           // Too close to start to book online, as opposed to booked by someone else.
           closed: !s.available && Date.parse(s.startsAt) - now < notice,
           seatsLeft: s.lessonTypeId === null ? null : s.seatsLeft,
+          mine: s.mine ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
+          bookingId: s.mine?.bookingId ?? null,
         }))
       const availableCount = slots.filter((s) => s.available).length
       if (openDays && availableCount === 0) {
@@ -252,6 +257,11 @@ Page({
 
   pickSlot(e: WechatMiniprogram.TouchEvent) {
     const slot = this.data.slots[e.currentTarget.dataset.index as number]
+    // Booked already: open that booking, to pay for or cancel it there.
+    if (slot?.bookingId) {
+      navigateOnce(`/pages/booking-detail/index?id=${slot.bookingId}`)
+      return
+    }
     if (!slot?.available) return
     const query = [
       ...(slot.id === null ? [] : [`slotId=${slot.id}`]),

@@ -1,4 +1,10 @@
-import type { BookingStatus, Disruption, PackageStatus, RefundStatus } from '../lib/shared'
+import type {
+  BookingStatus,
+  Disruption,
+  PackageStatus,
+  RefundDto,
+  RefundStatus,
+} from '../lib/shared'
 
 export const REFUND_STATUS: Record<RefundStatus, string> = {
   requested: '待审核',
@@ -10,9 +16,19 @@ export const REFUND_STATUS: Record<RefundStatus, string> = {
   rejected: '未通过',
 }
 
-/** A refund's status for the student. Money paid at the front desk is handed back there. */
-export function refundStatus(status: RefundStatus, paidOffline: boolean): string {
-  return paidOffline && REFUND_STATUS[status] === '退款中' ? '待到店退还' : REFUND_STATUS[status]
+/**
+ * A refund's status for the student. Money paid at the front desk is handed back there; one staff
+ * paid back another way (线下另付) after WeChat Pay could not is 已退还, not 已退款 to where it came
+ * from.
+ */
+export function refundStatus(
+  refund: Pick<RefundDto, 'status' | 'settledHow'>,
+  paidOffline: boolean,
+): string {
+  const text = REFUND_STATUS[refund.status]
+  if (paidOffline && text === '退款中') return '待到店退还'
+  if (refund.status === 'succeeded' && refund.settledHow === 'offline') return '已退还'
+  return text
 }
 
 export const BOOKING_STATUS: Record<BookingStatus, string> = {

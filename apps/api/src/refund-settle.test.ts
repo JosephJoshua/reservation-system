@@ -82,6 +82,26 @@ describe('a failed WeChat Pay refund settled outside the system', () => {
     expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(204)
   })
 
+  it('tells the student how the refund was paid back', async () => {
+    const h = setup()
+    const { t, admin, refundId } = await failedRefund(h)
+    const bookingId = h.db.select().from(refunds).get()?.bookingId
+    const view = async () => (await h.call('GET', `/bookings/${bookingId}`, undefined, t)).json
+    expect((await view()).refund).toEqual({ amount: 20000, status: 'failed', settledHow: null })
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { how: 'offline', note: '已现金退还' },
+      admin,
+    )
+    expect(res.status).toBe(200)
+    expect((await view()).refund).toEqual({
+      amount: 20000,
+      status: 'succeeded',
+      settledHow: 'offline',
+    })
+  })
+
   it('needs a note, the finance role, and a refund that failed', async () => {
     const h = setup()
     const { admin, refundId } = await failedRefund(h)

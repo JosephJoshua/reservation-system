@@ -420,8 +420,22 @@ describe('booking seats', () => {
     const group = (
       await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${kids.id}`, undefined, t)
     ).json
+    // Not offered again to the student who has a seat, who is told so.
     expect(group).toEqual([
-      expect.objectContaining({ id, capacity: 4, seatsLeft: 3, available: true }),
+      expect.objectContaining({
+        id,
+        capacity: 4,
+        seatsLeft: 3,
+        available: false,
+        mine: expect.objectContaining({ status: 'confirmed' }),
+      }),
+    ])
+    const other = await h.student('b')
+    const forOther = (
+      await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${kids.id}`, undefined, other)
+    ).json
+    expect(forOther).toEqual([
+      expect.objectContaining({ id, seatsLeft: 3, available: true, mine: null }),
     ])
     const solo = (
       await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${lesson.id}`, undefined, t)

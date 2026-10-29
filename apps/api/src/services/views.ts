@@ -5,6 +5,7 @@ import {
   freeCancelDeadline,
   type PackageDto,
   type PackageStatus,
+  type RefundDto,
   studentMoveError,
 } from '@rs/shared'
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
@@ -39,6 +40,11 @@ export function packageStatus(p: PackageRow, now: Date): PackageStatus {
   if (p.expiresAt <= now) return 'expired'
   if (p.lessonsRemaining <= 0) return 'used_up'
   return 'active'
+}
+
+/** A refund as the student sees it: how much, how far, and how staff paid it back if they did. */
+function refundView(r: typeof refunds.$inferSelect): RefundDto {
+  return { amount: r.amount, status: r.status, settledHow: r.settledHow }
 }
 
 /** Latest refund per key, preferring one that is not rejected. */
@@ -179,7 +185,7 @@ export function bookingViews(
       cancelledBy: b.cancelledBy,
       cancelReason: b.cancelledBy === 'venue' ? (b.cancelReason ?? '') : '',
       late: b.late,
-      refund: refund ? { amount: refund.amount, status: refund.status } : null,
+      refund: refund ? refundView(refund) : null,
       attendance: b.attendance,
       canCheckIn: !disruption && studentCanCheckIn(b, now, selfCheckIn),
       invoice: order ? (invoiceByOrder.get(order.id) ?? null) : null,
@@ -241,7 +247,7 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
       status: packageStatus(p, now),
       pricePaid: p.pricePaid,
       paidOffline: offline.has(p.orderId),
-      refund: refund ? { amount: refund.amount, status: refund.status } : null,
+      refund: refund ? refundView(refund) : null,
       invoice: invoiceByOrder.get(p.orderId) ?? null,
     }
   })

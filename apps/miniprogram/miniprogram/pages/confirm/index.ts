@@ -364,6 +364,12 @@ Page({
         this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
         return
       }
+      if (e instanceof ApiError && e.code === 'already_booked' && e.bookingId) {
+        // Booked this session already, on other terms (unpaid at the old price, say): that
+        // booking is where to pay or cancel it.
+        this.finish(e.bookingId, e.message, e.message)
+        return
+      }
       if (e instanceof ApiError && e.code === 'price_changed') {
         const { payWith } = this.data
         await this.load()
