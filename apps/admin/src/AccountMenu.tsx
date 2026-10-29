@@ -2,7 +2,7 @@ import type { StaffDto } from '@rs/shared'
 import { useCallback, useRef, useState } from 'react'
 import { LockOnIcon, LogoutIcon, UserCircleIcon } from 'tdesign-icons-react'
 import { Button, Dialog, Input, MessagePlugin, Popup } from 'tdesign-react'
-import { api, RequestError, setToken } from './api'
+import { api, setToken } from './api'
 import { Field } from './Field'
 import { attempt, useSubmitting } from './hooks'
 
@@ -188,8 +188,6 @@ export function ReLogin({ me, onDone }: { me: StaffDto; onDone: (ok: boolean) =>
       onDone(true)
     } catch (e) {
       void MessagePlugin.error((e as Error).message)
-      // Deactivated meanwhile: no password brings this page back.
-      if (e instanceof RequestError && e.code === 'account_disabled') onDone(false)
     } finally {
       setBusy(false)
     }
