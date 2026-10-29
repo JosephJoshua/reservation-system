@@ -236,7 +236,7 @@ describe('invoice queue', () => {
 
     expect(entries(h).at(-1)).toMatchObject({
       action: 'invoice.issue',
-      summary: '订单「10 次课」开票 ¥1800',
+      summary: '订单「10 次课」开票 ¥1,800',
       amount: 180000,
       studentId: 1,
     })

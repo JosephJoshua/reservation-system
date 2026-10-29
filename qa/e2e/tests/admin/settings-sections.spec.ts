@@ -83,6 +83,8 @@ test('首页内容 saves the notice and 预约须知 with the bar', async ({ pag
   await hours.fill((await hours.inputValue()) === '09:00-21:30' ? '09:00-21:00' : '09:00-21:30')
   await bar(page).getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已保存').first()).toBeVisible()
+  // Saved once the settings load again and the bar goes.
+  await expect(bar(page)).toHaveCount(0)
   await page.goto('./#/banners')
   await expect(notice).toHaveValue(`公告${run}`)
 })

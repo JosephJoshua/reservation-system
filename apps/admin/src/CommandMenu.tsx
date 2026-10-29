@@ -292,7 +292,7 @@ export function CommandMenu({
         placement="top"
         top="12vh"
         width={560}
-        className="command-menu"
+        className="command-menu own-close"
         destroyOnClose
         // Not the Esc that ends composing a character, which only leaves the input method.
         closeOnEscKeydown={false}

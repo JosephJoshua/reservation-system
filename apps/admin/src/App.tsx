@@ -114,14 +114,27 @@ function currentPage(): PageKey {
   }
   // The first part names the page, as in `#/students/12`.
   const key = window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] ?? ''
-  return key in pages ? (key as PageKey) : 'overview'
+  if (key in pages) return key as PageKey
+  // An address of no page, as from a mistyped link, is put right to the 概览 shown.
+  if (key) {
+    history.replaceState(history.state, '', '#/overview')
+    window.dispatchEvent(new Event(SHOW_SECTION))
+  }
+  return 'overview'
 }
 
-/** Whose login `token` is, or null when it can't be told. */
+/** Whose login `token` is, or null when it can't be told, such as with no answer in 5 seconds. */
 function whoIs(token: string): Promise<StaffDto | null> {
-  return fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
+  // Not AbortSignal.timeout, which older Safari lacks.
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), 5000)
+  return fetch('/api/admin/me', {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: abort.signal,
+  })
     .then((res) => (res.ok ? (res.json() as Promise<StaffDto>) : null))
     .catch(() => null)
+    .finally(() => clearTimeout(timer))
 }
 
 export function App() {
@@ -133,6 +146,8 @@ export function App() {
   const phone = useIsPhone()
   // Who is signed in, once known, for logging in again over the page.
   const signedIn = useRef<StaffDto | null>(null)
+  // Counts this tab's logins and logouts, so work begun in one session can tell it has ended.
+  const session = useRef(0)
   // The session ended while working: asks for the password over the page. `header` and `other`
   // say why when it was another tab, and what the other button does instead of 换个账号登录.
   const [relogin, setRelogin] = useState<{
@@ -165,6 +180,7 @@ export function App() {
     if (getToken() === ownToken.current) setToken(null)
     ownToken.current = null
     signedIn.current = null
+    session.current++
     setAuthed(false)
     setNotice(why)
   }
@@ -176,21 +192,22 @@ export function App() {
   }
 
   /**
-   * Another tab logged in as `now`, not `me` this tab was working as: asks whether to log in
-   * again as `me`, keeping what is not saved, or go on as `now`. Replaces an open question, such
-   * as after that tab first logged out, and answers whatever waited on it.
+   * Another tab logged in as `now`, not `me` this tab was working as, or as someone this tab
+   * could not tell (null): asks whether to log in again as `me`, keeping what is not saved, or go
+   * on as the new login. Replaces an open question, such as after that tab first logged out, and
+   * answers whatever waited on it.
    */
-  const askSwitch = (me: StaffDto, now: StaffDto) => {
+  const askSwitch = (me: StaffDto, now: StaffDto | null) => {
     const before = pending.current
     setRelogin({
       me,
-      header: `其他标签页登录了${now.name}的账号`,
+      header: now ? `其他标签页登录了${now.name}的账号` : '其他标签页重新登录了',
       done: (ok) => {
         if (before) before.done(ok)
         else setRelogin(null)
       },
       other: {
-        label: `以${now.name}继续`,
+        label: now ? `以${now.name}继续` : '以新登录继续',
         run: async () => {
           if (!(await confirmLeave())) return
           takeLeave()
@@ -354,13 +371,30 @@ export function App() {
     if (!me || !hasUnsaved()) return follow()
     // Nothing goes out as the new login until it is known whose it is.
     holdRequests()
-    const now = await whoIs(token)
     // Changed again meanwhile, or asked already: the later change or the open question decides.
-    if (getToken() !== token || pending.current) return
-    if (!now || now.id === me.id) {
+    const settled = () => getToken() !== token || !!pending.current
+    // This tab logged out, or in again, meanwhile: what was held belonged to that session.
+    // Not the account object, which each reload of who is signed in replaces.
+    const started = session.current
+    const left = () => session.current !== started
+    let now = await whoIs(token)
+    // Not told, as on a network blip: tried again a moment later, then asked.
+    for (const wait of [1000, 3000]) {
+      if (now || settled() || left()) break
+      await new Promise((resolve) => setTimeout(resolve, wait))
+      if (settled() || left()) break
+      now = await whoIs(token)
+    }
+    if (left()) {
+      if (!pending.current) releaseRequests(false)
+      return
+    }
+    if (settled()) return
+    if (now?.id === me.id) {
       releaseRequests(true)
       return follow()
     }
+    // Someone else, or not known whom: changes held meanwhile are never sent as them unasked.
     askSwitch(me, now)
   }
 
@@ -390,6 +424,7 @@ export function App() {
           notice={notice}
           onDone={() => {
             ownToken.current = getToken()
+            session.current++
             setAuthed(true)
             setNotice(undefined)
           }}
@@ -584,8 +619,12 @@ function SignedInApp({
               <AccountMenu me={me.data} onLogout={onLogout} />
             </span>
           </header>
-          {/* Typing in the page's dialogs counts as unsaved when leaving the page. */}
-          <main className="admin-content" onInputCapture={(e) => markTyped(e.target)}>
+          {/* Typing or a choice in the page's dialogs counts as unsaved when leaving the page. */}
+          <main
+            className="admin-content"
+            onInputCapture={(e) => markTyped(e.nativeEvent)}
+            onClickCapture={(e) => markTyped(e.nativeEvent)}
+          >
             {Page ? (
               <Page key={account} />
             ) : me.error ? (
@@ -595,8 +634,13 @@ function SignedInApp({
             )}
           </main>
           {lessonId && allowed.includes('lessons') && (
-            // Typing in the lesson's dialogs counts as unsaved when it closes or the page changes.
-            <div className="lesson-scope" onInputCapture={(e) => markTyped(e.target, 'lesson')}>
+            // Typing or a choice in the lesson's dialogs counts as unsaved when it closes or the
+            // page changes.
+            <div
+              className="lesson-scope"
+              onInputCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
+              onClickCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
+            >
               <LessonDrawer key={lessonId} id={lessonId} />
             </div>
           )}

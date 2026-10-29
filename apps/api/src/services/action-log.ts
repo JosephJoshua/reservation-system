@@ -1,6 +1,6 @@
 import {
   type ActionLogEntryDto,
-  formatYuan,
+  formatMoney,
   type StaffAction,
   venueDateKey,
   venueParts,
@@ -191,7 +191,8 @@ export function venueSpan(startsAt: Date, endsAt: Date, now: Date) {
     : `${venueMoment(startsAt, now)} 至 ${venueMoment(endsAt, now)}`
 }
 
-export const yuan = (fen: number) => `¥${formatYuan(fen)}`
+/** ¥2,800, as the admin shows money. */
+export const yuan = formatMoney
 
 /** What a venue or coach cancel gave back, as "，退款 ¥200" for its log summary. */
 export function cancelOutcome(tx: Q, bookingId: number) {

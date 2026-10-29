@@ -34,7 +34,7 @@ export const staffActionLabels = {
   'session.cancel': '取消小班课',
   'feedback.hide': '隐藏点评',
   'feedback.show': '恢复点评',
-  'package.sell': '线下售课时包',
+  'package.sell': '前台售卖课时包',
   'package.grant': '赠送课时',
   'package.extend': '延长有效期',
   'package.refund': '前台退课时包',
@@ -109,7 +109,7 @@ export const staffRoles = Object.keys(staffRoleLabels) as [StaffRole, ...StaffRo
 
 export const staffRoleHelp: Record<StaffRole, string> = {
   admin: '全部功能，包括员工、设置和价格',
-  front_desk: '排课、代约、签到、学员和线下售课时包',
+  front_desk: '排课、代约、签到、学员和前台售卖课时包',
   finance: '订单、退款、发票、报表和导出',
 }
 

@@ -328,8 +328,9 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
       visible
       width={800}
       header={`${coach.name} 的排班`}
-      // Stays open after a save, so it counts its own changes rather than what was typed.
-      className="own-leave-guard"
+      // Stays open after a save, so it counts its own changes rather than what was typed; Esc
+      // and the backdrop ask before dropping them.
+      className={dirty ? 'own-leave-guard has-unsaved' : 'own-leave-guard'}
       confirmBtn={{ content: '保存每周时间', disabled: !!invalid || !hours || !dirty }}
       cancelBtn="关闭"
       onConfirm={save}

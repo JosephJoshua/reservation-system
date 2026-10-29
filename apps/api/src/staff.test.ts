@@ -307,7 +307,7 @@ describe('action log', () => {
       ['staff.create', '管理员'],
     ])
     expect(entries[2]).toMatchObject({
-      summary: '售出课时包「10 次课」，现金 ¥1800',
+      summary: '售出课时包「10 次课」，现金 ¥1,800',
       amount: 180000,
       student: { id: 1 },
       targetKind: 'package',
@@ -342,7 +342,7 @@ describe('action log', () => {
       log(h)
         .map((e) => e.summary)
         .slice(-2),
-    ).toEqual(['同意课时包「10 次课」退款 ¥1500', '课时包「10 次课」线下退还 ¥1500'])
+    ).toEqual(['同意课时包「10 次课」退款 ¥1,500', '课时包「10 次课」线下退还 ¥1,500'])
     expect(log(h).filter((e) => e.action.startsWith('refund.'))).toHaveLength(2)
   })
 

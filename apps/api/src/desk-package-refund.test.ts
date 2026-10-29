@@ -78,7 +78,7 @@ describe('refunding a package sold at the front desk', () => {
     ])
     const logged = h.db.select().from(actionLog).where(eq(actionLog.action, 'package.refund')).all()
     expect(logged).toHaveLength(1)
-    expect(logged[0]?.summary).toBe('课时包「十节课」前台退款 ¥1500')
+    expect(logged[0]?.summary).toBe('课时包「十节课」前台退款 ¥1,500')
     // Counted as money back in the month, as other offline refunds are.
     const month = monthlyReport(h.deps, '2026-10')
     expect(month.revenue).toMatchObject({ refunded: 150000 })
@@ -88,6 +88,8 @@ describe('refunding a package sold at the front desk', () => {
       })
     ).text()
     expect(csv).toContain('前台退课时包')
+    const [listed] = (await h.call('GET', '/admin/refunds', undefined, admin)).json
+    expect(listed).toMatchObject({ package: { lessonsRemaining: 0 }, lessonsRefunded: 10 })
     expect(csv).toContain('线下（现金）')
     expect((await h.call('DELETE', `/admin/students/${studentId}`, undefined, admin)).status).toBe(
       204,
