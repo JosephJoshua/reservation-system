@@ -12,6 +12,7 @@ import {
   packages,
   refunds,
   slots,
+  students as studentRows,
 } from './db/schema'
 import { notifyCoaches } from './services/coach-notices'
 import { applyPayment } from './services/orders'
@@ -251,11 +252,56 @@ describe('scheduling sessions', () => {
     const admin = await h.admin()
     const res = await schedule(h, admin, { lessonTypeId: kids.id, coachId: coach.id, capacity: 2 })
     expect(res.status).toBe(400)
-    expect(res.json.error.message).toBe('人数需在 3 到 30 之间')
+    expect(res.json.error.message).toBe('人数需在 3 到 4 之间')
     const id = await session(h, admin, kids.id, coach.id)
     const patch = await h.call('PATCH', `/admin/slots/${id}`, { capacity: 2 }, admin)
     expect(patch.status).toBe(400)
     expect(patch.json.error.code).toBe('invalid_capacity')
+  })
+
+  it("keeps seats within the class's 上课人数 and schedules active classes only", async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const over = await schedule(h, admin, { lessonTypeId: kids.id, coachId: coach.id, capacity: 5 })
+    expect([over.status, over.json.error.message]).toEqual([400, '人数需在 2 到 4 之间'])
+    const id = await session(h, admin, kids.id, coach.id)
+    const raised = await h.call('PATCH', `/admin/slots/${id}`, { capacity: 5 }, admin)
+    expect([raised.status, raised.json.error.code]).toEqual([400, 'invalid_capacity'])
+    expect(h.db.select().from(slots).where(eq(slots.id, id)).get()?.capacity).toBe(4)
+    h.db.update(lessonTypes).set({ active: false }).where(eq(lessonTypes.id, kids.id)).run()
+    const off = await schedule(h, admin, { lessonTypeId: kids.id, coachId: coach.id, hour: 14 })
+    expect([off.status, off.json.error.code]).toEqual([404, 'not_found'])
+    // A session already on can still change its seats.
+    expect((await h.call('PATCH', `/admin/slots/${id}`, { capacity: 3 }, admin)).status).toBe(204)
+    expect((await h.call('PATCH', `/admin/slots/${id}`, { capacity: 4 }, admin)).status).toBe(204)
+  })
+
+  it('keeps a session bigger than its class has since become editable', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h, { capacity: 6 })
+    const admin = await h.admin()
+    const made = await schedule(h, admin, { lessonTypeId: kids.id, coachId: coach.id, capacity: 6 })
+    const id = made.json.ids[0] as number
+    // The class is made smaller; the session keeps its 6 seats.
+    const put = await h.call(
+      'PUT',
+      `/admin/lesson-types/${kids.id}`,
+      { name: kids.name, durationMinutes: 60, price: kids.price, capacity: 4 },
+      admin,
+    )
+    expect(put.status).toBe(200)
+    expect(h.db.select().from(slots).where(eq(slots.id, id)).get()?.capacity).toBe(6)
+    const [a, b, c, d, e] = await students(h, 'a', 'b', 'c', 'd', 'e')
+    for (const t of [a, b, c, d, e]) await seat(h, t, id, kids.id)
+    // Up to the 6 it has, never below the 5 booked; not above.
+    const patch = (capacity: number) => h.call('PATCH', `/admin/slots/${id}`, { capacity }, admin)
+    expect((await patch(7)).json.error.message).toBe('人数需在 2 到 6 之间')
+    expect((await patch(4)).json.error.code).toBe('capacity_below_booked')
+    expect((await patch(6)).status).toBe(204)
+    expect((await patch(5)).status).toBe(204)
+    // Lowered to the 5 booked, it goes back no further than the class's 4 allow, which is 5.
+    expect((await patch(6)).json.error.message).toBe('人数需在 2 到 5 之间')
   })
 
   it('refuses a time with a booked lesson, another session, a wrong length or coach', async () => {
@@ -366,6 +412,48 @@ describe('booking seats', () => {
         seatsLeft: 1,
       }),
     ])
+  })
+
+  it('lists sessions of classes the student can see only', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const inner = h.db
+      .insert(lessonTypes)
+      .values({ name: '内部小班', durationMinutes: 60, price: 8000, capacity: 4, adminOnly: true })
+      .returning()
+      .get()
+    h.db.insert(coachLessonTypes).values({ coachId: coach.id, lessonTypeId: inner.id }).run()
+    const admin = await h.admin()
+    const open = await session(h, admin, kids.id, coach.id, 10)
+    const hidden = await session(h, admin, inner.id, coach.id, 14)
+    const t = await h.student('a')
+    const tester = await h.student('b')
+    h.db.update(studentRows).set({ tester: true }).where(eq(studentRows.id, 2)).run()
+    const ids = async (token: string, q = '') =>
+      (await h.call('GET', `/slots?date=2026-10-26${q}`, undefined, token)).json.map(
+        (s: { id: number }) => s.id,
+      )
+    expect(await ids(t)).toEqual([open])
+    expect(await ids(tester)).toEqual([open, hidden])
+    const asked = await h.call(
+      'GET',
+      `/slots?date=2026-10-26&lessonTypeId=${inner.id}`,
+      undefined,
+      t,
+    )
+    expect([asked.status, asked.json.error.code]).toEqual([404, 'not_found'])
+    expect(
+      (await h.call('GET', `/slots/open-days?lessonTypeId=${inner.id}`, undefined, t)).json,
+    ).toEqual([])
+    expect((await h.call('GET', '/slots/open-days', undefined, t)).json).toEqual(['2026-10-26'])
+
+    // A class taken off: its sessions go from the list, but a seat already held can still move.
+    const mine = await seat(h, t, open, kids.id)
+    const other = await session(h, admin, kids.id, coach.id, 16)
+    h.db.update(lessonTypes).set({ active: false }).where(eq(lessonTypes.id, kids.id)).run()
+    expect(await ids(t)).toEqual([])
+    expect((await h.call('GET', '/slots/open-days', undefined, t)).json).toEqual([])
+    expect(await ids(t, `&moving=${mine}`)).toEqual([open, other])
   })
 
   it('hides sessions of a length the class no longer has', async () => {
@@ -497,7 +585,7 @@ describe('booking seats', () => {
 
   it('frees a seat on cancel for the next student', async () => {
     const h = setup()
-    const { coach, kids } = seedGroup(h, { capacity: 2 })
+    const { coach, kids } = seedGroup(h)
     const admin = await h.admin()
     const id = await session(h, admin, kids.id, coach.id, 10)
     h.db.update(slots).set({ capacity: 2 }).where(eq(slots.id, id)).run()
@@ -555,7 +643,7 @@ describe('booking seats', () => {
 describe('late payments', () => {
   it('confirms a seat whose hold ran out while the session has room, and refunds when full', async () => {
     const h = setup()
-    const { coach, kids } = seedGroup(h, { capacity: 2 })
+    const { coach, kids } = seedGroup(h)
     const admin = await h.admin()
     const id = await session(h, admin, kids.id, coach.id)
     h.db.update(slots).set({ capacity: 2 }).where(eq(slots.id, id)).run()
@@ -921,7 +1009,7 @@ describe('calling off a session', () => {
 describe('session capacity', () => {
   it('never goes below the students booked, and renumbers seats when lowered', async () => {
     const h = setup()
-    const { coach, kids } = seedGroup(h)
+    const { coach, kids } = seedGroup(h, { capacity: 6 })
     const admin = await h.admin()
     const id = await session(h, admin, kids.id, coach.id)
     const tokens = await students(h, 'a', 'b', 'c')
@@ -970,7 +1058,7 @@ describe('session capacity', () => {
 describe('one lesson for 课程详情', () => {
   it('shows the session, its seats, its feedback and what was done to it', async () => {
     const h = setup()
-    const { coach, kids } = seedGroup(h)
+    const { coach, kids } = seedGroup(h, { capacity: 6 })
     const admin = await h.admin()
     const slotId = await session(h, admin, kids.id, coach.id)
     const other = await session(h, admin, kids.id, coach.id, 14)

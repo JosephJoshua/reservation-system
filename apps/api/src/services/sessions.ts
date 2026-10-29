@@ -55,9 +55,9 @@ export function createSessions(tx: Q, now: Date, input: NewSessions) {
     .from(lessonTypes)
     .where(eq(lessonTypes.id, input.lessonTypeId))
     .get()
-  if (!lessonType) throw notFound('课程')
+  if (!lessonType?.active) throw notFound('课程')
   if (!isGroup(lessonType)) throw new ApiError(409, 'not_group', '请选择小班课课程')
-  assertCapacity(input.capacity, lessonType.minStudents)
+  assertCapacity(input.capacity, lessonType)
   const ids: number[] = []
   for (const s of input.sessions) {
     const coach = tx.select().from(coaches).where(eq(coaches.id, s.coachId)).get()
@@ -115,11 +115,20 @@ export function createSessions(tx: Q, now: Date, input: NewSessions) {
   return { ids, lessonType }
 }
 
-/** A session takes 2 to 30 students, and never fewer than its class needs to go ahead. */
-function assertCapacity(capacity: number, minStudents: number | null) {
-  const least = Math.max(2, minStudents ?? 0)
-  if (capacity < least || capacity > MAX_CAPACITY) {
-    throw new ApiError(400, 'invalid_capacity', `人数需在 ${least} 到 ${MAX_CAPACITY} 之间`)
+/**
+ * A session takes at least 2 students, never fewer than its class needs to go ahead, and no more
+ * than the class's 上课人数, or `kept` when an existing session already takes more (the class
+ * may have been made smaller since).
+ */
+function assertCapacity(
+  capacity: number,
+  lessonType: { capacity: number; minStudents: number | null },
+  kept = 0,
+) {
+  const least = Math.max(2, lessonType.minStudents ?? 0)
+  const most = Math.min(MAX_CAPACITY, Math.max(lessonType.capacity, kept))
+  if (capacity < least || capacity > most) {
+    throw new ApiError(400, 'invalid_capacity', `人数需在 ${least} 到 ${most} 之间`)
   }
 }
 
@@ -129,13 +138,14 @@ export function setSessionCapacity(tx: Q, slotId: number, capacity: number) {
   if (!slot) throw notFound('时段')
   if (slot.lessonTypeId === null) throw new ApiError(409, 'not_group', '只有小班课可以修改人数')
   const lessonType = tx
-    .select({ minStudents: lessonTypes.minStudents })
+    .select({ capacity: lessonTypes.capacity, minStudents: lessonTypes.minStudents })
     .from(lessonTypes)
     .where(eq(lessonTypes.id, slot.lessonTypeId))
     .get()
-  assertCapacity(capacity, lessonType?.minStudents ?? null)
+  if (!lessonType) throw notFound('课程')
   const seats = takenSeats(tx, slot.id)
   const booked = seats.length
+  assertCapacity(capacity, lessonType, Math.max(slot.capacity, booked))
   if (capacity < booked) {
     throw new ApiError(
       409,

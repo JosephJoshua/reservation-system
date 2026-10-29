@@ -1,4 +1,5 @@
 import {
+  CONFLICT_REASONS,
   clashes,
   type DayPlanDto,
   endsSameVenueDay,
@@ -161,6 +162,22 @@ export function Schedule() {
     })
   }
 
+  /** Keeps a lesson that 排班 no longer covers where it is, agreed with the coach. */
+  const keepOutside = async (c: ScheduleConflictDto) => {
+    if (
+      await attempt(
+        () =>
+          api('POST', `/admin/bookings/${c.bookingId}/move`, {
+            coachId: c.coachId,
+            startsAt: c.startsAt,
+            anyTime: true,
+          }),
+        '已保留',
+      )
+    )
+      reload()
+  }
+
   const tables = day?.tables ?? null
   const use = new Map((day?.tableUse ?? []).map((u) => [u.startsAt, u.used]))
   const pending = conflicts.data ?? []
@@ -221,7 +238,7 @@ export function Schedule() {
           className="board-alert"
           message={
             <div>
-              <span>有 {pending.length} 节课在教练请假或闭馆时间里，请改约或取消。</span>
+              <span>有 {pending.length} 节课需要改约或取消。</span>
               <Button
                 variant="text"
                 theme="primary"
@@ -238,8 +255,21 @@ export function Schedule() {
                       onClick={() => setDate(venueDateKey(new Date(c.startsAt)))}
                     >
                       {spanText(c.startsAt, c.endsAt)} {c.coachName} {c.title}
-                      {c.group && '（小班课）'}
+                      {c.group && '（小班课）'} · {CONFLICT_REASONS[c.reason]}
                     </Button>
+                    {c.reason === 'outside' && c.bookingId !== null && (
+                      <Popconfirm
+                        theme="warning"
+                        content="确认教练会在这个时间上课？课程保留，不再提示。"
+                        confirmBtn="已确认"
+                        cancelBtn="返回"
+                        onConfirm={() => keepOutside(c)}
+                      >
+                        <Button variant="text" theme="primary">
+                          已与教练确认
+                        </Button>
+                      </Popconfirm>
+                    )}
                   </div>
                 ))}
             </div>
@@ -575,6 +605,8 @@ function CreateSessions({
   }, [taught, lessonTypeId])
   const [capacity, setCapacity] = useState<number>(lessonType?.capacity ?? 6)
   const least = Math.max(2, lessonType?.minStudents ?? 0)
+  // No more than the class's 上课人数.
+  const most = lessonType?.capacity ?? 30
   const plan = usePlan(initialFrom, '10:00')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
@@ -650,15 +682,15 @@ function CreateSessions({
           <PlanFields plan={plan} />
           <Field
             label="每节人数"
-            help={`${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时整节自动取消并退款。` : ''}与该教练已有的课重叠、或在请假和闭馆里的时间不能排`}
+            help={`最多 ${most} 人。${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时整节自动取消并退款。` : ''}与该教练已有的课重叠、或在请假和闭馆里的时间不能排`}
           >
             <InputNumber
               theme="normal"
               value={capacity}
               min={least}
-              max={30}
+              max={most}
               suffix="人"
-              onChange={(v) => setCapacity(Math.max(least, Math.min(30, Number(v) || least)))}
+              onChange={(v) => setCapacity(Math.max(least, Math.min(most, Number(v) || least)))}
             />
           </Field>
         </div>
@@ -856,7 +888,12 @@ function SessionDialog({
   const full = slot.bookings.length >= slot.capacity || (!slot.bookings.length && slot.tableFull)
   // Never below the students already in, so nobody loses a seat, nor below the class minimum.
   const minSeats = Math.max(2, slot.bookings.length, lessonType?.minStudents ?? 0)
-  const capacityOk = Number.isInteger(capacity) && capacity >= minSeats && capacity <= 30
+  // No more than the class's 上课人数, or what the session already takes if that is more.
+  const maxSeats = Math.min(
+    30,
+    Math.max(lessonType?.capacity ?? 30, slot.capacity, slot.bookings.length),
+  )
+  const capacityOk = Number.isInteger(capacity) && capacity >= minSeats && capacity <= maxSeats
 
   const patch = async (body: { open?: boolean; capacity?: number }, done: string) => {
     if (
@@ -1025,7 +1062,7 @@ function SessionDialog({
                 theme="normal"
                 value={capacity}
                 min={minSeats}
-                max={30}
+                max={maxSeats}
                 suffix="人"
                 status={capacityOk ? 'default' : 'error'}
                 onChange={(v) => setCapacity(Number(v) || 0)}
@@ -1039,7 +1076,11 @@ function SessionDialog({
                 保存
               </Button>
             </Space>
-            {!capacityOk && <span className="danger-text">人数需在 {minSeats} 到 30 之间</span>}
+            {!capacityOk && (
+              <span className="danger-text">
+                人数需在 {minSeats} 到 {maxSeats} 之间
+              </span>
+            )}
           </>
         )}
 

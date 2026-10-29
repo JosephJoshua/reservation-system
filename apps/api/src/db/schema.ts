@@ -309,6 +309,9 @@ export const bookings = sqliteTable(
     coachToldCancelledAt: instant('coach_told_cancelled_at'),
     // Set when the front desk booked the lesson for the student.
     bookedByStaffId: integer('booked_by_staff_id').references(() => staff.id),
+    // The venue put it outside the coach's 排班 after agreeing with the coach, so it is not a lesson
+    // to sort out.
+    outsideAgreed: integer('outside_agreed', { mode: 'boolean' }).notNull().default(false),
     // The coach and time the coach was last told about, so a moved lesson is announced to them.
     coachToldCoachId: integer('coach_told_coach_id'),
     coachToldStartsAt: instant('coach_told_starts_at'),

@@ -32,7 +32,7 @@ import {
 import { priceFor } from './catalog'
 import { coachNowKnows } from './coach-notices'
 import { moveSummaries } from './move-history'
-import { openTimes, type SlotTarget, targetSlot } from './schedule'
+import { assertNotOff, openTimes, outsideHours, type SlotTarget, targetSlot } from './schedule'
 import { ruleBook } from './settings'
 import { queueStudentNotice } from './student-notices'
 import { assertTableFree } from './tables'
@@ -156,7 +156,8 @@ function checkStudentMove(
  * another session of the same class. The old seat is freed and the new one taken
  * in one IMMEDIATE transaction, and the unique index on live seats refuses a seat someone else
  * took meanwhile. The payment or package lesson stays with the booking. Moving to
- * the time it already has is a no-op, so a repeated request does nothing more.
+ * the time it already has is a no-op, so a repeated request does nothing more, except that the
+ * venue with `anyTime` keeps a lesson now outside 排班 where it is, as agreed ('agreed').
  */
 export function moveBooking(
   deps: Deps,
@@ -164,7 +165,7 @@ export function moveBooking(
   target: SlotTarget,
   by: Mover,
   options: { anyTime?: boolean } = {},
-): boolean {
+): boolean | 'agreed' {
   const now = deps.now()
   const student = typeof by === 'object' && 'studentId' in by ? by.studentId : null
   const coach = typeof by === 'object' && 'coachId' in by ? by.coachId : null
@@ -192,7 +193,23 @@ export function moveBooking(
         : row.inSession === null &&
           at.coachId === row.coachId &&
           at.startsAt.getTime() === booking.startsAt.getTime()
-    if (here && booking.status === 'confirmed') return false
+    if (here && booking.status === 'confirmed') {
+      // The venue keeping a lesson where it is although 排班 no longer covers it: agreed with the
+      // coach, so it leaves the lessons to sort out.
+      if (
+        by === 'venue' &&
+        options.anyTime &&
+        row.inSession === null &&
+        booking.startsAt > now &&
+        !booking.outsideAgreed &&
+        outsideHours(tx, row.coachId, booking)
+      ) {
+        assertNotOff(tx, row.coachId, booking)
+        tx.update(bookings).set({ outsideAgreed: true }).where(eq(bookings.id, booking.id)).run()
+        return 'agreed'
+      }
+      return false
+    }
     if (booking.status !== 'confirmed') {
       throw new ApiError(409, 'not_movable', '只有预约成功的课程可以改约')
     }
@@ -229,6 +246,12 @@ export function moveBooking(
       checkStudentMove(tx, row, slot, pkg, rules, now)
     } else if (!priceFor(tx, slot.coachId, lessonType, now)) {
       throw new ApiError(409, 'coach_not_teaching', '该教练不教这门课')
+    } else if (
+      coach !== null &&
+      bookingWindowError(slot.startsAt, now, ruleBook(tx).of(lessonType.id)) === 'too_far'
+    ) {
+      // A coach moves within the days students can book the lesson; only the venue goes further.
+      throw new ApiError(409, 'too_far', moveWindowMessages.too_far)
     }
     // A package lesson is taught while the package is valid. Only the venue may decide otherwise,
     // say when it moved a lesson it could not give in time.
@@ -257,6 +280,12 @@ export function moveBooking(
           seat,
           startsAt: slot.startsAt,
           endsAt: slot.endsAt,
+          // Only a venue move outside 排班 is agreed with the coach; any other move is inside it.
+          outsideAgreed:
+            by === 'venue' &&
+            !!options.anyTime &&
+            slot.lessonTypeId === null &&
+            outsideHours(tx, slot.coachId, slot),
           ...coachKnows,
         })
         .where(
@@ -296,7 +325,8 @@ export function moveBooking(
 
 /**
  * Times on some venue dates a coach can move one of their private lessons to: their own 排班's
- * open start times for the lesson's length, other than the time it has now.
+ * open start times for the lesson's length within the days it can be booked ahead, other than the
+ * time it has now.
  */
 export function coachMoveTimes(
   deps: Deps,
@@ -308,14 +338,20 @@ export function coachMoveTimes(
   const row = bookingRow(db, bookingId)
   if (!row || row.coachId !== coachId || row.inSession !== null) throw notFound('预约')
   const { booking } = row
+  const now = deps.now()
+  const rules = ruleBook(db).of(booking.lessonTypeId)
   return openTimes(db, {
     coachIds: [coachId],
     dates,
     minutes: (booking.endsAt.getTime() - booking.startsAt.getTime()) / 60_000,
-    notBefore: deps.now(),
+    notBefore: now,
     except: booking.id,
   })
-    .filter((t) => t.startsAt.getTime() !== booking.startsAt.getTime())
+    .filter(
+      (t) =>
+        t.startsAt.getTime() !== booking.startsAt.getTime() &&
+        bookingWindowError(t.startsAt, now, rules) !== 'too_far',
+    )
     .map((t) => ({
       coachId: t.coachId,
       startsAt: t.startsAt.toISOString(),
