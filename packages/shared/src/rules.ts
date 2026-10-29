@@ -159,6 +159,26 @@ export function validityEnd(from: Date, days: number): Date {
   return venueInstant(venueDateKey(new Date(from.getTime() + days * DAY)), 24 * 60)
 }
 
+/** What a package grants, as the student was shown it and as the package is made. */
+export interface PackageTerms {
+  lessonTypeId: number
+  /** Empty means every coach who teaches the lesson type. */
+  coachIds: number[]
+  lessonCount: number
+  validityDays: number
+}
+
+/** Whether two sets of package terms grant the same thing; coach order does not matter. */
+export function samePackageTerms(a: PackageTerms, b: PackageTerms): boolean {
+  const coaches = (ids: number[]) => [...new Set(ids)].sort((x, y) => x - y).join(',')
+  return (
+    a.lessonTypeId === b.lessonTypeId &&
+    a.lessonCount === b.lessonCount &&
+    a.validityDays === b.validityDays &&
+    coaches(a.coachIds) === coaches(b.coachIds)
+  )
+}
+
 interface Span {
   startsAt: Date
   endsAt: Date

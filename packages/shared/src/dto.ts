@@ -119,6 +119,8 @@ export interface BookingDto {
   capacity: number
   paidWith: 'order' | 'package'
   price: number
+  /** A payment WeChat Pay took that could not confirm the booking; staff sort it out. */
+  paymentIssue: 'open' | 'handled' | null
   /** Paid at the front desk, so any refund is handed back there. */
   paidOffline: boolean
   packageName: string | null

@@ -8,6 +8,7 @@ import {
   freeCancelDeadline,
   peakOverlap,
   rulesFor,
+  samePackageTerms,
   sameTerms,
   studentMoveError,
   tablesFor,
@@ -183,6 +184,20 @@ describe('endsSameVenueDay', () => {
     // 23:00 to 24:00 at the venue is 15:00 to 16:00 UTC.
     expect(endsSameVenueDay(at('2026-10-25T15:00:00Z'), at('2026-10-25T16:00:00Z'))).toBe(true)
     expect(endsSameVenueDay(at('2026-10-25T15:30:00Z'), at('2026-10-25T16:30:00Z'))).toBe(false)
+  })
+})
+
+describe('samePackageTerms', () => {
+  const terms = { lessonTypeId: 1, coachIds: [3, 2], lessonCount: 10, validityDays: 90 }
+  it('ignores coach order', () => {
+    expect(samePackageTerms(terms, { ...terms, coachIds: [2, 3] })).toBe(true)
+  })
+  it('notices any change in what the package grants', () => {
+    expect(samePackageTerms(terms, { ...terms, lessonCount: 5 })).toBe(false)
+    expect(samePackageTerms(terms, { ...terms, validityDays: 7 })).toBe(false)
+    expect(samePackageTerms(terms, { ...terms, lessonTypeId: 2 })).toBe(false)
+    expect(samePackageTerms(terms, { ...terms, coachIds: [2] })).toBe(false)
+    expect(samePackageTerms(terms, { ...terms, coachIds: [] })).toBe(false)
   })
 })
 

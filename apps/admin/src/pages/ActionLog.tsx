@@ -28,9 +28,16 @@ const groups: { label: string; actions: StaffAction[] }[] = [
   { label: '课时包', actions: ['package.sell', 'package.grant', 'package.extend'] },
   {
     label: '退款',
-    actions: ['refund.approve', 'refund.reject', 'refund.retry', 'refund.paid_back'],
+    actions: [
+      'refund.approve',
+      'refund.reject',
+      'refund.retry',
+      'refund.synced',
+      'refund.paid_back',
+    ],
   },
   { label: '发票', actions: ['invoice.issue', 'invoice.reject', 'invoice.refund_seen'] },
+  { label: '订单', actions: ['order.anomaly_handled'] },
   {
     label: '价格',
     actions: [

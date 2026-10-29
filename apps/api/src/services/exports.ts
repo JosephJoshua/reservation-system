@@ -1,4 +1,5 @@
 import {
+  formatYuan,
   invoiceStatusLabels,
   invoiceTitleKindLabels,
   offlineMethodLabels,
@@ -349,6 +350,16 @@ function channel(o: { provider: 'wechat' | 'offline'; offlineMethod: string | nu
   return method ? `线下（${offlineMethodLabels[method]}）` : '线下'
 }
 
+/** A payment flagged for staff, with what was charged and what staff did about it. */
+function anomalyText(o: typeof orders.$inferSelect) {
+  if (!o.anomaly) return ''
+  const what =
+    o.anomaly === 'refunded'
+      ? '付款已在微信支付退回'
+      : `实付金额不符（实付 ${o.anomalyAmount === null ? '未知' : `¥${formatYuan(o.anomalyAmount)}`}）`
+  return o.anomalyHandledAt ? `${what}；已处理：${o.anomalyNote ?? ''}` : `${what}；待处理`
+}
+
 function ordersTable(tx: Q, q: ExportQuery): Table {
   const { from, to } = range(q)
   const rows = tx
@@ -382,6 +393,7 @@ function ordersTable(tx: Q, q: ExportQuery): Table {
       '支付渠道',
       '微信支付单号',
       '状态',
+      '支付异常',
       '备注',
     ],
     rows: rows.map((o) => [
@@ -397,6 +409,7 @@ function ordersTable(tx: Q, q: ExportQuery): Table {
       channel(o),
       o.transactionId ?? '',
       orderStatusText[o.status],
+      anomalyText(o),
       o.note,
     ]),
   }

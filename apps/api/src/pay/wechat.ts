@@ -138,12 +138,22 @@ export class WechatPayGateway implements PaymentGateway {
 
   parsePaymentNotification(headers: Headers, body: string): PaymentNotification {
     const data = this.decryptNotification<{
+      appid?: string
+      mchid?: string
       out_trade_no: string
       trade_state: string
       transaction_id?: string
       success_time?: string
       amount?: { total: number }
     }>(headers, body)
+    // Signed with this merchant's key, but for another app or merchant: not a payment of ours.
+    if (data.appid !== this.config.appId || data.mchid !== this.config.mchId) {
+      throw new GatewayError(
+        `payment for appid ${data.appid} mchid ${data.mchid}`,
+        'FOREIGN_NOTIFICATION',
+        400,
+      )
+    }
     return { outTradeNo: data.out_trade_no, order: mapTradeState(data) }
   }
 
@@ -233,8 +243,18 @@ export class WechatPayGateway implements PaymentGateway {
       throw new GatewayError(message, code, res.status)
     }
     if (text === '') return undefined as T
-    this.verify(res.headers, text)
-    return JSON.parse(text) as T
+    // WeChat Pay took the request (2xx), so it may have acted on it: an answer that cannot be
+    // trusted or read leaves the outcome unknown, never failed.
+    try {
+      this.verify(res.headers, text)
+      return JSON.parse(text) as T
+    } catch (e) {
+      throw new GatewayError(
+        `unreadable response: ${(e as Error).message}`,
+        'BAD_RESPONSE',
+        res.status,
+      )
+    }
   }
 }
 
@@ -250,14 +270,16 @@ function mapTradeState(res: {
   amount?: { total: number }
 }): OrderState {
   switch (res.trade_state) {
-    // REFUND means it was paid and later refunded, which our own refund rows track.
     case 'SUCCESS':
+    // REFUND means it was paid and later refunded. For an order already paid here our own refund
+    // rows track that; an order still unpaid here was refunded outside this system.
     case 'REFUND':
       return {
         state: 'paid',
         transactionId: res.transaction_id ?? '',
         paidAt: res.success_time ? new Date(res.success_time) : new Date(),
         amount: res.amount?.total ?? 0,
+        ...(res.trade_state === 'REFUND' ? { refunded: true as const } : {}),
       }
     case 'CLOSED':
     case 'REVOKED':
@@ -272,10 +294,13 @@ function mapRefund(res: RefundResponse): RefundState {
   switch (res.status) {
     case 'SUCCESS':
       return { status: 'succeeded', refundId: res.refund_id ?? '' }
-    case 'PROCESSING':
-      return { status: 'processing', refundId: res.refund_id ?? '' }
-    default:
+    case 'CLOSED':
       return { status: 'failed', reason: res.status }
+    case 'ABNORMAL':
+      return { status: 'processing', refundId: res.refund_id ?? '', abnormal: true }
+    default:
+      // PROCESSING, or a state added later: not settled, so keep asking.
+      return { status: 'processing', refundId: res.refund_id ?? '' }
   }
 }
 
