@@ -19,6 +19,7 @@ import {
   ruleOverrides,
   ruleShortLabels,
   ruleText,
+  SCHEDULE_STEP,
   type StaffRole,
   staffActions,
   staffRoleLabels,
@@ -264,7 +265,12 @@ const lessonTypeBody = z
   .object({
     name: z.string().trim().min(1).max(30),
     description: z.string().trim().max(500).default(''),
-    durationMinutes: z.number().int().min(15).max(480),
+    durationMinutes: z
+      .number()
+      .int()
+      .min(15)
+      .max(480)
+      .refine((m) => m % SCHEDULE_STEP === 0, `时长需为 ${SCHEDULE_STEP} 分钟的整数倍`),
     price: fen,
     isTrial: z.boolean().default(false),
     adminOnly: z.boolean().default(false),
