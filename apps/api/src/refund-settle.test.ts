@@ -1,4 +1,4 @@
-import { REFUND_PAID_TWICE, REFUND_UNDONE_AFTER_SETTLE } from '@rs/shared'
+import { REFUND_PAID_TWICE, REFUND_UNDONE_AFTER_SETTLE, REFUND_WECHAT_CONFIRMED } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it, vi } from 'vitest'
 import { actionLog, refunds } from './db/schema'
@@ -320,9 +320,10 @@ describe('a failed WeChat Pay refund settled outside the system', () => {
       status: 'succeeded',
       settledHow: 'platform',
       providerRefundId: 'wx-fixed',
-      failure: before?.failure,
+      failure: REFUND_WECHAT_CONFIRMED,
       updatedAt: before?.updatedAt,
     })
+    expect(before?.failure).toBe(ABNORMAL_NOTE)
   })
 
   it('settles one WeChat Pay reports as 退款异常 too', async () => {
@@ -563,8 +564,38 @@ describe('WeChat Pay reporting on a refund staff already settled', () => {
     expect(h.db.select().from(refunds).get()).toMatchObject({
       status: 'succeeded',
       providerRefundId: 'wx-fixed',
-      failure: null,
+      failure: REFUND_WECHAT_CONFIRMED,
     })
+    // The earlier CLOSED sent again, or any older report, is no news after the success.
+    settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
+    settleRefund(h.deps, outRefundNo, { status: 'processing', refundId: 'wx-1', abnormal: true })
+    expect(h.db.select().from(refunds).get()?.failure).toBe(REFUND_WECHAT_CONFIRMED)
+    expect(h.logs.filter((l) => l.message.includes('later reported not done'))).toHaveLength(1)
+    const csv = await refundsCsv(h)
+    expect(csv).toContain(`商户平台处理；已在商户平台处理；${REFUND_WECHAT_CONFIRMED}`)
+    expect(csv).not.toContain('微信支付退款失败')
+  })
+
+  it('says the refund changed when it is still to settle but changed during the query', async () => {
+    const h = setup()
+    const { admin, refundId } = await abnormalRefund(h)
+    vi.spyOn(h.gateway, 'queryRefund').mockImplementation(async () => {
+      // As a sweep that rewrote the note of a refund still stuck as 退款异常.
+      h.db.update(refunds).set({ failure: '其他说明' }).where(eq(refunds.id, refundId)).run()
+      return { status: 'processing', refundId: 'wx-1', abnormal: true }
+    })
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { how: 'platform', note: '已在商户平台处理' },
+      admin,
+    )
+    expect(res.json).toMatchObject({
+      status: 'processing',
+      settled: false,
+      message: '退款状态已变更，请刷新后查看',
+    })
+    expect(h.db.select().from(refunds).get()?.settledNote).toBeNull()
   })
 
   it('warns for a refund settled before warnings existed, and for one with no note', async () => {

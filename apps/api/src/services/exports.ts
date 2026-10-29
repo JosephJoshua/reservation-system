@@ -7,6 +7,7 @@ import {
   offlineMethodLabels,
   orderKindLabels,
   REFUND_SETTLE_WAYS,
+  REFUND_WECHAT_CONFIRMED,
   settledRefundWarning,
   toCsv,
   venueDateKey,
@@ -609,7 +610,7 @@ function refundsTable(tx: Q, q: ExportQuery): Table {
             r.settledHow && REFUND_SETTLE_WAYS[r.settledHow],
             r.settledNote,
             r.failure &&
-              (settledRefundWarning(r.failure)
+              (settledRefundWarning(r.failure) || r.failure === REFUND_WECHAT_CONFIRMED
                 ? r.failure
                 : r.failure === ABNORMAL_NOTE
                   ? '微信支付退款异常'

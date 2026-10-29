@@ -171,7 +171,12 @@ export function Refunds() {
             <Filter label="">
               <Checkbox
                 checked={f.abnormal === '1'}
-                onChange={(v) => filters.set({ abnormal: v ? '1' : '' })}
+                // 退款异常 are all 退款中, so the status follows.
+                onChange={(v) =>
+                  filters.set(
+                    v ? { abnormal: '1', check: '', status: 'processing' } : { abnormal: '' },
+                  )
+                }
               >
                 退款异常
               </Checkbox>
@@ -179,7 +184,10 @@ export function Refunds() {
             <Filter label="">
               <Checkbox
                 checked={f.check === '1'}
-                onChange={(v) => filters.set({ check: v ? '1' : '' })}
+                // 待核对 are all 已退款, so the status follows.
+                onChange={(v) =>
+                  filters.set(v ? { check: '1', abnormal: '', status: 'succeeded' } : { check: '' })
+                }
               >
                 待核对
               </Checkbox>

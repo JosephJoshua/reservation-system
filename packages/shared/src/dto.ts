@@ -126,6 +126,12 @@ export const REFUND_UNDONE_AFTER_SETTLE = {
   abnormal: '微信支付随后报告退款异常，请核对学员是否已收到退款',
 } as const
 
+/**
+ * The note on a refund staff put right 商户平台处理 once WeChat Pay reports it done: no warning,
+ * but it marks WeChat Pay's last word, so an older report sent again later is ignored.
+ */
+export const REFUND_WECHAT_CONFIRMED = '微信支付已报告退款成功'
+
 /** Failure notes on a settled refund that are warnings for staff to check. */
 export const REFUND_SETTLED_WARNINGS: readonly string[] = [
   REFUND_PAID_TWICE,

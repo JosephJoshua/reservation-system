@@ -1,6 +1,7 @@
 import {
   REFUND_PAID_TWICE,
   REFUND_UNDONE_AFTER_SETTLE,
+  REFUND_WECHAT_CONFIRMED,
   type RefundSettleWay,
   settledRefundWarning,
 } from '@rs/shared'
@@ -401,8 +402,9 @@ export async function settleFailedRefund(
 
 /**
  * WeChat Pay reports a refund done that staff had settled outside the system. Its refund id is
- * recorded. Settled 商户平台处理, that is most likely the same refund put right there, so a
- * warning that WeChat Pay had reported it closed or 退款异常 since is cleared; paid back
+ * recorded. Settled 商户平台处理, that is most likely the same refund put right there, so it is
+ * noted as confirmed (clearing a warning that WeChat Pay had reported it closed or 退款异常
+ * since); paid back
  * 线下另付, the money may have gone back twice, so staff are warned. Neither moves the refund's
  * time, which places it in a report month.
  */
@@ -426,12 +428,12 @@ function recordPaidTwice(deps: Deps, outRefundNo: string, refundId: string) {
   if (warned.changes > 0) deps.log('refund paid back by staff also made by wechat', { outRefundNo })
   deps.db
     .update(refunds)
-    .set({ failure: null })
+    .set({ failure: REFUND_WECHAT_CONFIRMED })
     .where(
       and(
         settled,
         eq(refunds.settledHow, 'platform'),
-        inArray(refunds.failure, Object.values(REFUND_UNDONE_AFTER_SETTLE)),
+        or(isNull(refunds.failure), ne(refunds.failure, REFUND_WECHAT_CONFIRMED)),
       ),
     )
     .run()
@@ -464,7 +466,15 @@ function recordUndoneAfterSettle(deps: Deps, outRefundNo: string, result: Refund
       ),
     )
     .get()
-  if (!row || row.failure === reported || settledRefundWarning(row.failure)) return
+  // A success is WeChat Pay's last word: anything after it is an older report sent again.
+  if (
+    !row ||
+    row.failure === reported ||
+    row.failure === REFUND_WECHAT_CONFIRMED ||
+    settledRefundWarning(row.failure)
+  ) {
+    return
+  }
   const warned = deps.db
     .update(refunds)
     .set({

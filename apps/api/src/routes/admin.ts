@@ -2430,6 +2430,7 @@ export function adminRoutes(deps: Deps) {
       .select({
         status: refunds.status,
         failure: refunds.failure,
+        abnormal: refunds.abnormal,
         note: refunds.settledNote,
         how: refunds.settledHow,
       })
@@ -2449,7 +2450,7 @@ export function adminRoutes(deps: Deps) {
           ? now.note !== null
             ? '该退款已标为另行退款'
             : '微信支付已退款，无需另行退款'
-          : now?.status === 'pending' || now?.status === 'processing'
+          : now?.status === 'pending' || (now?.status === 'processing' && !now.abnormal)
             ? '退款已在微信支付处理中，无需另行退款'
             : '退款状态已变更，请刷新后查看',
     })
