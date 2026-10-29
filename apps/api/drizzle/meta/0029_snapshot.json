@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a75d1237-136e-4878-b777-fb1ae752be79",
+  "id": "2a44b766-5569-45b0-8ef8-2027fca30827",
   "prevId": "7145b91b-bc43-43a6-97b9-1f4306d294be",
   "tables": {
     "action_log": {
@@ -2650,6 +2650,13 @@
         },
         "settled_note": {
           "name": "settled_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "settled_how": {
+          "name": "settled_how",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -1,5 +1,5 @@
-import { REFUND_PAID_TWICE } from '@rs/shared'
-import { and, eq, inArray, isNotNull, isNull, lt, notInArray, sql } from 'drizzle-orm'
+import { REFUND_PAID_TWICE, type RefundSettleWay } from '@rs/shared'
+import { and, eq, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { orders, refunds } from '../db/schema'
 import type { Deps } from '../deps'
@@ -304,6 +304,7 @@ const settleable = (r: { status: string; abnormal: boolean }) =>
 export async function settleFailedRefund(
   deps: Deps,
   refundId: number,
+  how: RefundSettleWay,
   note: string,
 ): Promise<'settled' | 'updated' | 'repeat' | 'overtaken'> {
   const row = deps.db
@@ -313,7 +314,13 @@ export async function settleFailedRefund(
     .where(eq(refunds.id, refundId))
     .get()
   if (!row) throw notFound('退款')
-  if (row.refund.status === 'succeeded' && row.refund.settledNote === note) return 'repeat'
+  if (
+    row.refund.status === 'succeeded' &&
+    row.refund.settledNote === note &&
+    row.refund.settledHow === how
+  ) {
+    return 'repeat'
+  }
   if (!settleable(row.refund) || row.provider !== 'wechat') {
     throw new ApiError(409, 'refund_not_failed', '只能处理退款失败或退款异常的微信支付退款')
   }
@@ -349,7 +356,13 @@ export async function settleFailedRefund(
       throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
     }
     tx.update(refunds)
-      .set({ status: 'succeeded', settledNote: note, abnormal: false, updatedAt: now })
+      .set({
+        status: 'succeeded',
+        settledNote: note,
+        settledHow: how,
+        abnormal: false,
+        updatedAt: now,
+      })
       .where(eq(refunds.id, refundId))
       .run()
     closeRefundedRequests(tx, current.orderId)
@@ -358,23 +371,36 @@ export async function settleFailedRefund(
 }
 
 /**
- * WeChat Pay reports a refund done that staff had settled outside the system: the money went
- * back twice. Recorded, with a warning for staff.
+ * WeChat Pay reports a refund done that staff had settled outside the system. Its refund id is
+ * recorded. Settled 商户平台处理, that is most likely the same refund put right there; paid back
+ * 线下另付, the money may have gone back twice, so staff are warned. Neither moves the refund's
+ * time, which places it in a report month.
  */
 function recordPaidTwice(deps: Deps, outRefundNo: string, refundId: string) {
-  const changed = deps.db
+  const settled = and(
+    eq(refunds.outRefundNo, outRefundNo),
+    eq(refunds.status, 'succeeded'),
+    isNotNull(refunds.settledNote),
+  )
+  const warned = deps.db
     .update(refunds)
-    .set({ providerRefundId: refundId, failure: REFUND_PAID_TWICE, updatedAt: deps.now() })
+    .set({ providerRefundId: refundId, failure: REFUND_PAID_TWICE })
     .where(
       and(
-        eq(refunds.outRefundNo, outRefundNo),
-        eq(refunds.status, 'succeeded'),
-        isNotNull(refunds.settledNote),
-        isNull(refunds.providerRefundId),
+        settled,
+        eq(refunds.settledHow, 'offline'),
+        or(isNull(refunds.failure), ne(refunds.failure, REFUND_PAID_TWICE)),
       ),
     )
     .run()
-  if (changed.changes > 0) deps.log('refund settled by staff also made by wechat', { outRefundNo })
+  if (warned.changes > 0) deps.log('refund paid back by staff also made by wechat', { outRefundNo })
+  deps.db
+    .update(refunds)
+    .set({ providerRefundId: refundId })
+    .where(
+      and(settled, or(isNull(refunds.providerRefundId), ne(refunds.providerRefundId, refundId))),
+    )
+    .run()
 }
 
 /**

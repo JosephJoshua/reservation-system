@@ -601,6 +601,8 @@ export const refunds = sqliteTable(
     // merchant platform): how, in their words. It is then succeeded, and failure says why it
     // failed.
     settledNote: text('settled_note'),
+    // With settledNote: put right on the merchant platform, or paid back another way.
+    settledHow: text('settled_how', { enum: ['platform', 'offline'] }),
     createdAt: createdAt(),
     updatedAt: instant('updated_at').notNull(),
   },

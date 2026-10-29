@@ -13,6 +13,7 @@ import {
   offlineMethodLabels,
   offlineMethods,
   packageTermsSchema,
+  REFUND_SETTLE_WAYS,
   type RuleOverrides,
   ruleNames,
   ruleOverrides,
@@ -2388,19 +2389,22 @@ export function adminRoutes(deps: Deps) {
   // A failed WeChat Pay refund staff settled outside the system, in cash or on the merchant
   // platform.
   app.post('/refunds/:id/settled', need('finance'), async (c) => {
-    const { note } = await parseBody(
+    const { how, note } = await parseBody(
       c,
-      z.object({ note: z.string().trim().min(1, '请填写处理说明').max(100) }),
+      z.object({
+        how: z.enum(['platform', 'offline']),
+        note: z.string().trim().min(1, '请填写处理说明').max(100),
+      }),
     )
     const id = idParam(c)
-    const done = await settleFailedRefund(deps, id, note)
+    const done = await settleFailedRefund(deps, id, how, note)
     if (done === 'settled' || done === 'updated') {
       const r = refundContext(id)
       log(c.get('staffId'), {
         action: done === 'settled' ? 'refund.settled' : 'refund.synced',
         summary:
           done === 'settled'
-            ? `${r.what}退款 ${yuan(r.amount)} 已另行退款：${note}`
+            ? `${r.what}退款 ${yuan(r.amount)} 已另行退款（${REFUND_SETTLE_WAYS[how]}）：${note}`
             : `${r.what}退款 ${yuan(r.amount)} 状态已按微信支付更新`,
         amount: r.amount,
         studentId: r.studentId,
@@ -2408,13 +2412,18 @@ export function adminRoutes(deps: Deps) {
       })
     }
     const now = db
-      .select({ status: refunds.status, failure: refunds.failure, note: refunds.settledNote })
+      .select({
+        status: refunds.status,
+        failure: refunds.failure,
+        note: refunds.settledNote,
+        how: refunds.settledHow,
+      })
       .from(refunds)
       .where(eq(refunds.id, id))
       .get()
     // Settled only if the refund ends up settled with this note: a retry or WeChat Pay may have
     // got there first, and then it is as they left it.
-    const settled = now?.status === 'succeeded' && now.note === note
+    const settled = now?.status === 'succeeded' && now.note === note && now.how === how
     return c.json({
       status: now?.status,
       failure: now?.failure ?? null,

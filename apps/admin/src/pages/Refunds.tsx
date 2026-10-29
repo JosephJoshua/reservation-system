@@ -1,4 +1,9 @@
-import { REFUND_PAID_TWICE, type RefundStatus } from '@rs/shared'
+import {
+  REFUND_PAID_TWICE,
+  REFUND_SETTLE_WAYS,
+  type RefundSettleWay,
+  type RefundStatus,
+} from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
@@ -7,6 +12,7 @@ import {
   InputNumber,
   MessagePlugin,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Tag,
@@ -244,7 +250,10 @@ export function Refunds() {
                     {label}
                   </Tag>
                   {row.settledNote !== null && (
-                    <div className="muted">另行退款：{row.settledNote}</div>
+                    <div className="muted">
+                      {row.settledHow ? REFUND_SETTLE_WAYS[row.settledHow] : '另行退款'}：
+                      {row.settledNote}
+                    </div>
                   )}
                   {/* On a success, a warning that the order was refunded more than paid. Once
                   settled outside the system, WeChat Pay's earlier failure no longer applies. */}
@@ -443,6 +452,7 @@ function Settle({
   onClose: () => void
   onDone: () => void
 }) {
+  const [how, setHow] = useState<RefundSettleWay | null>(null)
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
@@ -454,7 +464,7 @@ function Settle({
         outcome = await api<RefundOutcome & { settled: boolean; message: string | null }>(
           'POST',
           `/admin/refunds/${refund.id}/settled`,
-          { note },
+          { how, note },
           { key },
         )
       },
@@ -477,7 +487,7 @@ function Settle({
       confirmBtn={{
         content: '确认',
         theme: 'primary',
-        disabled: !note.trim(),
+        disabled: !how || !note.trim(),
         loading: submitting,
       }}
       cancelBtn="返回"
@@ -487,10 +497,22 @@ function Settle({
       <div className="fields">
         <p className="muted">
           {yuan(refund.amount)}{' '}
-          已通过现金或微信支付商户平台退给学员后再确认。确认后计为已退款，不再重试。
+          已在微信支付商户平台处理，或已通过现金、转账退给学员后再确认。确认后计为已退款，不再重试。
         </p>
+        <Radio.Group
+          value={how ?? undefined}
+          onChange={(v) => setHow(v as RefundSettleWay)}
+          options={(Object.keys(REFUND_SETTLE_WAYS) as RefundSettleWay[]).map((value) => ({
+            value,
+            label: REFUND_SETTLE_WAYS[value],
+          }))}
+        />
         <Textarea
-          placeholder="处理说明，例如：已现金退还"
+          placeholder={
+            how === 'platform'
+              ? '处理说明，例如：已在商户平台重新退款'
+              : '处理说明，例如：已现金退还'
+          }
           value={note}
           maxlength={100}
           onChange={(v) => setNote(String(v))}

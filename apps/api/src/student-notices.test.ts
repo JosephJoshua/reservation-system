@@ -192,7 +192,7 @@ describe('student notices', () => {
     const settled = await h.call(
       'POST',
       `/admin/refunds/${refundId}/settled`,
-      { note: '已现金退还' },
+      { how: 'offline', note: '已现金退还' },
       admin,
     )
     expect(settled.json.settled).toBe(true)
