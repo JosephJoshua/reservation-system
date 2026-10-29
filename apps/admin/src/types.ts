@@ -129,6 +129,11 @@ export type AdminBooking = BookingDto & {
   coachNote: string
   /** Set when the front desk booked it for the student. */
   bookedBy: { id: number; name: string } | null
+  /**
+   * Why the venue could not give the lesson as booked, for staff marking 签到: unlike
+   * `disruption`, still set once the lesson ended.
+   */
+  lessonDisruption: Disruption | null
 }
 
 export interface StudentDetail extends Person {

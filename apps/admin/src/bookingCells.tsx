@@ -101,14 +101,13 @@ export function AttendanceCell({
   row,
   canMark,
   onChanged,
-  disruption = row.disruption,
 }: {
   row: AdminBooking
   canMark: boolean
   onChanged: () => unknown
-  /** What stood in the way of the lesson, asked about before 到课. */
-  disruption?: Disruption | null
 }) {
+  // What stood in the way of the lesson, asked about before 到课.
+  const disruption = row.lessonDisruption
   const started = Date.parse(row.startsAt) <= Date.now()
   const markable = started && (row.status === 'confirmed' || row.status === 'completed')
   const mark = async (attendance: string | null) => {

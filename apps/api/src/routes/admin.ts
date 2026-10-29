@@ -1479,12 +1479,20 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
+    // What stood in the way of a booked lesson, also once it ended, for staff marking 签到: not
+    // the student's `disruption`, which ends with the lesson.
+    const disrupted = attendanceDisruptions(
+      db,
+      rows.filter((r) => r.status === 'confirmed'),
+      now,
+    )
     return c.json(
       views.map((v, i) => ({
         ...v,
         student: people.get(rows[i]?.studentId ?? 0) ?? null,
         coachNote: rows[i]?.coachNote ?? '',
         bookedBy: bookedBy.get(rows[i]?.bookedByStaffId ?? 0) ?? null,
+        lessonDisruption: disrupted.get(rows[i]?.id ?? 0) ?? null,
       })),
     )
   })

@@ -216,14 +216,7 @@ function LessonBody({
             {
               colKey: 'attendance',
               title: '签到',
-              cell: ({ row }) => (
-                <AttendanceCell
-                  row={row}
-                  canMark={canMark}
-                  onChanged={reload}
-                  disruption={s.disruption}
-                />
-              ),
+              cell: ({ row }) => <AttendanceCell row={row} canMark={canMark} onChanged={reload} />,
             },
             ...(group && canBook
               ? [
