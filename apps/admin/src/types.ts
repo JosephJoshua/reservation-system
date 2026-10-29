@@ -209,6 +209,8 @@ export interface Refund {
   }
   student: Person
   package: PackageDto | null
+  /** The lessons the package had left when the refund closed it, or null before that. */
+  lessonsRefunded: number | null
   /** A live invoice on the order, which a refund makes wrong. */
   invoiceStatus: 'requested' | 'issued' | null
 }

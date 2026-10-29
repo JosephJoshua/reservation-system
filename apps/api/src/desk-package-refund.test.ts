@@ -88,6 +88,8 @@ describe('refunding a package sold at the front desk', () => {
       })
     ).text()
     expect(csv).toContain('前台退课时包')
+    const [listed] = (await h.call('GET', '/admin/refunds', undefined, admin)).json
+    expect(listed).toMatchObject({ package: { lessonsRemaining: 0 }, lessonsRefunded: 10 })
     expect(csv).toContain('线下（现金）')
     expect((await h.call('DELETE', `/admin/students/${studentId}`, undefined, admin)).status).toBe(
       204,

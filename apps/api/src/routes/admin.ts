@@ -2298,6 +2298,19 @@ export function adminRoutes(deps: Deps) {
         deps.now(),
       ).map((p) => [p.id, p]),
     )
+    // The lessons a package had left when it was refunded: once refunded, it shows none.
+    const lessonsRefunded = new Map(
+      packageIds.length
+        ? db
+            .select({ packageId: packageLedger.packageId, delta: packageLedger.delta })
+            .from(packageLedger)
+            .where(
+              and(inArray(packageLedger.packageId, packageIds), eq(packageLedger.kind, 'refund')),
+            )
+            .all()
+            .map((l) => [l.packageId, -l.delta])
+        : [],
+    )
     const orderIds = [...new Set(rows.map((r) => r.order.id))]
     // A refund on an order with an invoice means the invoice may need voiding in the tax system.
     const invoiced = new Map(
@@ -2321,6 +2334,11 @@ export function adminRoutes(deps: Deps) {
         order: r.order,
         student: r.student,
         package: r.refund.packageId ? (pkgs.get(r.refund.packageId) ?? null) : null,
+        // Not on a request still open or turned down, which left the package as it was.
+        lessonsRefunded:
+          r.refund.packageId && r.refund.status !== 'requested' && r.refund.status !== 'rejected'
+            ? (lessonsRefunded.get(r.refund.packageId) ?? null)
+            : null,
         invoiceStatus: invoiced.get(r.order.id) ?? null,
       })),
     )

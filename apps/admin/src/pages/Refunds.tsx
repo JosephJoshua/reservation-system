@@ -221,7 +221,8 @@ export function Refunds() {
             cell: ({ row }) =>
               row.package ? (
                 <span>
-                  {row.package.name}，剩 {row.package.lessonsRemaining}/
+                  {row.package.name}，{row.lessonsRefunded === null ? '剩' : '退款时剩'}{' '}
+                  {row.lessonsRefunded ?? row.package.lessonsRemaining}/
                   {row.package.lessonsPurchased + row.package.lessonsGranted} 节，实付{' '}
                   {yuan(row.package.pricePaid)}
                   <br />
