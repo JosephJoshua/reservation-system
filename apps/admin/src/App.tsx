@@ -125,12 +125,16 @@ function currentPage(): PageKey {
 
 /** Whose login `token` is, or null when it can't be told, such as with no answer in 5 seconds. */
 function whoIs(token: string): Promise<StaffDto | null> {
+  // Not AbortSignal.timeout, which older Safari lacks.
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), 5000)
   return fetch('/api/admin/me', {
     headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(5000),
+    signal: abort.signal,
   })
     .then((res) => (res.ok ? (res.json() as Promise<StaffDto>) : null))
     .catch(() => null)
+    .finally(() => clearTimeout(timer))
 }
 
 export function App() {
@@ -142,6 +146,8 @@ export function App() {
   const phone = useIsPhone()
   // Who is signed in, once known, for logging in again over the page.
   const signedIn = useRef<StaffDto | null>(null)
+  // Counts this tab's logins and logouts, so work begun in one session can tell it has ended.
+  const session = useRef(0)
   // The session ended while working: asks for the password over the page. `header` and `other`
   // say why when it was another tab, and what the other button does instead of 换个账号登录.
   const [relogin, setRelogin] = useState<{
@@ -174,6 +180,7 @@ export function App() {
     if (getToken() === ownToken.current) setToken(null)
     ownToken.current = null
     signedIn.current = null
+    session.current++
     setAuthed(false)
     setNotice(why)
   }
@@ -367,7 +374,9 @@ export function App() {
     // Changed again meanwhile, or asked already: the later change or the open question decides.
     const settled = () => getToken() !== token || !!pending.current
     // This tab logged out, or in again, meanwhile: what was held belonged to that session.
-    const left = () => signedIn.current !== me
+    // Not the account object, which each reload of who is signed in replaces.
+    const started = session.current
+    const left = () => session.current !== started
     let now = await whoIs(token)
     // Not told, as on a network blip: tried again a moment later, then asked.
     for (const wait of [1000, 3000]) {
@@ -415,6 +424,7 @@ export function App() {
           notice={notice}
           onDone={() => {
             ownToken.current = getToken()
+            session.current++
             setAuthed(true)
             setNotice(undefined)
           }}
