@@ -8,27 +8,37 @@ const unsaved = new Set<string>()
 // typed is lost when the page changes under them, so they count as unsaved until they close.
 // Dialogs opened from the header, such as 修改我的密码, stay open whatever the page and are not
 // counted. A dialog that keeps its own count, with useLeaveGuard, has the class
-// `own-leave-guard`.
-const typedIn = new Set<Element>()
+// `own-leave-guard`. Each is kept with where it was opened: the page, or a lesson opened over it,
+// which closing the lesson alone also throws away.
+type TypedIn = 'page' | 'lesson'
+const typedIn = new Map<Element, TypedIn>()
 
 /**
- * Notes typing in a dialog of the page. The page's content passes its input events here: React
- * hands them up from a dialog to the page that opened it, though the dialog sits elsewhere.
+ * Notes typing in a dialog of the page or of the lesson open over it. Their content passes its
+ * input events here: React hands them up from a dialog to what opened it, though the dialog
+ * sits elsewhere.
  */
-export function markTyped(target: EventTarget) {
+export function markTyped(target: EventTarget, where: TypedIn = 'page') {
   const el = target as Element | null
   if (!el?.closest || el.closest('.own-leave-guard')) return
   const dialog = el.closest('.t-dialog__ctx')
-  if (dialog) typedIn.add(dialog)
+  if (dialog) typedIn.set(dialog, where)
 }
 
-/** Drops the dialogs closed or gone since they were typed into. */
-function openTyped() {
-  for (const dialog of typedIn) {
+/** Drops the dialogs closed or gone since they were typed into, and counts the rest. */
+function openTyped(where?: TypedIn) {
+  let count = 0
+  for (const [dialog, at] of typedIn) {
     const shown = dialog.isConnected && dialog.getClientRects().length > 0
     if (!shown) typedIn.delete(dialog)
+    else if (!where || at === where) count++
   }
-  return typedIn.size
+  return count
+}
+
+/** True while a dialog of the lesson open over the page holds typing not saved. */
+export function lessonHasUnsaved() {
+  return openTyped('lesson') > 0
 }
 
 // What the admin last clicked or pressed a key on, so a save can tell which dialog it came from.

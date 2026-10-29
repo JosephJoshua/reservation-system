@@ -53,7 +53,7 @@ export function holdRequests() {
   held = { turn, release }
 }
 
-/** Lets held requests go, or with `send` false fails them, as the tab signed out. */
+/** Lets held requests go, or with `send` false fails them, as after signing out or switching account. */
 export function releaseRequests(send: boolean) {
   const was = held
   held = null
@@ -63,7 +63,7 @@ export function releaseRequests(send: boolean) {
 async function waitTurn(path: string) {
   if (path.startsWith('/admin/login')) return
   while (held) {
-    if (!(await held.turn)) throw new RequestError(401, 'signed_out', '已退出登录')
+    if (!(await held.turn)) throw new RequestError(401, 'signed_out', '登录已变更，请重新操作')
   }
 }
 

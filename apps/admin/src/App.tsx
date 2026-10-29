@@ -52,7 +52,15 @@ import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
-import { confirmLeave, hasUnsaved, leaveTo, markTyped, passLeave, takeLeave } from './SaveBar'
+import {
+  confirmLeave,
+  hasUnsaved,
+  leaveTo,
+  lessonHasUnsaved,
+  markTyped,
+  passLeave,
+  takeLeave,
+} from './SaveBar'
 import { SHOW_SECTION } from './SectionNav'
 import { StudentSearch } from './StudentSearch'
 import { ThemeMenu } from './ThemeMenu'
@@ -186,8 +194,12 @@ export function App() {
         run: async () => {
           if (!(await confirmLeave())) return
           takeLeave()
+          // That account logged out meanwhile, and the question changed to say so.
+          if (!pending.current?.other) return
+          // Changes held while asking were made as before: they are not sent as the new account.
+          releaseRequests(false)
           // The question as it is now: a request turned away meanwhile may have joined it.
-          pending.current?.done(false)
+          pending.current.done(false)
           follow()
         },
       },
@@ -236,8 +248,12 @@ export function App() {
       if (!token) {
         const me = signedIn.current
         if (me && hasUnsaved()) {
-          if (!pending.current) {
+          const open = pending.current
+          if (!open) {
             setRelogin({ me, header: '已在其他标签页退出登录', done: () => setRelogin(null) })
+          } else if (open.other) {
+            // Asked about another account, which has since logged out too: nobody to go on as.
+            setRelogin({ ...open, header: '已在其他标签页退出登录', other: undefined })
           }
           return
         }
@@ -275,8 +291,10 @@ export function App() {
         takeLeave()
         return
       }
-      // A lesson opened over the page leaves the page and its form as they are.
-      if (hasUnsaved() && !takeLeave() && withoutLesson(next) !== withoutLesson(shown)) {
+      // A lesson opened or closed over the page leaves the page and its form as they are, but
+      // closing one drops what was typed in its dialogs.
+      const lessonOnly = withoutLesson(next) === withoutLesson(shown)
+      if ((lessonOnly ? lessonHasUnsaved() : hasUnsaved()) && !takeLeave()) {
         const held = shown
         // Without the mark of an opened lesson, which belongs to the step it was set on.
         const { lessonOpened: _, ...state } = history.state ?? {}
@@ -576,7 +594,12 @@ function SignedInApp({
               <Loading />
             )}
           </main>
-          {lessonId && allowed.includes('lessons') && <LessonDrawer key={lessonId} id={lessonId} />}
+          {lessonId && allowed.includes('lessons') && (
+            // Typing in the lesson's dialogs counts as unsaved when it closes or the page changes.
+            <div className="lesson-scope" onInputCapture={(e) => markTyped(e.target, 'lesson')}>
+              <LessonDrawer key={lessonId} id={lessonId} />
+            </div>
+          )}
         </div>
       </div>
       {switched && (

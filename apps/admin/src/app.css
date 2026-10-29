@@ -114,6 +114,11 @@ body {
   min-width: 0;
 }
 
+/* Wraps the lesson drawer for its input events only; the drawer itself is placed elsewhere. */
+.lesson-scope {
+  display: contents;
+}
+
 .admin-header {
   position: sticky;
   top: 0;
