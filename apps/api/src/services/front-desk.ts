@@ -33,6 +33,8 @@ export interface FrontDeskBookingInput {
   note?: string
   /** Set for staff who may not change prices: an offline payment must be the listed price. */
   listedPriceOnly?: boolean
+  /** The package the desk was shown: paying from another one, picked meanwhile, is refused. */
+  expectedPackageId?: number
 }
 
 /**
@@ -166,6 +168,10 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
             (!lessonType.isTrial && packageMismatch(tx, input.studentId, lessonType.id, slot)) ||
               '该学员没有可用于这节课的课时包',
           )
+        }
+        // The one shown was used up or expired meanwhile, and the next would be used unseen.
+        if (input.expectedPackageId !== undefined && pkg.id !== input.expectedPackageId) {
+          throw new ApiError(409, 'package_changed', '课时包已变动，请核对后再代约')
         }
         const used = tx
           .update(packages)

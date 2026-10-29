@@ -1,4 +1,4 @@
-import { venueInstant } from '@rs/shared'
+import { venueInstant, versionOf } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { bookings, coaches, coachLessonTypes, orders, packageProducts, refunds } from './db/schema'
@@ -612,6 +612,38 @@ describe('packages', () => {
     expect(ok.json).toMatchObject({ status: 'confirmed', orderId: null })
   })
 
+  it('refuses 代约 from another package than the one the desk was shown', async () => {
+    const h = setup()
+    const { coach, lesson, product, t } = await withPackage(h, 1)
+    const admin = await h.admin()
+    const studentId = (await h.call('GET', '/me', undefined, t)).json.id
+    const [first] = (await h.call('GET', '/packages', undefined, t)).json
+    const target = { studentId, slotId: h.slot(coach.id).id, lessonTypeId: lesson.id }
+    const quote = await h.call('POST', '/admin/bookings/quote', target, admin)
+    expect(quote.json.package.id).toBe(first.id)
+    // Meanwhile the student buys another package and uses up the first one.
+    const res = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await pay(h, res.json.orderId)
+    expect((await book(h, t, h.slot(coach.id, '2026-10-26').id, lesson.id)).status).toBe(201)
+    const body = { ...target, payWith: 'package', expectedPackageId: first.id }
+    const stale = await h.call('POST', '/admin/bookings', body, admin)
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'package_changed'])
+    const second = (await h.call('POST', '/admin/bookings/quote', target, admin)).json.package
+    expect(second.id).not.toBe(first.id)
+    const ok = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...body, expectedPackageId: second.id },
+      admin,
+    )
+    expect(ok.status).toBe(201)
+    // Without one, as before, the package the server picks is used.
+    const other = { ...target, slotId: h.slot(coach.id, '2026-10-27').id, payWith: 'package' }
+    expect((await h.call('POST', '/admin/bookings', other, admin)).json.error.code).toBe(
+      'no_package',
+    )
+  })
+
   it('books with a package whatever price the page showed', async () => {
     const h = setup()
     const { coach, lesson, t } = await withPackage(h)
@@ -1097,6 +1129,28 @@ describe('review fixes', () => {
     expect((await h.call('PUT', '/me', {}, t)).status).toBe(400)
     const admin = await h.admin()
     expect((await h.call('PATCH', '/admin/students/1', {}, admin)).status).toBe(400)
+  })
+
+  it("refuses the desk's edit of a name or phone the student changed meanwhile", async () => {
+    const h = setup()
+    const t = await h.student('a')
+    await h.call('PUT', '/me', { name: '张三', phone: '13800138000' }, t)
+    const admin = await h.admin()
+    const loaded = (await h.call('GET', '/admin/students/1', undefined, admin)).json
+    const version = { 'If-Match': versionOf({ name: loaded.name, phone: loaded.phone }) }
+    // The student changes their phone in the mini program while the desk's dialog is open.
+    await h.call('PUT', '/me', { phone: '13900139000' }, t)
+    const stale = await h.call('PATCH', '/admin/students/1', { name: '张小三' }, admin, version)
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'edited_elsewhere'])
+    const now = (await h.call('GET', '/admin/students/1', undefined, admin)).json
+    expect(now).toMatchObject({ name: '张三', phone: '13900139000' })
+    const ok = await h.call('PATCH', '/admin/students/1', { name: '张小三' }, admin, {
+      'If-Match': versionOf({ name: now.name, phone: now.phone }),
+    })
+    expect(ok.status).toBe(204)
+    expect((await h.call('GET', '/me', undefined, t)).json.name).toBe('张小三')
+    // 测试学员 is switched without a version, as before.
+    expect((await h.call('PATCH', '/admin/students/1', { tester: true }, admin)).status).toBe(204)
   })
 
   it('quotes the package the booking will use', async () => {

@@ -1475,7 +1475,11 @@ export function adminRoutes(deps: Deps) {
       c,
       z
         .discriminatedUnion('payWith', [
-          z.object({ ...frontDeskTarget, payWith: z.literal('package') }),
+          z.object({
+            ...frontDeskTarget,
+            payWith: z.literal('package'),
+            expectedPackageId: z.number().int().positive().optional(),
+          }),
           z.object({
             ...frontDeskTarget,
             payWith: z.literal('offline'),
@@ -1986,6 +1990,8 @@ export function adminRoutes(deps: Deps) {
     const before = db.select().from(students).where(eq(students.id, id)).get()
     if (!before) throw notFound('学员')
     if (before.deletedAt) throw accountDeleted()
+    // The desk edits the name and phone the student also keeps in the mini program.
+    checkVersion(c, { name: before.name, phone: before.phone })
     const changed = db.update(students).set(body).where(eq(students.id, id)).run()
     if (changed.changes === 0) throw notFound('学员')
     // Field names only: the log keeps no copy of a student's name or phone.
