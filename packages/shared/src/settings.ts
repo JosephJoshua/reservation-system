@@ -45,16 +45,30 @@ export const bookingTermsSchema = bookingRules.pick({
   studentMoves: true,
 })
 
+/**
+ * Whether a venue phone reads as one, as people write them: digits with spaces, -, + and
+ * parentheses, and an extension after 转, such as `(010) 6234-5678 转 8`. Empty is allowed.
+ */
+export function venuePhoneValid(phone: string) {
+  const p = phone.trim()
+  if (p === '') return true
+  return /^\+?[\d\s()（）-]+(\s*转\s*\d+)?$/.test(p) && (p.match(/\d/g)?.length ?? 0) >= 5
+}
+
+export const VENUE_PHONE_MESSAGE = '电话只能包含数字、空格、横线、加号和括号，分机号写在“转”后'
+
+const venueFields = {
+  // Named in the mini program and, without an operator, in the privacy policy.
+  name: z.string().trim().min(1).max(40),
+  address: z.string().max(120),
+  phone: z.string().max(30).refine(venuePhoneValid, VENUE_PHONE_MESSAGE),
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
+  openingHours: z.string().max(60),
+}
+
 export const venueSettings = z.object({
-  venue: z.object({
-    // Named in the mini program and, without an operator, in the privacy policy.
-    name: z.string().trim().min(1).max(40),
-    address: z.string().max(120),
-    phone: z.string().max(30),
-    latitude: z.number().min(-90).max(90).nullable(),
-    longitude: z.number().min(-180).max(180).nullable(),
-    openingHours: z.string().max(60),
-  }),
+  venue: z.object(venueFields),
   booking: bookingRules.extend({
     // Lessons that can run at once, one per table. null is no limit.
     tables: z.number().int().min(1).max(99).nullable(),
@@ -100,6 +114,14 @@ export const venueSettings = z.object({
     operator: z.string().trim().max(60),
     contact: z.string().trim().max(60),
   }),
+})
+
+/**
+ * The settings as read back: a phone saved before it was checked still shows, to be put right on
+ * the next save, instead of reading as empty.
+ */
+export const storedVenueSettings = venueSettings.extend({
+  venue: z.object({ ...venueFields, phone: z.string().max(30) }),
 })
 
 export type VenueSettings = z.infer<typeof venueSettings>

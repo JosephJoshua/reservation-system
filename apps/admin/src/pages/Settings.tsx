@@ -2,7 +2,9 @@ import {
   CHECK_IN_EARLY_MINUTES,
   ownRuleLabels,
   ruleLabels,
+  VENUE_PHONE_MESSAGE,
   type VenueSettings,
+  venuePhoneValid,
   venueSettings,
 } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
@@ -100,15 +102,18 @@ function settingsProblem(
           ? (top as SettingsSection)
           : 'venue'
   const message =
-    issue.code === 'too_big' && issue.origin === 'string'
-      ? `${label}太长`
-      : issue.code === 'too_small' || issue.code === 'too_big'
-        ? `${label}超出允许范围`
-        : issue.code === 'invalid_type' && issue.expected === 'int'
-          ? `${label}需为整数`
-          : issue.code === 'not_multiple_of'
-            ? `${label}需为 ${issue.divisor} 的倍数`
-            : `${label}格式不对`
+    // Checks of their own say what is wrong in words.
+    issue.code === 'custom'
+      ? issue.message
+      : issue.code === 'too_big' && issue.origin === 'string'
+        ? `${label}太长`
+        : issue.code === 'too_small' || issue.code === 'too_big'
+          ? `${label}超出允许范围`
+          : issue.code === 'invalid_type' && issue.expected === 'int'
+            ? `${label}需为整数`
+            : issue.code === 'not_multiple_of'
+              ? `${label}需为 ${issue.divisor} 的倍数`
+              : `${label}格式不对`
   return { message, section }
 }
 const sectionKeys = sections.map((x) => x.key)
@@ -221,10 +226,14 @@ export function Settings() {
               }
             />
           </Field>
-          <Field label="电话">
+          <Field
+            label="电话"
+            help={venuePhoneValid(s.venue.phone) ? undefined : VENUE_PHONE_MESSAGE}
+          >
             <Input
               value={s.venue.phone}
               maxlength={30}
+              status={venuePhoneValid(s.venue.phone) ? 'default' : 'error'}
               onChange={(v) =>
                 set((d) => {
                   d.venue.phone = String(v)
