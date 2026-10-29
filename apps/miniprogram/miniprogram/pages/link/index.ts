@@ -26,6 +26,7 @@ Page({
       .then(agreementFor)
       .then((version) => {
         this.policyVersion = version ?? ''
+        this.versionKnown = true
         this.setData({ showAgreement: version !== null, ready: true })
       })
       .catch((e) => {
@@ -38,6 +39,11 @@ Page({
 
   /** The version of the policies the agreement row offers. */
   policyVersion: '',
+  /**
+   * Whether the page knows which version the student was offered or had agreed to, so a refusal
+   * means the texts changed. Not when /me failed and the row was shown without one.
+   */
+  versionKnown: false,
 
   onCode(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
     this.setData({ code: clean(e.detail.value) })
@@ -81,7 +87,11 @@ Page({
     } catch (e) {
       if (needsAgreement(e)) {
         this.setData({ showAgreement: true, agreed: false })
-        this.policyVersion = (await askToAgree(this.policyVersion !== '')) ?? this.policyVersion
+        const version = await askToAgree(this.versionKnown)
+        if (version !== null) {
+          this.policyVersion = version
+          this.versionKnown = true
+        }
         return
       }
       showError(e)
