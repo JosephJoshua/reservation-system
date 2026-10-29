@@ -361,10 +361,13 @@
    * Row buttons share the footer evenly, text centered, whatever wraps them. The 1px gap shows
    * the footer's background as dividers.
    */
+  /* Flush with the card's bottom, its corners rounded as the card's, so a filled 签到 keeps them. */
   .card-table tbody td[data-actions] {
-    margin: 4px -16px 0;
+    margin: 4px -16px -4px;
     padding: 0 !important;
+    overflow: hidden;
     border-top: 1px solid var(--td-component-stroke) !important;
+    border-radius: 0 0 7px 7px;
   }
 
   .card-table tbody td[data-actions] > .cell {

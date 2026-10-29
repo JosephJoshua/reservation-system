@@ -114,7 +114,13 @@ function currentPage(): PageKey {
   }
   // The first part names the page, as in `#/students/12`.
   const key = window.location.hash.replace(/^#\/?/, '').split(/[?/]/)[0] ?? ''
-  return key in pages ? (key as PageKey) : 'overview'
+  if (key in pages) return key as PageKey
+  // An address of no page, as from a mistyped link, is put right to the 概览 shown.
+  if (key) {
+    history.replaceState(history.state, '', '#/overview')
+    window.dispatchEvent(new Event(SHOW_SECTION))
+  }
+  return 'overview'
 }
 
 /** Whose login `token` is, or null when it can't be told. */

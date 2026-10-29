@@ -1,11 +1,12 @@
 import { toCsv } from '@rs/shared'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Card, DatePicker, Dialog, Popconfirm, Space, Tabs, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { fmtDate, fmtDateTime, today, yuan } from '../format'
 import { attempt, hashParam, newKey, useApi, useSubmitting } from '../hooks'
 import { useCan } from '../me'
+import { SHOW_SECTION } from '../SectionNav'
 import { Stats } from './Stats'
 
 interface MonthlyReport {
@@ -411,23 +412,50 @@ function PayMonth({
   )
 }
 
+/**
+ * The address of the tab shown: the tab alone, as the month is not kept there. A lesson open over
+ * the page stays.
+ */
+function showTab(tab: string) {
+  const lesson = hashParam('lesson')
+  const params = new URLSearchParams()
+  if (tab === 'monthly') params.set('tab', 'monthly')
+  if (lesson) params.set('lesson', lesson)
+  const query = params.toString()
+  const hash = `#/reports${query ? `?${query}` : ''}`
+  if (hash === window.location.hash) return
+  // Without a step for the back button, as on the other pages with tabs.
+  history.replaceState(history.state, '', hash)
+  window.dispatchEvent(new Event(SHOW_SECTION))
+}
+
 export function Reports() {
   // In the address, so a refresh or a copied link opens the same tab.
   const [tab, setTab] = useState(() => (hashParam('tab') === 'monthly' ? 'monthly' : 'stats'))
   // The monthly report loads when first opened, then keeps its month while switching back and forth.
   const [monthlyOpened, setMonthlyOpened] = useState(tab === 'monthly')
+  // The tab the address names, also when it changes while the page is open. An address with more
+  // than the tab, such as an old link with a month, is put right to what is shown.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, on opening the page
+  useEffect(() => {
+    showTab(tab)
+    const on = () => {
+      if (!/^#\/reports(?=[?/]|$)/.test(window.location.hash)) return
+      const named = hashParam('tab') === 'monthly' ? 'monthly' : 'stats'
+      setTab(named)
+      if (named === 'monthly') setMonthlyOpened(true)
+      showTab(named)
+    }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
   return (
     <Tabs
       value={tab}
       onChange={(v) => {
         setTab(String(v))
         if (v === 'monthly') setMonthlyOpened(true)
-        // Without a step for the back button, as on the other pages with tabs.
-        history.replaceState(
-          history.state,
-          '',
-          v === 'monthly' ? '#/reports?tab=monthly' : '#/reports',
-        )
+        showTab(String(v))
       }}
       className="report-tabs"
     >
