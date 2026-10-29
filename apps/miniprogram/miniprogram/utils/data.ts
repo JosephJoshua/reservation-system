@@ -1,5 +1,5 @@
 import type { CatalogDto, LateCancelRule, MeDto } from '../lib/shared'
-import { api, publicApi } from './api'
+import { ApiError, api, publicApi } from './api'
 
 let catalog: { value: CatalogDto; at: number } | null = null
 
@@ -59,8 +59,46 @@ export function cancelRuleText(hours: number, rule: LateCancelRule): string {
   return hours === 0 ? '开课前随时可以免费取消。' : `开课前 ${hours} 小时以上可免费取消；${late}。`
 }
 
-/** Records that the student agreed to the policies now in force, as the policy page shows them. */
-export async function agreePolicies(): Promise<void> {
-  const { version } = await publicApi<CatalogDto['policies']>('GET', '/policies')
+/** The version of the policies in force, which an agreement row offers from when it is shown. */
+export async function policyVersion(): Promise<string> {
+  return (await publicApi<CatalogDto['policies']>('GET', '/policies')).version
+}
+
+/**
+ * The version a page's agreement row offers: null when the student has agreed to the policies in
+ * force already, so the page shows no row.
+ */
+export function agreementFor(me: MeDto): Promise<string | null> {
+  return me.agreedPolicies ? Promise.resolve(null) : policyVersion()
+}
+
+/**
+ * Records that the student agreed to the policies at `version`, the one the page offered when it
+ * showed the agreement. The server refuses an older one with policy_changed.
+ */
+export async function agreePolicies(version: string): Promise<void> {
   await api<void>('POST', '/me/consent', { version })
+}
+
+/**
+ * Whether a submit was refused for want of consent to the policies in force: agreed to an older
+ * version than the page offered (policy_changed), or the policies changed after the page loaded
+ * for a student who had agreed, so it showed no agreement (consent_required).
+ */
+export const needsAgreement = (e: unknown): boolean =>
+  e instanceof ApiError && (e.code === 'policy_changed' || e.code === 'consent_required')
+
+/**
+ * After needsAgreement: asks the student to read and agree, and answers the version now in force
+ * for the page's agreement row, or null when it could not be loaded. `updated` is false for a
+ * student who was offered no version yet, who is not told the texts changed.
+ */
+export async function askToAgree(updated: boolean): Promise<string | null> {
+  const version = await policyVersion().catch(() => null)
+  await wx.showModal({
+    title: updated ? '条款已更新' : '请阅读并同意用户协议和隐私政策',
+    content: updated ? '请重新阅读用户协议和隐私政策，同意后再提交。' : '勾选同意后再提交。',
+    showCancel: false,
+  })
+  return version
 }

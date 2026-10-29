@@ -1,5 +1,5 @@
 import type { BookingDto } from '../../lib/shared'
-import { api, errorMessage, showError } from '../../utils/api'
+import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { BOOKING_STATUS } from '../../utils/labels'
@@ -32,10 +32,10 @@ function statusOf(b: BookingDto): Pick<LessonView, 'status' | 'tone'> {
   }
 }
 
-function view(b: BookingDto): LessonView {
+function view(b: BookingDto, now: Date): LessonView {
   return {
     id: b.id,
-    day: dayName(b.startsAt).length <= 2 ? dayName(b.startsAt) : weekday(b.startsAt),
+    day: dayName(b.startsAt, now).length <= 2 ? dayName(b.startsAt, now) : weekday(b.startsAt),
     date: monthDay(b.startsAt),
     time: `${time(b.startsAt)}-${time(b.endsAt)}`,
     name: b.lessonType.name,
@@ -87,10 +87,11 @@ Page({
       const rows = await api<BookingDto[]>('GET', `/bookings?scope=${this.data.scope}`)
       if (request !== this.request) return
       const open = rows.find((b) => b.canCheckIn)
+      const now = new Date(serverNow())
       this.setData({
         state: 'ready',
-        lessons: rows.map(view),
-        checkIn: this.data.scope === 'upcoming' && open ? view(open) : null,
+        lessons: rows.map((b) => view(b, now)),
+        checkIn: this.data.scope === 'upcoming' && open ? view(open, now) : null,
       })
     } catch (e) {
       if (request !== this.request) return

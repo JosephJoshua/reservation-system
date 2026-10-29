@@ -126,6 +126,15 @@ export async function requestKeyed<T>(
   }
 }
 
+/**
+ * Whether a failed change means the page is out of date and should reload: refused for how
+ * things stand now (403, 404, 409). Not a lost answer: with the network down the reload would
+ * fail too and could replace the page, and what was typed, with an error.
+ */
+export function refreshAfter(e: unknown): boolean {
+  return e instanceof ApiError && [403, 404, 409].includes(e.status)
+}
+
 /** Sends a local file as the `file` field of a multipart POST; answers like request. */
 export function upload<T>(
   path: string,

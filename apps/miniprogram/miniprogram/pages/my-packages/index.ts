@@ -1,5 +1,5 @@
 import type { PackageDto } from '../../lib/shared'
-import { api, errorMessage, showError } from '../../utils/api'
+import { api, errorMessage, refreshAfter, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
@@ -112,6 +112,9 @@ Page({
       wx.showToast({ title: '已提交', icon: 'success' })
       await this.load()
     } catch (err) {
+      // Refused because the package changed meanwhile (a request open already, used up, paused or
+      // refunded): show where it stands now, then why.
+      if (refreshAfter(err)) await this.load()
       showError(err)
     } finally {
       this.setData({ busy: 0 })

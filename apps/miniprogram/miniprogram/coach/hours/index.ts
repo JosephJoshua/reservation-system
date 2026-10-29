@@ -11,7 +11,7 @@ import {
   type WeeklyHours,
   weeklyHoursError,
 } from '../../lib/shared'
-import { ApiError, errorMessage, showError } from '../../utils/api'
+import { ApiError, errorMessage, serverNow, showError } from '../../utils/api'
 import { dateText, time } from '../../utils/format'
 import { modalDangerColor } from '../../utils/theme'
 import { bindInstead, coachApi } from '../utils/coach-api'
@@ -155,10 +155,38 @@ Page({
     this.load()
   },
 
+  onShow() {
+    // Left open past midnight: today, the 生效日期 and the date pickers' range have moved.
+    const now = serverNow()
+    const today = venueDateKey(new Date(now))
+    if (this.data.state !== 'ready' || this.data.today === today) return
+    if (!this.data.dirty) {
+      this.load()
+      return
+    }
+    // Unsaved hours keep the version they were loaded with, so a save over hours staff changed
+    // meanwhile is still refused and asks to check them. Only the dates move.
+    let { from } = this.data
+    if (from < today) from = today
+    const moved = from !== this.data.from
+    this.setData({
+      today,
+      lastDay: venueDateKey(new Date(now + 365 * DAY)),
+      from,
+      fromText: from === today ? '今天' : dateLabel(from),
+    })
+    if (moved) {
+      // As when 生效日期 is picked: the days not edited take the hours in effect from then.
+      const kept = this.data.hours.filter((h) => this.touched.has(h.weekday))
+      const rest = hoursOn(this.periods, from).filter((h) => !this.touched.has(h.weekday))
+      this.setHours([...rest, ...kept])
+    }
+  },
+
   async load() {
     try {
       const view = await coachApi<ScheduleViewDto>('GET', '/hours')
-      const now = Date.now()
+      const now = serverNow()
       const today = venueDateKey(new Date(now))
       this.periods = view.periods
       this.hoursVersion = view.hoursVersion
@@ -185,11 +213,13 @@ Page({
         const next = view.periods.find((p) => p.hours.length)
         this.setFrom(!hoursOn(view.periods, today).length && next ? next.from : today)
       } else {
-        // Hours changed elsewhere meanwhile: the days not edited here take the newer hours.
+        // Hours changed elsewhere meanwhile: the days not edited here take the newer hours. A
+        // 生效日期 that has passed overnight moves to today.
+        let { from } = this.data
+        if (from < today) from = today
         const kept = this.data.hours.filter((h) => this.touched.has(h.weekday))
-        const rest = hoursOn(view.periods, this.data.from).filter(
-          (h) => !this.touched.has(h.weekday),
-        )
+        const rest = hoursOn(view.periods, from).filter((h) => !this.touched.has(h.weekday))
+        this.setData({ from, fromText: from === today ? '今天' : dateLabel(from) })
         this.setHours([...rest, ...kept])
       }
     } catch (e) {
@@ -439,7 +469,9 @@ Page({
     // An end before the start on the same date means past midnight, which 加班 cannot do.
     const overnight = timed && d.exEnd !== '00:00' && toMinutes(d.exEnd) <= toMinutes(d.exStart)
     const error =
-      overnight && d.exKind === 'extra' ? '加班不能跨到第二天' : exceptionError(draft, new Date())
+      overnight && d.exKind === 'extra'
+        ? '加班不能跨到第二天'
+        : exceptionError(draft, new Date(serverNow()))
     this.setData({ exHint: error ?? this.exEffect(draft), exInvalid: !!error })
   },
 

@@ -8,10 +8,19 @@ import {
   type StudentDto,
 } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage, RESULT_UNKNOWN, showError } from '../../utils/api'
-import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
+import {
+  agreementFor,
+  agreePolicies,
+  askForNotices,
+  askToAgree,
+  cancelRuleText,
+  getCatalog,
+  getMe,
+  needsAgreement,
+} from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
-import { payOrder } from '../../utils/pay'
+import { PAY_PENDING, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
 
@@ -75,6 +84,8 @@ Page({
   left: false,
   /** The cancel and move rules shown, which the booking must still be made under. */
   terms: null as BookingTerms | null,
+  /** The version of the policies the agreement row offers. */
+  policyVersion: '',
   /** Set after the first onShow, so coming back to the page can be told apart. */
   shown: false,
   /** Counts quotes asked for, so only the latest one is shown. */
@@ -165,6 +176,8 @@ Page({
     try {
       const { lessonTypeId } = this.data
       const [catalog, quote, me] = await Promise.all([getCatalog(), this.quote(), getMe()])
+      const version = await agreementFor(me)
+      this.policyVersion = version ?? ''
       const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
       const coach = catalog.coaches.find((c) => c.id === this.data.coachId)
       if (!lessonType || !coach) {
@@ -202,7 +215,7 @@ Page({
         needName: !me.name,
         needPhone: !me.phone,
         hasBookingPolicy: Boolean(catalog.policies.booking),
-        showAgreement: !me.agreedPolicies,
+        showAgreement: version !== null,
         noticeTemplates: me.noticeTemplates,
       })
     } catch (e) {
@@ -293,7 +306,7 @@ Page({
       ])
       // Consent comes before the contact details, which the API refuses without it.
       if (this.data.showAgreement) {
-        await agreePolicies()
+        await agreePolicies(this.policyVersion)
         this.setData({ showAgreement: false })
       }
       await this.saveProfile()
@@ -315,19 +328,37 @@ Page({
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
-        const paid = await payOrder(res.orderId, this.data.price, res.payment, () => !this.left)
-          .then((result) => result === 'paid')
-          .catch((e) => {
-            showError(e)
-            return false
-          })
-        this.finish(res.bookingId, '', paid ? '预约成功' : '已预约，请尽快支付')
+        const result = await payOrder(
+          res.orderId,
+          this.data.price,
+          res.payment,
+          () => !this.left,
+        ).catch((e) => {
+          showError(e)
+          return 'failed' as const
+        })
+        // Paid but not confirmed yet: say so, so the booking's 待支付 does not invite paying again.
+        if (result === 'pending') {
+          this.finish(res.bookingId, PAY_PENDING, PAY_PENDING)
+          return
+        }
+        // Paid at the cashier on an order the server closed: never invite paying again.
+        if (result === 'unclear') {
+          this.finish(res.bookingId, PAY_UNCLEAR, PAY_UNCLEAR)
+          return
+        }
+        this.finish(res.bookingId, '', result === 'paid' ? '预约成功' : '已预约，请尽快支付')
         return
       }
       this.finish(res.bookingId, res.existing ? '你已预约这节课' : '', '预约成功')
     } catch (e) {
       // Gone back while it was booking: nothing here to reload or ask about.
       if (this.left) return
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
+        return
+      }
       if (e instanceof ApiError && e.code === 'price_changed') {
         const { payWith } = this.data
         await this.load()
@@ -411,7 +442,7 @@ Page({
     wx.disableAlertBeforeUnload()
     const url = `/pages/booking-detail/index?id=${bookingId}`
     const success = () => {
-      if (toast) wx.showToast({ title: toast, icon: 'none' })
+      if (toast) wx.showToast({ title: toast, icon: 'none', duration: 2500 })
     }
     if (isTop(this)) wx.redirectTo({ url, success })
     else if (this.left) {
