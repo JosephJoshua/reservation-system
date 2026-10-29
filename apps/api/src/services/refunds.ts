@@ -358,8 +358,19 @@ export async function settleFailedRefund(
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const current = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
-    // A retry, or WeChat Pay, got there first.
-    if (!current || current.outRefundNo !== old || !settleable(current)) return 'overtaken'
+    // A retry, or WeChat Pay, got there first: also when WeChat Pay reported something new
+    // while it was being asked (a CLOSED callback on a 退款异常, say), which the answer to the
+    // query, given earlier, would otherwise overwrite.
+    if (
+      !current ||
+      current.outRefundNo !== old ||
+      !settleable(current) ||
+      current.status !== row.refund.status ||
+      current.failure !== row.refund.failure ||
+      current.abnormal !== row.refund.abnormal
+    ) {
+      return 'overtaken'
+    }
     const total = tx
       .select({ amount: orders.amount })
       .from(orders)

@@ -542,4 +542,33 @@ describe('WeChat Pay reporting on a refund staff already settled', () => {
     expect(h.db.select().from(refunds).get()?.failure).toBe('CLOSED')
     expect(await refundsCsv(h)).toContain('线下另付；已现金退还；微信支付退款失败：CLOSED')
   })
+
+  it('does not settle over a CLOSED report that lands while WeChat Pay is asked', async () => {
+    const h = setup()
+    const { admin, refundId, outRefundNo } = await abnormalRefund(h)
+    vi.spyOn(h.gateway, 'queryRefund').mockImplementation(async () => {
+      // The callback lands between the query and its answer.
+      settleRefund(h.deps, outRefundNo, { status: 'failed', reason: 'CLOSED' })
+      return { status: 'processing', refundId: 'wx-1', abnormal: true }
+    })
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { how: 'platform', note: '已在商户平台处理' },
+      admin,
+    )
+    expect(res.status).toBe(200)
+    expect(res.json).toMatchObject({
+      status: 'failed',
+      settled: false,
+      message: '退款状态已变更，请刷新后查看',
+    })
+    expect(h.db.select().from(refunds).get()).toMatchObject({
+      status: 'failed',
+      failure: 'CLOSED',
+      settledNote: null,
+    })
+    const actions = h.db.select({ action: actionLog.action }).from(actionLog).all()
+    expect(actions.map((a) => a.action)).not.toContain('refund.settled')
+  })
 })
