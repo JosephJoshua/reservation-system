@@ -624,6 +624,7 @@ function SignedInApp({
             className="admin-content"
             onInputCapture={(e) => markTyped(e.nativeEvent)}
             onClickCapture={(e) => markTyped(e.nativeEvent)}
+            onKeyDownCapture={(e) => markTyped(e.nativeEvent)}
           >
             {Page ? (
               <Page key={account} />
@@ -640,6 +641,7 @@ function SignedInApp({
               className="lesson-scope"
               onInputCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
               onClickCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
+              onKeyDownCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
             >
               <LessonDrawer key={lessonId} id={lessonId} />
             </div>

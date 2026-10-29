@@ -65,9 +65,25 @@ describe('refunding a package sold at the front desk', () => {
       })
     const res = await send(150000)
     expect(res.status).toBe(200)
-    // Repeats, with or without the same key, change nothing more.
+    // A retry of the same submit gets the same answer.
     expect((await send(150000)).json).toEqual(res.json)
-    expect((await send(150000, 'r2')).json).toEqual(res.json)
+    // Another submit, from a second tab or a colleague, may mean the money went out twice.
+    const again = await send(150000, 'r2')
+    expect(again.status).toBe(409)
+    expect(again.json.error).toMatchObject({
+      code: 'package_refunded_elsewhere',
+      message: '该课时包已由其他人退款，请核对是否重复退还',
+    })
+    // Even with the package as it is now.
+    const now = await shown(h, admin, studentId, packageId)
+    const fresh = await h.call(
+      'POST',
+      `/admin/packages/${packageId}/desk-refund`,
+      { amount: 100000 },
+      admin,
+      { 'If-Match': versionOf(now), 'Idempotency-Key': 'r3' },
+    )
+    expect(fresh.json.error.code).toBe('package_refunded_elsewhere')
 
     expect(h.db.select().from(packages).get()).toMatchObject({
       status: 'refunded',

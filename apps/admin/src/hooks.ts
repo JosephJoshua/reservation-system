@@ -108,11 +108,14 @@ export async function attempt(
     onRefused,
     key = DIALOG,
     stale = [],
+    quiet = [],
   }: {
     onStale?: (e: RequestError) => unknown
     onRefused?: () => void
     key?: string
     stale?: string[]
+    /** Codes the caller shows itself, with no message. */
+    quiet?: string[]
   } = {},
 ): Promise<boolean> {
   if (inFlight.has(key)) return false
@@ -125,7 +128,9 @@ export async function attempt(
     if (success) void MessagePlugin.success(success)
     return true
   } catch (e) {
-    void MessagePlugin.error(e instanceof RequestError ? e.message : '操作失败，请重试')
+    if (!(e instanceof RequestError && quiet.includes(e.code))) {
+      void MessagePlugin.error(e instanceof RequestError ? e.message : '操作失败，请重试')
+    }
     if (onStale && e instanceof RequestError && (STALE.has(e.code) || stale.includes(e.code))) {
       await onStale(e)
     } else onRefused?.()

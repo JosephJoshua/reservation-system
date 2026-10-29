@@ -79,6 +79,33 @@ describe('dialablePhone', () => {
     expect(dialablePhone('138-0013-8000')).toBe('13800138000')
   })
 
+  it('reads a short group after a full landline number, typed with a space, as its extension', () => {
+    expect(dialablePhone('010 6234 5678 8')).toBe('01062345678')
+    expect(dialablePhone('0571 8888 8888 802')).toBe('057188888888')
+    expect(dialablePhone('(010) 62345678 12')).toBe('01062345678')
+    expect(dialablePhone('010 6234 5678')).toBe('01062345678')
+    expect(dialablePhone('0755 2345 6789')).toBe('075523456789')
+    // 00 starts an international number, not an area code.
+    expect(dialablePhone('0086 139 0000 0001')).toBe('008613900000001')
+  })
+
+  it('refuses digits after a mainland mobile instead of dialling them', () => {
+    for (const phone of [
+      '139-0000-0001-12',
+      '139 0000 0001 2',
+      '13900000001 12',
+      '+86 139 0000 0001-8',
+      '(+86) 139 0000 0001 8',
+    ]) {
+      expect(venuePhoneValid(phone), phone).toBe(false)
+      expect(dialablePhone(phone), phone).toBeNull()
+    }
+    // With 转 or brackets, a mobile may still name an extension.
+    expect(dialablePhone('13900000001 转 8')).toBe('13900000001')
+    // Another country's number is not a mainland mobile.
+    expect(venuePhoneValid('+1 415 555 0123 4')).toBe(true)
+  })
+
   it('leaves out an extension in brackets rather than dialling it with the number', () => {
     expect(dialablePhone('13800138000(8)')).toBe('13800138000')
     expect(dialablePhone('13800138000（8）')).toBe('13800138000')

@@ -360,19 +360,20 @@ export function deskRefundQuote(deps: Deps, packageId: number) {
 /**
  * Staff refund the unused lessons of a package sold at the front desk and hand the money back
  * there at once: the package ends, and the refund is recorded as paid back, as an offline refund
- * marked 已退还 is. `check` sees the package as staff saw it. A repeat of a refund already made
- * returns it with `repeat`.
+ * marked 已退还 is. `check` sees the package as staff saw it. A genuine retry of the same submit
+ * is answered by its Idempotency-Key; any other submit after the refund is refused, since the
+ * money may have been handed back twice.
  */
 export function refundDeskPackage(
   deps: Deps,
   packageId: number,
   amount: number,
   check: (current: PackageRow) => void,
-): { refundId: number; repeat: boolean } {
+): { refundId: number } {
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const done = tx
-      .select({ id: refunds.id, amount: refunds.amount })
+      .select({ id: refunds.id })
       .from(refunds)
       .where(
         and(
@@ -382,7 +383,13 @@ export function refundDeskPackage(
         ),
       )
       .get()
-    if (done && done.amount === amount) return { refundId: done.id, repeat: true }
+    if (done) {
+      throw new ApiError(
+        409,
+        'package_refunded_elsewhere',
+        '该课时包已由其他人退款，请核对是否重复退还',
+      )
+    }
     const { pkg, order, left } = deskRefundable(tx, packageId, now)
     check(pkg)
     if (amount < 1 || amount > left) {
@@ -409,7 +416,7 @@ export function refundDeskPackage(
       .returning({ id: refunds.id })
       .get().id
     closeRefundedRequests(tx, order.id)
-    return { refundId, repeat: false }
+    return { refundId }
   })
 }
 

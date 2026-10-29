@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { actionLog, bookings } from './db/schema'
+import { actionLog, bookings, coaches, scheduleExceptions } from './db/schema'
 import { type Harness, setup } from './test/harness'
 
 const CODE = 'https://yuyue.example.com/checkin'
@@ -156,6 +156,57 @@ describe('student check-in', () => {
 })
 
 describe('front desk 签到', () => {
+  it('says when the lesson is disrupted, and still lets the desk mark it', async () => {
+    const h = setup()
+    const { coach, slot, bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T01:35:00Z')
+    const admin = await h.admin()
+    const seen = async () => ({
+      list: (await h.call('GET', '/admin/front-desk', undefined, admin)).json[0].disruption,
+      lesson: (await h.call('GET', `/admin/slots/${slot.id}`, undefined, admin)).json.disruption,
+      booking: (await h.call('GET', `/admin/bookings?id=${bookingId}`, undefined, admin)).json[0]
+        .lessonDisruption,
+    })
+    expect(await seen()).toEqual({ list: null, lesson: null, booking: null })
+
+    const off = h.db
+      .insert(scheduleExceptions)
+      .values({
+        coachId: coach.id,
+        kind: 'off',
+        startsAt: new Date('2026-10-26T00:00:00Z'),
+        endsAt: new Date('2026-10-26T10:00:00Z'),
+      })
+      .returning()
+      .get()
+    expect(await seen()).toEqual({ list: 'off', lesson: 'off', booking: 'off' })
+    // Staff on site know best: asked in the admin, not refused.
+    const mark = await h.call(
+      'PUT',
+      `/admin/bookings/${bookingId}/attendance`,
+      { attendance: 'attended' },
+      admin,
+    )
+    expect(mark.status).toBe(204)
+    // A 闭馆 comes first, and still shows once the lesson ended.
+    h.db
+      .insert(scheduleExceptions)
+      .values({ coachId: null, kind: 'off', startsAt: off.startsAt, endsAt: off.endsAt })
+      .run()
+    h.clock.now = new Date('2026-10-26T05:00:00Z')
+    expect(await seen()).toEqual({ list: 'closed', lesson: 'closed', booking: 'closed' })
+    // The student-side value ends with the lesson; the staff one does not.
+    const [listed] = (await h.call('GET', `/admin/bookings?id=${bookingId}`, undefined, admin)).json
+    expect(listed.disruption).toBeNull()
+
+    // A coach who stopped teaching after the lesson may well have given it.
+    h.db.delete(scheduleExceptions).run()
+    h.db.update(coaches).set({ active: false }).where(eq(coaches.id, coach.id)).run()
+    expect(await seen()).toEqual({ list: null, lesson: null, booking: null })
+    h.clock.now = new Date('2026-10-26T02:30:00Z')
+    expect(await seen()).toEqual({ list: 'inactive', lesson: 'inactive', booking: 'inactive' })
+  })
+
   it('lists the day with who marked each lesson', async () => {
     const h = setup()
     const { coachToken, student, bookingId } = await lesson(h)
@@ -177,6 +228,7 @@ describe('front desk 签到', () => {
         markedBy: null,
         canArrive: false,
         canMarkAbsent: false,
+        disruption: null,
       },
     ])
     const other = await h.call('GET', '/admin/front-desk?date=2026-10-27', undefined, admin)

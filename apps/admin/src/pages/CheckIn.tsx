@@ -9,7 +9,7 @@ import { Alert, Button, Card, Dialog, Input, Radio, Space, Tag } from 'tdesign-r
 import { renderSVG } from 'uqr'
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
-import { LessonTime } from '../bookingCells'
+import { confirmDisruptedArrival, DisruptionTag, LessonTime } from '../bookingCells'
 import { DataTable } from '../DataTable'
 import { NewStudentDialog } from '../DeskStudent'
 import { fmtTime } from '../format'
@@ -52,6 +52,7 @@ function Status({ row }: { row: FrontDeskLessonDto }) {
       ) : (
         <Tag variant="light">未签到</Tag>
       )}
+      {row.disruption && <DisruptionTag disruption={row.disruption} />}
       {line && <span className="muted nowrap">{line}</span>}
     </div>
   )
@@ -60,6 +61,14 @@ function Status({ row }: { row: FrontDeskLessonDto }) {
 function Actions({ row, onDone }: { row: FrontDeskLessonDto; onDone: () => void }) {
   const mark = async (attendance: 'attended' | 'no_show' | null) => {
     const label = { attended: '已签到', no_show: '已记为缺席' }
+    // Staff on site know best, so asked rather than refused.
+    if (
+      attendance === 'attended' &&
+      row.disruption &&
+      !(await confirmDisruptedArrival(row.disruption))
+    ) {
+      return
+    }
     if (
       await attempt(
         () => api('PUT', `/admin/bookings/${row.bookingId}/attendance`, { attendance }),

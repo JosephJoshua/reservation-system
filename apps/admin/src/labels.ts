@@ -1,4 +1,4 @@
-import type { BookingStatus, PackageStatus, RefundStatus } from '@rs/shared'
+import type { BookingStatus, Disruption, PackageStatus, RefundStatus } from '@rs/shared'
 
 type Theme = 'default' | 'primary' | 'warning' | 'danger' | 'success'
 
@@ -8,6 +8,13 @@ export const bookingStatusLabel: Record<BookingStatus, [string, Theme]> = {
   completed: ['已完成', 'success'],
   cancelled: ['已取消', 'default'],
   expired: ['已超时', 'default'],
+}
+
+/** A lesson the venue could not give as booked, short for 闭馆, 请假 and 停课. */
+export const disruptionLabel: Record<Disruption, string> = {
+  closed: '场馆闭馆',
+  off: '教练请假',
+  inactive: '教练停课',
 }
 
 export const packageStatusLabel: Record<PackageStatus, [string, Theme]> = {
