@@ -7,16 +7,16 @@ import {
   type SlotDto,
   venueDateKey,
 } from '../../lib/shared'
-import { api, assetUrl, errorMessage } from '../../utils/api'
+import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
 import { askForNotices, getCatalog, getMe } from '../../utils/data'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { leaveMove, submitMove } from '../../utils/move'
 
 /** Why a lesson the student opened 改约 for can no longer move. */
 function whyFixed(b: BookingDto): string {
-  if (b.status !== 'confirmed' || Date.parse(b.startsAt) <= Date.now()) return '这节课现在不能改约'
+  if (b.status !== 'confirmed' || Date.parse(b.startsAt) <= serverNow()) return '这节课现在不能改约'
   if (b.movedFrom && b.movesLeft === 0) return '改约次数已用完'
-  if (Date.parse(b.cancelDeadline) <= Date.now()) return '已过改约截止时间，如需调整请联系场馆'
+  if (Date.parse(b.cancelDeadline) <= serverNow()) return '已过改约截止时间，如需调整请联系场馆'
   return '这节课现在不能改约'
 }
 
@@ -107,7 +107,7 @@ Page({
         const c = catalog.coaches.find((coach) => coach.id === id)
         return c ? [{ id, name: c.name, avatar: c.avatarUrl ? assetUrl(c.avatarUrl) : '' }] : []
       })
-      const days = bookableDays(booking.window.advanceDays)
+      const days = bookableDays(booking.window.advanceDays, serverNow())
       // Open on the lesson's own day, where nearby times are the likely pick.
       const date = days.some((d) => d.key === venueDateKey(new Date(booking.startsAt)))
         ? venueDateKey(new Date(booking.startsAt))
@@ -147,7 +147,7 @@ Page({
       )
       if (request !== this.request) return
       const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
-      const now = Date.now()
+      const now = serverNow()
       const notice = booking.window.minNoticeMinutes * 60_000
       // A group class moves to another session of the same class, a private lesson to a private slot.
       const sessionOf = booking.capacity > 1 ? booking.lessonType.id : null
@@ -204,7 +204,7 @@ Page({
     const rules = this.booking?.terms
     // A time the student picks is free to cancel only until its usual deadline, which may be past.
     const late = rules
-      ? cancelDeadline(new Date(slot.startsAt), rules).getTime() < Date.now()
+      ? cancelDeadline(new Date(slot.startsAt), rules).getTime() < serverNow()
       : false
     this.setData({
       picked: slot,
@@ -237,7 +237,7 @@ Page({
       },
       `/pages/booking-detail/index?id=${this.id}`,
     )
-    if (result === 'moved' || result === 'fixed') return
+    if (result === 'moved' || result === 'fixed' || result === 'unknown') return
     this.setData({ submitting: false })
     if (result === 'refused') this.refuse(slot.key)
     // The picked time went: taken, closed or too close now. Show what is left.

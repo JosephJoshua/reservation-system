@@ -1,5 +1,5 @@
-import type { SlotDto } from '../../lib/shared'
-import { api, assetUrl, errorMessage } from '../../utils/api'
+import { type SlotDto, venueDateKey } from '../../lib/shared'
+import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
 import { catalogFetchedAt, getCatalog } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
@@ -81,8 +81,10 @@ Page({
     if (this.data.state !== 'ready') return
     const seek = this.pendingSeek
     this.pendingSeek = undefined
-    // Another page refreshed the catalog meanwhile, say after a coach or lesson was turned off.
-    if (catalogFetchedAt() !== this.catalogAt) this.load(seek)
+    // Another page refreshed the catalog meanwhile, say after a coach or lesson was turned off,
+    // or the page was left open past midnight and the day strip has moved.
+    const today = venueDateKey(new Date(serverNow()))
+    if (catalogFetchedAt() !== this.catalogAt || this.data.days[0]?.key !== today) this.load(seek)
     else this.loadSlots(seek)
   },
 
@@ -112,7 +114,7 @@ Page({
           },
         ]
       })
-      const days = bookableDays(lessonType.rules.advanceDays)
+      const days = bookableDays(lessonType.rules.advanceDays, serverNow())
       const coachId = coaches.some((c) => c.id === this.data.coachId)
         ? this.data.coachId
         : coaches.length === 1
@@ -154,7 +156,7 @@ Page({
       const rows = await api<SlotDto[]>('GET', `/slots?date=${date}&${filter}`)
       if (request !== this.request) return
       const names = new Map(coaches.map((c) => [c.id, c.name]))
-      const now = Date.now()
+      const now = serverNow()
       const notice = this.noticeMs
       const slots = rows
         .filter((s) => names.has(s.coachId) && Date.parse(s.startsAt) > now)

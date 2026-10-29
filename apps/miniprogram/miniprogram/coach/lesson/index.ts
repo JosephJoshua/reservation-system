@@ -5,7 +5,7 @@ import {
   profileTraits,
   type StudentProfileDto,
 } from '../../lib/shared'
-import { ApiError, assetUrl, errorMessage, showError } from '../../utils/api'
+import { assetUrl, errorMessage, refreshAfter, serverNow, showError } from '../../utils/api'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
@@ -76,7 +76,7 @@ function feedbackNote(l: CoachLessonDto): string {
 function feedbackClosed(l: CoachLessonDto): string {
   // A lesson that has ended comes as completed.
   const started =
-    (l.status === 'confirmed' || l.status === 'completed') && Date.parse(l.startsAt) <= Date.now()
+    (l.status === 'confirmed' || l.status === 'completed') && Date.parse(l.startsAt) <= serverNow()
   return started && !l.feedback ? (l.feedbackBlocked ?? '') : ''
 }
 
@@ -86,7 +86,7 @@ function attendanceNote(l: CoachLessonDto): string {
   if (l.attendance && l.attendanceBy === 'staff') {
     return `${mark}由前台登记，如需修改请联系前台。`
   }
-  if (Date.parse(l.startsAt) > Date.now()) {
+  if (Date.parse(l.startsAt) > serverNow()) {
     return l.attendance ? `${mark}课程开始后可以修改。` : '课程开始后可以签到。'
   }
   if (l.attendance) return `${mark}签到已截止，如需修改请联系场馆。`
@@ -151,7 +151,7 @@ Page({
     this.setData({
       state: 'ready',
       lesson: l,
-      tag: lessonTag(l, l.startsAt, Date.now()),
+      tag: lessonTag(l, l.startsAt, serverNow()),
       when: lessonTime(l.startsAt, l.endsAt),
       movedFrom: l.movedFrom ? dateTime(l.movedFrom) : '',
       lessonName: l.lessonType.isTrial
@@ -198,9 +198,10 @@ Page({
       this.markedAt = Date.now()
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
     } catch (err) {
+      // The front desk marked it meanwhile, marking was turned off or it is too late now: show the
+      // lesson as it stands, then why.
+      if (refreshAfter(err)) await this.load()
       showError(err)
-      // The front desk marked it meanwhile: show their mark, which the coach cannot change.
-      if (err instanceof ApiError && err.code === 'staff_marked') this.load()
     } finally {
       this.setData({ marking: false })
     }
@@ -227,6 +228,8 @@ Page({
       if (typed) this.setData({ noteDirty: this.data.note.trim() !== saved.coachNote })
       wx.showToast({ title: '备注已保存', icon: 'none' })
     } catch (err) {
+      // Refused for how the lesson stands now: reload it, keeping the unsaved note.
+      if (refreshAfter(err)) await this.load()
       showError(err)
     } finally {
       this.setData({ savingNote: false })
@@ -255,6 +258,7 @@ Page({
       this.show(await coachApi<CoachLessonDto>('DELETE', `/lessons/${this.id}/feedback`))
       wx.showToast({ title: '已删除', icon: 'success' })
     } catch (err) {
+      if (refreshAfter(err)) await this.load()
       showError(err)
     } finally {
       this.feedbackAsking = false
@@ -356,6 +360,8 @@ Page({
       this.show(await coachApi<CoachLessonDto>('POST', `/lessons/${this.id}/cancel`, { reason }))
       wx.showToast({ title: '已取消', icon: 'success' })
     } catch (err) {
+      // Not cancellable any more, say started or cancelled meanwhile: show it as it stands.
+      if (refreshAfter(err)) await this.load()
       showError(err)
     } finally {
       this.setData({ cancelling: false })

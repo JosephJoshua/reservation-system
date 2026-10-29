@@ -126,6 +126,14 @@ export async function requestKeyed<T>(
   }
 }
 
+/**
+ * Whether a failed change means the page may be out of date and should reload: refused for how
+ * things stand now (403, 404, 409), or lost so it may have gone through.
+ */
+export function refreshAfter(e: unknown): boolean {
+  return e instanceof ApiError && [0, 403, 404, 409].includes(e.status)
+}
+
 /** Sends a local file as the `file` field of a multipart POST; answers like request. */
 export function upload<T>(
   path: string,

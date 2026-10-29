@@ -5,7 +5,7 @@ import {
   venueDateKey,
   venueInstant,
 } from '../../lib/shared'
-import { errorMessage, showError } from '../../utils/api'
+import { errorMessage, serverNow, showError } from '../../utils/api'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { isTop, navigateOnce } from '../../utils/nav'
 import { modalDangerColor } from '../../utils/theme'
@@ -123,7 +123,7 @@ Page({
   onShow() {
     if (this.data.state !== 'ready') return
     // Left open past midnight: today and the day strip have moved.
-    if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date())) {
+    if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date(serverNow()))) {
       this.load()
       return
     }
@@ -140,14 +140,14 @@ Page({
       const me = await coachApi<CoachMeDto>('GET', '/me')
       this.me = me
       remember(me)
-      const now = Date.now()
+      const now = serverNow()
       const today = venueDateKey(new Date(now))
       const days = Array.from({ length: PAST_DAYS + me.advanceDays + 1 }, (_, i) => {
         const at = new Date(now + (i - PAST_DAYS) * DAY)
         const near = i >= PAST_DAYS && i - PAST_DAYS <= 2
         return {
           key: venueDateKey(at),
-          label: near ? dayName(at) : weekday(at),
+          label: near ? dayName(at, new Date(now)) : weekday(at),
           date: monthDay(at),
           past: i < PAST_DAYS,
           lessons: 0,
@@ -205,7 +205,7 @@ Page({
   showDay() {
     const schedule = this.schedule
     if (!schedule) return
-    const now = Date.now()
+    const now = serverNow()
     const { date } = this.data
     const dayStart = venueInstant(date, 0).getTime()
     const dayEnd = dayStart + DAY

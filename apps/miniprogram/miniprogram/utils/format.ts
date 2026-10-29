@@ -88,11 +88,19 @@ export interface Day {
   date: string
 }
 
-/** Today and the days after it that can be booked, for the day strip. */
-export function bookableDays(advanceDays: number, now = Date.now()): Day[] {
+/**
+ * Today and the days after it that can be booked, for the day strip. `now` is the server's time
+ * (serverNow()), since the phone's clock can be off by a day.
+ */
+export function bookableDays(advanceDays: number, now: number): Day[] {
+  const today = new Date(now)
   return Array.from({ length: advanceDays + 1 }, (_, i) => {
     const at = new Date(now + i * 86400000)
-    return { key: venueDateKey(at), label: i < 3 ? dayName(at) : weekday(at), date: monthDay(at) }
+    return {
+      key: venueDateKey(at),
+      label: i < 3 ? dayName(at, today) : weekday(at),
+      date: monthDay(at),
+    }
   })
 }
 

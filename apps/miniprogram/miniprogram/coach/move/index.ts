@@ -4,7 +4,7 @@ import {
   type OpenTimeDto,
   venueDateKey,
 } from '../../lib/shared'
-import { ApiError, errorMessage } from '../../utils/api'
+import { ApiError, errorMessage, serverNow } from '../../utils/api'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { leaveMove, submitMove } from '../../utils/move'
 import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
@@ -70,7 +70,7 @@ Page({
         return
       }
       this.coachId = me.id
-      const strip = bookableDays(me.advanceDays)
+      const strip = bookableDays(me.advanceDays, serverNow())
       const first = strip[0]?.key ?? ''
       const last = strip[strip.length - 1]?.key ?? first
       // Start times in the coach's own 排班 that fit the lesson, with its own time free.
@@ -78,7 +78,7 @@ Page({
         'GET',
         `/move-times?bookingId=${this.id}&from=${first}&to=${last}`,
       )
-      this.free = times.filter((t) => Date.parse(t.startsAt) > Date.now())
+      this.free = times.filter((t) => Date.parse(t.startsAt) > serverNow())
       const days = strip.map((d) => ({
         ...d,
         free: this.free.filter((s) => !s.tableFull && venueDateKey(new Date(s.startsAt)) === d.key)
@@ -147,7 +147,7 @@ Page({
         }),
       `/coach/lesson/index?id=${this.id}`,
     )
-    if (result === 'moved' || result === 'fixed') return
+    if (result === 'moved' || result === 'fixed' || result === 'unknown') return
     this.setData({ submitting: false })
     if (result === 'refused') {
       // Say the student has another lesson then: keep the time from being picked again.
