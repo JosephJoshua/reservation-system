@@ -750,7 +750,7 @@ function PackagesCard({ student }: { student: Student }) {
           {
             colKey: 'op',
             title: '操作',
-            width: 180,
+            width: 240,
             cell: ({ row }) => (
               <Space size={0} breakLine={false}>
                 {!s.deletedAt &&
@@ -1571,6 +1571,7 @@ function DeskRefund({
               max={q.max / 100}
               decimalPlaces={2}
               suffix="元"
+              status={valid ? 'default' : 'error'}
               onChange={(v) => setAmount(v as number)}
             />
           </Field>
