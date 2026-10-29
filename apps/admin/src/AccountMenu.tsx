@@ -172,7 +172,19 @@ function OwnPassword({ onClose }: { onClose: () => void }) {
  * page, with anything typed in it, stays as it was. `onDone` gets true once logged in, or false
  * when they would rather log in with another account, which leaves the page.
  */
-export function ReLogin({ me, onDone }: { me: StaffDto; onDone: (ok: boolean) => void }) {
+export function ReLogin({
+  me,
+  header = '登录已过期',
+  otherLabel = '换个账号登录',
+  onDone,
+}: {
+  me: StaffDto
+  /** Why the password is asked for, when not because the session expired. */
+  header?: string
+  /** The button that answers onDone(false). */
+  otherLabel?: string
+  onDone: (ok: boolean) => void
+}) {
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const submit = async () => {
@@ -195,12 +207,12 @@ export function ReLogin({ me, onDone }: { me: StaffDto; onDone: (ok: boolean) =>
   return (
     <Dialog
       visible
-      header="登录已过期"
+      header={header}
       closeBtn={false}
       closeOnEscKeydown={false}
       closeOnOverlayClick={false}
       confirmBtn={{ content: '登录', disabled: !password, loading: busy }}
-      cancelBtn={{ content: '换个账号登录', disabled: busy }}
+      cancelBtn={{ content: otherLabel, disabled: busy }}
       onConfirm={submit}
       onCancel={() => onDone(false)}
       className="relogin-dialog"

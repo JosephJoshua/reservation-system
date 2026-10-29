@@ -45,7 +45,7 @@ import { Schedule } from './pages/Schedule'
 import { Settings } from './pages/Settings'
 import { Staff } from './pages/Staff'
 import { Students } from './pages/Students'
-import { confirmLeave, hasUnsaved, leaveTo, takeLeave } from './SaveBar'
+import { confirmLeave, hasUnsaved, leaveTo, passLeave, takeLeave } from './SaveBar'
 import { SHOW_SECTION } from './SectionNav'
 import { StudentSearch } from './StudentSearch'
 import { ThemeMenu } from './ThemeMenu'
@@ -111,10 +111,13 @@ export function App() {
   const phone = useIsPhone()
   // Who is signed in, once known, for logging in again over the page.
   const signedIn = useRef<StaffDto | null>(null)
-  // The session ended while working: asks for the password over the page.
+  // The session ended while working: asks for the password over the page. `header` and `other`
+  // say why when it was another tab, and what the other button does instead of 换个账号登录.
   const [relogin, setRelogin] = useState<{
     me: StaffDto
     done: (ok: boolean) => void
+    header?: string
+    other?: { label: string; run: () => void }
   } | null>(null)
   const pending = useRef(relogin)
   pending.current = relogin
@@ -146,6 +149,18 @@ export function App() {
             resolve(false)
             return
           }
+          // Already asking, as after another tab logged out: the same question answers both.
+          const open = pending.current
+          if (open) {
+            setRelogin({
+              ...open,
+              done: (ok) => {
+                open.done(ok)
+                resolve(ok)
+              },
+            })
+            return
+          }
           setRelogin({
             me,
             done: (ok) => {
@@ -157,9 +172,17 @@ export function App() {
       () => signOut('账号已停用，请联系管理员'),
     )
     // Another tab of this browser logged in or out: the token is shared, so this tab follows,
-    // and SignedInApp says so if that made it someone else.
+    // and SignedInApp says so if that made it someone else. Changes not saved here are not
+    // dropped on the way: the staff member logs in again over the page, or chooses to follow.
     const offToken = onTokenChange((token) => {
       if (!token) {
+        const me = signedIn.current
+        if (me && hasUnsaved()) {
+          if (!pending.current) {
+            setRelogin({ me, header: '已在其他标签页退出登录', done: () => setRelogin(null) })
+          }
+          return
+        }
         if (signedIn.current || pending.current) signOut('已在其他标签页退出登录')
         else setAuthed(false)
         return
@@ -168,7 +191,7 @@ export function App() {
       setNotice(undefined)
       const asked = pending.current
       if (!asked) {
-        window.dispatchEvent(new Event(STAFF_CHANGED))
+        void followAccount(token)
         return
       }
       // Asking for the password here: logged in again there as the same person, this tab
@@ -219,6 +242,11 @@ export function App() {
       const link = (e.target as Element | null)?.closest?.('a[href^="#"]:not([data-overlay])')
       const href = link?.getAttribute('href')
       if (!href || href === window.location.hash) return
+      // A link that drops the form on purpose, such as opening the student a phone belongs to.
+      if (link?.hasAttribute('data-discard')) {
+        passLeave()
+        return
+      }
       // The link's own click handler (closing a dialog, say) waits for the answer too.
       e.preventDefault()
       e.stopPropagation()
@@ -238,6 +266,39 @@ export function App() {
       document.removeEventListener('click', onClick, true)
     }
   }, [])
+
+  /**
+   * Another tab logged in: this tab acts as that account from now on. Someone else, with changes
+   * not saved here, asks first: logging in again here as before keeps them.
+   */
+  const followAccount = async (token: string) => {
+    const follow = () => window.dispatchEvent(new Event(STAFF_CHANGED))
+    const me = signedIn.current
+    if (!me || !hasUnsaved()) return follow()
+    const now = await fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => (res.ok ? (res.json() as Promise<StaffDto>) : null))
+      .catch(() => null)
+    // Changed again meanwhile, or asked already: the later change or the open question decides.
+    if (getToken() !== token || pending.current) return
+    if (!now || now.id === me.id) return follow()
+    const asked = {
+      me,
+      header: `其他标签页登录了${now.name}的账号`,
+      done: (ok: boolean) => {
+        setRelogin(null)
+        if (!ok) follow()
+      },
+      other: {
+        label: `以${now.name}继续`,
+        run: async () => {
+          if (!(await confirmLeave())) return
+          takeLeave()
+          asked.done(false)
+        },
+      },
+    }
+    setRelogin(asked)
+  }
 
   // A new page starts at its top, as the content scrolls with the window.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the page changes
@@ -268,16 +329,28 @@ export function App() {
           }}
         />
       ) : (
-        <SignedInApp page={page} phone={phone} onLogout={logout} onMe={rememberMe} />
+        <SignedInApp
+          page={page}
+          phone={phone}
+          onLogout={logout}
+          onMe={rememberMe}
+          onRedirect={() => setPage(currentPage())}
+        />
       )}
       {authed && relogin && (
         <ReLogin
           me={relogin.me}
+          header={relogin.header}
+          otherLabel={relogin.other?.label}
           onDone={async (ok) => {
             if (ok) {
               relogin.done(true)
               // Roles may have changed meanwhile.
               window.dispatchEvent(new Event(STAFF_CHANGED))
+              return
+            }
+            if (relogin.other) {
+              relogin.other.run()
               return
             }
             // Another account: the page and anything unsaved on it go.
@@ -296,11 +369,14 @@ function SignedInApp({
   phone,
   onLogout,
   onMe,
+  onRedirect,
 }: {
   page: PageKey
   phone: boolean
   onLogout: () => void
   onMe: (me: StaffDto | null) => void
+  /** The page shown is not the one in the address, which was put right. */
+  onRedirect: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   // A menu tap that first asked about unsaved changes closes the menu once the page changes.
@@ -311,10 +387,15 @@ function SignedInApp({
   // Another tab logged in as someone else: said once, as the page now acts as them.
   const seen = useRef<number | null>(null)
   const [switched, setSwitched] = useState<string | null>(null)
+  // Counts account changes, so the page starts over as the new account, its forms emptied.
+  const [account, setAccount] = useState(0)
   useEffect(() => {
     if (!me.data) return
     onMe(me.data)
-    if (seen.current !== null && seen.current !== me.data.id) setSwitched(me.data.name)
+    if (seen.current !== null && seen.current !== me.data.id) {
+      setSwitched(me.data.name)
+      setAccount((n) => n + 1)
+    }
     seen.current = me.data.id
   }, [me.data, onMe])
   // biome-ignore lint/correctness/useExhaustiveDependencies: forgets the account on leaving
@@ -335,6 +416,14 @@ function SignedInApp({
   // A page the roles do not cover, such as from an old link, opens the first one they do.
   const page = allowed.includes(requested) ? requested : allowed[0]
   const lessonId = useLessonParam()
+  // The address names the page shown, so a reload or a copied link opens it too.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the page shown changes
+  useEffect(() => {
+    if (!me.data || !page || page === requested) return
+    history.replaceState(history.state, '', `#/${page}`)
+    window.dispatchEvent(new Event(SHOW_SECTION))
+    onRedirect()
+  }, [me.data, page, requested])
   // 课程详情 belongs with 预约 in the menu.
   const current = page === 'lessons' ? 'bookings' : page
   const Page = page ? pages[page].component : null
@@ -429,7 +518,13 @@ function SignedInApp({
             </span>
           </header>
           <main className="admin-content">
-            {Page ? <Page /> : me.error ? <p className="muted">{me.error}</p> : <Loading />}
+            {Page ? (
+              <Page key={account} />
+            ) : me.error ? (
+              <p className="muted">{me.error}</p>
+            ) : (
+              <Loading />
+            )}
           </main>
           {lessonId && allowed.includes('lessons') && <LessonDrawer key={lessonId} id={lessonId} />}
         </div>

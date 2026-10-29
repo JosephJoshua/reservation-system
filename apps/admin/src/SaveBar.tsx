@@ -4,9 +4,51 @@ import { Button, DialogPlugin } from 'tdesign-react'
 // Forms with changes not saved yet, by the id of the component that holds them.
 const unsaved = new Set<string>()
 
-/** True while some form on the page has changes that are not saved. */
+// Dialogs typed into since they opened, such as 代约 or 修改姓名和手机号: what was typed is lost
+// when the page changes under them, so they count as unsaved until they close. A dialog that
+// keeps its own count, with useLeaveGuard, has the class `own-leave-guard`; the login and
+// search dialogs hold nothing to keep.
+const typedIn = new Set<Element>()
+const NOT_TRACKED = '.own-leave-guard, .relogin-dialog, .command-menu'
+
+function onTyped(e: Event) {
+  const target = e.target as Element | null
+  if (!target?.closest || target.closest(NOT_TRACKED)) return
+  const dialog = target.closest('.t-dialog__ctx')
+  if (dialog) typedIn.add(dialog)
+}
+
+/** Drops the dialogs closed or gone since they were typed into. */
+function openTyped() {
+  for (const dialog of typedIn) {
+    const shown = dialog.isConnected && dialog.getClientRects().length > 0
+    if (!shown) typedIn.delete(dialog)
+  }
+  return typedIn.size
+}
+
+/**
+ * Forgets what was typed into the dialog on top, once it was saved: it is closing, and the page
+ * change that may follow, such as opening the student just added, is not asked about.
+ */
+export function settleDialog() {
+  const open = [...document.querySelectorAll('.t-dialog__ctx')].filter(
+    (d) => d.getClientRects().length > 0,
+  )
+  const top = open.at(-1)
+  if (top) typedIn.delete(top)
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('input', onTyped, true)
+  window.addEventListener('beforeunload', (e) => {
+    if (openTyped() > 0) e.preventDefault()
+  })
+}
+
+/** True while some form or dialog on the page has changes that are not saved. */
 export function hasUnsaved() {
-  return unsaved.size > 0
+  return unsaved.size > 0 || openTyped() > 0
 }
 
 // The question on screen, so a second back press while it is open does not ask twice.
@@ -38,6 +80,14 @@ export function confirmLeave(): Promise<boolean> {
     })
   })
   return asking
+}
+
+/**
+ * Lets the next page change through without asking, for a move that follows a save, such as
+ * opening the student a dialog just added while the dialog is still closing.
+ */
+export function passLeave() {
+  leaving = true
 }
 
 /** True once right after the admin chose to leave, for the page change that follows. */

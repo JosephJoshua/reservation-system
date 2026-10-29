@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { MessagePlugin } from 'tdesign-react'
 import { api, RequestError } from './api'
+import { settleDialog } from './SaveBar'
 
 /** Loads a GET endpoint; `reload` fetches again. */
 export function useApi<T>(path: string | null) {
@@ -118,6 +119,7 @@ export async function attempt(
   setInFlight(key, true)
   try {
     await fn()
+    settleDialog()
     if (success) void MessagePlugin.success(success)
     return true
   } catch (e) {
