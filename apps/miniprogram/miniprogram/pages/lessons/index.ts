@@ -2,7 +2,7 @@ import type { BookingDto } from '../../lib/shared'
 import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
-import { BOOKING_STATUS, DISRUPTION_TAG } from '../../utils/labels'
+import { lessonTag } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 
 type Scope = 'upcoming' | 'past'
@@ -19,23 +19,6 @@ interface LessonView {
   tone: 'primary' | 'warning' | 'success' | 'danger' | 'default'
 }
 
-/** The status tag, with the attendance once it is marked. */
-function statusOf(b: BookingDto): Pick<LessonView, 'status' | 'tone'> {
-  if (b.attendance === 'attended') {
-    return { status: b.status === 'confirmed' ? '已签到' : '已到课', tone: 'success' }
-  }
-  if (b.attendance === 'no_show') return { status: '缺席', tone: 'danger' }
-  // The venue cannot give it as booked: said on the list, so nobody travels to it.
-  if (b.disruption && (b.status === 'confirmed' || b.status === 'pending_payment')) {
-    return { status: DISRUPTION_TAG[b.disruption], tone: 'warning' }
-  }
-  return {
-    status: BOOKING_STATUS[b.status],
-    tone:
-      b.status === 'pending_payment' ? 'warning' : b.status === 'confirmed' ? 'primary' : 'default',
-  }
-}
-
 function view(b: BookingDto, now: Date): LessonView {
   return {
     id: b.id,
@@ -45,7 +28,8 @@ function view(b: BookingDto, now: Date): LessonView {
     name: b.lessonType.name,
     coach: b.coach.name,
     feedback: b.hasFeedback,
-    ...statusOf(b),
+    // An unpaid hold reads 已失效 from its payment time on, as 预约详情 shows it.
+    ...lessonTag(b, now.getTime()),
   }
 }
 
