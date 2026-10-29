@@ -839,7 +839,9 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, weeklyHoursBody)
     const id = idParam(c)
     const from = body.from ?? venueDateKey(deps.now())
-    const { conflicts, changed } = saveHours(deps, id, { from, hours: body.hours })
+    const { conflicts, changed } = saveHours(deps, id, { from, hours: body.hours }, (current) =>
+      checkVersion(c, current),
+    )
     if (changed) {
       log(c.get('staffId'), {
         action: 'schedule.hours',

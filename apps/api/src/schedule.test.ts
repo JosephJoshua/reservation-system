@@ -1,7 +1,7 @@
 // 排班 end to end: weekly hours, 请假/加班/闭馆, the start times they leave, and booking, moving
 // and cancelling private lessons at those times. The clock starts on Friday 2026-10-23 at 10:00
 // venue time; 2026-10-25 is a Sunday.
-import { venueInstant } from '@rs/shared'
+import { venueInstant, versionOf } from '@rs/shared'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {
@@ -844,6 +844,48 @@ describe('the coach keeping their own 排班', () => {
     expect(
       (await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '10:00' }])).status,
     ).toBe(200)
+  })
+
+  it('refuses a weekly hours save made on top of the other side changing them', async () => {
+    const h = setup()
+    const { coach, admin } = await venue(h)
+    const token = await coachToken(h, admin, coach.id)
+    const week = (startMinute: number) => ({ hours: [{ weekday: 0, startMinute, endMinute: 720 }] })
+    // Staff and the coach both open the 排班.
+    const staffSaw = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin))
+      .json.periods
+    const coachSaw = (await h.call('GET', '/coach/hours', undefined, token)).json.periods
+    const coachSave = await h.call('PUT', '/coach/hours', week(540), token, {
+      'If-Match': versionOf(coachSaw),
+    })
+    expect(coachSave.status).toBe(200)
+    const staffSave = await h.call('PUT', `/admin/coaches/${coach.id}/hours`, week(600), admin, {
+      'If-Match': versionOf(staffSaw),
+      'Idempotency-Key': 'staff-hours-1',
+    })
+    expect([staffSave.status, staffSave.json.error.code]).toEqual([409, 'edited_elsewhere'])
+    // The coach's hours stand; saved again on top of them, staff win.
+    const now = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)).json
+    expect(now.periods[0].hours).toEqual(week(540).hours)
+    const again = await h.call('PUT', `/admin/coaches/${coach.id}/hours`, week(600), admin, {
+      'If-Match': versionOf(now.periods),
+      'Idempotency-Key': 'staff-hours-2',
+    })
+    expect(again.status).toBe(200)
+    // A stale save from the coach is refused the same way.
+    const stale = await h.call('PUT', '/coach/hours', week(480), token, {
+      'If-Match': versionOf(coachSaw),
+    })
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'edited_elsewhere'])
+    // A repeat of the staff save (a lost response) gets its first answer back.
+    const repeat = await h.call('PUT', `/admin/coaches/${coach.id}/hours`, week(600), admin, {
+      'If-Match': versionOf(now.periods),
+      'Idempotency-Key': 'staff-hours-2',
+    })
+    expect(repeat.status).toBe(200)
+    expect(
+      (await h.call('GET', '/coach/hours', undefined, token)).json.periods[0].hours[0].startMinute,
+    ).toBe(600)
   })
 
   it('keeps one coach out of another coach 请假', async () => {
