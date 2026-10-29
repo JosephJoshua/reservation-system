@@ -37,6 +37,7 @@ export const staffActionLabels = {
   'package.sell': '线下售课时包',
   'package.grant': '赠送课时',
   'package.extend': '延长有效期',
+  'package.refund': '前台退课时包',
   'refund.approve': '同意退款',
   'refund.reject': '拒绝退款',
   'refund.retry': '重试退款',

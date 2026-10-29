@@ -501,7 +501,17 @@ function useStudent(id: number, onChanged: () => void) {
           }}
         />
       )}
-      {action && action.kind !== 'ledger' && (
+      {action?.kind === 'refund' && (
+        <DeskRefund
+          pkg={s.packages.find((p) => p.id === action.packageId)}
+          onClose={() => setAction(null)}
+          onDone={() => {
+            setAction(null)
+            reload()
+          }}
+        />
+      )}
+      {(action?.kind === 'grant' || action?.kind === 'extend') && (
         <PackageAction
           kind={action.kind}
           packageId={action.packageId}
@@ -536,7 +546,7 @@ function useStudent(id: number, onChanged: () => void) {
   }
 }
 
-type PackageActionKind = { kind: 'grant' | 'extend' | 'ledger'; packageId: number }
+type PackageActionKind = { kind: 'grant' | 'extend' | 'ledger' | 'refund'; packageId: number }
 type Student = ReturnType<typeof useStudent>
 
 /** The student's phone, when they joined, the 测试学员 switch, or that they were deleted. */
@@ -685,6 +695,7 @@ function PackagesCard({ student }: { student: Student }) {
   const { s, sell, packageAction } = student
   const canEdit = useCan('students')
   const canManage = useCan('manage')
+  const canRefund = useCan('finance')
   if (!s) return null
   return (
     <Card
@@ -766,6 +777,17 @@ function PackagesCard({ student }: { student: Student }) {
                     </Button>
                   </>
                 ) : null}
+                {/* Sold at the front desk, so refunded there by staff. */}
+                {!s.deletedAt && canRefund && row.paidOffline && row.status === 'active' && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    theme="danger"
+                    onClick={() => packageAction({ kind: 'refund', packageId: row.id })}
+                  >
+                    退款
+                  </Button>
+                )}
                 <Button
                   size="small"
                   variant="text"
@@ -1467,6 +1489,94 @@ function PackageAction({
           />
         </Field>
       </div>
+    </Dialog>
+  )
+}
+
+/** Refunds the unused lessons of a package sold at the front desk, handed back there. */
+function DeskRefund({
+  pkg,
+  onClose,
+  onDone,
+}: {
+  pkg: StudentDetail['packages'][number] | undefined
+  onClose: () => void
+  onDone: () => void
+}) {
+  const quote = useApi<{ suggested: number; max: number; lessonsRemaining: number }>(
+    pkg ? `/admin/packages/${pkg.id}/desk-refund` : null,
+  )
+  const [amount, setAmount] = useState<number | undefined>()
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+  const q = quote.data
+  useEffect(() => {
+    if (q) setAmount(toYuan(q.suggested))
+  }, [q])
+  const fen = toFen(amount)
+  const valid = !!q && fen !== null && fen >= 1 && fen <= q.max
+
+  const submit = async () => {
+    if (!pkg || !valid) return
+    if (
+      await attempt(
+        () =>
+          api(
+            'POST',
+            `/admin/packages/${pkg.id}/desk-refund`,
+            { amount: fen },
+            {
+              key,
+              ifMatch: pkg,
+            },
+          ),
+        '已退款',
+        { onStale: onDone },
+      )
+    )
+      onDone()
+  }
+
+  return (
+    <Dialog
+      visible
+      header="前台退款"
+      confirmBtn={{
+        content: '确认已退还',
+        theme: 'danger',
+        disabled: !valid,
+        loading: submitting,
+      }}
+      cancelBtn="返回"
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      {quote.loading ? (
+        <Loading size="small" />
+      ) : quote.error || !q || !pkg ? (
+        <p className="muted">{quote.error ?? '课时包不存在'}</p>
+      ) : (
+        <div className="fields">
+          <p>
+            「{pkg.name}」剩 {q.lessonsRemaining} 节，实付 {yuan(pkg.pricePaid)}。
+          </p>
+          <Field
+            label="退款金额"
+            help={`建议金额 = 实付金额 − 已上课时按单次价合计，最多 ${yuan(q.max)}`}
+          >
+            <InputNumber
+              theme="normal"
+              value={amount}
+              min={0.01}
+              max={q.max / 100}
+              decimalPlaces={2}
+              suffix="元"
+              onChange={(v) => setAmount(v as number)}
+            />
+          </Field>
+          <p className="muted">请先当面退还款项再确认。确认后课时包作废，不能撤销。</p>
+        </div>
+      )}
     </Dialog>
   )
 }

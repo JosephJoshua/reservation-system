@@ -137,8 +137,10 @@ import { nextSort, orderedLists, saveOrder } from '../services/order'
 import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
   approvePackageRefund,
+  deskRefundQuote,
   extendPackage,
   grantLessons,
+  refundDeskPackage,
   rejectPackageRefund,
   sellPackageOffline,
 } from '../services/packages'
@@ -2084,6 +2086,33 @@ export function adminRoutes(deps: Deps) {
       target: { kind: 'package', id },
     })
     return c.body(null, 204)
+  })
+
+  // A package sold at the front desk, refunded there: the suggested amount for the dialog.
+  app.get('/packages/:id/desk-refund', need('finance'), (c) =>
+    c.json(deskRefundQuote(deps, idParam(c))),
+  )
+
+  // Refunds the unused lessons of a package sold at the front desk, handed back there at once.
+  app.post('/packages/:id/desk-refund', need('finance'), async (c) => {
+    const { amount } = await parseBody(c, z.object({ amount: fen.min(1) }))
+    const id = idParam(c)
+    // The amount was worked out from the package as staff saw it.
+    if (!c.req.header('If-Match')) throw new ApiError(428, 'version_required', '请刷新后再操作')
+    const done = refundDeskPackage(deps, id, amount, (current) =>
+      checkVersion(c, packageViews(db, [current], deps.now())[0]),
+    )
+    if (!done.repeat) {
+      const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
+      log(c.get('staffId'), {
+        action: 'package.refund',
+        summary: `课时包「${pkg?.name}」前台退款 ${yuan(amount)}`,
+        amount,
+        studentId: pkg?.studentId,
+        target: { kind: 'package', id },
+      })
+    }
+    return c.json({ refundId: done.refundId })
   })
 
   app.post('/packages/offline-sale', need('students'), async (c) => {
