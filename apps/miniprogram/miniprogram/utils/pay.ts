@@ -3,8 +3,8 @@ import { ApiError, api } from './api'
 import { yuan } from './format'
 
 /**
- * Paid; paid, but the lesson could not be confirmed (the venue stopped it, or the hold ran out and
- * the time was taken) so the money goes back; not paid (cancelled at the cashier); paid at the
+ * Paid; paid, but the lesson could not be confirmed (the venue stopped or called it off, or the
+ * hold ran out and the time was taken) so the money goes back; not paid (cancelled at the cashier); paid at the
  * cashier but not confirmed yet; or paid at the cashier while the server has the order closed,
  * which staff have to sort out.
  */
@@ -20,7 +20,7 @@ export const PAY_PENDING = '支付结果确认中，请稍后下拉刷新'
 export const PAY_UNCLEAR = '支付结果确认中，如已扣款请联系场馆'
 
 /** Said when a payment landed on a lesson that can no longer go ahead and is refunded. */
-export const PAY_REFUNDED = '课程已无法上课，款项将原路退回'
+export const PAY_REFUNDED = '这节课无法上课，款项将原路退回'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -71,9 +71,14 @@ export async function waitForOrder(orderId: number): Promise<OrderStatusDto | nu
   }
 }
 
-/** A paid order's result: its lesson booking expired instead of being confirmed, and is refunded. */
+/**
+ * A paid order's result: its lesson booking was not confirmed (expired, or cancelled by the venue
+ * for a session it called off), so the money goes back.
+ */
 function paidAs(order: OrderStatusDto): 'paid' | 'refunded' {
-  return order.bookingStatus === 'expired' ? 'refunded' : 'paid'
+  return order.bookingStatus === 'expired' || order.bookingStatus === 'cancelled'
+    ? 'refunded'
+    : 'paid'
 }
 
 /** The paid order's result, asking the server once; null when unpaid or it cannot be reached. */

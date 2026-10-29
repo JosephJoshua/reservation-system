@@ -53,9 +53,11 @@ function subtitle(b: BookingDto, now: number): string {
       return left > 0 ? `请在 ${mm}:${ss} 内完成支付，超时将自动取消` : '支付已超时'
     }
     case 'confirmed':
-      // Paid or on a package, but the venue cannot give it: the student should not come.
+      // Paid or on a package, but the venue cannot give it: the student should not come. Once it
+      // has started it can no longer be cancelled here.
       if (b.disruption) {
-        return `${DISRUPTION_TEXT[b.disruption]}，${b.canMove ? '请取消或改约' : '请取消后重新预约'}`
+        const next = !b.canCancel ? '请联系场馆' : b.canMove ? '请取消或改约' : '请取消后重新预约'
+        return `${DISRUPTION_TEXT[b.disruption]}，${next}`
       }
       return '请按时到场上课'
     case 'completed':
@@ -74,18 +76,18 @@ function subtitle(b: BookingDto, now: number): string {
     case 'expired': {
       if (b.paymentIssue === 'open') return '付款异常，场馆会联系你处理'
       if (b.paymentIssue === 'handled') return '付款异常，场馆已处理'
-      const why = b.disruption ? DISRUPTION_TEXT[b.disruption] : ''
       // Paid, but the lesson could not be confirmed (stopped by the venue, or the time was taken
-      // after the hold ran out): the server refunded it.
+      // after the hold ran out): the server refunded it, and says why as recorded then.
       if (b.refund) {
         const back = b.paidOffline
           ? '款项将到店退还'
           : b.refund.status === 'succeeded'
             ? '款项已原路退回'
             : '款项将原路退回'
-        return `${why || '课程已无法上课'}，${back}`
+        return `${b.expiredWhy || '这节课无法上课'}，${back}`
       }
-      return why ? `${why}，预约已失效` : '未在规定时间内支付'
+      // Unpaid: what stands in the way of the lesson while it is still ahead.
+      return b.disruption ? `${DISRUPTION_TEXT[b.disruption]}，预约已失效` : '未在规定时间内支付'
     }
   }
 }
