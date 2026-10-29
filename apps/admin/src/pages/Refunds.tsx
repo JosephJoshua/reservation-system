@@ -1,8 +1,8 @@
 import {
-  REFUND_PAID_TWICE,
   REFUND_SETTLE_WAYS,
   type RefundSettleWay,
   type RefundStatus,
+  settledRefundWarning,
 } from '@rs/shared'
 import { useState } from 'react'
 import {
@@ -73,12 +73,13 @@ function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
 export function Refunds() {
   // The overview links here with the status it counted.
   const filters = useListFilters(
-    { status: 'requested', from: '', to: '', q: '', provider: '', abnormal: '' },
+    { status: 'requested', from: '', to: '', q: '', provider: '', abnormal: '', check: '' },
     {
       path: '#/refunds',
       valid: {
         status: oneOf(...statusOptions.map((o) => o.value)),
         abnormal: oneOf('1'),
+        check: oneOf('1'),
         from: isDay,
         to: isDay,
         provider: oneOf(...providerOptions.map((o) => o.value)),
@@ -88,10 +89,10 @@ export function Refunds() {
   const f = filters.values
   const params = new URLSearchParams()
   setRange(params, f.from, f.to)
-  for (const key of ['q', 'status', 'provider', 'abnormal'] as const)
+  for (const key of ['q', 'status', 'provider', 'abnormal', 'check'] as const)
     if (f[key]) params.set(key, f[key])
   const list = usePagedList<Refund>(`/admin/refunds?${params}`, filters)
-  const more = ['status', 'provider', 'abnormal'] as const
+  const more = ['status', 'provider', 'abnormal', 'check'] as const
   const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
   const [settling, setSettling] = useState<Refund | null>(null)
@@ -170,9 +171,25 @@ export function Refunds() {
             <Filter label="">
               <Checkbox
                 checked={f.abnormal === '1'}
-                onChange={(v) => filters.set({ abnormal: v ? '1' : '' })}
+                // 退款异常 are all 退款中, so the status follows.
+                onChange={(v) =>
+                  filters.set(
+                    v ? { abnormal: '1', check: '', status: 'processing' } : { abnormal: '' },
+                  )
+                }
               >
                 退款异常
+              </Checkbox>
+            </Filter>
+            <Filter label="">
+              <Checkbox
+                checked={f.check === '1'}
+                // 待核对 are all 已退款, so the status follows.
+                onChange={(v) =>
+                  filters.set(v ? { check: '1', abnormal: '', status: 'succeeded' } : { check: '' })
+                }
+              >
+                待核对
               </Checkbox>
             </Filter>
           </>
@@ -180,8 +197,9 @@ export function Refunds() {
         set={filters.changed([...more])}
         onClear={() => filters.reset([...more])}
         actions={
-          // The export has no 退款异常 filter.
-          f.abnormal !== '1' && (
+          // The export has no 退款异常 or 待核对 filter.
+          f.abnormal !== '1' &&
+          f.check !== '1' && (
             <ExportButton
               kind="refunds"
               range={f.from && f.to ? [f.from, f.to] : undefined}
@@ -256,11 +274,15 @@ export function Refunds() {
                     </div>
                   )}
                   {/* On a success, a warning that the order was refunded more than paid. Once
-                  settled outside the system, WeChat Pay's earlier failure no longer applies. */}
+                  settled outside the system, only a warning raised after the settle applies. */}
                   {row.failure &&
-                    (row.settledNote === null || row.failure === REFUND_PAID_TWICE) && (
+                    (row.settledNote === null ? (
                       <div className="muted">{row.failure}</div>
-                    )}
+                    ) : (
+                      settledRefundWarning(row.failure) && (
+                        <div className="warning-text">{row.failure}</div>
+                      )
+                    ))}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
                   )}
