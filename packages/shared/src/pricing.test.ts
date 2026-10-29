@@ -70,6 +70,8 @@ describe('formatMoney', () => {
     expect(formatMoney(0)).toBe('¥0')
     expect(formatMoney(-200_000)).toBe('¥-2,000')
     expect(formatMoney(123_456.6)).toBe('¥1,234.57')
+    expect(formatMoney(-1234.5)).toBe('¥-12.35')
+    expect(formatMoney(1234.5)).toBe('¥12.35')
   })
 })
 

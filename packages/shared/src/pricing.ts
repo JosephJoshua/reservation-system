@@ -63,7 +63,9 @@ export function formatYuan(fen: Fen): string {
  * rounded.
  */
 export function formatMoney(fen: Fen): string {
-  const [whole = '', cents] = formatYuan(Math.round(fen)).split('.')
+  // Half a fen rounds away from zero, as Intl did: -1234.5 is ¥-12.35.
+  const rounded = Math.sign(fen) * Math.round(Math.abs(fen))
+  const [whole = '', cents] = formatYuan(rounded).split('.')
   const grouped = whole.replace(/\B(?=(\d{3})+$)/g, ',')
   return `¥${grouped}${cents ? `.${cents}` : ''}`
 }
