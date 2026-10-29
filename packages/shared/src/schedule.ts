@@ -285,6 +285,17 @@ export interface ScheduleConflictDto {
   /** The student's name, or the group class's name. */
   title: string
   group: boolean
+  /** Why it needs sorting out: in 请假, in 闭馆, outside 排班, or its coach is no longer active. */
+  reason: ScheduleConflictReason
+}
+
+export type ScheduleConflictReason = 'off' | 'closed' | 'outside' | 'inactive'
+
+export const CONFLICT_REASONS: Record<ScheduleConflictReason, string> = {
+  off: '教练请假',
+  closed: '闭馆',
+  outside: '不在排班里',
+  inactive: '教练已停用',
 }
 
 /** A start time a private lesson can be booked at. */

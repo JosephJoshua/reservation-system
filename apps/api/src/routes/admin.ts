@@ -139,10 +139,10 @@ import { cleanRichText } from '../services/rich-text'
 import {
   addException,
   dayPlan,
-  leaveConflicts,
   openTimes,
   removeException,
   saveHours,
+  scheduleConflicts,
   scheduleView,
   upcomingClosures,
 } from '../services/schedule'
@@ -873,7 +873,7 @@ export function adminRoutes(deps: Deps) {
     return c.json(result, 201)
   })
 
-  const logRemoved = (staffId: number, row: ReturnType<typeof removeException>) => {
+  const logRemoved = (staffId: number, { row }: ReturnType<typeof removeException>) => {
     if (!row) return
     const what =
       row.coachId === null
@@ -889,8 +889,10 @@ export function adminRoutes(deps: Deps) {
   app.delete('/coaches/:id/exceptions/:exceptionId', need('bookings'), (c) => {
     const exceptionId = Number(c.req.param('exceptionId'))
     if (!Number.isInteger(exceptionId) || exceptionId <= 0) throw notFound('请假/加班')
-    logRemoved(c.get('staffId'), removeException(deps, exceptionId, idParam(c)))
-    return c.body(null, 204)
+    const removed = removeException(deps, exceptionId, idParam(c))
+    logRemoved(c.get('staffId'), removed)
+    // Removing a 加班 leaves its lessons outside 排班, for the desk to move or cancel.
+    return c.json({ conflicts: removed.conflicts })
   })
 
   app.delete('/closures/:id', need('manage'), (c) => {
@@ -898,8 +900,8 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
-  // Lessons and sessions yet to start that fall in 请假 or 闭馆.
-  app.get('/schedule/conflicts', need('view'), (c) => c.json(leaveConflicts(db, deps.now(), null)))
+  // Lessons and sessions yet to start that the desk has to move or cancel.
+  app.get('/schedule/conflicts', need('view'), (c) => c.json(scheduleConflicts(db, deps.now())))
 
   // A day for the 日程 board: each coach's working time and 请假, and tables in use.
   app.get('/schedule/day', need('view'), (c) => {
@@ -1546,7 +1548,15 @@ export function adminRoutes(deps: Deps) {
     const id = idParam(c)
     const before = describeBooking(db, id)
     // A repeat of a move that already happened logs nothing.
-    if (moveBooking(deps, id, toTarget(body), 'venue', { anyTime: body.anyTime })) {
+    const moved = moveBooking(deps, id, toTarget(body), 'venue', { anyTime: body.anyTime })
+    if (moved === 'agreed') {
+      log(c.get('staffId'), {
+        action: 'booking.move',
+        summary: `${before.what}：已与教练确认在排班外上课`,
+        studentId: before.studentId,
+        target: { kind: 'booking', id },
+      })
+    } else if (moved) {
       const to = db
         .select({ startsAt: slots.startsAt, coach: coaches.name })
         .from(bookings)

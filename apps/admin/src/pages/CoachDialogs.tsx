@@ -250,13 +250,18 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
   }
 
   const remove = async (e: ScheduleExceptionDto) => {
-    if (
-      await attempt(
-        () => api('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`),
-        e.kind === 'off' ? '已取消请假' : '已取消加班',
-      )
+    let result: { conflicts: ScheduleConflictDto[] } | undefined
+    const ok = await attempt(
+      async () => {
+        result = await api('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`)
+      },
+      e.kind === 'off' ? '已取消请假' : '已取消加班',
     )
+    if (ok) {
+      // Lessons booked in a 加班 stay, now outside 排班.
+      if (result?.conflicts.length) setConflicts({ list: result.conflicts, what: '不在排班里' })
       await reload()
+    }
   }
 
   return (

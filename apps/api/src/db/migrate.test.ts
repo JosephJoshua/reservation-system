@@ -213,3 +213,61 @@ describe('0023_hash_session_tokens', () => {
     expect(db.pragma('foreign_key_check')).toEqual([])
   })
 })
+
+describe('0026_outside_agreed', () => {
+  it('marks lessons yet to come that the venue placed, to be checked against 排班', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = off')
+    const run = (file: string) => {
+      const sql = readFileSync(join(migrationsFolder, file), 'utf8')
+      for (const statement of sql.split('--> statement-breakpoint')) db.exec(statement)
+    }
+    const files = readdirSync(migrationsFolder)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+    for (const file of files.slice(0, files.indexOf('0026_outside_agreed.sql'))) run(file)
+    const later = Date.now() + 86_400_000
+    const slot = db.prepare(
+      'insert into slots (id, coach_id, starts_at, ends_at, lesson_type_id) values (?, 1, ?, ?, ?)',
+    )
+    for (let id = 1; id <= 7; id++) slot.run(id, later, later + 3_600_000, null)
+    slot.run(8, later, later + 3_600_000, 9)
+    const insert = db.prepare(
+      "insert into bookings (id, slot_id, student_id, lesson_type_id, starts_at, ends_at, status, paid_with, price, booked_by_staff_id) values (?, ?, ?, 1, ?, ?, ?, 'order', 100, ?)",
+    )
+    const book = (id: number, status: string, staff: number | null, startsAt = later) =>
+      insert.run(id, id, id, startsAt, startsAt + 3_600_000, status, staff)
+    // 1: a student's. 2: the desk's. 3: a student's, last moved by the venue. 4: the desk's, last
+    // moved by the coach. 5: the desk's, cancelled. 6: the desk's, past. 7: the desk's, pending.
+    // 8: the desk's seat in a group session.
+    book(1, 'confirmed', null)
+    book(2, 'confirmed', 1)
+    book(3, 'confirmed', null)
+    book(4, 'confirmed', 1)
+    book(5, 'cancelled', 1)
+    book(6, 'confirmed', 1, Date.now() - 86_400_000)
+    book(7, 'pending_payment', 1)
+    book(8, 'confirmed', 1)
+    const move = db.prepare(
+      'insert into booking_moves (booking_id, by, from_coach_id, from_starts_at, from_ends_at, to_coach_id, to_starts_at, to_ends_at) values (?, ?, 1, 0, 1, 1, 0, 1)',
+    )
+    move.run(3, 'student')
+    move.run(3, 'venue')
+    move.run(4, 'venue')
+    move.run(4, 'coach')
+    db.pragma('foreign_keys = on')
+    run('0026_outside_agreed.sql')
+    expect(
+      db.prepare('select id, outside_agreed as agreed from bookings order by id').all(),
+    ).toEqual([
+      { id: 1, agreed: 0 },
+      { id: 2, agreed: 2 },
+      { id: 3, agreed: 2 },
+      { id: 4, agreed: 0 },
+      { id: 5, agreed: 0 },
+      { id: 6, agreed: 0 },
+      { id: 7, agreed: 2 },
+      { id: 8, agreed: 0 },
+    ])
+  })
+})

@@ -12,6 +12,7 @@ import {
   isGroup,
   SCHEDULE_STEP,
   type ScheduleConflictDto,
+  type ScheduleConflictReason,
   type ScheduleException,
   type ScheduleExceptionDto,
   type ScheduleViewDto,
@@ -23,8 +24,22 @@ import {
   withinSpans,
   workingSpans,
 } from '@rs/shared'
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, min, ne, or } from 'drizzle-orm'
-import { immediate, type Q } from '../db/client'
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  min,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
+import { type Db, immediate, type Q } from '../db/client'
 import {
   bookings,
   coachCategories,
@@ -119,6 +134,18 @@ function datesSpan(dates: readonly string[]): Span {
   }
 }
 
+/**
+ * Where the lessons a booking on these dates must keep clear of can lie: a day either side too,
+ * since the buffer reaches over midnight.
+ */
+function busySpan(dates: readonly string[]): Span {
+  const sorted = [...dates].sort()
+  return datesSpan([
+    addVenueDays(sorted[0] as string, -1),
+    addVenueDays(sorted[sorted.length - 1] as string, 1),
+  ])
+}
+
 /** Each coach's working time on each date: weekly hours with 加班, less 请假 and 闭馆. */
 export function workingTime(
   tx: Q,
@@ -207,7 +234,7 @@ export function openTimes(
   if (!q.coachIds.length || !q.dates.length) return []
   const { startGrid, bufferMinutes } = getSettings(tx).booking
   const working = workingTime(tx, q.coachIds, q.dates)
-  const busy = busyTime(tx, q.coachIds, datesSpan(q.dates), q.except)
+  const busy = busyTime(tx, q.coachIds, busySpan(q.dates), q.except)
   const times: Omit<OpenTime, 'tableFull'>[] = []
   for (const coachId of q.coachIds) {
     // By the venue date they start on: a day only needs its own lessons and its neighbours'
@@ -261,7 +288,7 @@ export function assertPrivateTime(
     throw new ApiError(409, 'crosses_midnight', '课程不能跨到第二天')
   }
   const date = venueDateKey(span.startsAt)
-  const busy = busyTime(tx, [coachId], datesSpan([date]), q.except).get(coachId) ?? []
+  const busy = busyTime(tx, [coachId], busySpan([date]), q.except).get(coachId) ?? []
   if (rule === 'anytime') {
     if (busy.some((b) => clashes(span, b))) {
       throw new ApiError(409, 'coach_busy', '该教练在这个时间已有课')
@@ -283,8 +310,41 @@ export function assertPrivateTime(
   throw new ApiError(409, 'time_unavailable', '该时间不可预约')
 }
 
+/** Whether a private lesson at this time lies outside the coach's 排班. */
+export function outsideHours(tx: Q, coachId: number, span: Span): boolean {
+  const date = venueDateKey(span.startsAt)
+  return !withinSpans(span, workingTime(tx, [coachId], [date]).get(coachId)?.get(date) ?? [])
+}
+
+/**
+ * Settles the lessons migration 0023 marked 2 (placed by the venue before the flag was kept):
+ * agreed where they lie outside 排班 now, not agreed otherwise. Run after migrations; once none
+ * are left marked, it does nothing.
+ */
+export function settleOutsideAgreed(db: Db) {
+  immediate(db, (tx) => {
+    const marked = tx
+      .select({
+        id: bookings.id,
+        coachId: slots.coachId,
+        startsAt: bookings.startsAt,
+        endsAt: bookings.endsAt,
+      })
+      .from(bookings)
+      .innerJoin(slots, eq(slots.id, bookings.slotId))
+      .where(sql`${bookings.outsideAgreed} = 2`)
+      .all()
+    for (const b of marked) {
+      tx.update(bookings)
+        .set({ outsideAgreed: outsideHours(tx, b.coachId, b) })
+        .where(eq(bookings.id, b.id))
+        .run()
+    }
+  })
+}
+
 /** Refuses a lesson that runs into the coach's 请假 or a 闭馆, naming the 闭馆 first. */
-function assertNotOff(tx: Q, coachId: number, span: Span) {
+export function assertNotOff(tx: Q, coachId: number, span: Span) {
   const off = (exceptionsFor(tx, [coachId], span).get(coachId) ?? []).filter(
     (e) => e.kind === 'off',
   )
@@ -577,14 +637,21 @@ export function addException(
 
 /**
  * Removes a 请假, 加班 or 闭馆 that has not ended. One under way is cut short at now, so the part
- * already past stays on record. `coachId` limits it to that coach's own, or to 闭馆 when null; returns what was removed,
- * or null when it was already gone.
+ * already past stays on record. `coachId` limits it to that coach's own, or to 闭馆 when null.
+ * Returns what was removed, or null when it was already gone, and for a 加班 the booked lessons
+ * in it now outside 排班, which stay for the venue to move or cancel.
  */
-export function removeException(deps: Deps, id: number, coachId?: number | null) {
+export function removeException(
+  deps: Deps,
+  id: number,
+  coachId?: number | null,
+): { row: typeof scheduleExceptions.$inferSelect | null; conflicts: ScheduleConflictDto[] } {
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const row = tx.select().from(scheduleExceptions).where(eq(scheduleExceptions.id, id)).get()
-    if (!row || (coachId !== undefined && row.coachId !== coachId)) return null
+    if (!row || (coachId !== undefined && row.coachId !== coachId)) {
+      return { row: null, conflicts: [] }
+    }
     if (row.endsAt <= now) throw new ApiError(409, 'ended', '已过去的不能删除')
     if (row.startsAt < now) {
       // Cut to the 5-minute step, which keeps it a valid exception.
@@ -594,7 +661,16 @@ export function removeException(deps: Deps, id: number, coachId?: number | null)
     } else {
       tx.delete(scheduleExceptions).where(eq(scheduleExceptions.id, id)).run()
     }
-    return row
+    const conflicts =
+      row.kind === 'extra' && row.coachId !== null
+        ? outsideSchedule(tx, now, row.coachId).filter((c) =>
+            clashes(
+              { startsAt: new Date(c.startsAt), endsAt: new Date(c.endsAt) },
+              { startsAt: row.startsAt, endsAt: row.endsAt },
+            ),
+          )
+        : []
+    return { row, conflicts }
   })
 }
 
@@ -608,6 +684,8 @@ interface FutureLesson {
   endsAt: Date
   title: string
   group: boolean
+  /** A private lesson the venue put outside 排班 on purpose. */
+  agreed: boolean
 }
 
 /** Booked private lessons and sessions not called off that have not started, for some coaches. */
@@ -620,6 +698,7 @@ function futureLessons(tx: Q, now: Date, coachId: number | null): FutureLesson[]
       coachId: slots.coachId,
       startsAt: bookings.startsAt,
       endsAt: bookings.endsAt,
+      agreed: bookings.outsideAgreed,
       name: students.name,
       deletedAt: students.deletedAt,
     })
@@ -656,12 +735,15 @@ function futureLessons(tx: Q, now: Date, coachId: number | null): FutureLesson[]
       endsAt: l.endsAt,
       title: l.deletedAt ? DELETED_NAME : l.name || '未填写姓名',
       group: false,
+      agreed: l.agreed,
     })),
-    ...sessions.map((s) => ({ ...s, bookingId: null, title: s.name, group: true })),
+    ...sessions.map((s) => ({ ...s, bookingId: null, title: s.name, group: true, agreed: false })),
   ].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
 }
 
-function conflictDtos(tx: Q, lessons: FutureLesson[]): ScheduleConflictDto[] {
+type Conflict = FutureLesson & { reason: ScheduleConflictReason }
+
+function conflictDtos(tx: Q, lessons: Conflict[]): ScheduleConflictDto[] {
   const names = new Map(
     lessons.length
       ? tx
@@ -681,15 +763,12 @@ function conflictDtos(tx: Q, lessons: FutureLesson[]): ScheduleConflictDto[] {
     endsAt: l.endsAt.toISOString(),
     title: l.title,
     group: l.group,
+    reason: l.reason,
   }))
 }
 
-/**
- * Lessons and sessions yet to start that fall in their coach's 请假 or in 闭馆: the venue moves or
- * cancels them. Null coachId looks at every coach.
- */
-export function leaveConflicts(tx: Q, now: Date, coachId: number | null): ScheduleConflictDto[] {
-  const lessons = futureLessons(tx, now, coachId)
+/** Of these lessons, the ones in their coach's 请假 or in 闭馆, with which. */
+function inLeave(tx: Q, now: Date, lessons: FutureLesson[]): Conflict[] {
   if (!lessons.length) return []
   const last = new Date(Math.max(...lessons.map((l) => l.endsAt.getTime())))
   const offs = tx
@@ -703,23 +782,73 @@ export function leaveConflicts(tx: Q, now: Date, coachId: number | null): Schedu
       ),
     )
     .all()
-  return conflictDtos(
+  return lessons.flatMap((l): Conflict[] => {
+    const hit = offs.filter((o) => (o.coachId === null || o.coachId === l.coachId) && clashes(l, o))
+    if (!hit.length) return []
+    return [{ ...l, reason: hit.some((o) => o.coachId === null) ? 'closed' : 'off' }]
+  })
+}
+
+/**
+ * Of these lessons, the private ones no longer inside their coach's 排班, other than those the
+ * venue put outside it on purpose.
+ */
+function outsideOf(tx: Q, lessons: FutureLesson[]): Conflict[] {
+  const loose = lessons.filter((l) => !l.group && !l.agreed)
+  if (!loose.length) return []
+  const working = workingTime(
     tx,
-    lessons.filter((l) =>
-      offs.some((o) => (o.coachId === null || o.coachId === l.coachId) && clashes(l, o)),
-    ),
+    [...new Set(loose.map((l) => l.coachId))],
+    [...new Set(loose.map((l) => venueDateKey(l.startsAt)))],
   )
+  return loose
+    .filter((l) => !withinSpans(l, working.get(l.coachId)?.get(venueDateKey(l.startsAt)) ?? []))
+    .map((l) => ({ ...l, reason: 'outside' }))
+}
+
+/**
+ * Lessons and sessions yet to start that fall in their coach's 请假 or in 闭馆: the venue moves or
+ * cancels them. Null coachId looks at every coach.
+ */
+export function leaveConflicts(tx: Q, now: Date, coachId: number | null): ScheduleConflictDto[] {
+  return conflictDtos(tx, inLeave(tx, now, futureLessons(tx, now, coachId)))
 }
 
 /** A coach's private lessons yet to start that are no longer inside their 排班. */
 function outsideSchedule(tx: Q, now: Date, coachId: number): ScheduleConflictDto[] {
-  const lessons = futureLessons(tx, now, coachId).filter((l) => !l.group)
+  return conflictDtos(tx, outsideOf(tx, futureLessons(tx, now, coachId)))
+}
+
+/**
+ * Every lesson and session yet to start that the venue has to move or cancel: in 请假 or 闭馆,
+ * with a coach no longer active, or a private lesson no longer inside 排班 (say after a coach cut
+ * their hours or a 加班 was removed). Each is listed once, for the first of those that applies.
+ */
+export function scheduleConflicts(tx: Q, now: Date): ScheduleConflictDto[] {
+  const lessons = futureLessons(tx, now, null)
   if (!lessons.length) return []
-  const dates = [...new Set(lessons.map((l) => venueDateKey(l.startsAt)))]
-  const working = workingTime(tx, [coachId], dates).get(coachId)
+  const inactive = new Set(
+    tx
+      .select({ id: coaches.id })
+      .from(coaches)
+      .where(eq(coaches.active, false))
+      .all()
+      .map((c) => c.id),
+  )
+  const key = (l: FutureLesson) => `${l.slotId}:${l.bookingId}`
+  const off = inLeave(tx, now, lessons)
+  const listed = new Set(off.map(key))
+  const rest = lessons.filter((l) => !listed.has(key(l)))
+  const gone = rest
+    .filter((l) => inactive.has(l.coachId))
+    .map((l): Conflict => ({ ...l, reason: 'inactive' }))
+  const outside = outsideOf(
+    tx,
+    rest.filter((l) => !inactive.has(l.coachId)),
+  )
   return conflictDtos(
     tx,
-    lessons.filter((l) => !withinSpans(l, working?.get(venueDateKey(l.startsAt)) ?? [])),
+    [...off, ...gone, ...outside].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime()),
   )
 }
 

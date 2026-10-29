@@ -269,8 +269,8 @@ export function coachRoutes(deps: Deps) {
 
   app.delete('/exceptions/:id', (c) => {
     assertCoachMayEdit(deps.db)
-    removeException(deps, idParam(c), c.get('coachId'))
-    return c.body(null, 204)
+    const { conflicts } = removeException(deps, idParam(c), c.get('coachId'))
+    return c.json({ conflicts })
   })
 
   return app

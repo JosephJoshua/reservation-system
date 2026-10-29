@@ -2,7 +2,7 @@
 // and cancelling private lessons at those times. The clock starts on Friday 2026-10-23 at 10:00
 // venue time; 2026-10-25 is a Sunday.
 import { venueInstant } from '@rs/shared'
-import { eq } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {
   bookings,
@@ -12,6 +12,7 @@ import {
   scheduleExceptions,
   slots,
 } from './db/schema'
+import { settleOutsideAgreed } from './services/schedule'
 import { type Harness, setup } from './test/harness'
 
 const SUN = '2026-10-25'
@@ -310,7 +311,7 @@ describe('请假, 加班 and 闭馆', () => {
           admin,
         )
       ).status,
-    ).toBe(204)
+    ).toBe(200)
     expect(await times(h, student, SUN, lesson.id)).toEqual([
       '09:00',
       '09:30',
@@ -330,7 +331,7 @@ describe('请假, 加班 and 闭馆', () => {
           admin,
         )
       ).status,
-    ).toBe(204)
+    ).toBe(200)
   })
 
   it('covers several days with one 请假', async () => {
@@ -718,7 +719,7 @@ describe('the coach keeping their own 排班', () => {
     })
     expect(
       (await h.call('DELETE', `/coach/exceptions/${leave.json.id}`, undefined, token)).status,
-    ).toBe(204)
+    ).toBe(200)
     expect(await times(h, student, SUN, lesson.id)).toHaveLength(5)
   })
 
@@ -1575,4 +1576,311 @@ describe('a busy venue', () => {
       await time(`/admin/open-times?date=${SUN}&lessonTypeId=${lesson.id}`, admin),
     ).toBeLessThan(500)
   }, 30_000)
+})
+
+describe('lessons left to sort out', () => {
+  const conflicts = async (h: Harness, admin: string) =>
+    (await h.call('GET', '/admin/schedule/conflicts', undefined, admin)).json as {
+      bookingId: number | null
+      reason: string
+    }[]
+
+  it('lists the lessons of a 加班 that is removed, from the venue and from the coach', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    const extra = await exception(h, admin, coach.id, 'extra', at(SUN, '10:00'), at(SUN, '12:00'))
+    const booked = await book(h, student, coach.id, at(SUN, '10:00'), lesson.id)
+    expect(booked.status).toBe(201)
+    const path = `/admin/coaches/${coach.id}/exceptions/${extra.json.id}`
+    const removed = await h.call('DELETE', path, undefined, admin)
+    expect(removed.status).toBe(200)
+    expect(removed.json.conflicts).toEqual([
+      expect.objectContaining({
+        bookingId: booked.json.bookingId,
+        startsAt: at(SUN, '10:00'),
+        reason: 'outside',
+      }),
+    ])
+    // A repeat removes nothing more and has nothing new to report.
+    expect((await h.call('DELETE', path, undefined, admin)).json.conflicts).toEqual([])
+    expect(await conflicts(h, admin)).toEqual([
+      expect.objectContaining({ bookingId: booked.json.bookingId, reason: 'outside' }),
+    ])
+    expect(h.db.select().from(bookings).get()?.status).toBe('confirmed')
+
+    // The coach removing their own 加班 hears of the lessons in that one only.
+    const token = await coachToken(h, admin, coach.id)
+    const own = await h.call(
+      'POST',
+      '/coach/exceptions',
+      { kind: 'extra', startsAt: at(MON, '10:00'), endsAt: at(MON, '11:00') },
+      token,
+    )
+    const other = await h.student('b')
+    const second = await book(h, other, coach.id, at(MON, '10:00'), lesson.id)
+    const gone = await h.call('DELETE', `/coach/exceptions/${own.json.id}`, undefined, token)
+    expect(gone.status).toBe(200)
+    expect(gone.json.conflicts.map((c: { bookingId: number }) => c.bookingId)).toEqual([
+      second.json.bookingId,
+    ])
+    // Removing 请假 leaves nothing new to report.
+    const leave = await exception(h, admin, coach.id, 'off', at(MON, '14:00'), at(MON, '15:00'))
+    const back = await h.call(
+      'DELETE',
+      `/admin/coaches/${coach.id}/exceptions/${leave.json.id}`,
+      undefined,
+      admin,
+    )
+    expect(back.json.conflicts).toEqual([])
+  })
+
+  it('lists lessons a coach left outside their own hours, but not ones the venue agreed', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '13:00' }])
+    const inside = await book(h, student, coach.id, at(SUN, '11:00'), lesson.id)
+    // The desk books 18:00 outside 排班, agreed with the coach, and 09:00 inside it.
+    const desk = (body: Record<string, unknown>) =>
+      h.call(
+        'POST',
+        '/admin/bookings',
+        {
+          studentId: 1,
+          payWith: 'offline',
+          amount: 20000,
+          method: 'cash',
+          lessonTypeId: lesson.id,
+          ...body,
+        },
+        admin,
+      )
+    const agreed = await desk({ coachId: coach.id, startsAt: at(SUN, '18:00'), anyTime: true })
+    expect(agreed.status).toBe(201)
+    const deskInside = await desk({ coachId: coach.id, startsAt: at(SUN, '09:00'), anyTime: true })
+    expect(deskInside.status).toBe(201)
+    expect(await conflicts(h, admin)).toEqual([])
+
+    // The coach cuts Sunday to 09:00-10:00 in the mini program: the venue sees 11:00.
+    const token = await coachToken(h, admin, coach.id)
+    const sunday = (from: string, to: string) =>
+      h.call(
+        'PUT',
+        '/coach/hours',
+        { hours: [{ weekday: 0, startMinute: minutes(from), endMinute: minutes(to) }] },
+        token,
+      )
+    const cut = await sunday('09:00', '10:00')
+    expect(cut.json.conflicts.map((c: { bookingId: number }) => c.bookingId)).toEqual([
+      inside.json.bookingId,
+    ])
+    expect(await conflicts(h, admin)).toEqual([
+      expect.objectContaining({ bookingId: inside.json.bookingId, reason: 'outside' }),
+    ])
+
+    // Moved by the venue outside 排班 on purpose, it leaves the list; moved back into 排班 by a
+    // plain move, it is watched again.
+    const move = (startsAt: string, anyTime: boolean) =>
+      h.call(
+        'POST',
+        `/admin/bookings/${inside.json.bookingId}/move`,
+        { coachId: coach.id, startsAt, anyTime },
+        admin,
+      )
+    expect((await move(at(SUN, '15:00'), true)).status).toBe(204)
+    expect(await conflicts(h, admin)).toEqual([])
+    await sunday('09:00', '18:00')
+    expect((await move(at(SUN, '16:00'), false)).status).toBe(204)
+    await sunday('09:00', '10:00')
+    expect(await conflicts(h, admin)).toEqual([
+      expect.objectContaining({ bookingId: inside.json.bookingId, reason: 'outside' }),
+    ])
+  })
+
+  it('says why: 请假, 闭馆 or a coach who stopped', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    const li = secondCoach(h, lesson.id)
+    for (const id of [coach.id, li.id]) {
+      await hoursPut(h, admin, id, [{ weekday: 0, from: '09:00', to: '18:00' }])
+    }
+    const other = await h.student('b')
+    const a = await book(h, student, coach.id, at(SUN, '10:00'), lesson.id)
+    const b = await book(h, student, coach.id, at(SUN, '14:00'), lesson.id)
+    const c = await book(h, other, li.id, at(SUN, '16:00'), lesson.id)
+    await exception(h, admin, coach.id, 'off', at(SUN, '10:00'), at(SUN, '11:00'))
+    await h.call(
+      'POST',
+      '/admin/closures',
+      { startsAt: at(SUN, '14:00'), endsAt: at(SUN, '15:00') },
+      admin,
+    )
+    h.db.update(coaches).set({ active: false }).where(eq(coaches.id, li.id)).run()
+    expect((await conflicts(h, admin)).map((x) => [x.bookingId, x.reason])).toEqual([
+      [a.json.bookingId, 'off'],
+      [b.json.bookingId, 'closed'],
+      [c.json.bookingId, 'inactive'],
+    ])
+  })
+})
+
+describe('the buffer over midnight', () => {
+  it('keeps clear of a lesson ending at 24:00 the day before, and one at 00:00 the day after', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    const other = await h.student('b')
+    h.settings((s) => {
+      s.booking.bufferMinutes = 30
+    })
+    await hoursPut(h, admin, coach.id, [
+      { weekday: 6, from: '22:00', to: '24:00' },
+      { weekday: 0, from: '00:00', to: '02:00' },
+    ])
+    const SAT = '2026-10-24'
+    const first = await book(h, student, coach.id, at(SAT, '23:00'), lesson.id)
+    expect(first.status).toBe(201)
+    expect(await times(h, other, SUN, lesson.id)).toEqual(['00:30', '01:00'])
+    const early = await book(h, other, coach.id, at(SUN, '00:00'), lesson.id)
+    expect([early.status, early.json.error.code]).toEqual([409, 'slot_taken'])
+
+    // The other way round: a lesson at 00:00 keeps the evening before clear.
+    await h.call('POST', `/bookings/${first.json.bookingId}/cancel`, {}, student)
+    expect((await book(h, other, coach.id, at(SUN, '00:00'), lesson.id)).status).toBe(201)
+    expect(await times(h, student, SAT, lesson.id)).toEqual(['22:00', '22:30'])
+    const late = await book(h, student, coach.id, at(SAT, '23:00'), lesson.id)
+    expect([late.status, late.json.error.code]).toEqual([409, 'slot_taken'])
+  })
+})
+
+describe('a coach moving a lesson far ahead', () => {
+  it("keeps to the lesson's booking window; the venue may go further", async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '12:00' }])
+    // 14 days from Friday 10-23 run to 11-06; 11-10 is past them.
+    const FAR = '2026-11-10'
+    await exception(h, admin, coach.id, 'extra', at(FAR, '10:00'), at(FAR, '12:00'))
+    const id = (await book(h, student, coach.id, at(SUN, '10:00'), lesson.id)).json.bookingId
+    const token = await coachToken(h, admin, coach.id)
+    const farTimes = async () =>
+      (
+        await h.call(
+          'GET',
+          `/coach/move-times?bookingId=${id}&from=${FAR}&to=${FAR}`,
+          undefined,
+          token,
+        )
+      ).json
+    expect(await farTimes()).toEqual([])
+    const moved = await h.call(
+      'POST',
+      `/coach/lessons/${id}/move`,
+      { coachId: coach.id, startsAt: at(FAR, '10:00') },
+      token,
+    )
+    expect([moved.status, moved.json.error.code]).toEqual([409, 'too_far'])
+    // A lesson booked further ahead lets the coach go as far.
+    h.db
+      .update(lessonTypes)
+      .set({ rules: { advanceDays: 24 } })
+      .where(eq(lessonTypes.id, lesson.id))
+      .run()
+    expect(await farTimes()).toHaveLength(3)
+    h.db.update(lessonTypes).set({ rules: {} }).where(eq(lessonTypes.id, lesson.id)).run()
+    const byVenue = await h.call(
+      'POST',
+      `/admin/bookings/${id}/move`,
+      { coachId: coach.id, startsAt: at(FAR, '10:00') },
+      admin,
+    )
+    expect(byVenue.status).toBe(204)
+  })
+})
+
+describe('lessons placed by the venue before the flag was kept', () => {
+  it('counts as agreed only those outside 排班 now, once', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '13:00' }])
+    const desk = (startsAt: string, anyTime: boolean) =>
+      h.call(
+        'POST',
+        '/admin/bookings',
+        {
+          studentId: 1,
+          payWith: 'offline',
+          amount: 20000,
+          method: 'cash',
+          lessonTypeId: lesson.id,
+          coachId: coach.id,
+          startsAt,
+          anyTime,
+        },
+        admin,
+      )
+    const inside = (await desk(at(SUN, '10:00'), false)).json.bookingId as number
+    const outside = (await desk(at(SUN, '18:00'), true)).json.bookingId as number
+    const own = (await book(h, student, coach.id, at(SUN, '12:00'), lesson.id)).json
+      .bookingId as number
+    // As migration 0023 leaves them.
+    h.db
+      .update(bookings)
+      .set({ outsideAgreed: sql`2` as unknown as boolean })
+      .where(inArray(bookings.id, [inside, outside]))
+      .run()
+    const flags = () =>
+      h.db
+        .select({ id: bookings.id, agreed: sql<number>`${bookings.outsideAgreed}` })
+        .from(bookings)
+        .orderBy(bookings.id)
+        .all()
+    settleOutsideAgreed(h.db)
+    const settled = [
+      { id: inside, agreed: 0 },
+      { id: outside, agreed: 1 },
+      { id: own, agreed: 0 },
+    ]
+    expect(flags()).toEqual(settled)
+    // Run again, say on the next start, it changes nothing.
+    settleOutsideAgreed(h.db)
+    expect(flags()).toEqual(settled)
+    // The desk's lesson inside 排班 is watched like any other.
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '10:00' }])
+    const listed = (await h.call('GET', '/admin/schedule/conflicts', undefined, admin)).json
+    expect(listed.map((c: { bookingId: number }) => c.bookingId)).toEqual([inside, own])
+  })
+})
+
+describe('keeping a lesson outside 排班', () => {
+  it('lets the desk confirm it with the coach where it is, once and logged', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    const other = await h.student('b')
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '13:00' }])
+    const a = (await book(h, student, coach.id, at(SUN, '11:00'), lesson.id)).json.bookingId
+    const b = (await book(h, other, coach.id, at(SUN, '12:00'), lesson.id)).json.bookingId
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '10:00' }])
+    const listed = async () =>
+      (await h.call('GET', '/admin/schedule/conflicts', undefined, admin)).json.map(
+        (c: { bookingId: number }) => c.bookingId,
+      )
+    expect(await listed()).toEqual([a, b])
+    const keep = (id: number, startsAt: string, anyTime: boolean) =>
+      h.call('POST', `/admin/bookings/${id}/move`, { coachId: coach.id, startsAt, anyTime }, admin)
+    // A plain move to the same time changes nothing.
+    expect((await keep(a, at(SUN, '11:00'), false)).status).toBe(204)
+    expect(await listed()).toEqual([a, b])
+    expect((await keep(a, at(SUN, '11:00'), true)).status).toBe(204)
+    expect(await listed()).toEqual([b])
+    expect((await keep(a, at(SUN, '11:00'), true)).status).toBe(204)
+    const log = (await h.call('GET', '/admin/actions', undefined, admin)).json
+    const entries = (log.items ?? log) as { summary: string }[]
+    expect(entries.filter((e) => e.summary.includes('已与教练确认在排班外上课'))).toHaveLength(1)
+    expect(
+      h.db.select().from(bookings).where(eq(bookings.id, a)).get()?.startsAt.toISOString(),
+    ).toBe(at(SUN, '11:00'))
+    // Not over the coach's 请假.
+    await exception(h, admin, coach.id, 'off', at(SUN, '12:00'), at(SUN, '13:00'))
+    const off = await keep(b, at(SUN, '12:00'), true)
+    expect([off.status, off.json.error.code]).toEqual([409, 'coach_off'])
+  })
 })

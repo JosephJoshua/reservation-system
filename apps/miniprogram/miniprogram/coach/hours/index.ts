@@ -494,8 +494,14 @@ Page({
           return
         }
         try {
-          await coachApi('DELETE', `/exceptions/${item.id}`)
-          wx.showToast({ title: '已取消', icon: 'success' })
+          const res = await coachApi<{ conflicts: ScheduleConflictDto[] }>(
+            'DELETE',
+            `/exceptions/${item.id}`,
+          )
+          // Lessons booked in a 加班 stay, now outside 排班.
+          if (!warnConflicts(res?.conflicts ?? [], '不在排班里')) {
+            wx.showToast({ title: '已取消', icon: 'success' })
+          }
           await this.load()
         } catch (err) {
           showError(err)

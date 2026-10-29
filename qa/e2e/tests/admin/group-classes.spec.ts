@@ -186,20 +186,21 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   await expect(page.getByText('已代约')).toBeVisible()
   await expect(block(page, '3/4')).toBeVisible()
 
-  // Seats never go below the students booked; raising them saves.
+  // Seats never go below the students booked, nor above the class's 上课人数; within them a
+  // change saves.
   await block(page, '3/4').click()
   const seats = dialog(page).locator('.t-input-number input')
   await typeNumber(seats, '2')
-  await expect(dialog(page).getByText('人数需在 3 到 30 之间')).toBeVisible()
+  await expect(dialog(page).getByText('人数需在 3 到 4 之间')).toBeVisible()
   await expect(dialog(page).locator('.t-button', { hasText: '保存' })).toHaveClass(/t-is-disabled/)
-  await typeNumber(seats, '6')
+  await typeNumber(seats, '3')
   await seats.blur()
   await dialog(page).getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已修改人数')).toBeVisible()
-  await expect(block(page, '3/6')).toBeVisible()
+  await expect(block(page, '3/3')).toBeVisible()
 
   // Cancelling one seat refunds that student only.
-  await block(page, '3/6').click()
+  await block(page, '3/3').click()
   await dialog(page)
     .locator('.roster-row', { hasText: `学员乙${run}` })
     .getByRole('button', { name: '取消' })
@@ -207,7 +208,7 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   await expect(dialog(page)).toContainText(`取消 学员乙${run} 的预约`)
   await dialog(page).locator('textarea').fill('学员请假')
   await dialog(page).getByRole('button', { name: '确认取消并退款' }).click()
-  await expect(block(page, '2/6')).toBeVisible()
+  await expect(block(page, '2/3')).toBeVisible()
   const mine = await call<BookingDto[]>(request, 'GET', '/bookings?scope=upcoming', b)
   expect(mine.find((x) => x.lessonType.id === lessonTypeId)).toBeUndefined()
 })
@@ -233,7 +234,7 @@ test('moves a seat to another session from the bookings page', async ({ page, re
 test('calls off a whole session and refunds everyone', async ({ page, request }) => {
   await login(page)
   await openSchedule(page)
-  await block(page, '1/6').click()
+  await block(page, '1/3').click()
   await dialog(page).getByRole('button', { name: '取消整节' }).click()
   await expect(dialog(page)).toContainText('取消整节课后，1 位学员都会收到全额退款或退回课时')
   await expect(dialog(page).locator('.t-button', { hasText: '确认取消并退款' })).toHaveClass(
