@@ -1613,6 +1613,27 @@ a:hover {
   display: none;
 }
 
+/* TDesign shades the first button there as a scroll control; this one is the page's own. */
+.detail-tabs .t-tabs__operations--right .t-tabs__btn:first-child {
+  box-shadow: none;
+}
+
+/* A price and the struck-through one before a sale each stay whole, never split mid-number. */
+.price-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+}
+
+.price-cell > span {
+  white-space: nowrap;
+}
+
+.price-cell > .strike {
+  margin-left: 0;
+}
+
 .detail-tabs .t-tab-panel {
   padding-top: 16px;
 }

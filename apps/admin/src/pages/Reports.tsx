@@ -3,8 +3,8 @@ import { useState } from 'react'
 import { Button, Card, DatePicker, Dialog, Popconfirm, Space, Tabs, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
-import { fmtDate, fmtDateTime, today, yuan, yuanGrouped } from '../format'
-import { attempt, newKey, useApi, useSubmitting } from '../hooks'
+import { fmtDate, fmtDateTime, today, yuan } from '../format'
+import { attempt, hashParam, newKey, useApi, useSubmitting } from '../hooks'
 import { useCan } from '../me'
 import { Stats } from './Stats'
 
@@ -199,17 +199,17 @@ function Monthly() {
 
   const stats: [string, string, string?][] = r
     ? [
-        ['净收入', yuanGrouped(r.revenue.net), `退款 ${yuan(r.revenue.refunded)}`],
-        ['微信支付', yuanGrouped(r.revenue.wechat)],
-        ['线下收款', yuanGrouped(r.revenue.offline)],
+        ['净收入', yuan(r.revenue.net), `退款 ${yuan(r.revenue.refunded)}`],
+        ['微信支付', yuan(r.revenue.wechat)],
+        ['线下收款', yuan(r.revenue.offline)],
         [
           '未上课时',
           `${r.packagesOutstanding.lessons} 节`,
-          `预收 ${yuanGrouped(r.packagesOutstanding.value)}，按当前计`,
+          `预收 ${yuan(r.packagesOutstanding.value)}，按当前计`,
         ],
         [
           '教练课时费',
-          yuanGrouped(r.coaches.reduce((sum, c) => sum + c.pay.amount, 0)),
+          yuan(r.coaches.reduce((sum, c) => sum + c.pay.amount, 0)),
           payLessonsText(r),
         ],
       ]
@@ -265,7 +265,11 @@ function Monthly() {
           columns={[
             ...coachColumns
               .filter(([key]) => key !== 'payAmount' && key !== 'unrated')
-              .map(([colKey, title]) => ({ colKey, title })),
+              // Headings on one line, as 时长（小时） otherwise breaks inside its brackets.
+              .map(([colKey, title]) => ({
+                colKey,
+                title: <span className="nowrap">{title}</span>,
+              })),
             {
               colKey: 'pay',
               title: '课时费',
@@ -394,7 +398,7 @@ function PayMonth({
         >
           <div className="fields">
             <p>
-              {paid} 位教练，合计 {yuanGrouped(total)}
+              {paid} 位教练，合计 {yuan(total)}
               {adjustments > 0 ? `，含 ${adjustments} 条往月调整` : ''}。
             </p>
             <p className="muted">
@@ -408,15 +412,22 @@ function PayMonth({
 }
 
 export function Reports() {
-  const [tab, setTab] = useState('stats')
+  // In the address, so a refresh or a copied link opens the same tab.
+  const [tab, setTab] = useState(() => (hashParam('tab') === 'monthly' ? 'monthly' : 'stats'))
   // The monthly report loads when first opened, then keeps its month while switching back and forth.
-  const [monthlyOpened, setMonthlyOpened] = useState(false)
+  const [monthlyOpened, setMonthlyOpened] = useState(tab === 'monthly')
   return (
     <Tabs
       value={tab}
       onChange={(v) => {
         setTab(String(v))
         if (v === 'monthly') setMonthlyOpened(true)
+        // Without a step for the back button, as on the other pages with tabs.
+        history.replaceState(
+          history.state,
+          '',
+          v === 'monthly' ? '#/reports?tab=monthly' : '#/reports',
+        )
       }}
       className="report-tabs"
     >
