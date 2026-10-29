@@ -272,7 +272,7 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
           'PUT',
           `/admin/coaches/${coach.id}/hours`,
           { from, hours },
-          { key: saveKey, ifMatch: data?.periods },
+          { key: saveKey, ifMatch: data?.hoursVersion },
         ).catch((e) => {
           throw e instanceof RequestError && e.code === 'edited_elsewhere'
             ? new RequestError(

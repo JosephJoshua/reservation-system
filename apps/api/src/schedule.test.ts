@@ -853,8 +853,8 @@ describe('the coach keeping their own 排班', () => {
     const week = (startMinute: number) => ({ hours: [{ weekday: 0, startMinute, endMinute: 720 }] })
     // Staff and the coach both open the 排班.
     const staffSaw = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin))
-      .json.periods
-    const coachSaw = (await h.call('GET', '/coach/hours', undefined, token)).json.periods
+      .json.hoursVersion
+    const coachSaw = (await h.call('GET', '/coach/hours', undefined, token)).json.hoursVersion
     const coachSave = await h.call('PUT', '/coach/hours', week(540), token, {
       'If-Match': versionOf(coachSaw),
     })
@@ -868,7 +868,7 @@ describe('the coach keeping their own 排班', () => {
     const now = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)).json
     expect(now.periods[0].hours).toEqual(week(540).hours)
     const again = await h.call('PUT', `/admin/coaches/${coach.id}/hours`, week(600), admin, {
-      'If-Match': versionOf(now.periods),
+      'If-Match': versionOf(now.hoursVersion),
       'Idempotency-Key': 'staff-hours-2',
     })
     expect(again.status).toBe(200)
@@ -879,13 +879,31 @@ describe('the coach keeping their own 排班', () => {
     expect([stale.status, stale.json.error.code]).toEqual([409, 'edited_elsewhere'])
     // A repeat of the staff save (a lost response) gets its first answer back.
     const repeat = await h.call('PUT', `/admin/coaches/${coach.id}/hours`, week(600), admin, {
-      'If-Match': versionOf(now.periods),
+      'If-Match': versionOf(now.hoursVersion),
       'Idempotency-Key': 'staff-hours-2',
     })
     expect(repeat.status).toBe(200)
     expect(
       (await h.call('GET', '/coach/hours', undefined, token)).json.periods[0].hours[0].startMinute,
     ).toBe(600)
+  })
+
+  it('takes a weekly hours save loaded before the venue midnight as current', async () => {
+    // 23:50 at the venue on Friday.
+    const h = setup({ now: '2026-10-23T15:50:00Z' })
+    const { coach, admin } = await venue(h)
+    // A change planned from Saturday, so the periods from today change shape at midnight.
+    await hoursPut(h, admin, coach.id, [{ weekday: 6, from: '09:00', to: '12:00' }], '2026-10-24')
+    const saw = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, admin)).json
+    h.clock.now = new Date('2026-10-23T16:10:00Z')
+    const save = await h.call(
+      'PUT',
+      `/admin/coaches/${coach.id}/hours`,
+      { hours: [{ weekday: 0, startMinute: 540, endMinute: 720 }] },
+      admin,
+      { 'If-Match': versionOf(saw.hoursVersion) },
+    )
+    expect(save.status).toBe(200)
   })
 
   it('keeps one coach out of another coach 请假', async () => {

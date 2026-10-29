@@ -144,6 +144,8 @@ Page({
   },
 
   periods: [] as HoursPeriod[],
+  // The hours as loaded, sent back with a save so one over a change by staff is refused.
+  hoursVersion: '',
   /** Weekdays changed since the hours were loaded, kept when 生效日期 moves. */
   touched: new Set<number>(),
   lessonMinutes: null as number | null,
@@ -159,6 +161,7 @@ Page({
       const now = Date.now()
       const today = venueDateKey(new Date(now))
       this.periods = view.periods
+      this.hoursVersion = view.hoursVersion
       this.lessonMinutes = view.lessonMinutes
       this.setData({
         state: 'ready',
@@ -334,7 +337,7 @@ Page({
         'PUT',
         '/hours',
         { from: this.data.from, hours: sent },
-        { 'If-Match': versionOf(this.periods) },
+        { 'If-Match': versionOf(this.hoursVersion) },
       )
       // Changes made while saving are still unsaved.
       this.setDirty(this.data.hours !== sent)

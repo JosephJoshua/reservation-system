@@ -19,6 +19,7 @@ import {
   type Span,
   venueDateKey,
   venueInstant,
+  versionOf,
   type WeeklyHours,
   weeklyHoursError,
   withinSpans,
@@ -513,19 +514,40 @@ export function shortestLesson(tx: Q, coachId: number): number | null {
 }
 
 /**
- * A coach's weekly hours from today on: what the 排班 editors show and what a save of them is
- * checked against (If-Match), so one made on top of another's change is refused.
+ * What a save of a coach's weekly hours is checked against (If-Match), so one made on top of
+ * another's change is refused. Taken from all of the coach's rows, not the periods from today,
+ * so it stays the same over the venue's midnight while nothing changes.
  */
-export function periodsFromToday(tx: Q, now: Date, coachId: number): HoursPeriod[] {
-  const today = venueDateKey(now)
-  const periods = hoursPeriods(tx, [coachId]).get(coachId) ?? []
-  return [{ from: today, hours: hoursOn(periods, today) }, ...periods.filter((p) => p.from > today)]
+export function hoursVersion(tx: Q, coachId: number): string {
+  const rows = tx
+    .select({
+      fromDate: coachHours.fromDate,
+      toDate: coachHours.toDate,
+      weekday: coachHours.weekday,
+      startMinute: coachHours.startMinute,
+      endMinute: coachHours.endMinute,
+    })
+    .from(coachHours)
+    .where(eq(coachHours.coachId, coachId))
+    .orderBy(
+      asc(coachHours.fromDate),
+      asc(coachHours.weekday),
+      asc(coachHours.startMinute),
+      asc(coachHours.endMinute),
+    )
+    .all()
+  return versionOf(rows)
 }
 
 /** A coach's 排班 from today on, for the editors in the admin app and the mini program. */
 export function scheduleView(tx: Q, now: Date, coachId: number): ScheduleViewDto {
   assertCoach(tx, coachId)
-  const fromToday = periodsFromToday(tx, now, coachId)
+  const today = venueDateKey(now)
+  const periods = hoursPeriods(tx, [coachId]).get(coachId) ?? []
+  const fromToday: HoursPeriod[] = [
+    { from: today, hours: hoursOn(periods, today) },
+    ...periods.filter((p) => p.from > today),
+  ]
   const rows = tx
     .select()
     .from(scheduleExceptions)
@@ -539,6 +561,7 @@ export function scheduleView(tx: Q, now: Date, coachId: number): ScheduleViewDto
   const settings = getSettings(tx)
   return {
     periods: fromToday,
+    hoursVersion: hoursVersion(tx, coachId),
     exceptions: rows.map((r) => exceptionDto(r, names)),
     closures: upcomingClosures(tx, now),
     coachEdits: settings.booking.coachEditsHours,
@@ -558,7 +581,7 @@ export function saveHours(
   deps: Deps,
   coachId: number,
   input: { from: string; hours: WeeklyHours[] },
-  check?: (current: HoursPeriod[]) => void,
+  check?: (current: string) => void,
 ): { conflicts: ScheduleConflictDto[]; changed: boolean } {
   const now = deps.now()
   const today = venueDateKey(now)
@@ -575,7 +598,7 @@ export function saveHours(
   if (error) throw new ApiError(400, 'invalid_hours', error)
   return immediate(deps.db, (tx) => {
     assertCoach(tx, coachId)
-    check?.(periodsFromToday(tx, now, coachId))
+    check?.(hoursVersion(tx, coachId))
     // In force on `from` or planned later. Unchanged when they all run on with no end and hold
     // exactly the new hours.
     const current = tx
