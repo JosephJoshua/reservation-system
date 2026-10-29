@@ -3,10 +3,12 @@ import { ApiError, api } from './api'
 import { yuan } from './format'
 
 /**
- * Paid; not paid (cancelled at the cashier); paid at the cashier but not confirmed yet; or paid at
- * the cashier while the server has the order closed, which staff have to sort out.
+ * Paid; paid, but the lesson could not be confirmed (the venue stopped it, or the hold ran out and
+ * the time was taken) so the money goes back; not paid (cancelled at the cashier); paid at the
+ * cashier but not confirmed yet; or paid at the cashier while the server has the order closed,
+ * which staff have to sort out.
  */
-export type PayResult = 'paid' | 'cancelled' | 'pending' | 'unclear'
+export type PayResult = 'paid' | 'refunded' | 'cancelled' | 'pending' | 'unclear'
 
 /** Said when a payment went through at the cashier but the server has not confirmed it yet. */
 export const PAY_PENDING = '支付结果确认中，请稍后下拉刷新'
@@ -16,6 +18,9 @@ export const PAY_PENDING = '支付结果确认中，请稍后下拉刷新'
  * been taken, so this never invites paying again.
  */
 export const PAY_UNCLEAR = '支付结果确认中，如已扣款请联系场馆'
+
+/** Said when a payment landed on a lesson that can no longer go ahead and is refunded. */
+export const PAY_REFUNDED = '课程已无法上课，款项将原路退回'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -66,11 +71,16 @@ export async function waitForOrder(orderId: number): Promise<OrderStatusDto | nu
   }
 }
 
-/** Whether the server has the order as paid, asking it once; false when it cannot be reached. */
-function paidNow(orderId: number): Promise<boolean> {
+/** A paid order's result: its lesson booking expired instead of being confirmed, and is refunded. */
+function paidAs(order: OrderStatusDto): 'paid' | 'refunded' {
+  return order.bookingStatus === 'expired' ? 'refunded' : 'paid'
+}
+
+/** The paid order's result, asking the server once; null when unpaid or it cannot be reached. */
+function paidNow(orderId: number): Promise<'paid' | 'refunded' | null> {
   return api<OrderStatusDto>('GET', `/orders/${orderId}`)
-    .then((order) => order.status === 'paid')
-    .catch(() => false)
+    .then((order) => (order.status === 'paid' ? paidAs(order) : null))
+    .catch(() => null)
 }
 
 /**
@@ -89,7 +99,8 @@ export async function payOrder(
   try {
     payment = params ?? (await api<PaymentParamsDto>('POST', `/orders/${orderId}/payment`))
   } catch (e) {
-    if (e instanceof ApiError && e.code === 'order_paid') return 'paid'
+    // Paid already; the lesson may have been refunded since. Said as paid if that cannot be told.
+    if (e instanceof ApiError && e.code === 'order_paid') return (await paidNow(orderId)) ?? 'paid'
     throw e
   }
   if (!stillHere()) return 'cancelled'
@@ -98,14 +109,15 @@ export async function payOrder(
     outcome = payment.fake ? await fakePayment(orderId, amount) : await requestPayment(payment)
   } catch (e) {
     // WeChat also fails an order that was paid meanwhile, so ask the server before saying so.
-    if (await paidNow(orderId)) return 'paid'
+    const paid = await paidNow(orderId)
+    if (paid) return paid
     throw e
   }
   // The server has the last word, even on a cancel.
-  if (outcome === 'cancelled') return (await paidNow(orderId)) ? 'paid' : 'cancelled'
+  if (outcome === 'cancelled') return (await paidNow(orderId)) ?? 'cancelled'
   const order = await waitForOrder(orderId)
   // The cashier said paid, so a closed order is not "nothing paid": the payment may land on it
   // later, or need a refund by staff.
   if (order?.status === 'closed') return 'unclear'
-  return order?.status === 'paid' ? 'paid' : 'pending'
+  return order?.status === 'paid' ? paidAs(order) : 'pending'
 }

@@ -20,7 +20,7 @@ import {
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
-import { PAY_PENDING, PAY_UNCLEAR, payOrder } from '../../utils/pay'
+import { PAY_PENDING, PAY_REFUNDED, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
 
@@ -345,6 +345,11 @@ Page({
         // Paid at the cashier on an order the server closed: never invite paying again.
         if (result === 'unclear') {
           this.finish(res.bookingId, PAY_UNCLEAR, PAY_UNCLEAR)
+          return
+        }
+        // Paid, but the venue stopped the lesson meanwhile: the server refunds it.
+        if (result === 'refunded') {
+          this.finish(res.bookingId, PAY_REFUNDED, PAY_REFUNDED)
           return
         }
         this.finish(res.bookingId, '', result === 'paid' ? '预约成功' : '已预约，请尽快支付')

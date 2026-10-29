@@ -2,7 +2,7 @@ import type { BookingDto } from '../../lib/shared'
 import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
-import { BOOKING_STATUS } from '../../utils/labels'
+import { BOOKING_STATUS, DISRUPTION_TAG } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 
 type Scope = 'upcoming' | 'past'
@@ -25,6 +25,10 @@ function statusOf(b: BookingDto): Pick<LessonView, 'status' | 'tone'> {
     return { status: b.status === 'confirmed' ? '已签到' : '已到课', tone: 'success' }
   }
   if (b.attendance === 'no_show') return { status: '缺席', tone: 'danger' }
+  // The venue cannot give it as booked: said on the list, so nobody travels to it.
+  if (b.disruption && (b.status === 'confirmed' || b.status === 'pending_payment')) {
+    return { status: DISRUPTION_TAG[b.disruption], tone: 'warning' }
+  }
   return {
     status: BOOKING_STATUS[b.status],
     tone:
@@ -86,7 +90,8 @@ Page({
     try {
       const rows = await api<BookingDto[]>('GET', `/bookings?scope=${this.data.scope}`)
       if (request !== this.request) return
-      const open = rows.find((b) => b.canCheckIn)
+      // Nothing to check in to while the venue cannot give the lesson.
+      const open = rows.find((b) => b.canCheckIn && !b.disruption)
       const now = new Date(serverNow())
       this.setData({
         state: 'ready',
