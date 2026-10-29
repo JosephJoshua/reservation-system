@@ -1,4 +1,10 @@
-import { type BannerDto, type CatalogDto, type HomeDto, NO_LINK } from '../../lib/shared'
+import {
+  type BannerDto,
+  type CatalogDto,
+  dialablePhone,
+  type HomeDto,
+  NO_LINK,
+} from '../../lib/shared'
 import { assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { priceText } from '../../utils/format'
@@ -127,7 +133,8 @@ Page({
   },
 
   call() {
-    const phone = this.data.venue?.phone
+    // The first number, as digits: the phone may hold an extension, a second number or a note.
+    const phone = dialablePhone(this.data.venue?.phone ?? '')
     if (phone) openOnce((complete) => wx.makePhoneCall({ phoneNumber: phone, complete }))
   },
 

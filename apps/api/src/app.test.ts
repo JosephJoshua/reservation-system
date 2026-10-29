@@ -71,7 +71,12 @@ describe('venue phone', () => {
     const refused = await h.call('PUT', '/admin/settings', emoji, admin)
     expect(refused.status).toBe(400)
     expect(refused.json.error.message).toBe(VENUE_PHONE_MESSAGE)
-    for (const phone of ['', '010-62345678', '+86 (010) 6234 5678 转 8', '13900000001']) {
+    for (const phone of [
+      '',
+      '010-62345678',
+      '+86 (010) 6234 5678 转 8',
+      '010-62345678 / 13900000001（微信同号）',
+    ]) {
       const ok = structuredClone(loaded)
       ok.venue.phone = phone
       const res = await h.call('PUT', '/admin/settings', ok, admin)
@@ -85,6 +90,13 @@ describe('venue phone', () => {
     expect(getSettings(h.db).venue.phone).toBe('前台 010-62345678')
     const read = (await h.call('GET', '/admin/settings', undefined, admin)).json
     expect(read.venue.phone).toBe('前台 010-62345678')
+    // Left as it is, it does not block saving the rest; changed, it is checked.
+    read.venue.openingHours = '每天 10:00-22:00'
+    const other = await h.call('PUT', '/admin/settings', read, admin)
+    expect(other.status).toBe(200)
+    expect(other.json.venue.phone).toBe('前台 010-62345678')
+    other.json.venue.phone = '前台 010-62345679'
+    expect((await h.call('PUT', '/admin/settings', other.json, admin)).status).toBe(400)
   })
 })
 

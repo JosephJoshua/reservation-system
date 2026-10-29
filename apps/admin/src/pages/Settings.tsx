@@ -166,6 +166,8 @@ export function Settings() {
       .map((x) => x.key),
   )
   const dirty = dirtySections.size > 0
+  // Checked once changed, so a phone saved before the check does not block the rest.
+  const phoneWrong = s.venue.phone !== data?.venue.phone && !venuePhoneValid(s.venue.phone)
 
   const save = async () => {
     if (isSaving()) return
@@ -184,6 +186,11 @@ export function Settings() {
     const body = structuredClone(s)
     body.venue.latitude = lat ? Number(lat) : null
     body.venue.longitude = lng ? Number(lng) : null
+    if (phoneWrong) {
+      void MessagePlugin.warning(VENUE_PHONE_MESSAGE)
+      nav.scrollTo('venue')
+      return
+    }
     const problem = settingsProblem(body)
     if (problem) {
       void MessagePlugin.warning(problem.message)
@@ -226,14 +233,11 @@ export function Settings() {
               }
             />
           </Field>
-          <Field
-            label="电话"
-            help={venuePhoneValid(s.venue.phone) ? undefined : VENUE_PHONE_MESSAGE}
-          >
+          <Field label="电话" help={phoneWrong ? VENUE_PHONE_MESSAGE : undefined}>
             <Input
               value={s.venue.phone}
-              maxlength={30}
-              status={venuePhoneValid(s.venue.phone) ? 'default' : 'error'}
+              maxlength={60}
+              status={phoneWrong ? 'error' : 'default'}
               onChange={(v) =>
                 set((d) => {
                   d.venue.phone = String(v)
