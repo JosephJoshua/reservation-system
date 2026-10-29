@@ -157,8 +157,29 @@ Page({
 
   onShow() {
     // Left open past midnight: today, the 生效日期 and the date pickers' range have moved.
-    if (this.data.state === 'ready' && this.data.today !== venueDateKey(new Date(serverNow()))) {
+    const now = serverNow()
+    const today = venueDateKey(new Date(now))
+    if (this.data.state !== 'ready' || this.data.today === today) return
+    if (!this.data.dirty) {
       this.load()
+      return
+    }
+    // Unsaved hours keep the version they were loaded with, so a save over hours staff changed
+    // meanwhile is still refused and asks to check them. Only the dates move.
+    let { from } = this.data
+    if (from < today) from = today
+    const moved = from !== this.data.from
+    this.setData({
+      today,
+      lastDay: venueDateKey(new Date(now + 365 * DAY)),
+      from,
+      fromText: from === today ? '今天' : dateLabel(from),
+    })
+    if (moved) {
+      // As when 生效日期 is picked: the days not edited take the hours in effect from then.
+      const kept = this.data.hours.filter((h) => this.touched.has(h.weekday))
+      const rest = hoursOn(this.periods, from).filter((h) => !this.touched.has(h.weekday))
+      this.setHours([...rest, ...kept])
     }
   },
 

@@ -58,6 +58,13 @@ Page({
     this.load()
   },
 
+  onShow() {
+    // Left open past midnight: the day strip has moved.
+    const today = venueDateKey(new Date(serverNow()))
+    const { state, submitting, days } = this.data
+    if (state === 'ready' && !submitting && days[0]?.key !== today) this.load()
+  },
+
   async load() {
     try {
       const [lesson, me] = await Promise.all([
