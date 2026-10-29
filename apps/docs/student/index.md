@@ -17,6 +17,7 @@
 
 <Shots>
   <Shot phone src="img/mp/s01-home.webp" alt="“预约”首页" />
+  <Shot phone src="img/mp/s01b-home-lower.webp" alt="首页下方的教练、课时包和场馆信息" />
   <Shot phone src="img/mp/s10-lessons-upcoming.webp" alt="“课程”页" />
   <Shot phone src="img/mp/s23-profile.webp" alt="“我的”页" />
 </Shots>
@@ -27,6 +28,8 @@
 
 - 填写**上课学员的姓名和手机号**。这两项仅场馆工作人员可见，用于上课联系和课程变动通知。如果为孩子预约，请填写孩子的姓名。
 - 勾选同意**用户协议**和**隐私政策**。
+
+<Shot phone src="img/mp/s06b-confirm-new.webp" alt="首次预约时填写联系方式并同意协议" />
 
 填写一次后会自动保存，之后预约无需重复填写。如需修改，请见[个人信息与账号](./account)。
 

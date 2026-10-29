@@ -29,7 +29,11 @@
 
 在“我的”页点击“外观”，可以选择“跟随系统”“浅色”或“深色”。默认跟随手机的深色模式设置。
 
-<Shot phone src="img/mp/s26-theme.webp" alt="外观" />
+<Shots>
+  <Shot phone src="img/mp/s26-theme.webp" alt="外观" />
+  <Shot phone src="img/mp/s28-home-dark.webp" alt="深色模式下的首页" />
+  <Shot phone src="img/mp/s29-lessons-dark.webp" alt="深色模式下的“课程”页" />
+</Shots>
 
 ## 联系场馆
 
