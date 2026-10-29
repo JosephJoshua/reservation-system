@@ -30,7 +30,7 @@ import { disruptionOf } from './disruption'
 import { newOutTradeNo } from './ids'
 import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
-import { createRefund, submitRefund } from './refunds'
+import { createRefund, submitRefund, VENUE_CANCEL_REFUND } from './refunds'
 import { type SlotTarget, targetSlot } from './schedule'
 import { getSettings, ruleBook } from './settings'
 import { assertTableFree } from './tables'
@@ -527,6 +527,11 @@ export async function cancelBooking(
     // The payment that landed could not confirm the booking (the slot was gone), so it is
     // already being refunded in full and there is nothing left to cancel.
     if (paidWhileCancelling && booking.status === 'expired') return null
+    // The payment landed on a seat in a session the venue called off, which applyPayment
+    // cancelled for the venue and refunded: this cancel's work is done.
+    if (paidWhileCancelling && booking.status === 'cancelled' && booking.cancelledBy === 'venue') {
+      return []
+    }
     // Two cancels by the same side racing: the first one did the work.
     if (repeatedCancel(booking, by, options)) return null
     if (booking.status !== 'confirmed') throw new ApiError(409, 'not_cancellable', '该预约已取消')
@@ -609,7 +614,7 @@ export async function cancelBooking(
         createRefund(tx, now, {
           orderId: order.id,
           amount: outcome.refund,
-          reason: by === 'venue' ? '场馆取消课程' : '取消预约',
+          reason: by === 'venue' ? VENUE_CANCEL_REFUND : '取消预约',
           bookingId: booking.id,
         }),
       ]

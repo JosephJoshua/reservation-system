@@ -12,11 +12,13 @@ import {
   packages,
   refunds,
   slots,
+  studentNotices,
   students as studentRows,
 } from './db/schema'
 import { notifyCoaches } from './services/coach-notices'
 import { applyPayment } from './services/orders'
 import { cancelUnderfilledSessions, UNDERFILLED_REASON } from './services/sessions'
+import { notifyStudents } from './services/student-notices'
 import { type Harness, setup } from './test/harness'
 import type { Notifier } from './wx-notify'
 
@@ -899,7 +901,7 @@ describe('calling off a session', () => {
     ])
   })
 
-  it('refunds a payment landing on a seat its cancel could not close, at once', async () => {
+  it('cancels a seat for the venue when its payment lands after a cancel that failed', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h)
     const admin = await h.admin()
@@ -923,7 +925,8 @@ describe('calling off a session', () => {
       code: 'lesson_unavailable',
       message: '该课已取消，请预约其他课程',
     })
-    // A cashier opened before still takes the money: never confirmed, refunded at once.
+    // A cashier opened before still takes the money: never confirmed, cancelled by the venue as
+    // the rest were, and refunded in full at once.
     const order = h.db.select().from(orders).where(eq(orders.id, held.json.orderId)).get()
     applyPayment(h.deps, order?.outTradeNo ?? '', {
       state: 'paid',
@@ -932,12 +935,33 @@ describe('calling off a session', () => {
       amount: order?.amount ?? 0,
     })
     const row = h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get()
-    expect(row?.status).toBe('expired')
+    expect(row).toMatchObject({
+      status: 'cancelled',
+      cancelledBy: 'venue',
+      cancelReason: '场地维修',
+      cancelledAt: h.deps.now(),
+      late: false,
+    })
     expect(h.db.select().from(refunds).all()).toEqual([
-      expect.objectContaining({ amount: 8000, reason: '该课已取消，自动退款' }),
+      expect.objectContaining({ amount: 8000, reason: '场馆取消课程' }),
     ])
     const status = await h.call('GET', `/orders/${held.json.orderId}`, undefined, a)
-    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired' })
+    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'cancelled' })
+    const view = await h.call('GET', `/bookings/${held.json.bookingId}`, undefined, a)
+    expect(view.json).toMatchObject({ cancelledBy: 'venue', cancelReason: '场地维修' })
+    // The student is told, as for the other seats.
+    await notifyStudents(h.deps)
+    const told = h.db
+      .select()
+      .from(studentNotices)
+      .where(
+        and(
+          eq(studentNotices.bookingId, held.json.bookingId),
+          eq(studentNotices.kind, 'cancelled'),
+        ),
+      )
+      .all()
+    expect(told).toHaveLength(1)
     h.gateway.closeOrder = realClose
 
     // A seat still confirmed before the sweeper gets to it is not on the desk's list and cannot
@@ -953,6 +977,40 @@ describe('calling off a session', () => {
     expect(list.json).toEqual([])
     const scan = await h.call('POST', '/check-in', { code: 'https://yuyue.example.com/checkin' }, b)
     expect(scan.json.error.code).toBe('nothing_to_check_in')
+  })
+
+  it('counts a seat whose payment lands while the venue cancels it', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const id = await session(h, admin, kids.id, coach.id)
+    const [a] = await students(h, 'a')
+    const held = await book(h, a, id, kids.id)
+    const order = h.db.select().from(orders).where(eq(orders.id, held.json.orderId)).get()
+    // Paid at WeChat Pay a moment before the call-off; the close call reports it paid.
+    h.gateway.pay(order?.outTradeNo ?? '')
+    const res = await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)
+    expect(res.status).toBe(204)
+    expect(
+      h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get(),
+    ).toMatchObject({ status: 'cancelled', cancelledBy: 'venue', cancelReason: '场地维修' })
+    expect(h.db.select().from(refunds).all()).toEqual([
+      expect.objectContaining({ amount: 8000, reason: '场馆取消课程' }),
+    ])
+    const log = (await h.call('GET', '/admin/actions?actions=session.cancel', undefined, admin))
+      .json
+    expect(log).toEqual([
+      expect.objectContaining({
+        summary: '10月26日 10:00 王教练 少儿小班课，原因：场地维修，取消 1 人的预约',
+      }),
+    ])
+    await notifyStudents(h.deps)
+    const told = h.db
+      .select()
+      .from(studentNotices)
+      .where(eq(studentNotices.kind, 'cancelled'))
+      .all()
+    expect(told.map((n) => n.bookingId)).toEqual([held.json.bookingId])
   })
 
   it('calls off a session short of the minimum at the free-cancel deadline, once', async () => {

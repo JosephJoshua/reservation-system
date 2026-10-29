@@ -23,6 +23,19 @@ export function refundedSoFar(tx: Q, orderId: number): number {
   return row?.total ?? 0
 }
 
+/** Ends the reason of a refund made because a payment landed but could not confirm its booking. */
+export const AUTO_REFUND = '，自动退款'
+/** The refund reason for a lesson the venue cancelled. */
+export const VENUE_CANCEL_REFUND = '场馆取消课程'
+
+/**
+ * Why a payment was refunded on arrival, read back from its refund reason (时段已被预约, 该课已取消
+ * or a disruption's text); null for any other refund.
+ */
+export function autoRefundWhy(reason: string): string | null {
+  return reason.endsWith(AUTO_REFUND) ? reason.slice(0, -AUTO_REFUND.length) : null
+}
+
 /**
  * Adds a pending refund row inside the caller's transaction. WeChat Pay refunds are then sent;
  * offline ones stay pending until staff mark them paid back at the front desk.
