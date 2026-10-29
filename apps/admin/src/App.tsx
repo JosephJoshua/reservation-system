@@ -123,9 +123,12 @@ function currentPage(): PageKey {
   return 'overview'
 }
 
-/** Whose login `token` is, or null when it can't be told. */
+/** Whose login `token` is, or null when it can't be told, such as with no answer in 5 seconds. */
 function whoIs(token: string): Promise<StaffDto | null> {
-  return fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
+  return fetch('/api/admin/me', {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(5000),
+  })
     .then((res) => (res.ok ? (res.json() as Promise<StaffDto>) : null))
     .catch(() => null)
 }
@@ -361,16 +364,23 @@ export function App() {
     if (!me || !hasUnsaved()) return follow()
     // Nothing goes out as the new login until it is known whose it is.
     holdRequests()
+    // Changed again meanwhile, or asked already: the later change or the open question decides.
+    const settled = () => getToken() !== token || !!pending.current
+    // This tab logged out, or in again, meanwhile: what was held belonged to that session.
+    const left = () => signedIn.current !== me
     let now = await whoIs(token)
     // Not told, as on a network blip: tried again a moment later, then asked.
     for (const wait of [1000, 3000]) {
-      if (now || getToken() !== token || pending.current) break
+      if (now || settled() || left()) break
       await new Promise((resolve) => setTimeout(resolve, wait))
-      if (getToken() !== token || pending.current) break
+      if (settled() || left()) break
       now = await whoIs(token)
     }
-    // Changed again meanwhile, or asked already: the later change or the open question decides.
-    if (getToken() !== token || pending.current) return
+    if (left()) {
+      if (!pending.current) releaseRequests(false)
+      return
+    }
+    if (settled()) return
     if (now?.id === me.id) {
       releaseRequests(true)
       return follow()
