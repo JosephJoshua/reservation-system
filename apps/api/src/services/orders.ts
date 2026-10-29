@@ -62,7 +62,13 @@ export async function startPayment(
   const held = order.bookingId
     ? deps.db.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
     : undefined
-  if (held?.status === 'pending_payment') assertNotDisrupted(deps.db, held)
+  if (held?.status === 'pending_payment') {
+    // Its cancel could not close the order at WeChat Pay; the sweeper cancels the seat.
+    if (calledOffSession(deps.db, held.slotId)) {
+      throw new ApiError(409, 'lesson_unavailable', '该课已取消，请预约其他课程')
+    }
+    assertNotDisrupted(deps.db, held)
+  }
   let prepayId = order.prepayId
   if (!prepayId) {
     try {
@@ -210,17 +216,17 @@ export function applyPayment(
     const booking = tx.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
     if (!booking) return []
     let reason = '时段已被预约，自动退款'
-    // The venue cannot give the lesson any more (闭馆, 请假, the coach stopped): a hold ends, one
-    // already over is not revived, and the payment goes back, saying why.
-    const disruption =
-      booking.status === 'pending_payment' || booking.status === 'expired'
-        ? disruptionOf(tx, booking)
-        : null
-    if (disruption) {
+    // The venue cannot give the lesson any more (the session was called off, 闭馆, 请假, the coach
+    // stopped): a hold ends, one already over is not revived, and the payment goes back, saying
+    // why. A called-off session's seat still held is one whose cancel could not close the order.
+    const unpaid = booking.status === 'pending_payment' || booking.status === 'expired'
+    const calledOff = unpaid && calledOffSession(tx, booking.slotId)
+    const disruption = unpaid && !calledOff ? disruptionOf(tx, booking) : null
+    if (calledOff || disruption) {
       if (booking.status === 'pending_payment') {
         tx.update(bookings).set({ status: 'expired' }).where(eq(bookings.id, booking.id)).run()
       }
-      reason = `${DISRUPTION_TEXT[disruption]}，自动退款`
+      reason = disruption ? `${DISRUPTION_TEXT[disruption]}，自动退款` : '该课已取消，自动退款'
     } else if (
       booking.status === 'pending_payment' ||
       (booking.status === 'expired' && revivable(tx, booking, deps.now()))
@@ -261,6 +267,16 @@ export function applyPayment(
 }
 
 class SeatGone extends Error {}
+
+/** Whether the slot is a session the venue called off. */
+function calledOffSession(tx: Q, slotId: number) {
+  const slot = tx
+    .select({ cancelledAt: slots.cancelledAt })
+    .from(slots)
+    .where(eq(slots.id, slotId))
+    .get()
+  return !!slot?.cancelledAt
+}
 
 /** A free seat for a booking revived by a late payment, or null when the slot is full. */
 function revivedSeat(tx: Q, slotId: number) {

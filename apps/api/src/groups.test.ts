@@ -899,6 +899,62 @@ describe('calling off a session', () => {
     ])
   })
 
+  it('refunds a payment landing on a seat its cancel could not close, at once', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const id = await session(h, admin, kids.id, coach.id)
+    const [a, b] = await students(h, 'a', 'b')
+    const held = await book(h, a, id, kids.id)
+    const stuck = await book(h, b, id, kids.id)
+    expect(held.json.status).toBe('pending_payment')
+    // WeChat Pay cannot be reached, so the holds stay until the sweeper tries again.
+    const realClose = h.gateway.closeOrder.bind(h.gateway)
+    h.gateway.closeOrder = async () => {
+      throw new Error('wechat down')
+    }
+    const res = await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)
+    expect(res.status).toBe(204)
+    expect(live(h, id).map((r) => r.status)).toEqual(['pending_payment', 'pending_payment'])
+    // No cashier for it any more.
+    const again = await h.call('POST', `/orders/${held.json.orderId}/payment`, {}, a)
+    expect(again.status).toBe(409)
+    expect(again.json.error).toEqual({
+      code: 'lesson_unavailable',
+      message: '该课已取消，请预约其他课程',
+    })
+    // A cashier opened before still takes the money: never confirmed, refunded at once.
+    const order = h.db.select().from(orders).where(eq(orders.id, held.json.orderId)).get()
+    applyPayment(h.deps, order?.outTradeNo ?? '', {
+      state: 'paid',
+      transactionId: 'x',
+      paidAt: h.deps.now(),
+      amount: order?.amount ?? 0,
+    })
+    const row = h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get()
+    expect(row?.status).toBe('expired')
+    expect(h.db.select().from(refunds).all()).toEqual([
+      expect.objectContaining({ amount: 8000, reason: '该课已取消，自动退款' }),
+    ])
+    const status = await h.call('GET', `/orders/${held.json.orderId}`, undefined, a)
+    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired' })
+    h.gateway.closeOrder = realClose
+
+    // A seat still confirmed before the sweeper gets to it is not on the desk's list and cannot
+    // be checked in.
+    h.db
+      .update(bookings)
+      .set({ status: 'confirmed' })
+      .where(eq(bookings.id, stuck.json.bookingId))
+      .run()
+    h.clock.now = venueInstant('2026-10-26', 9 * 60 + 45)
+    const desk = await h.admin()
+    const list = await h.call('GET', '/admin/front-desk?date=2026-10-26', undefined, desk)
+    expect(list.json).toEqual([])
+    const scan = await h.call('POST', '/check-in', { code: 'https://yuyue.example.com/checkin' }, b)
+    expect(scan.json.error.code).toBe('nothing_to_check_in')
+  })
+
   it('calls off a session short of the minimum at the free-cancel deadline, once', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h, { minStudents: 2 })

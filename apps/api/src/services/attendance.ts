@@ -12,7 +12,7 @@ import {
   venueInstant,
   venueParts,
 } from '@rs/shared'
-import { and, asc, eq, gt, gte, inArray, lt } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, lt } from 'drizzle-orm'
 import { immediate } from '../db/client'
 import { bookings, coaches, lessonTypes, slots, staff, students } from '../db/schema'
 import type { Deps } from '../deps'
@@ -128,6 +128,8 @@ export function studentCheckIn(deps: Deps, studentId: number): CheckInLessonDto[
           eq(bookings.studentId, studentId),
           eq(bookings.status, 'confirmed'),
           gt(bookings.endsAt, now),
+          // A called-off session's seat the sweeper has yet to cancel.
+          isNull(slots.cancelledAt),
         ),
       )
       .orderBy(asc(bookings.startsAt))
@@ -187,6 +189,8 @@ export function frontDeskLessons(deps: Deps, date: string): FrontDeskLessonDto[]
     .where(
       and(
         eq(bookings.status, 'confirmed'),
+        // A called-off session's seat the sweeper has yet to cancel.
+        isNull(slots.cancelledAt),
         gte(bookings.startsAt, venueInstant(date, 0)),
         lt(bookings.startsAt, venueInstant(date, 24 * 60)),
       ),
