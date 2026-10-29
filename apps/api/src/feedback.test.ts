@@ -666,7 +666,7 @@ describe('photo upload repeats', () => {
     expect(files(h)).toHaveLength(24)
   })
 
-  it('still answers a repeat after another student deletes their account', async () => {
+  it('tells the coach to add a photo again when its answer was dropped by an erasure', async () => {
     const h = setup()
     const { ct, id } = await taught(h)
     const send = () => {
@@ -685,9 +685,13 @@ describe('photo upload repeats', () => {
     await h.call('PUT', '/me', { name: '乙某某', phone: '13800000002' }, other)
     h.clock.now = new Date(h.clock.now.getTime() + 60_000)
     expect((await h.call('DELETE', '/me', undefined, other)).status).toBe(204)
+    // Erasures drop every staff and coach answer kept for repeats, this one too.
     const again = await send()
-    expect(again.status).toBe(201)
-    expect(((await again.json()) as { url: string }).url).toBe(url)
-    expect(files(h)).toHaveLength(1)
+    expect(again.status).toBe(409)
+    expect(await again.json()).toMatchObject({
+      error: { code: 'in_progress', message: '照片未能添加，请重新选择' },
+    })
+    // Not uploaded a second time.
+    expect(files(h)).toEqual([url.replace('/api/uploads/', '')])
   })
 })

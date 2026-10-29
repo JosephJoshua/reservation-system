@@ -86,6 +86,8 @@ function liveSession(deps: Deps, token: string, now: Date) {
 const CREDENTIAL_PATHS =
   /^\/api\/(?:admin\/login|auth\/student|coach\/login|coach\/bind|admin\/me\/password|admin\/staff|admin\/staff\/[^/]+\/password)\/?$/
 
+const PHOTO_UPLOAD = /^\/api\/coach\/lessons\/[^/]+\/photos\/?$/
+
 /**
  * The key a request is kept under, for a signed-in caller's mutating request that carries an
  * Idempotency-Key; null when it is not kept.
@@ -160,8 +162,13 @@ export function idempotency(deps: Deps): MiddlewareHandler {
         throw new ApiError(409, 'idempotency_key_reused', '内容已变更，请刷新后重新提交')
       }
       if (seen.status !== null) {
-        // Its answer was dropped when a student in it deleted their account (see eraseStudent).
+        // Its answer was dropped when a student deleted their account (see eraseStudent).
         if (seen.body === null && seen.status !== 204) {
+          // A photo the coach has not saved in feedback yet is in no list a reload shows, so the
+          // coach is told to add it again; the copy already uploaded is swept as unused.
+          if (PHOTO_UPLOAD.test(c.req.path)) {
+            throw new ApiError(409, 'in_progress', '照片未能添加，请重新选择')
+          }
           throw new ApiError(409, 'in_progress', '已处理，请刷新后查看结果')
         }
         return new Response(seen.body || null, {

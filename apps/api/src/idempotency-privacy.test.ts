@@ -120,8 +120,7 @@ describe('answers kept for repeats and erased students', () => {
     })
     expect(del.status).toBe(204)
     const rows = h.db.select().from(idempotencyKeys).all()
-    // The 档案 answer showed them; the new student's id alone says nothing about them.
-    expect(rows.map((r) => r.body)).toEqual(['{"id":1}', null, null])
+    expect(rows.every((r) => !r.body)).toBe(true)
     expect(JSON.stringify(rows)).not.toMatch(/独特名字|13912345678|膝盖旧伤/)
     // The deletion's own repeat still answers as it did.
     const again = await h.call('DELETE', `/admin/students/${id}`, undefined, a, {
@@ -156,6 +155,59 @@ describe('answers kept for repeats and erased students', () => {
     expect(own.map((r) => r.studentId)).toEqual([desk.json.id, desk.json.id])
     expect((await h.call('DELETE', '/me', undefined, w)).status).toBe(204)
     expect(JSON.stringify(h.db.select().from(idempotencyKeys).all())).not.toContain('13912345678')
+  })
+})
+
+describe('answers given before a student changed their details', () => {
+  it('are dropped on erasure too, with the old name, phone, note and 档案', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const ct = boundCoach(h, coach.id)
+    const admin = await h.admin()
+    const s = await h.student('A')
+    await h.call('PUT', '/me', { name: '甲某某', phone: '13800000001' }, s)
+    const studentId = (await h.call('GET', '/me', undefined, s)).json.id
+    const slot = h.slot(coach.id, '2026-10-25', 10)
+    const made = await h.call(
+      'POST',
+      '/admin/bookings',
+      {
+        studentId,
+        slotId: slot.id,
+        lessonTypeId: lesson.id,
+        payWith: 'offline',
+        amount: 20000,
+        method: 'cash',
+      },
+      admin,
+    )
+    const id = made.json.bookingId
+    const note = await h.call('PUT', `/coach/lessons/${id}/note`, { note: '左手持拍旧备注' }, ct, {
+      'Idempotency-Key': 'c1',
+    })
+    expect(note.status).toBe(200)
+    const profile = await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      { level: null, grip: null, tags: ['旧标签膝伤'], note: '旧档案备注' },
+      admin,
+      { 'Idempotency-Key': 'a1' },
+    )
+    expect(profile.status).toBe(200)
+    // Changed before the account is deleted.
+    await h.call('PUT', '/me', { name: '乙某某', phone: '13900000002' }, s)
+    await h.call('PUT', `/coach/lessons/${id}/note`, { note: '' }, ct)
+    await h.call(
+      'PUT',
+      `/admin/students/${studentId}/profile`,
+      { level: null, grip: null, tags: [], note: '' },
+      admin,
+    )
+    h.clock.now = new Date('2026-10-26T02:00:00Z')
+    expect((await h.call('DELETE', '/me', undefined, s)).status).toBe(204)
+    expect(
+      scan(h, ['甲某某', '13800000001', '左手持拍旧备注', '旧档案备注', '旧标签膝伤']),
+    ).toEqual([])
   })
 })
 
