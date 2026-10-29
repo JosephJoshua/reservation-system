@@ -2,7 +2,7 @@ import type { BookingDto } from '../../lib/shared'
 import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
-import { BOOKING_STATUS } from '../../utils/labels'
+import { BOOKING_STATUS, DISRUPTION_TAG } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 
 type Scope = 'upcoming' | 'past'
@@ -25,6 +25,10 @@ function statusOf(b: BookingDto): Pick<LessonView, 'status' | 'tone'> {
     return { status: b.status === 'confirmed' ? '已签到' : '已到课', tone: 'success' }
   }
   if (b.attendance === 'no_show') return { status: '缺席', tone: 'danger' }
+  // The venue cannot give it as booked: said on the list, so nobody travels to it.
+  if (b.disruption && (b.status === 'confirmed' || b.status === 'pending_payment')) {
+    return { status: DISRUPTION_TAG[b.disruption], tone: 'warning' }
+  }
   return {
     status: BOOKING_STATUS[b.status],
     tone:
@@ -62,9 +66,11 @@ Page({
 
   onShow() {
     this.load()
-    // A lesson opens for check-in 30 minutes before it starts and closes when it ends.
+    // A lesson opens for check-in 30 minutes before it starts and closes when it ends. Kept
+    // quiet: offline, a toast every minute would only nag.
+    clearInterval(this.timer)
     this.timer = setInterval(() => {
-      if (this.data.scope === 'upcoming' && this.data.state === 'ready') this.load()
+      if (this.data.scope === 'upcoming' && this.data.state === 'ready') this.load(true)
     }, 60_000)
   },
 
@@ -80,13 +86,18 @@ Page({
     this.load().finally(() => wx.stopPullDownRefresh())
   },
 
-  async load() {
+  /**
+   * Loads the list. A failure keeps what is on screen, and is said unless `quiet` (the timer's
+   * refresh). The retry button passes its tap event here, so only `true` counts as quiet.
+   */
+  async load(quiet?: boolean) {
     const request = ++this.request
     if (!this.data.lessons.length) this.setData({ state: 'loading' })
     try {
       const rows = await api<BookingDto[]>('GET', `/bookings?scope=${this.data.scope}`)
       if (request !== this.request) return
-      const open = rows.find((b) => b.canCheckIn)
+      // Nothing to check in to while the venue cannot give the lesson.
+      const open = rows.find((b) => b.canCheckIn && !b.disruption)
       const now = new Date(serverNow())
       this.setData({
         state: 'ready',
@@ -96,8 +107,9 @@ Page({
     } catch (e) {
       if (request !== this.request) return
       // A failed refresh keeps what is on screen.
-      if (this.data.state === 'ready') showError(e)
-      else this.setData({ state: 'error', error: errorMessage(e) })
+      if (this.data.state === 'ready') {
+        if (quiet !== true) showError(e)
+      } else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

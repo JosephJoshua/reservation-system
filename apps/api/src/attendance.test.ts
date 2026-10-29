@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { bookings } from './db/schema'
+import { actionLog, bookings } from './db/schema'
 import { type Harness, setup } from './test/harness'
 
 const CODE = 'https://yuyue.example.com/checkin'
@@ -252,6 +252,42 @@ describe('front desk 签到', () => {
       attendanceBy: null,
       attendanceStaffId: null,
     })
+  })
+
+  it('takes over a student check-in when the desk marks 到课', async () => {
+    const h = setup()
+    const { coachToken, student, bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T01:40:00Z')
+    const admin = await h.admin()
+    const logged = () =>
+      h.db.select().from(actionLog).where(eq(actionLog.action, 'booking.attendance')).all()
+    expect((await h.call('POST', '/check-in', { code: CODE }, student)).status).toBe(200)
+    expect(row(h, bookingId)).toMatchObject({ attendanceBy: 'student', attendanceStaffId: null })
+    h.clock.now = new Date('2026-10-26T01:50:00Z')
+    const mark = () =>
+      h.call('PUT', `/admin/bookings/${bookingId}/attendance`, { attendance: 'attended' }, admin)
+    expect((await mark()).status).toBe(204)
+    // The desk's mark now, kept from when the student scanned.
+    expect(row(h, bookingId)).toMatchObject({
+      attendance: 'attended',
+      attendanceAt: new Date('2026-10-26T01:40:00Z'),
+      attendanceBy: 'staff',
+      attendanceStaffId: expect.any(Number),
+    })
+    expect(logged()).toHaveLength(1)
+    // A repeat writes and logs nothing more.
+    expect((await mark()).status).toBe(204)
+    expect(logged()).toHaveLength(1)
+    // So the coach can no longer turn it into 缺席.
+    h.clock.now = new Date('2026-10-26T02:05:00Z')
+    const res = await h.call(
+      'PUT',
+      `/coach/lessons/${bookingId}/attendance`,
+      { attendance: 'no_show' },
+      coachToken,
+    )
+    expect(res.json.error.code).toBe('staff_marked')
+    expect(row(h, bookingId)?.attendance).toBe('attended')
   })
 
   it('drops the whole mark when the venue cancels mid-lesson', async () => {

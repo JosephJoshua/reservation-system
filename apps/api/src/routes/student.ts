@@ -27,7 +27,7 @@ import {
   venueDates,
   venueInstant,
 } from '@rs/shared'
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
@@ -38,6 +38,7 @@ import {
   lessonTypes,
   orders,
   packageProducts,
+  refunds,
   slots,
   students,
 } from '../db/schema'
@@ -658,6 +659,11 @@ export function studentRoutes(deps: Deps) {
       amount: order.amount,
       bookingId: order.bookingId,
       bookingStatus: booking ? bookingStatus(booking, deps.now()) : null,
+      refunded: !!db
+        .select({ id: refunds.id })
+        .from(refunds)
+        .where(and(eq(refunds.orderId, order.id), ne(refunds.status, 'rejected')))
+        .get(),
     } satisfies OrderStatusDto)
   })
 
