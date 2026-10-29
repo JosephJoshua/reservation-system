@@ -227,6 +227,7 @@ export function heldAt(tx: Q, studentId: number, target: SlotTarget) {
       paidWith: bookings.paidWith,
       price: bookings.price,
       packageId: bookings.packageId,
+      terms: bookings.terms,
     })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
@@ -246,16 +247,27 @@ export function heldAt(tx: Q, studentId: number, target: SlotTarget) {
     .get()
 }
 
-/** Whether a request for a time the student already holds asks for the booking they have. */
+/**
+ * Whether a request for a time the student already holds asks for the booking they have, under
+ * the cancel and move rules it was booked with (`terms`).
+ */
 function asksForHeld(
   own: { paidWith: 'order' | 'package'; price: number; packageId: number | null },
+  terms: BookingTerms,
   input: CreateBookingInput,
 ): boolean {
   if (input.payWith === 'package' && own.paidWith !== 'package') return false
   if (input.payWith === 'wechat' && own.paidWith === 'package') return false
-  if (input.expectedPackageId !== undefined && own.packageId !== input.expectedPackageId) {
+  // As for a new booking, the package shown only counts when one is used: one asked for with no
+  // package to use books by WeChat Pay, and asking again the same gets that booking back.
+  if (
+    input.expectedPackageId !== undefined &&
+    (own.paidWith === 'package' || input.payWith === 'package') &&
+    own.packageId !== input.expectedPackageId
+  ) {
     return false
   }
+  if (input.expectedTerms && !sameTerms(input.expectedTerms, terms)) return false
   // As for a new booking, the price shown only counts when not paying with a package.
   return (
     input.expectedPrice === undefined ||
@@ -329,9 +341,9 @@ export async function createBooking(
     // than being told the time is taken (by the student themself).
     const own = heldAt(tx, studentId, input.target)
     if (own && own.lessonTypeId === input.lessonTypeId) {
-      // Asked on other terms (a package now, or another price): not a repeat. Handing back the
+      // Asked on other terms (a package now, another price or other rules): not a repeat. Handing back the
       // hold would send the student to pay its old order, so they are pointed to it instead.
-      if (!asksForHeld(own, input)) {
+      if (!asksForHeld(own, ruleBook(tx, settings).termsOf(own), input)) {
         throw new ApiError(
           409,
           'already_booked',

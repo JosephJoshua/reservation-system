@@ -97,11 +97,11 @@ describe('booking a session the student already holds', () => {
       code: 'already_booked',
       bookingId: first.json.bookingId,
     })
-    // Nor is another package than the one shown.
+    // Nor is paying with another package than the one shown.
     const otherPackage = await h.call(
       'POST',
       '/bookings',
-      { slotId, lessonTypeId: kids.id, expectedPackageId: 999 },
+      { slotId, lessonTypeId: kids.id, payWith: 'package', expectedPackageId: 999 },
       t,
     )
     expect(otherPackage.json.error.code).toBe('already_booked')
@@ -142,6 +142,116 @@ describe('booking a session the student already holds', () => {
       message: '你已预约这节课',
       bookingId: first.json.bookingId,
     })
+  })
+
+  it('points a repeat under other rules to the hold, judged by the rules it was booked under', async () => {
+    const h = setup()
+    const { kids, slotId } = await groupSession(h)
+    const t = await h.student('a')
+    const first = await h.call('POST', '/bookings', byWechat(slotId, kids.id), t)
+    const { terms } = (await h.call('GET', `/bookings/${first.json.bookingId}`, undefined, t)).json
+    const withTerms = { ...byWechat(slotId, kids.id), expectedTerms: terms }
+    const same = await h.call('POST', '/bookings', withTerms, t)
+    expect(same.json).toMatchObject({ bookingId: first.json.bookingId, existing: true })
+    const other = await h.call(
+      'POST',
+      '/bookings',
+      {
+        ...byWechat(slotId, kids.id),
+        expectedTerms: { ...terms, cancelDeadlineHours: terms.cancelDeadlineHours + 1 },
+      },
+      t,
+    )
+    expect(other.status).toBe(409)
+    expect(other.json.error).toMatchObject({
+      code: 'already_booked',
+      bookingId: first.json.bookingId,
+    })
+    // The venue's rules changed since: the hold keeps the ones it was booked under.
+    h.settings((s) => {
+      s.booking.cancelDeadlineHours = terms.cancelDeadlineHours + 5
+    })
+    const later = await h.call('POST', '/bookings', withTerms, t)
+    expect(later.json).toMatchObject({ bookingId: first.json.bookingId, existing: true })
+  })
+
+  it('returns a booking asked for with a package it had none for, asked the same again', async () => {
+    const h = setup()
+    const { kids, slotId } = await groupSession(h)
+    const t = await h.student('a')
+    const body = { slotId, lessonTypeId: kids.id, expectedPackageId: 5, expectedPrice: 8000 }
+    const first = await h.call('POST', '/bookings', body, t)
+    expect(first.status).toBe(201)
+    expect(first.json.status).toBe('pending_payment')
+    const again = await h.call('POST', '/bookings', body, t)
+    expect(again.status).toBe(201)
+    expect(again.json).toMatchObject({
+      bookingId: first.json.bookingId,
+      orderId: first.json.orderId,
+      existing: true,
+    })
+    // Asking to pay with that package is another booking than the one held.
+    const withPackage = await h.call('POST', '/bookings', { ...body, payWith: 'package' }, t)
+    expect(withPackage.json.error.code).toBe('already_booked')
+  })
+
+  it('points a repeat of a private lesson on other terms to the hold', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const slot = h.slot(coach.id)
+    const t = await h.student('a')
+    const body = {
+      slotId: slot.id,
+      lessonTypeId: lesson.id,
+      payWith: 'wechat',
+      expectedPrice: 20000,
+    }
+    const first = await h.call('POST', '/bookings', body, t)
+    expect(first.json.status).toBe('pending_payment')
+    expect((await h.call('POST', '/bookings', body, t)).json).toMatchObject({
+      bookingId: first.json.bookingId,
+      existing: true,
+    })
+    // Booked by coach and start rather than by the slot's id, at another price.
+    const byTime = await h.call(
+      'POST',
+      '/bookings',
+      {
+        coachId: coach.id,
+        startsAt: slot.startsAt.toISOString(),
+        lessonTypeId: lesson.id,
+        payWith: 'wechat',
+        expectedPrice: 15000,
+      },
+      t,
+    )
+    expect(byTime.status).toBe(409)
+    expect(byTime.json.error).toEqual({
+      code: 'already_booked',
+      message: '你已预约这节课，待支付',
+      bookingId: first.json.bookingId,
+    })
+    const withPackage = await h.call('POST', '/bookings', { ...body, payWith: 'package' }, t)
+    expect(withPackage.json.error).toMatchObject({
+      code: 'already_booked',
+      bookingId: first.json.bookingId,
+    })
+  })
+
+  it('replays the first answer to its own key after a refusal on other terms', async () => {
+    const h = setup()
+    const { kids, slotId } = await groupSession(h)
+    const t = await h.student('a')
+    const send = (body: object, key: string) =>
+      h.call('POST', '/bookings', body, t, { 'Idempotency-Key': key })
+    const first = await send(byWechat(slotId, kids.id), 'book-1')
+    expect(first.status).toBe(201)
+    const other = await send(byWechat(slotId, kids.id, 1), 'book-2')
+    expect(other.json.error.code).toBe('already_booked')
+    const replay = await send(byWechat(slotId, kids.id), 'book-1')
+    expect(replay.status).toBe(201)
+    expect(replay.json).toEqual(first.json)
+    expect(h.db.select().from(bookings).all()).toHaveLength(1)
   })
 
   it('marks the student’s own held or booked session in the slots, not as bookable', async () => {
