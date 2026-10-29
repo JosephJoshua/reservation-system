@@ -360,19 +360,25 @@ describe('Idempotency-Key waits', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
+    // Settles once the first request holds its key and is calling WeChat.
+    let calling = () => {}
+    const started = new Promise<void>((resolve) => {
+      calling = resolve
+    })
     h.gateway.createOrder = async (input) => {
+      calling()
       await gate
       return real(input)
     }
     const body = { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id, payWith: 'wechat' }
-    return { t, body, release }
+    return { t, body, release, started }
   }
 
   it('lets a repeat wait out a slow WeChat call', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout'] })
     try {
       const h = setup()
-      const { t, body, release } = await blockedBooking(h)
+      const { t, body, release, started } = await blockedBooking(h)
       // The clock moves with the timers, as a real wait would.
       const pass = async (ms: number) => {
         for (let at = 0; at < ms; at += 1000) {
@@ -381,7 +387,7 @@ describe('Idempotency-Key waits', () => {
         }
       }
       const first = keyed(h, '/bookings', body, t, 'slow')
-      await vi.advanceTimersByTimeAsync(0)
+      await started
       // The mini program gives up after 15 seconds and sends the same request again.
       await pass(16_000)
       let repeated = false
@@ -397,6 +403,43 @@ describe('Idempotency-Key waits', () => {
       expect(a.status).toBe(201)
       expect(b).toEqual(a)
       expect(h.db.select().from(orders).all()).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops waiting for a caller that has gone away', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const h = setup()
+      const { t, body, release, started } = await blockedBooking(h)
+      const first = keyed(h, '/bookings', body, t, 'gone')
+      await started
+      const caller = new AbortController()
+      let done = false
+      const repeat = Promise.resolve(
+        h.app.request('/api/bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t}`,
+            'Idempotency-Key': 'gone',
+          },
+          body: JSON.stringify(body),
+          signal: caller.signal,
+        }),
+      ).finally(() => {
+        done = true
+      })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(done).toBe(false)
+      caller.abort()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(done).toBe(true)
+      expect((await repeat).status).toBe(409)
+      release()
+      await vi.advanceTimersByTimeAsync(100)
+      expect((await first).status).toBe(201)
     } finally {
       vi.useRealTimers()
     }

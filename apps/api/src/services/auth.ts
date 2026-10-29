@@ -43,11 +43,8 @@ const MAX_FAILED_LOGINS = 10
 // Kept per app instance, so separate test apps never share counts.
 const failedLoginsByApp = new WeakMap<Deps, Map<string, { count: number; since: number }>>()
 
-/**
- * Runs a password check under the failed-attempt limit for `key`. `check` returns whether the
- * password was right; a wrong one counts against the key and throws `wrong`.
- */
-export function limitedCheck(deps: Deps, key: string, check: () => boolean, wrong: ApiError) {
+/** The failed checks still counting for this app, with the lock on `key` checked. */
+function attemptsFor(deps: Deps, key: string) {
   const now = deps.now().getTime()
   let failedLogins = failedLoginsByApp.get(deps)
   if (!failedLogins) {
@@ -61,27 +58,61 @@ export function limitedCheck(deps: Deps, key: string, check: () => boolean, wron
   if (failed && failed.count >= MAX_FAILED_LOGINS) {
     throw new ApiError(429, 'too_many_attempts', '尝试次数过多，请 15 分钟后再试')
   }
-  if (!check()) {
+  const miss = () =>
     failedLogins.set(key, { count: (failed?.count ?? 0) + 1, since: failed?.since ?? now })
-    throw wrong
-  }
-  failedLogins.delete(key)
+  return { miss, clear: () => failedLogins.delete(key) }
 }
 
-// Staff logins are limited per login name and per address. A login name backs off after a run
-// of wrong passwords from anywhere, so one login cannot keep guessing at another between its own
-// good logins. The wait starts short, so someone typing wrong passwords on purpose keeps the real
-// person out for a minute rather than for good, and a name that signed in from an address before
-// counts its failures there on their own. Each address also has a looser limit for all names
-// together, which a good login does not reset.
+/**
+ * Runs a password check under the failed-attempt limit for `key`. `check` returns whether the
+ * password was right; a wrong one counts against the key and throws `wrong`.
+ */
+export function limitedCheck(deps: Deps, key: string, check: () => boolean, wrong: ApiError) {
+  const { miss, clear } = attemptsFor(deps, key)
+  if (!check()) {
+    miss()
+    throw wrong
+  }
+  clear()
+}
+
+/** `limitedCheck` for a check that takes a while, such as hashing a password. */
+export async function limitedCheckAsync(
+  deps: Deps,
+  key: string,
+  check: () => Promise<boolean>,
+  wrong: ApiError,
+) {
+  const { miss, clear } = attemptsFor(deps, key)
+  // Counted before the check, so requests sent at once cannot all get past the limit meanwhile.
+  miss()
+  if (!(await check())) throw wrong
+  clear()
+}
+
+// Staff logins are limited per login name and per address.
+//
+// A login name backs off after a run of wrong passwords from anywhere, so one login cannot keep
+// guessing at another between its own good logins. The wait starts short, so someone typing
+// wrong passwords on purpose keeps the real person out for a minute at first, and grows to 15
+// minutes; the count is kept for a day after the last miss, so waiting out one wait does not
+// start the count afresh.
+//
+// A name that signed in from an address before counts its misses there on their own, so the
+// real person still gets in at the venue while someone elsewhere guesses at the name, and junk
+// names typed on the venue Wi-Fi do not shut them out either.
+//
+// Each address also has a looser limit for all names together, so one address cannot try many
+// names; a good login does not reset it.
 const NAME_FREE_FAILURES = 10
 const NAME_MAX_WAIT_MS = 15 * 60_000
+const NAME_KEEP_MS = 24 * 3_600_000
 const ADDRESS_MAX_FAILURES = 50
 const KNOWN_ADDRESS_MS = 30 * 86_400_000
 
 type LoginLimits = {
-  /** Wrong passwords in a row, forgotten 15 minutes after the last one. */
-  failures: Map<string, { count: number; last: number }>
+  /** Wrong passwords per key, forgotten `keep` ms after the last one. */
+  failures: Map<string, { count: number; last: number; keep: number }>
   /** When each login name last signed in from each address. */
   known: Map<string, number>
 }
@@ -104,7 +135,7 @@ export function loginNameWaitMs(count: number) {
 }
 
 /** `client` identifies the caller, such as the address the reverse proxy saw. */
-export function loginAdmin(deps: Deps, username: string, password: string, client: string) {
+export async function loginAdmin(deps: Deps, username: string, password: string, client: string) {
   const now = deps.now().getTime()
   let limits = loginLimitsByApp.get(deps)
   if (!limits) {
@@ -113,36 +144,55 @@ export function loginAdmin(deps: Deps, username: string, password: string, clien
   }
   const { failures, known } = limits
   for (const [k, entry] of failures) {
-    if (now - entry.last > LOGIN_WINDOW_MS) failures.delete(k)
+    if (now - entry.last > entry.keep) failures.delete(k)
   }
   for (const [k, at] of known) {
     if (now - at > KNOWN_ADDRESS_MS) known.delete(k)
   }
   const pair = JSON.stringify([username, client])
+  const knownPair = known.has(pair)
   const addressKey = `address:${client}`
-  const anyKey = `name:${username}`
-  const nameKey = known.has(pair) ? `pair:${pair}` : anyKey
+  const nameKey = knownPair ? `pair:${pair}` : `name:${username}`
+
   // Checked before the password, so a locked name costs no hashing and reveals nothing.
   const address = failures.get(addressKey)
-  if (address && address.count >= ADDRESS_MAX_FAILURES) {
+  if (!knownPair && address && address.count >= ADDRESS_MAX_FAILURES) {
     throw tooMany(address.last + LOGIN_WINDOW_MS - now)
   }
   const name = failures.get(nameKey)
   const wait = name ? name.last + loginNameWaitMs(name.count) - now : 0
   if (wait > 0) throw tooMany(wait)
 
+  // Counted as a miss before the password is checked, so requests sent at once cannot all get
+  // past the limit while their passwords are hashed; a right password takes the miss back.
+  const counted: [string, number][] = [
+    [addressKey, LOGIN_WINDOW_MS],
+    [nameKey, NAME_KEEP_MS],
+    // Misses on a known address also count for the name everywhere, but never stop it there.
+    [`name:${username}`, NAME_KEEP_MS],
+  ]
+  for (const [key, keep] of new Map(counted)) {
+    failures.set(key, { count: (failures.get(key)?.count ?? 0) + 1, last: now, keep })
+  }
   const member = deps.db.select().from(staff).where(eq(staff.username, username)).get()
   // The hash is checked even for an unknown name, so timing does not reveal which names exist.
-  const right = verifyPassword(password, member?.passwordHash) && member?.active === true
-  if (!right || !member) {
-    for (const key of new Set([addressKey, nameKey, anyKey])) {
-      failures.set(key, { count: (failures.get(key)?.count ?? 0) + 1, last: now })
-    }
-    throw new ApiError(401, 'bad_password', '登录名或密码错误')
+  const right = (await verifyPassword(password, member?.passwordHash)) && member?.active === true
+  if (!right || !member) throw new ApiError(401, 'bad_password', '登录名或密码错误')
+
+  const undo = (key: string) => {
+    const entry = failures.get(key)
+    if (entry && entry.count > 1) entry.count--
+    else failures.delete(key)
   }
-  // Only this name's counts: other names' failures from the address still stand.
+  undo(addressKey)
+  // Only the count this login was checked against starts afresh. On a known address that is the
+  // address's own count, so the real person signing in at the venue does not reset the count of
+  // someone guessing elsewhere; their own miss here is taken back from the name's count. On any
+  // other address the name's count was below its limit or its wait was over, so starting it
+  // afresh gives someone guessing at most ten more tries each time the real person signs in from
+  // a new address.
   failures.delete(nameKey)
-  failures.delete(anyKey)
+  if (knownPair) undo(`name:${username}`)
   known.set(pair, now)
   const token = newToken()
   deps.db

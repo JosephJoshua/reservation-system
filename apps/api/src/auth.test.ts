@@ -27,7 +27,8 @@ async function addDesk(h: Harness) {
   expect(res.status).toBe(201)
 }
 
-describe('staff login limits', () => {
+// Each login hashes a password, dozens per test, which takes seconds on a busy machine.
+describe('staff login limits', { timeout: 30_000 }, () => {
   it('backs a login name off from wrong passwords, starting at a minute', () => {
     expect([0, 9, 10, 11, 12, 13, 14, 20].map((n) => loginNameWaitMs(n) / 60_000)).toEqual([
       0, 0, 1, 2, 4, 8, 15, 15,
@@ -67,7 +68,7 @@ describe('staff login limits', () => {
     expect((await login(h, 'admin', ADMIN_PASSWORD, '10.2.0.4')).status).toBe(200)
   })
 
-  it('waits 15 minutes at most, and forgets misses 15 minutes after the last', async () => {
+  it('waits 15 minutes at most, and keeps the count for a day', async () => {
     const h = setup()
     for (let i = 0; i < 10; i++) await login(h, 'admin', 'x')
     // Tries while waiting do not count.
@@ -76,15 +77,29 @@ describe('staff login limits', () => {
       minutes(h, wait)
       expect((await login(h, 'admin', 'x')).status).toBe(401)
     }
-    minutes(h, 14)
-    expect((await login(h, 'admin', ADMIN_PASSWORD)).status).toBe(429)
-    minutes(h, 1)
+    // Waiting out the longest wait does not start the count afresh.
+    minutes(h, 15)
+    h.clock.now = new Date(h.clock.now.getTime() + 1)
+    expect((await login(h, 'admin', 'x')).status).toBe(401)
+    expect((await login(h, 'admin', ADMIN_PASSWORD)).json.error.message).toBe(
+      '尝试次数过多，请 15 分钟后再试',
+    )
+    minutes(h, 15)
     expect((await login(h, 'admin', ADMIN_PASSWORD)).status).toBe(200)
 
     for (let i = 0; i < 9; i++) await login(h, 'admin', 'x')
-    minutes(h, 16)
+    minutes(h, 24 * 60 + 1)
     expect((await login(h, 'admin', 'x')).status).toBe(401)
     expect((await login(h, 'admin', ADMIN_PASSWORD)).status).toBe(200)
+  })
+
+  it('counts logins sent at once before their passwords are checked', async () => {
+    const h = setup()
+    const statuses = await Promise.all(
+      Array.from({ length: 30 }, (_, i) => login(h, 'admin', 'x', `10.3.0.${i}`)),
+    )
+    expect(statuses.filter((r) => r.status === 401)).toHaveLength(10)
+    expect(statuses.filter((r) => r.status === 429)).toHaveLength(20)
   })
 
   it('keeps a name in from an address it signed in from while others guess at it', async () => {
@@ -93,21 +108,26 @@ describe('staff login limits', () => {
     for (let i = 0; i < 12; i++) await login(h, 'admin', 'x', `10.1.0.${i}`)
     expect((await login(h, 'admin', ADMIN_PASSWORD, '10.1.0.99')).status).toBe(429)
     expect((await login(h, 'admin', ADMIN_PASSWORD, '10.9.9.9')).status).toBe(200)
+    // Signing in at the venue does not reset the count of whoever guesses elsewhere.
+    expect((await login(h, 'admin', ADMIN_PASSWORD, '10.1.0.98')).status).toBe(429)
   })
 
-  it('gives a shared address room for typos, but not unlimited guesses', async () => {
+  it('does not let junk names on the venue Wi-Fi shut out staff who sign in there', async () => {
     const h = setup()
     await addDesk(h)
-    // Venue Wi-Fi: one address for everyone. Someone else's typos do not shut the desk out.
-    for (let i = 0; i < 10; i++) await login(h, 'nobody', 'x', '1.2.3.4')
     expect((await login(h, 'desk', 'desk-pass-1', '1.2.3.4')).status).toBe(200)
-    for (let i = 0; i < 40; i++) await login(h, `name${i}`, 'x', '1.2.3.4')
-    // Fifty misses from one address stop it, and a good login does not reset that.
-    expect((await login(h, 'desk', 'desk-pass-1', '1.2.3.4')).status).toBe(429)
-    expect((await login(h, 'desk', 'desk-pass-1', '5.6.7.8')).status).toBe(200)
-    expect((await login(h, 'desk', 'desk-pass-1', '1.2.3.4')).status).toBe(429)
+    for (let i = 0; i < 50; i++) await login(h, `name${i}`, 'x', '1.2.3.4')
+    // Fifty misses stop the address for names that never signed in there.
+    expect((await login(h, 'admin', ADMIN_PASSWORD, '1.2.3.4')).status).toBe(429)
+    expect((await login(h, 'desk', 'desk-pass-1', '1.2.3.4')).status).toBe(200)
+    // A good login does not reset the address.
+    expect((await login(h, 'admin', ADMIN_PASSWORD, '1.2.3.4')).status).toBe(429)
+    expect((await login(h, 'admin', ADMIN_PASSWORD, '5.6.7.8')).status).toBe(200)
     minutes(h, 16)
-    expect((await login(h, 'desk', 'desk-pass-1', '1.2.3.4')).status).toBe(200)
+    expect((await login(h, 'admin', ADMIN_PASSWORD, '1.2.3.4')).status).toBe(200)
+    // The desk's own misses there still back off.
+    for (let i = 0; i < 10; i++) await login(h, 'desk', 'x', '1.2.3.4')
+    expect((await login(h, 'desk', 'desk-pass-1', '1.2.3.4')).status).toBe(429)
   })
 })
 
@@ -210,6 +230,7 @@ describe('frames', () => {
       mkdirSync(join(dir, site, 'assets'), { recursive: true })
       writeFileSync(join(dir, site, 'index.html'), '<!doctype html><title>x</title>')
       writeFileSync(join(dir, site, 'assets', 'a.js'), '')
+      writeFileSync(join(dir, site, 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>')
     }
     writeFileSync(join(dir, 'help', '404.html'), '<!doctype html><title>404</title>')
     const root = new Hono()
@@ -231,6 +252,15 @@ describe('frames', () => {
     }
     expect((await root.request('/admin/bookings')).status).toBe(200)
     expect((await root.request('/help/missing.html')).status).toBe(404)
+    // Pages are checked on every load, so after a deploy none asks for bundles that are gone.
+    const cache = async (path: string) => (await root.request(path)).headers.get('Cache-Control')
+    for (const page of ['/admin/', '/admin/index.html', '/admin/bookings', '/help/']) {
+      expect([page, await cache(page)]).toEqual([page, 'no-cache'])
+    }
+    expect(await cache('/admin/assets/a.js')).toBe('public, max-age=31536000, immutable')
+    expect(await cache('/help/assets/a.js')).toBe('public, max-age=31536000, immutable')
+    expect(await cache('/admin/favicon.svg')).toBe('public, max-age=3600')
+    expect(await cache('/admin/assets/gone.js')).toBeNull()
   })
 })
 

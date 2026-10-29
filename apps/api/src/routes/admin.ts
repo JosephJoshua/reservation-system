@@ -73,7 +73,7 @@ import { frontDeskLessons, setAttendance } from '../services/attendance'
 import {
   type AdminVars,
   bearer,
-  limitedCheck,
+  limitedCheckAsync,
   loginAdmin,
   logout,
   need,
@@ -316,7 +316,7 @@ export function adminRoutes(deps: Deps) {
     )
     // Behind the reverse proxy, the last X-Forwarded-For entry is the address it saw.
     const client = c.req.header('X-Forwarded-For')?.split(',').pop()?.trim() || 'direct'
-    return c.json(loginAdmin(deps, body.username, body.password, client))
+    return c.json(await loginAdmin(deps, body.username, body.password, client))
   })
 
   app.use('*', async (c, next) => {
@@ -352,7 +352,7 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, z.object({ current: z.string().max(200), password }))
     const me = findStaff(db, c.get('staffId'))
     // Limited like logins, so a session left open cannot guess its way to the password.
-    limitedCheck(
+    await limitedCheckAsync(
       deps,
       `password:${me.id}`,
       () => verifyPassword(body.current, me.passwordHash),

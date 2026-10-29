@@ -4,38 +4,40 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import type { Hono, MiddlewareHandler } from 'hono'
 
 /**
- * No other site may show these pages in a frame, so a page elsewhere cannot lay the admin under
- * its own buttons. Set here rather than in the reverse proxy, so it holds behind any proxy.
+ * Headers for every response of a built site. No other site may show these pages in a frame, so
+ * a page elsewhere cannot lay the admin under its own buttons; set here rather than in the reverse
+ * proxy, so it holds behind any proxy.
+ *
+ * Pages are checked on every load, so a deploy is seen at once rather than a cached page asking
+ * for bundles that are gone; hashed bundles are cached for good; anything else (the manual's
+ * screenshots and videos) for an hour. Set after the file is read, since serveStatic builds its
+ * response before any header a handler sets.
  */
-const noFraming: MiddlewareHandler = async (c, next) => {
+const siteHeaders: MiddlewareHandler = async (c, next) => {
   await next()
-  c.res.headers.set('X-Frame-Options', 'DENY')
-  c.res.headers.set('Content-Security-Policy', "frame-ancestors 'none'")
+  const headers = c.res.headers
+  headers.set('X-Frame-Options', 'DENY')
+  headers.set('Content-Security-Policy', "frame-ancestors 'none'")
+  if (headers.get('Content-Type')?.startsWith('text/html')) {
+    headers.set('Cache-Control', 'no-cache')
+  } else if (c.res.status === 200) {
+    headers.set(
+      'Cache-Control',
+      c.req.path.includes('/assets/')
+        ? 'public, max-age=31536000, immutable'
+        : 'public, max-age=3600',
+    )
+  }
 }
 
-/**
- * Serves a built site under `prefix`. Hashed bundles are cached for good; pages are checked on
- * every load; anything else (the manual's screenshots and videos) for an hour.
- */
+/** Serves a built site under `prefix`. */
 function serveBuilt(root: Hono, prefix: string, dir: string) {
-  root.use(prefix, noFraming)
-  root.use(`${prefix}/*`, noFraming)
+  root.use(prefix, siteHeaders)
+  root.use(`${prefix}/*`, siteHeaders)
   root.get(prefix, (c) => c.redirect(`${prefix}/`))
   root.use(
     `${prefix}/*`,
-    serveStatic({
-      root: dir,
-      rewriteRequestPath: (path) => path.slice(prefix.length),
-      onFound: (path, c) =>
-        c.header(
-          'Cache-Control',
-          path.includes('/assets/')
-            ? 'public, max-age=31536000, immutable'
-            : path.endsWith('.html')
-              ? 'no-cache'
-              : 'public, max-age=3600',
-        ),
-    }),
+    serveStatic({ root: dir, rewriteRequestPath: (path) => path.slice(prefix.length) }),
   )
 }
 
@@ -45,11 +47,7 @@ export function serveSites(root: Hono, dirs: { adminDir?: string; helpDir?: stri
   if (adminDir) {
     serveBuilt(root, '/admin', adminDir)
     // Any other page path gets the app; a missing bundle (an old one after a deploy) stays a 404.
-    const index = serveStatic({
-      path: 'index.html',
-      root: adminDir,
-      onFound: (_path, c) => c.header('Cache-Control', 'no-cache'),
-    })
+    const index = serveStatic({ path: 'index.html', root: adminDir })
     root.use('/admin/*', async (c, next) => {
       if (c.req.path.startsWith('/admin/assets/')) return c.notFound()
       return index(c, next)

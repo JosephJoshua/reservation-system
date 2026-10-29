@@ -8,10 +8,10 @@ import { hashToken } from './services/ids'
 
 const KEEP_MS = 24 * 3_600_000
 const WAIT_STEP_MS = 50
-// A repeat waits for the first request until 45 seconds after the first began. A WeChat call
-// gives up after 15 seconds and a request makes at most a couple in a row, while the mini program
-// resends once after its own 15-second timeout: that resend is not told 正在处理 while the first
-// can still finish.
+// A repeat waits for the first request until 45 seconds after the first began. A call to WeChat
+// gives up after at most 15 seconds and a request may make a couple in a row, so a repeat is not
+// told 正在处理 while the first can still finish. That matters most for a client that sends again
+// on its own after a timeout, as the mini program will once it sends keys (its 15-second timeout).
 const MAX_WAITS = 900
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -93,6 +93,9 @@ export function idempotency(deps: Deps): MiddlewareHandler {
       if (wait >= MAX_WAITS || age > MAX_WAITS * WAIT_STEP_MS) {
         throw new ApiError(409, 'in_progress', '正在处理，请刷新后查看结果')
       }
+      // A caller that has gone away is not waited for.
+      if (c.req.raw.signal.aborted)
+        throw new ApiError(409, 'in_progress', '正在处理，请刷新后查看结果')
       await new Promise((resolve) => setTimeout(resolve, WAIT_STEP_MS))
     }
 
