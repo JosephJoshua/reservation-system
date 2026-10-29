@@ -105,7 +105,7 @@ export async function uploadImage(file: File): Promise<string> {
 }
 
 /** Fetches a file the API only gives to a signed-in admin, such as an export or an invoice. */
-async function fetchFile(path: string): Promise<{ blob: Blob; name: string }> {
+export async function fetchFile(path: string): Promise<{ blob: Blob; name: string }> {
   const token = getToken()
   let res: Response
   try {

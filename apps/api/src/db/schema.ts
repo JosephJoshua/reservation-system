@@ -256,6 +256,11 @@ export const slots = sqliteTable(
     // When the coach was told the session has students, and that it was called off.
     coachToldBookedAt: instant('coach_told_booked_at'),
     coachToldCancelledAt: instant('coach_told_cancelled_at'),
+    // Failed sends of the coach message now due, which message they were for, and when to try
+    // again. `given_up` marks a new lesson the coach was never told about (coach-notices.ts).
+    coachNoticeFailures: integer('coach_notice_failures').notNull().default(0),
+    coachNoticeRetryAt: instant('coach_notice_retry_at'),
+    coachNoticeKind: text('coach_notice_kind'),
     createdAt: createdAt(),
   },
   (t) => [index('slots_coach_time').on(t.coachId, t.startsAt), index('slots_time').on(t.startsAt)],
@@ -307,6 +312,11 @@ export const bookings = sqliteTable(
     coachToldCoachId: integer('coach_told_coach_id'),
     coachToldStartsAt: instant('coach_told_starts_at'),
     coachToldEndsAt: instant('coach_told_ends_at'),
+    // Failed sends of the coach message now due, which message they were for, and when to try
+    // again. `given_up` marks a new lesson the coach was never told about (coach-notices.ts).
+    coachNoticeFailures: integer('coach_notice_failures').notNull().default(0),
+    coachNoticeRetryAt: instant('coach_notice_retry_at'),
+    coachNoticeKind: text('coach_notice_kind'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -626,6 +636,8 @@ export const idempotencyKeys = sqliteTable(
     status: integer('status'),
     body: text('body'),
     contentType: text('content_type'),
+    // The signed-in student, so deleting their account also drops the responses kept for them.
+    studentId: integer('student_id'),
     createdAt: instant('created_at').notNull(),
   },
   (t) => [index('idempotency_keys_created').on(t.createdAt)],

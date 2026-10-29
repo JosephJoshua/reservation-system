@@ -876,7 +876,8 @@ a:hover {
   gap: 6px;
 }
 
-.feedback-photos img {
+.feedback-photos img,
+.feedback-photo-empty {
   display: block;
   width: 56px;
   height: 56px;

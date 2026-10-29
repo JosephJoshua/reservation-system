@@ -5,6 +5,7 @@ import { packageNotices, packages, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { getSettings } from './settings'
 import { wechatOpenid } from './student-link'
+import { retryAfterFailure } from './student-notices'
 
 const BATCH = 50
 const DAY_MS = 86_400_000
@@ -14,7 +15,6 @@ export const EXPIRY_NOTICE_MS = 7 * DAY_MS
 export const EXPIRING_SOON_MS = 30 * DAY_MS
 // A message that could not reach WeChat for this long is no longer news.
 const STALE_MS = DAY_MS
-const RETRY_MS = 5 * 60_000
 
 /** The last day a package can be used, as 2026年11月22日: it expires at the end of that day. */
 export function lastDay(expiresAt: Date) {
@@ -195,7 +195,7 @@ async function sendPending(deps: Deps) {
       } catch (e) {
         deps.log('package notice failed', { packageId: pkg.id, error: (e as Error).message })
         db.update(packageNotices)
-          .set({ doneAt: null, retryAt: new Date(now.getTime() + RETRY_MS) })
+          .set({ doneAt: null, retryAt: retryAfterFailure(now, notice.createdAt) })
           .where(eq(packageNotices.id, id))
           .run()
         continue

@@ -102,6 +102,11 @@ export function Settings() {
 
   const save = async () => {
     if (isSaving()) return
+    if (!s.venue.name.trim()) {
+      void MessagePlugin.warning('请填写场馆名称')
+      nav.scrollTo('venue')
+      return
+    }
     const lat = coord.lat.trim()
     const lng = coord.lng.trim()
     if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {

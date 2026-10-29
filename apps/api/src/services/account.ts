@@ -5,6 +5,7 @@ import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
+  idempotencyKeys,
   invoices,
   orders,
   packages,
@@ -187,6 +188,8 @@ export function eraseStudent(
   tx.update(bookings).set({ coachNote: '' }).where(eq(bookings.studentId, studentId)).run()
   tx.delete(studentProfiles).where(eq(studentProfiles.studentId, studentId)).run()
   tx.delete(sessions).where(eq(sessions.studentId, studentId)).run()
+  // Responses kept for repeats of their requests hold their name and phone.
+  tx.delete(idempotencyKeys).where(eq(idempotencyKeys.studentId, studentId)).run()
   // Invoices stay for the accounts, without the email. One made out to the student by name
   // loses the name and its PDF; a company's title is not personal data.
   const personal = tx
@@ -200,6 +203,7 @@ export function eraseStudent(
     .where(and(eq(invoices.studentId, studentId), eq(invoices.titleKind, 'personal')))
     .run()
   return {
+    studentId,
     files: personal.flatMap((r) => (r.pdfFile ? [r.pdfFile] : [])),
     lessons: deleteStudentFeedback(tx, studentId),
   }
@@ -207,6 +211,9 @@ export function eraseStudent(
 
 /** Removes the files of an erased student once the deletion has committed. */
 export function removeErasedFiles(deps: Deps, erased: ReturnType<typeof eraseStudent>) {
+  // In the app's log, outside the database, so a deletion undone by a restore can be found and
+  // done again (deploy/README.md).
+  deps.log('account erased', { studentId: erased.studentId })
   // The account is gone either way; a file left behind is logged rather than failing the request.
   removePhotosOf(deps, erased.lessons)
   for (const file of erased.files) {

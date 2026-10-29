@@ -742,7 +742,8 @@ describe('students moving a lesson', () => {
     h.clock.now = new Date('2026-10-25T04:30:00Z')
     await notifyStudents(h.deps)
     down = false
-    h.clock.now = new Date('2026-10-25T04:40:00Z')
+    // Tried again an hour later, the longest wait after a failure.
+    h.clock.now = new Date('2026-10-25T05:30:00Z')
     await notifyStudents(h.deps)
     await notifyStudents(h.deps)
     expect(sent.filter((m) => !m.startsWith('student_booked'))).toEqual([
@@ -1125,6 +1126,10 @@ describe('telling coaches about moved lessons', () => {
     }
     await notifyCoaches(h.deps)
     h.deps.notifier.send = send
+    // Not before the retry time.
+    await notifyCoaches(h.deps)
+    expect(sent).toEqual([])
+    h.clock.now = new Date(h.clock.now.getTime() + 60_000)
     await notifyCoaches(h.deps)
     expect(sent.map((s) => s.kind)).toEqual(['coach_moved'])
   })
