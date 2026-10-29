@@ -285,6 +285,8 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     .all()
   const status = bookingStatus(b, now)
   const feedback = feedbackOf(db, b.id)
+  // The phone and 学员档案 follow one rule, so a coach cannot call a student they no longer teach.
+  const open = student !== undefined && profileOpen(b, student.deletedAt, now)
   const { coachMarks } = getSettings(db).attendance
   return {
     id: b.id,
@@ -300,10 +302,9 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     student: {
       id: b.studentId,
       name: student?.deletedAt ? DELETED_NAME : (student?.name ?? ''),
-      phone: student?.phone ?? '',
+      phone: open ? student.phone : '',
     },
-    profile:
-      student && profileOpen(b, student.deletedAt, now) ? coachView(db, student.id, now) : null,
+    profile: open ? coachView(db, student.id, now) : null,
     paidWith: b.paidWith,
     price: b.price,
     paidOffline: order?.provider === 'offline',
@@ -314,6 +315,8 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       feedback && !feedback.deletedAt
         ? {
             ...feedbackView(feedback),
+            // Photos of feedback the student does not see are only served to staff.
+            ...(isVisible(feedback, b) ? {} : { photos: [] }),
             hidden: feedback.hiddenAt !== null,
             visible: isVisible(feedback, b),
           }

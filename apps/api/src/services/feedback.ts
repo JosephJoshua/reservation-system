@@ -1,7 +1,15 @@
 // 课后点评: what a coach writes for the student after a lesson, with photos, and what the venue
 // can take down.
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import {
   type AdminFeedbackDto,
@@ -26,7 +34,7 @@ import {
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
-import { visible } from './feedback-visibility'
+import { isVisible, visible } from './feedback-visibility'
 import { countAll, ofStudents } from './lists'
 import { queueStudentNotice } from './student-notices'
 
@@ -53,6 +61,58 @@ function lessonOfPhoto(name: string): number | null {
 }
 
 export const photoUrl = (name: string) => `/api/uploads/${name}`
+
+/** Whether an uploaded file is a lesson photo, which only shows while its feedback may. */
+export const isLessonPhoto = (name: string) => name.startsWith('fb')
+
+const photoTypes = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' } as const
+
+/**
+ * Who asks for a lesson photo: anyone with its link, staff who may see students, or staff who
+ * moderate feedback and so also see what the venue hid.
+ */
+export type PhotoViewer = 'anyone' | 'staff' | 'moderator'
+
+/**
+ * A lesson photo's bytes and type, or null when this viewer may not see it. Nobody sees photos of
+ * deleted feedback or of a student who deleted their account. Anyone sees a photo of feedback the
+ * student sees, and one not saved in feedback yet, for the coach's editor; unused ones are removed
+ * within a day. `restricted` says the photo is not for anyone, so it is not to be cached.
+ */
+export function readLessonPhoto(deps: Deps, name: string, viewer: PhotoViewer) {
+  const bookingId = lessonOfPhoto(name)
+  if (bookingId === null) return null
+  // Flat fields: drizzle reads a nested object of a left join as missing when its first field is
+  // null, as hiddenAt is.
+  const row = deps.db
+    .select({
+      status: bookings.status,
+      attendance: bookings.attendance,
+      studentDeletedAt: students.deletedAt,
+      feedbackId: lessonFeedback.id,
+      hiddenAt: lessonFeedback.hiddenAt,
+      deletedAt: lessonFeedback.deletedAt,
+      photos: lessonFeedback.photos,
+    })
+    .from(bookings)
+    .innerJoin(students, eq(students.id, bookings.studentId))
+    .leftJoin(lessonFeedback, eq(lessonFeedback.bookingId, bookings.id))
+    .where(eq(bookings.id, bookingId))
+    .get()
+  if (!row || row.studentDeletedAt || row.deletedAt) return null
+  const hidden = row.hiddenAt !== null
+  const saved = row.feedbackId !== null && (row.photos ?? []).includes(name)
+  const restricted = hidden || (saved && !isVisible({ hiddenAt: row.hiddenAt }, row))
+  if (restricted && viewer === 'anyone') return null
+  if (hidden && viewer !== 'moderator') return null
+  try {
+    const data = readFileSync(join(deps.uploadsDir, name))
+    const ext = name.slice(name.lastIndexOf('.') + 1) as keyof typeof photoTypes
+    return { data, type: photoTypes[ext], restricted }
+  } catch {
+    return null
+  }
+}
 
 export function feedbackView(f: FeedbackRow): FeedbackDto {
   return { text: f.text, photos: f.photos.map(photoUrl), updatedAt: f.updatedAt.toISOString() }
@@ -142,8 +202,8 @@ function writable(tx: Q, bookingId: number, coachId: number, now: Date) {
   return { booking, feedback }
 }
 
-/** What a photo upload is, from its first bytes rather than what the client says. */
-function imageType(data: Buffer): 'jpg' | 'png' | 'webp' | null {
+/** What an image upload is, from its first bytes rather than what the client says. */
+export function imageType(data: Buffer): 'jpg' | 'png' | 'webp' | null {
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'jpg'
   if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
     return 'png'

@@ -30,12 +30,6 @@ export async function sweep(deps: Deps) {
   } catch (e) {
     deps.log('photo sweep failed', (e as Error).message)
   }
-  // Coach chores run on their own, so a failure in payments does not stop them, or the reverse.
-  try {
-    await notifyCoaches(deps)
-  } catch (e) {
-    deps.log('coach sweep failed', (e as Error).message)
-  }
   try {
     await cancelUnderfilledSessions(deps)
     await finishCancelledSessions(deps)
@@ -51,7 +45,13 @@ export async function sweep(deps: Deps) {
     } catch (e) {
       deps.log('idempotency sweep failed', (e as Error).message)
     }
-    // Last, so slow WeChat sends never hold up payments, but also when payments fail.
+    // Last, so slow WeChat sends never hold up payments, but also when payments fail. Each runs
+    // on its own, so a failure in one does not stop the others.
+    try {
+      await notifyCoaches(deps)
+    } catch (e) {
+      deps.log('coach sweep failed', (e as Error).message)
+    }
     try {
       await notifyStudents(deps)
     } catch (e) {

@@ -86,6 +86,8 @@ import {
   adminFeedback,
   adminFeedbackCount,
   feedbackStates,
+  imageType,
+  readLessonPhoto,
   setFeedbackHidden,
   studentFeedback,
 } from '../services/feedback'
@@ -160,6 +162,7 @@ import {
   newStudentBindCode,
   samePhone,
   unlinkedSql,
+  wechatOpenid,
 } from '../services/student-link'
 import { profileInput, saveStudentProfile, studentProfile } from '../services/student-profiles'
 import { slotsWithoutTable } from '../services/tables'
@@ -283,7 +286,13 @@ const productBody = z
 
 const bannerBody = z
   .object({
-    imageUrl: z.string().min(1).max(300),
+    // An image uploaded here, not a lesson photo: anything else could point the app elsewhere.
+    imageUrl: z
+      .string()
+      .max(300)
+      .refine((u) => /^\/api\/uploads\/(?!fb)[\w-]+\.(jpg|png|webp)$/.test(u), {
+        message: '请上传图片',
+      }),
     title: z.string().trim().max(30).default(''),
     ...linkShape,
     startsAt: nullableInstant.default(null),
@@ -1574,6 +1583,20 @@ export function adminRoutes(deps: Deps) {
     return c.json(adminFeedback(db, q))
   })
 
+  // Lesson photos as staff see them: also of feedback the student does not see, and to those who
+  // moderate feedback, of feedback the venue hid. Those are not kept on the computer.
+  app.get('/feedback-photos/:name', need('view'), (c) => {
+    const name = c.req.param('name')
+    const viewer = can(c.get('roles'), 'bookings') ? 'moderator' : 'staff'
+    const photo = /^[\w-]+\.(jpg|png|webp)$/.test(name) ? readLessonPhoto(deps, name, viewer) : null
+    if (!photo) throw notFound('照片')
+    return c.body(photo.data, 200, {
+      'Content-Type': photo.type,
+      'Cache-Control': photo.restricted ? 'private, no-store' : 'private, max-age=3600',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  })
+
   app.put('/feedback/:id/hidden', need('bookings'), async (c) => {
     const { hidden } = await parseBody(c, z.object({ hidden: z.boolean() }))
     const id = idParam(c)
@@ -1716,7 +1739,10 @@ export function adminRoutes(deps: Deps) {
       tester: students.tester,
       deletedAt: students.deletedAt,
       createdAt: students.createdAt,
-      wechatBound: sql<boolean>`not ${unlinkedSql}`.mapWith(Boolean),
+      // A deleted account is bound to no one: its openid is a placeholder.
+      wechatBound: sql<boolean>`(not ${unlinkedSql} and ${students.deletedAt} is null)`.mapWith(
+        Boolean,
+      ),
       // Someone else has the same phone: the desk tells them apart by 学员编号.
       phoneShared:
         sql<boolean>`students.phone != '' and exists (select 1 from students as other where other.phone = students.phone and other.id != students.id and other.deleted_at is null)`.mapWith(
@@ -1838,7 +1864,7 @@ export function adminRoutes(deps: Deps) {
       tester: student.tester,
       deletedAt: student.deletedAt,
       createdAt: student.createdAt,
-      wechatBound: !isDeskOpenid(student.openid),
+      wechatBound: wechatOpenid(student.openid) !== null,
       samePhone: student.phone && !student.deletedAt ? samePhone(db, student.phone, id) : [],
       profile: studentProfile(db, id, now),
       feedback: student.deletedAt ? [] : studentFeedback(db, id),
@@ -2454,12 +2480,14 @@ export function adminRoutes(deps: Deps) {
     const form = await c.req.formData().catch(() => null)
     const file = form?.get('file')
     if (!(file instanceof File)) throw new ApiError(400, 'no_file', '请选择图片')
-    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[file.type]
-    if (!ext) throw new ApiError(400, 'bad_type', '只支持 JPG、PNG、WebP 图片')
     if (file.size > 2 * 1024 * 1024) throw new ApiError(400, 'too_large', '图片不能超过 2MB')
+    // What the file is, from its first bytes rather than the type the browser sent.
+    const data = Buffer.from(await file.arrayBuffer())
+    const ext = imageType(data)
+    if (!ext) throw new ApiError(400, 'bad_type', '只支持 JPG、PNG、WebP 图片')
     const name = `${Date.now()}-${randomBytes(6).toString('hex')}.${ext}`
     mkdirSync(deps.uploadsDir, { recursive: true })
-    writeFileSync(join(deps.uploadsDir, name), Buffer.from(await file.arrayBuffer()))
+    writeFileSync(join(deps.uploadsDir, name), data)
     return c.json({ url: `/api/uploads/${name}` }, 201)
   })
 

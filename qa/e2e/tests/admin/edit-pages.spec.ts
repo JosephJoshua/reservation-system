@@ -244,7 +244,7 @@ test('a banner deleted meanwhile says so on save', async ({ page, request }) => 
   })
   const banners = await call<{ imageUrl: string }[]>(request, 'GET', '/admin/banners', token)
   const gone = await call<{ id: number }>(request, 'POST', '/admin/banners', token, {
-    imageUrl: banners[0]?.imageUrl ?? '/uploads/none.png',
+    imageUrl: banners[0]?.imageUrl ?? '/api/uploads/none.png',
     title: `删掉${run}`,
     linkKind: 'none',
     linkId: null,

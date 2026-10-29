@@ -1,9 +1,36 @@
-import { and, eq, gt, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import { bookings, coaches, lessonTypes, slots, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { lessonTime, type NoticeKind, type NoticeValues } from '../wx-notify'
 
 const BATCH = 50
+/** Failed sends before a message is given up on, as if WeChat had refused it. */
+export const MAX_NOTICE_FAILURES = 8
+const RETRY_BASE_MS = 60_000
+const RETRY_MAX_MS = 3_600_000
+
+/** When to try again after this many failed sends: 1, 2, 4 ... minutes, at most an hour. */
+export function noticeRetryAt(now: Date, failures: number) {
+  return new Date(now.getTime() + Math.min(RETRY_BASE_MS * 2 ** (failures - 1), RETRY_MAX_MS))
+}
+
+/** Which message a row's failed sends were for, so they never count against another one. */
+type MessageKey = 'booked' | 'cancelled' | 'moved' | 'session_booked' | 'session_cancelled'
+/** A new lesson or session whose message was given up on: the coach never heard of it. */
+const GIVEN_UP = 'given_up'
+
+/**
+ * A row whose message failed waits for its retry time. Another message about it, say a
+ * cancellation after a failed move message, is due at once.
+ */
+function due(table: typeof bookings | typeof slots, key: MessageKey, now: Date) {
+  return or(
+    isNull(table.coachNoticeRetryAt),
+    lte(table.coachNoticeRetryAt, now),
+    isNull(table.coachNoticeKind),
+    ne(table.coachNoticeKind, key),
+  )
+}
 
 type Told = Pick<typeof bookings.$inferSelect, 'coachToldBookedAt' | 'coachToldCoachId'>
 
@@ -20,6 +47,8 @@ export function coachNowKnows(
 ) {
   if (b.coachToldBookedAt !== null && b.coachToldCoachId !== coachId) return {}
   return {
+    // They know it now, even if the message about it was given up on.
+    coachNoticeKind: null,
     coachToldBookedAt: b.coachToldBookedAt ?? now,
     coachToldCoachId: coachId,
     coachToldStartsAt: slot.startsAt,
@@ -34,8 +63,9 @@ export function noOtherCoachTold(coachId: number) {
 
 /**
  * Tells coaches about new, moved and cancelled lessons by subscription message. Each change is
- * looked at once: it is marked whether the message went out, was refused, or was not needed. Only
- * an unreachable WeChat leaves it for the next run, until the lesson starts.
+ * looked at once: it is marked whether the message went out, was refused, or was not needed. A
+ * failed send is tried again later, until the lesson starts or it has failed MAX_NOTICE_FAILURES
+ * times.
  */
 export async function notifyCoaches(deps: Deps) {
   // Moves first: a lesson moved to another coach is then announced to them as new.
@@ -59,6 +89,8 @@ async function notifySessions(deps: Deps) {
     lesson: lessonTypes.name,
     openid: coaches.openid,
     coach: coaches.name,
+    failures: slots.coachNoticeFailures,
+    noticeKind: slots.coachNoticeKind,
   }
   const base = () =>
     db
@@ -73,8 +105,10 @@ async function notifySessions(deps: Deps) {
         isNull(slots.cancelledAt),
         gt(slots.startsAt, now),
         sql`exists (select 1 from ${bookings} where ${bookings.slotId} = ${slots.id} and ${bookings.status} = 'confirmed')`,
+        due(slots, 'session_booked', now),
       ),
     )
+    .orderBy(asc(slots.id))
     .limit(BATCH)
     .all()
   for (const s of booked) {
@@ -95,9 +129,9 @@ async function notifySessions(deps: Deps) {
         coach: s.coach,
         reason: '',
       },
-      s.id,
+      { ...s, table: 'slots', key: 'session_booked' },
     )
-    if (!sent) continue
+    if (sent === 'retry') continue
     db.update(slots).set({ coachToldBookedAt: now }).where(eq(slots.id, s.id)).run()
   }
   const cancelled = base()
@@ -106,49 +140,105 @@ async function notifySessions(deps: Deps) {
         isNotNull(slots.cancelledAt),
         isNotNull(slots.coachToldBookedAt),
         isNull(slots.coachToldCancelledAt),
+        due(slots, 'session_cancelled', now),
       ),
     )
+    .orderBy(asc(slots.id))
     .limit(BATCH)
     .all()
   for (const s of cancelled) {
-    const sent = await send(
-      deps,
-      'coach_cancelled',
-      { openid: s.openid, startsAt: s.startsAt },
-      `coach/session/index?id=${s.id}`,
-      {
-        student: '小班课',
-        lesson: s.lesson,
-        time: lessonTime(s.startsAt, s.endsAt),
-        coach: s.coach,
-        reason: s.reason ?? '',
-      },
-      s.id,
-    )
-    if (!sent) continue
+    // A coach who never heard of the session needs no word that it is off.
+    const sent =
+      s.noticeKind === GIVEN_UP
+        ? 'skipped'
+        : await send(
+            deps,
+            'coach_cancelled',
+            { openid: s.openid, startsAt: s.startsAt },
+            `coach/session/index?id=${s.id}`,
+            {
+              student: '小班课',
+              lesson: s.lesson,
+              time: lessonTime(s.startsAt, s.endsAt),
+              coach: s.coach,
+              reason: s.reason ?? '',
+            },
+            { ...s, table: 'slots', key: 'session_cancelled' },
+          )
+    if (sent === 'retry') continue
     db.update(slots).set({ coachToldCancelledAt: now }).where(eq(slots.id, s.id)).run()
   }
 }
 
-/** Sends one message; false when WeChat could not be reached and it should be tried again. */
+/**
+ * The booking or group session a message is about, which message it is, and the failed sends
+ * recorded on the row and which message they were for.
+ */
+interface Target {
+  table: 'bookings' | 'slots'
+  id: number
+  key: MessageKey
+  failures: number
+  noticeKind: string | null
+}
+
+/** Records the failed sends of the row's message, and when to try again. */
+function setFailures(
+  deps: Deps,
+  target: Target,
+  failures: number,
+  retryAt: Date | null,
+  kind: string | null,
+) {
+  const set = { coachNoticeFailures: failures, coachNoticeRetryAt: retryAt, coachNoticeKind: kind }
+  if (target.table === 'slots') {
+    deps.db.update(slots).set(set).where(eq(slots.id, target.id)).run()
+  } else {
+    deps.db.update(bookings).set(set).where(eq(bookings.id, target.id)).run()
+  }
+}
+
+/**
+ * Sends one message: 'retry' when it failed and is tried again later, with the wait doubling each
+ * time. One that keeps failing is given up on, so it neither blocks other messages nor uses up
+ * WeChat's quota; a given up message about a new lesson is remembered, so the coach is not later
+ * told about changes to a lesson they never heard of.
+ */
 async function send(
   deps: Deps,
   kind: NoticeKind,
   to: { openid: string | null; startsAt: Date },
   page: string,
   values: NoticeValues,
-  bookingId: number,
+  target: Target,
 ) {
   const template = deps.notifier?.template(kind)
-  if (!deps.notifier || !template || !to.openid || to.startsAt <= deps.now()) return true
-  try {
-    const result = await deps.notifier.send(to.openid, template, page, values)
-    if (result === 'refused') deps.log('coach notice refused', { bookingId, kind })
-    return true
-  } catch (e) {
-    deps.log('coach notice failed', { bookingId, kind, error: (e as Error).message })
-    return false
+  const ref = { [target.table === 'slots' ? 'slotId' : 'bookingId']: target.id, kind }
+  // Failures recorded for another message do not count against this one.
+  const before = target.noticeKind === target.key ? target.failures : 0
+  if (deps.notifier && template && to.openid && to.startsAt > deps.now()) {
+    try {
+      const result = await deps.notifier.send(to.openid, template, page, values)
+      if (result === 'refused') deps.log('coach notice refused', ref)
+    } catch (e) {
+      const failures = before + 1
+      const error = (e as Error).message
+      if (failures < MAX_NOTICE_FAILURES) {
+        deps.log('coach notice failed', { ...ref, failures, error })
+        setFailures(deps, target, failures, noticeRetryAt(deps.now(), failures), target.key)
+        return 'retry'
+      }
+      deps.log('coach notice given up', { ...ref, failures, error })
+      const isNew = target.key === 'booked' || target.key === 'session_booked'
+      setFailures(deps, target, 0, null, isNew ? GIVEN_UP : null)
+      return 'given_up'
+    }
   }
+  // The next message about the row starts afresh.
+  if (target.failures > 0 || (target.noticeKind !== null && target.noticeKind !== GIVEN_UP)) {
+    setFailures(deps, target, 0, null, target.noticeKind === GIVEN_UP ? GIVEN_UP : null)
+  }
+  return 'settled'
 }
 
 const lesson = {
@@ -164,6 +254,8 @@ const lesson = {
   lesson: lessonTypes.name,
   openid: coaches.openid,
   coach: coaches.name,
+  failures: bookings.coachNoticeFailures,
+  noticeKind: bookings.coachNoticeKind,
 }
 
 /**
@@ -192,20 +284,24 @@ async function notify(deps: Deps, kind: 'booked' | 'cancelled') {
   const { db } = deps
   const pending = lessons(deps, kind === 'booked' ? 'slot' : 'told')
     .where(
-      kind === 'booked'
-        ? and(
-            eq(bookings.status, 'confirmed'),
-            isNull(bookings.coachToldBookedAt),
-            // Coaches hear about a group session as a whole (notifySessions).
-            isNull(slots.lessonTypeId),
-          )
-        : and(
-            eq(bookings.status, 'cancelled'),
-            // Only lessons the coach heard about; a hold that never got paid is not news.
-            isNotNull(bookings.coachToldBookedAt),
-            isNull(bookings.coachToldCancelledAt),
-          ),
+      and(
+        kind === 'booked'
+          ? and(
+              eq(bookings.status, 'confirmed'),
+              isNull(bookings.coachToldBookedAt),
+              // Coaches hear about a group session as a whole (notifySessions).
+              isNull(slots.lessonTypeId),
+            )
+          : and(
+              eq(bookings.status, 'cancelled'),
+              // Only lessons the coach heard about; a hold that never got paid is not news.
+              isNotNull(bookings.coachToldBookedAt),
+              isNull(bookings.coachToldCancelledAt),
+            ),
+        due(bookings, kind, deps.now()),
+      ),
     )
+    .orderBy(asc(bookings.id))
     .limit(BATCH)
     .all()
 
@@ -217,22 +313,26 @@ async function notify(deps: Deps, kind: 'booked' | 'cancelled') {
         : { startsAt: b.startsAt, endsAt: b.endsAt }
     // A coach the lesson moved away from can no longer open it.
     const own = kind === 'booked' || !b.toldCoachId || b.toldCoachId === b.coachId
-    const sent = await send(
-      deps,
-      `coach_${kind}`,
-      { openid: b.openid, startsAt: told.startsAt },
-      own ? `coach/lesson/index?id=${b.id}` : 'coach/index/index',
-      {
-        student: b.student || '学员',
-        lesson: b.lesson,
-        time: lessonTime(told.startsAt, told.endsAt),
-        coach: b.coach ?? '',
-        // To them it went away by the move, whatever happened to it afterwards.
-        reason: own ? (b.reason ?? '') : '课程已改约',
-      },
-      b.id,
-    )
-    if (!sent) continue
+    // A coach who never heard of the lesson needs no word that it is off.
+    const sent =
+      kind === 'cancelled' && b.noticeKind === GIVEN_UP
+        ? 'skipped'
+        : await send(
+            deps,
+            `coach_${kind}`,
+            { openid: b.openid, startsAt: told.startsAt },
+            own ? `coach/lesson/index?id=${b.id}` : 'coach/index/index',
+            {
+              student: b.student || '学员',
+              lesson: b.lesson,
+              time: lessonTime(told.startsAt, told.endsAt),
+              coach: b.coach ?? '',
+              // To them it went away by the move, whatever happened to it afterwards.
+              reason: own ? (b.reason ?? '') : '课程已改约',
+            },
+            { ...b, table: 'bookings', key: kind },
+          )
+    if (sent === 'retry') continue
     db.update(bookings)
       .set(
         kind === 'booked'
@@ -274,8 +374,10 @@ async function notifyMoves(deps: Deps) {
           ne(bookings.coachToldStartsAt, bookings.startsAt),
           ne(bookings.coachToldEndsAt, bookings.endsAt),
         ),
+        due(bookings, 'moved', deps.now()),
       ),
     )
+    .orderBy(asc(bookings.id))
     .limit(BATCH)
     .all()
 
@@ -283,6 +385,26 @@ async function notifyMoves(deps: Deps) {
     // Never null here, since the query compares them; this tells TypeScript.
     if (!b.toldCoachId || !b.toldStartsAt || !b.toldEndsAt) continue
     const told = { coachId: b.toldCoachId, startsAt: b.toldStartsAt, endsAt: b.toldEndsAt }
+    const target = { ...b, table: 'bookings', key: 'moved' } as const
+    // The coach never heard of the lesson: nothing to tell them about its move. A coach it moved
+    // to from them hears of it as new.
+    if (b.noticeKind === GIVEN_UP) {
+      db.update(bookings)
+        .set(
+          b.toldCoachId === b.coachId
+            ? { coachToldStartsAt: b.startsAt, coachToldEndsAt: b.endsAt }
+            : {
+                coachToldBookedAt: null,
+                coachToldCoachId: null,
+                coachToldStartsAt: null,
+                coachToldEndsAt: null,
+                coachNoticeKind: null,
+              },
+        )
+        .where(stillTold(b.id, told))
+        .run()
+      continue
+    }
     const values = {
       student: b.student || '学员',
       lesson: b.lesson,
@@ -299,9 +421,9 @@ async function notifyMoves(deps: Deps) {
           time: lessonTime(b.startsAt, b.endsAt),
           oldTime: lessonTime(b.toldStartsAt, b.toldEndsAt),
         },
-        b.id,
+        target,
       )
-      if (!sent) continue
+      if (sent === 'retry') continue
       // What was sent, not what is there now: a move meanwhile is picked up next run.
       db.update(bookings)
         .set({ coachToldStartsAt: b.startsAt, coachToldEndsAt: b.endsAt })
@@ -315,9 +437,9 @@ async function notifyMoves(deps: Deps) {
       { openid: b.openid, startsAt: b.toldStartsAt },
       b.toldCoachId === b.coachId ? `coach/lesson/index?id=${b.id}` : 'coach/index/index',
       { ...values, time: lessonTime(b.toldStartsAt, b.toldEndsAt), reason: '课程已改约' },
-      b.id,
+      target,
     )
-    if (!sent) continue
+    if (sent === 'retry') continue
     db.update(bookings)
       .set({
         coachToldBookedAt: null,
