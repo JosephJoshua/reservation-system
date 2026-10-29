@@ -8,6 +8,7 @@ import { runMigrations } from './db/migrate'
 import type { Deps } from './deps'
 import { FakeGateway } from './pay/fake'
 import { WechatPayGateway } from './pay/wechat'
+import { settleOutsideAgreed } from './services/schedule'
 import { ensureFirstStaff } from './services/staff'
 import { serveSites } from './sites'
 import { startSweeper } from './sweeper'
@@ -16,6 +17,7 @@ import { logNotifier, wechatNotifier } from './wx-notify'
 
 const db = openDb(config.databasePath)
 runMigrations(db)
+settleOutsideAgreed(db)
 ensureFirstStaff(db, config.adminPassword)
 
 const log = (message: string, detail?: unknown) => console.error(`[api] ${message}`, detail ?? '')

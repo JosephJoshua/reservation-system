@@ -265,6 +265,16 @@ export function studentRoutes(deps: Deps) {
     const settings = getSettings(db)
     const types = bookableTypes(student)
     const coachDtos = coachViews(db, activeCoaches(), types, now)
+    // Active coach and lesson type pairs they teach.
+    const teachingNow = new Set(
+      db
+        .select({ coachId: coachLessonTypes.coachId, lessonTypeId: coachLessonTypes.lessonTypeId })
+        .from(coachLessonTypes)
+        .innerJoin(coaches, eq(coaches.id, coachLessonTypes.coachId))
+        .where(eq(coaches.active, true))
+        .all()
+        .map((r) => `${r.coachId}:${r.lessonTypeId}`),
+    )
     const rules = ruleBook(db)
     const typeDtos: LessonTypeDto[] = types.map((t) => {
       const prices = coachDtos.flatMap((cd) => cd.lessons.filter((l) => l.lessonTypeId === t.id))
@@ -292,7 +302,14 @@ export function studentRoutes(deps: Deps) {
           .where(eq(packageProducts.onSale, true))
           .orderBy(asc(packageProducts.sort), asc(packageProducts.id))
           .all()
-          .filter((p) => visibleTypeIds.has(p.lessonTypeId))
+          // A package kept to coaches of whom none still teaches its lesson can't be used, so it
+          // is not sold.
+          .filter(
+            (p) =>
+              visibleTypeIds.has(p.lessonTypeId) &&
+              (!p.coachIds.length ||
+                p.coachIds.some((id) => teachingNow.has(`${id}:${p.lessonTypeId}`))),
+          )
           .map((p) => ({
             id: p.id,
             name: p.name,
@@ -330,10 +347,12 @@ export function studentRoutes(deps: Deps) {
    * start times the coaches' 排班 offers. Closed sessions and times beyond the booking window are
    * hidden; full ones, ones without a free table and ones too soon show as unavailable. `moving` is
    * the student's own booking being moved: its length and lesson type apply, and it gives up its
-   * time and table.
+   * time and table. Only lesson types the student can see are listed, and the one of the booking
+   * being moved.
    */
   function studentSlots(
     now: Date,
+    student: { tester: boolean },
     from: string,
     to: string,
     q: { coachId?: number; lessonTypeId?: number },
@@ -341,9 +360,15 @@ export function studentRoutes(deps: Deps) {
     rules = ruleBook(db),
   ) {
     const lessonTypeId = q.lessonTypeId ?? moving?.lessonTypeId
-    const lessonType = lessonTypeId
-      ? db.select().from(lessonTypes).where(eq(lessonTypes.id, lessonTypeId)).get()
-      : undefined
+    const seen = new Map(
+      db
+        .select()
+        .from(lessonTypes)
+        .all()
+        .filter((t) => visibleTo(t, student) || t.id === moving?.lessonTypeId)
+        .map((t) => [t.id, t]),
+    )
+    const lessonType = lessonTypeId ? seen.get(lessonTypeId) : undefined
     if (lessonTypeId && !lessonType) throw notFound('课程')
     // A computed private time has no lesson type of its own: it follows the window of the lesson
     // being booked or moved.
@@ -388,6 +413,8 @@ export function studentRoutes(deps: Deps) {
         (s) =>
           active.has(s.coachId) &&
           s.open &&
+          s.lessonTypeId !== null &&
+          seen.has(s.lessonTypeId) &&
           shown(s.startsAt, s.lessonTypeId) &&
           (!lessonType || s.lessonTypeId === lessonType.id) &&
           // A moved lesson keeps its length; a new booking takes the lesson type's.
@@ -472,7 +499,7 @@ export function studentRoutes(deps: Deps) {
           .where(and(eq(bookings.id, q.moving), eq(bookings.studentId, c.get('studentId'))))
           .get()
       : undefined
-    return c.json(studentSlots(deps.now(), q.date, q.date, q, moving))
+    return c.json(studentSlots(deps.now(), me(c.get('studentId')), q.date, q.date, q, moving))
   })
 
   // The venue days in the booking window with something that can be booked now, so the booking
@@ -484,7 +511,14 @@ export function studentRoutes(deps: Deps) {
     const rules = ruleBook(db)
     const days = typeId ? rules.of(typeId).advanceDays : rules.longestAdvanceDays()
     const last = venueDateKey(new Date(now.getTime() + days * 86_400_000))
-    const open = studentSlots(now, venueDateKey(now), last, q, undefined, rules).filter(
+    const student = me(c.get('studentId'))
+    // A lesson type the student can no longer see has no open days.
+    if (typeId) {
+      const type = db.select().from(lessonTypes).where(eq(lessonTypes.id, typeId)).get()
+      if (!type) throw notFound('课程')
+      if (!visibleTo(type, student)) return c.json([])
+    }
+    const open = studentSlots(now, student, venueDateKey(now), last, q, undefined, rules).filter(
       (s) => s.available,
     )
     return c.json([...new Set(open.map((s) => venueDateKey(new Date(s.startsAt))))])

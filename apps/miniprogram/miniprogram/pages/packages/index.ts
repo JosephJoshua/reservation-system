@@ -67,14 +67,20 @@ Page({
       const products = catalog.packageProducts
         .filter((p) => !this.lessonTypeId || p.lessonTypeId === this.lessonTypeId)
         .map((p) => {
+          // No coaches listed means any coach; a list names those still teaching.
           const coaches = p.coachIds.map((id) => coachNames.get(id)).filter(Boolean)
+          const who = !p.coachIds.length
+            ? '全部教练'
+            : coaches.length
+              ? `限${coaches.join('、')}`
+              : '限指定教练'
           return {
             id: p.id,
             name: p.name,
             description: p.description,
             lessonCount: p.lessonCount,
             validity: `购买后 ${p.validityDays} 天内有效`,
-            scope: `${typeNames.get(p.lessonTypeId) ?? ''} · ${coaches.length ? `限${coaches.join('、')}` : '全部教练'}`,
+            scope: `${typeNames.get(p.lessonTypeId) ?? ''} · ${who}`,
             price: yuan(p.price.price),
             original: p.price.originalPrice == null ? '' : yuan(p.price.originalPrice),
             amount: p.price.price,

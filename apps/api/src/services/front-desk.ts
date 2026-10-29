@@ -17,7 +17,7 @@ import { describeBooking, logAction, yuan } from './action-log'
 import { checkBookable, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
 import { listedPriceOnly } from './packages'
-import { type SlotTarget, targetSlot } from './schedule'
+import { outsideHours, type SlotTarget, targetSlot } from './schedule'
 import { ruleBook } from './settings'
 
 export interface FrontDeskBookingInput {
@@ -153,6 +153,8 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
       endsAt: slot.endsAt,
       status: 'confirmed' as const,
       bookedByStaffId: staffId,
+      outsideAgreed:
+        !!input.anyTime && slot.lessonTypeId === null && outsideHours(tx, slot.coachId, slot),
       terms: bookingTerms(ruleBook(tx).of(lessonType.id)),
     }
     try {

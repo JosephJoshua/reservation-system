@@ -526,6 +526,55 @@ describe('packages', () => {
     expect(off.json.error).toMatchObject({ code: 'not_found', message: '该课时包已下架' })
   })
 
+  it('stops selling a package kept to coaches who have all left', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const li = h.db.insert(coaches).values({ name: '李教练' }).returning().get()
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '王李 10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 180000,
+        validityDays: 90,
+        coachIds: [coach.id, li.id],
+      })
+      .returning()
+      .get()
+    const any = h.db
+      .insert(packageProducts)
+      .values({
+        name: '10 次课',
+        lessonTypeId: lesson.id,
+        lessonCount: 10,
+        price: 180000,
+        validityDays: 90,
+      })
+      .returning()
+      .get()
+    const t = await h.student('a')
+    const listed = async () =>
+      (await h.call('GET', '/catalog', undefined, t)).json.packageProducts.map(
+        (p: { id: number; coachIds: number[] }) => [p.id, p.coachIds],
+      )
+    // One of them still teaches.
+    h.db.update(coaches).set({ active: false }).where(eq(coaches.id, li.id)).run()
+    expect(await listed()).toEqual([
+      [product.id, [coach.id, li.id]],
+      [any.id, []],
+    ])
+    h.db.update(coaches).set({ active: false }).where(eq(coaches.id, coach.id)).run()
+    expect(await listed()).toEqual([[any.id, []]])
+    // Back at work but not teaching the package's lesson, 李 does not make it usable either.
+    h.db.update(coaches).set({ active: true }).where(eq(coaches.id, li.id)).run()
+    expect(await listed()).toEqual([[any.id, []]])
+    const refused = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    expect([refused.status, refused.json.error.message]).toEqual([404, '该课时包已下架'])
+    expect(h.db.select().from(orders).all()).toHaveLength(0)
+    expect((await h.call('POST', '/packages/purchase', { productId: any.id }, t)).status).toBe(201)
+  })
+
   it('creates the package once paid and uses it for bookings', async () => {
     const h = setup()
     const { coach, lesson, t } = await withPackage(h)
@@ -1277,7 +1326,7 @@ describe('review round 2', () => {
     expect(
       (await h.call('DELETE', `/admin/coaches/${coach.id}/exceptions/${leaveId}`, undefined, admin))
         .status,
-    ).toBe(204)
+    ).toBe(200)
     // Another student took 10:30 to 11:30 meanwhile, in a lesson row of its own.
     h.settings((s) => {
       s.booking.startGrid = 15

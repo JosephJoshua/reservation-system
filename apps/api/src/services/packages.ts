@@ -12,6 +12,7 @@ import {
   bookings,
   categoryPrices,
   coaches,
+  coachLessonTypes,
   lessonTypes,
   orders,
   packageLedger,
@@ -82,6 +83,24 @@ export async function purchasePackage(
     // Deleted while this request was on its way.
     if (!student || student.deletedAt) throw new ApiError(401, 'unauthorized', '请重新登录')
     if (!lessonType?.active || (lessonType.adminOnly && !student.tester)) {
+      throw new ApiError(404, 'not_found', '该课时包已下架')
+    }
+    // Kept to coaches of whom none still teaches its lesson, it could never be used.
+    if (
+      product.coachIds.length &&
+      !tx
+        .select({ id: coaches.id })
+        .from(coaches)
+        .innerJoin(coachLessonTypes, eq(coachLessonTypes.coachId, coaches.id))
+        .where(
+          and(
+            inArray(coaches.id, product.coachIds),
+            eq(coaches.active, true),
+            eq(coachLessonTypes.lessonTypeId, product.lessonTypeId),
+          ),
+        )
+        .get()
+    ) {
       throw new ApiError(404, 'not_found', '该课时包已下架')
     }
     const price = packagePrice(
