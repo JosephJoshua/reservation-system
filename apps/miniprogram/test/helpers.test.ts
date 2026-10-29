@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError, refreshAfter } from '../miniprogram/utils/api'
+import { isPolicyChanged } from '../miniprogram/utils/data'
 import { bookableDays } from '../miniprogram/utils/format'
 import { moveFailure } from '../miniprogram/utils/move'
 
@@ -36,15 +37,24 @@ describe('moveFailure', () => {
   })
 })
 
+describe('isPolicyChanged', () => {
+  it('tells a refusal of an older policy text from other errors', () => {
+    expect(isPolicyChanged(new ApiError(409, 'policy_changed', ''))).toBe(true)
+    expect(isPolicyChanged(new ApiError(403, 'consent_required', ''))).toBe(false)
+    expect(isPolicyChanged(new Error('policy_changed'))).toBe(false)
+  })
+})
+
 describe('refreshAfter', () => {
-  it('reloads after a refusal for how things stand, or a lost answer', () => {
+  it('reloads after a refusal for how things stand', () => {
     expect(refreshAfter(new ApiError(409, 'refund_open', ''))).toBe(true)
     expect(refreshAfter(new ApiError(403, 'coach_marks_off', ''))).toBe(true)
     expect(refreshAfter(new ApiError(404, 'not_found', ''))).toBe(true)
-    expect(refreshAfter(new ApiError(0, 'result_unknown', ''))).toBe(true)
   })
 
-  it('does not reload after a bad request or a server error', () => {
+  it('does not reload after a lost answer, a bad request or a server error', () => {
+    expect(refreshAfter(new ApiError(0, 'result_unknown', ''))).toBe(false)
+    expect(refreshAfter(new ApiError(0, 'network', ''))).toBe(false)
     expect(refreshAfter(new ApiError(400, 'invalid', ''))).toBe(false)
     expect(refreshAfter(new ApiError(500, 'http_error', ''))).toBe(false)
     expect(refreshAfter(new Error('x'))).toBe(false)

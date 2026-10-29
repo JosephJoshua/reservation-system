@@ -113,7 +113,7 @@ Page({
       await this.load()
     } catch (err) {
       // Refused because the package changed meanwhile (a request open already, used up, paused or
-      // refunded), or the answer was lost: show where it stands now, then why.
+      // refunded): show where it stands now, then why.
       if (refreshAfter(err)) await this.load()
       showError(err)
     } finally {
