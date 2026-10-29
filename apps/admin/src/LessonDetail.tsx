@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Card, Dialog, Drawer, Loading, Space, Tag, Textarea } from 'tdesign-react'
 import { api, RequestError } from './api'
 import { BookForStudent } from './BookForStudent'
-import { AttendanceCell, CancelBookingDialog, PaidCell, StatusCell } from './bookingCells'
+import {
+  AttendanceCell,
+  CancelBookingDialog,
+  DisruptionTag,
+  PaidCell,
+  StatusCell,
+} from './bookingCells'
 import { DataTable } from './DataTable'
 import { actorName, fmtDate, fmtDateTime, fmtTime, fmtWeekday } from './format'
 import {
@@ -156,6 +162,9 @@ function LessonBody({
                 </Tag>
               )
             )}
+            {s.disruption && !cancelled && live.length > 0 && (
+              <DisruptionTag disruption={s.disruption} />
+            )}
           </div>
         </div>
         {actions}
@@ -207,7 +216,14 @@ function LessonBody({
             {
               colKey: 'attendance',
               title: '签到',
-              cell: ({ row }) => <AttendanceCell row={row} canMark={canMark} onChanged={reload} />,
+              cell: ({ row }) => (
+                <AttendanceCell
+                  row={row}
+                  canMark={canMark}
+                  onChanged={reload}
+                  disruption={s.disruption}
+                />
+              ),
             },
             ...(group && canBook
               ? [

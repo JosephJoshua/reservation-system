@@ -96,6 +96,7 @@ import {
 } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { newCoachBindCode, unbindCoach } from '../services/coaches'
+import { attendanceDisruptions } from '../services/disruption'
 import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
 import {
   adminFeedback,
@@ -1269,6 +1270,9 @@ export function adminRoutes(deps: Deps) {
       lessonType,
       tableFull: slotsWithoutTable(db, [slot]).has(slot.id),
       movedTo: moved ? { slotId: moved.slotId, startsAt: moved.startsAt.toISOString() } : null,
+      // 闭馆, 请假 or the coach stopped: told to the desk before it marks 签到.
+      disruption:
+        attendanceDisruptions(db, [{ ...slot, slotId: slot.id }], deps.now()).get(slot.id) ?? null,
     })
   })
 

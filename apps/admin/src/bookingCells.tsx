@@ -1,11 +1,11 @@
-import { cancelSource } from '@rs/shared'
+import { cancelSource, DISRUPTION_TEXT, type Disruption } from '@rs/shared'
 import type { MouseEvent } from 'react'
 import { useState } from 'react'
-import { Dialog, Select, Tag, Textarea } from 'tdesign-react'
+import { Dialog, DialogPlugin, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from './api'
 import { fmtDateTime, yuan } from './format'
 import { attempt, onceKey, useSubmitting } from './hooks'
-import { bookingStatusLabel, refundLabel } from './labels'
+import { bookingStatusLabel, disruptionLabel, refundLabel } from './labels'
 import { openLesson } from './lessonLink'
 import { useCan } from './me'
 import type { AdminBooking } from './types'
@@ -65,19 +65,56 @@ export function StatusCell({ row }: { row: AdminBooking }) {
   )
 }
 
+/** Why the venue could not give a lesson as booked, as a warning tag. */
+export function DisruptionTag({ disruption }: { disruption: Disruption }) {
+  return (
+    <Tag theme="warning" variant="light" title={DISRUPTION_TEXT[disruption]}>
+      {disruptionLabel[disruption]}
+    </Tag>
+  )
+}
+
+/**
+ * Asks before 签到 on a lesson the venue could not give, which the student may have been told
+ * not to come to and which counts for the coach's 课时费. Resolves true to go ahead.
+ */
+export function confirmDisruptedArrival(disruption: Disruption): Promise<boolean> {
+  return new Promise((resolve) => {
+    const answer = (yes: boolean) => {
+      dialog.destroy()
+      resolve(yes)
+    }
+    const dialog = DialogPlugin.confirm({
+      header: `${DISRUPTION_TEXT[disruption]}，仍要签到？`,
+      body: '学员可能已被告知这节课上不了。签到后这节课计入教练课时费。',
+      theme: 'warning',
+      confirmBtn: '仍要签到',
+      cancelBtn: '返回',
+      onConfirm: () => answer(true),
+      onClose: () => answer(false),
+    })
+  })
+}
+
 /** 签到 once the lesson has started, which staff who mark attendance can change. */
 export function AttendanceCell({
   row,
   canMark,
   onChanged,
+  disruption = row.disruption,
 }: {
   row: AdminBooking
   canMark: boolean
   onChanged: () => unknown
+  /** What stood in the way of the lesson, asked about before 到课. */
+  disruption?: Disruption | null
 }) {
   const started = Date.parse(row.startsAt) <= Date.now()
   const markable = started && (row.status === 'confirmed' || row.status === 'completed')
   const mark = async (attendance: string | null) => {
+    if (attendance === 'attended' && disruption && !(await confirmDisruptedArrival(disruption))) {
+      return
+    }
     if (
       await attempt(
         () => api('PUT', `/admin/bookings/${row.id}/attendance`, { attendance }),
