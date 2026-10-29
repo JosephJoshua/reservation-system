@@ -193,6 +193,8 @@ export interface Refund {
   failure: string | null
   /** A failed refund staff settled outside the system: how. */
   settledNote: string | null
+  /** WeChat Pay could not send it back (退款异常), for staff to handle. */
+  abnormal: boolean
   createdAt: string
   updatedAt: string
   order: {

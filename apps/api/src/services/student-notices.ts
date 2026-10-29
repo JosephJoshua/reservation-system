@@ -273,7 +273,12 @@ function refundText(db: Q, b: { bookingId: number; paidWith: 'order' | 'package'
     return returned ? '课时已退回课时包' : '未退回课时'
   }
   const rows = db
-    .select({ amount: refunds.amount, status: refunds.status, provider: orders.provider })
+    .select({
+      amount: refunds.amount,
+      status: refunds.status,
+      provider: orders.provider,
+      settledNote: refunds.settledNote,
+    })
     .from(refunds)
     .innerJoin(orders, eq(orders.id, refunds.orderId))
     .where(eq(refunds.bookingId, b.bookingId))
@@ -285,9 +290,10 @@ function refundText(db: Q, b: { bookingId: number; paidWith: 'order' | 'package'
     .reduce((total, r) => total + r.amount, 0)
   if (!refunded) return '退款处理中'
   // Paid at the front desk, so the money is handed back there.
-  return rows[0]?.provider === 'offline'
-    ? `¥${formatYuan(refunded)} 到店退还`
-    : `¥${formatYuan(refunded)} 原路退回`
+  if (rows[0]?.provider === 'offline') return `¥${formatYuan(refunded)} 到店退还`
+  // Handed back by staff outside WeChat Pay (in cash, say), not to where it came from.
+  if (rows.some((r) => r.settledNote !== null)) return `¥${formatYuan(refunded)} 已另行退还`
+  return `¥${formatYuan(refunded)} 原路退回`
 }
 
 /** A notice with what its message says, read as it is now. */

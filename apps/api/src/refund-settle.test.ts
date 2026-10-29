@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it, vi } from 'vitest'
 import { actionLog, refunds } from './db/schema'
 import { GatewayError } from './pay/gateway'
+import { settleRefund } from './services/refunds'
 import { type Harness, setup } from './test/harness'
 
 /** A paid lesson the venue cancelled, whose WeChat Pay refund failed for good. */
@@ -149,5 +150,100 @@ describe('a failed WeChat Pay refund settled outside the system', () => {
       code: 'refund_not_offline',
       message: '这笔退款走微信支付，请重试或标为已另行退款',
     })
+  })
+
+  it('reports a settle that a retry overtook as not settled, and logs no settle', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    h.gateway.refundMode = 'succeeded'
+    const query = h.gateway.queryRefund.bind(h.gateway)
+    let first = true
+    // The settle's query to WeChat Pay answers only after the retry is done.
+    h.gateway.queryRefund = async (no: string) => {
+      const state = await query(no)
+      if (first) {
+        first = false
+        await new Promise((resolve) => setTimeout(resolve, 150))
+      }
+      return state
+    }
+    const settling = h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '已现金退还' },
+      admin,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const retry = await h.call('POST', `/admin/refunds/${refundId}/retry`, {}, admin)
+    expect(retry.json).toMatchObject({ status: 'succeeded', resent: true })
+    const settle = await settling
+    expect(settle.json).toMatchObject({
+      status: 'succeeded',
+      settled: false,
+      message: '微信支付已退款，无需另行退款',
+    })
+    expect(h.db.select().from(refunds).get()?.settledNote).toBeNull()
+    const actions = h.db.select({ action: actionLog.action }).from(actionLog).all()
+    expect(actions.map((a) => a.action)).not.toContain('refund.settled')
+  })
+
+  it('warns staff when WeChat Pay later refunds one they settled', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    await h.call('POST', `/admin/refunds/${refundId}/settled`, { note: '已现金退还' }, admin)
+    const row = h.db.select().from(refunds).where(eq(refunds.id, refundId)).get()
+    settleRefund(h.deps, row?.outRefundNo ?? '', { status: 'succeeded', refundId: 'wx-late' })
+    expect(h.db.select().from(refunds).where(eq(refunds.id, refundId)).get()).toMatchObject({
+      status: 'succeeded',
+      settledNote: '已现金退还',
+      providerRefundId: 'wx-late',
+      failure: '微信支付也已退款成功，学员可能收到两次退款，请核对',
+    })
+  })
+
+  it('settles one WeChat Pay reports as 退款异常 too', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const b = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id },
+      t,
+    )
+    await h.fakePay(b.json.orderId)
+    h.gateway.refundMode = 'abnormal'
+    const admin = await h.admin()
+    await h.call(
+      'POST',
+      `/admin/bookings/${b.json.bookingId}/cancel`,
+      { reason: '教练生病' },
+      admin,
+    )
+    const refund = h.db.select().from(refunds).get()
+    expect(refund).toMatchObject({ status: 'processing', abnormal: true })
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refund?.id}/settled`,
+      { note: '已在商户平台处理' },
+      admin,
+    )
+    expect(res.json).toMatchObject({ status: 'succeeded', settled: true })
+    expect(h.db.select().from(refunds).get()).toMatchObject({
+      status: 'succeeded',
+      abnormal: false,
+      settledNote: '已在商户平台处理',
+    })
+    // A refund on its way normally is left to WeChat Pay.
+    const h2 = setup()
+    const other = await failedRefund(h2)
+    h2.db.update(refunds).set({ status: 'processing' }).run()
+    const refused = await h2.call(
+      'POST',
+      `/admin/refunds/${other.refundId}/settled`,
+      { note: '已现金退还' },
+      other.admin,
+    )
+    expect(refused.json.error.code).toBe('refund_not_failed')
   })
 })

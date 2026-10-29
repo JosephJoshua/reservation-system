@@ -243,12 +243,11 @@ export function Refunds() {
                   <Tag theme={theme} variant="light">
                     {label}
                   </Tag>
-                  {row.settledNote !== null ? (
+                  {row.settledNote !== null && (
                     <div className="muted">另行退款：{row.settledNote}</div>
-                  ) : (
-                    // On a success, a warning that the order was refunded more than paid.
-                    row.failure && <div className="muted">{row.failure}</div>
                   )}
+                  {/* On a success, a warning that the order was refunded more than paid. */}
+                  {row.failure && <div className="muted">{row.failure}</div>}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
                   )}
@@ -304,6 +303,11 @@ export function Refunds() {
                     已另行退款
                   </Button>
                 </Space>
+              ) : row.status === 'processing' && row.abnormal ? (
+                // 退款异常: staff handle it on the merchant platform, or hand the money back.
+                <Button variant="text" theme="primary" onClick={() => setSettling(row)}>
+                  已另行退款
+                </Button>
               ) : null,
           },
         ]}
@@ -440,10 +444,10 @@ function Settle({
   const key = useIdempotencyKey()
 
   const submit = async () => {
-    let outcome: (RefundOutcome & { settled: boolean }) | undefined
+    let outcome: (RefundOutcome & { settled: boolean; message: string | null }) | undefined
     const ok = await attempt(
       async () => {
-        outcome = await api<RefundOutcome & { settled: boolean }>(
+        outcome = await api<RefundOutcome & { settled: boolean; message: string | null }>(
           'POST',
           `/admin/refunds/${refund.id}/settled`,
           { note },
@@ -455,7 +459,7 @@ function Settle({
     )
     if (!ok) return
     if (outcome?.settled === false) {
-      void MessagePlugin.success('原退款已在微信支付处理，已更新状态')
+      void MessagePlugin.info(outcome.message ?? '退款状态已变更，请刷新后查看', 5000)
     } else {
       void MessagePlugin.success('已标为另行退款')
     }

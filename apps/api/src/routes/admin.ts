@@ -2394,7 +2394,7 @@ export function adminRoutes(deps: Deps) {
     )
     const id = idParam(c)
     const done = await settleFailedRefund(deps, id, note)
-    if (done) {
+    if (done === 'settled' || done === 'updated') {
       const r = refundContext(id)
       log(c.get('staffId'), {
         action: done === 'settled' ? 'refund.settled' : 'refund.synced',
@@ -2407,8 +2407,26 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'refund', id },
       })
     }
-    // `updated`: WeChat Pay had it done or on its way after all, so it was not settled by hand.
-    return c.json({ ...refundOutcome(id), settled: done !== 'updated' })
+    const now = db
+      .select({ status: refunds.status, failure: refunds.failure, note: refunds.settledNote })
+      .from(refunds)
+      .where(eq(refunds.id, id))
+      .get()
+    // Settled only if the refund ends up settled with this note: a retry or WeChat Pay may have
+    // got there first, and then it is as they left it.
+    const settled = now?.status === 'succeeded' && now.note === note
+    return c.json({
+      status: now?.status,
+      failure: now?.failure ?? null,
+      settled,
+      message: settled
+        ? null
+        : now?.status === 'succeeded'
+          ? '微信支付已退款，无需另行退款'
+          : now?.status === 'pending' || now?.status === 'processing'
+            ? '退款已在微信支付处理中，无需另行退款'
+            : '退款状态已变更，请刷新后查看',
+    })
   })
 
   app.post('/refunds/:id/retry', need('finance'), async (c) => {

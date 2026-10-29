@@ -2,7 +2,7 @@ import { venueInstant } from '@rs/shared'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import { immediate } from './db/client'
-import { bookings, packageProducts, studentNotices, students } from './db/schema'
+import { bookings, packageProducts, refunds, studentNotices, students } from './db/schema'
 import { notifyStudents, queueStudentNotice } from './services/student-notices'
 import { type Harness, setup } from './test/harness'
 import type { NoticeKind, NoticeTemplate, NoticeValues, Notifier } from './wx-notify'
@@ -177,6 +177,27 @@ describe('student notices', () => {
     await h.call('POST', `/admin/bookings/${id}/cancel`, { reason: '教练生病' }, admin)
     await notifyStudents(h.deps)
     expect(sent.find((s) => s.kind === 'cancelled')?.values.refund).toBe('¥180 到店退还')
+  })
+
+  it('does not say 原路退回 for a refund staff handed back outside WeChat Pay', async () => {
+    const h = setup()
+    const sent = withNotifier(h)
+    const { coach, lesson } = h.seed()
+    const admin = await h.admin()
+    const student = await h.student('a')
+    const id = await book(h, student, h.slot(coach.id, '2026-10-26', 10).id, lesson.id)
+    h.gateway.refundMode = 'fail'
+    await h.call('POST', `/admin/bookings/${id}/cancel`, { reason: '场地维修' }, admin)
+    const refundId = h.db.select().from(refunds).get()?.id
+    const settled = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '已现金退还' },
+      admin,
+    )
+    expect(settled.json.settled).toBe(true)
+    await notifyStudents(h.deps)
+    expect(sent.find((s) => s.kind === 'cancelled')?.values.refund).toBe('¥200 已另行退还')
   })
 
   it('says the package lesson came back, and that an unpaid hold cost nothing', async () => {
