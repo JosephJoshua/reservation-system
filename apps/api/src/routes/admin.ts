@@ -2111,16 +2111,14 @@ export function adminRoutes(deps: Deps) {
     const done = refundDeskPackage(deps, id, amount, (current) =>
       checkVersion(c, packageViews(db, [current], deps.now())[0]),
     )
-    if (!done.repeat) {
-      const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
-      log(c.get('staffId'), {
-        action: 'package.refund',
-        summary: `课时包「${pkg?.name}」前台退款 ${yuan(amount)}`,
-        amount,
-        studentId: pkg?.studentId,
-        target: { kind: 'package', id },
-      })
-    }
+    const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
+    log(c.get('staffId'), {
+      action: 'package.refund',
+      summary: `课时包「${pkg?.name}」前台退款 ${yuan(amount)}`,
+      amount,
+      studentId: pkg?.studentId,
+      target: { kind: 'package', id },
+    })
     return c.json({ refundId: done.refundId })
   })
 

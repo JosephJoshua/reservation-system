@@ -18,6 +18,7 @@ import {
 } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
 import {
+  Alert,
   Button,
   Card,
   Dialog,
@@ -1519,6 +1520,8 @@ function DeskRefund({
     pkg ? `/admin/packages/${pkg.id}/desk-refund` : null,
   )
   const [amount, setAmount] = useState<number | undefined>()
+  // Someone else refunded it meanwhile: kept in the dialog, since cash may have gone out twice.
+  const [refunded, setRefunded] = useState<string | null>(null)
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
   const q = quote.data
@@ -1543,7 +1546,13 @@ function DeskRefund({
             },
           ),
         '已退款',
-        { onStale: onDone },
+        {
+          stale: ['package_refunded_elsewhere', 'edited_elsewhere'],
+          onStale: (e) => {
+            if (e.code === 'package_refunded_elsewhere') setRefunded(e.message)
+            else onDone()
+          },
+        },
       )
     )
       onDone()
@@ -1553,17 +1562,18 @@ function DeskRefund({
     <Dialog
       visible
       header="前台退款"
-      confirmBtn={{
-        content: '确认已退还',
-        theme: 'danger',
-        disabled: !valid,
-        loading: submitting,
-      }}
-      cancelBtn="返回"
+      confirmBtn={
+        refunded
+          ? null
+          : { content: '确认已退还', theme: 'danger', disabled: !valid, loading: submitting }
+      }
+      cancelBtn={refunded ? '关闭' : '返回'}
       onConfirm={submit}
-      onClose={onClose}
+      onClose={refunded ? onDone : onClose}
     >
-      {quote.loading ? (
+      {refunded ? (
+        <Alert theme="error" message={refunded} />
+      ) : quote.loading ? (
         <Loading size="small" />
       ) : quote.error || !q || !pkg ? (
         <p className="muted">{quote.error ?? '课时包不存在'}</p>
