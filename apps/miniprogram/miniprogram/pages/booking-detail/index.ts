@@ -215,7 +215,10 @@ Page({
           ? '课程时间已调整，开课前可免费取消。'
           : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
         (b.canMove
-          ? `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
+          ? // Moving closes with free cancelling, which for such a lesson is when it starts.
+            Date.parse(b.cancelDeadline) >= Date.parse(b.startsAt)
+            ? `开课前还可以改约 ${b.movesLeft} 次。`
+            : `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
           : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
             ? '改约次数已用完。'
             : ''),
