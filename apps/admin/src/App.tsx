@@ -176,21 +176,22 @@ export function App() {
   }
 
   /**
-   * Another tab logged in as `now`, not `me` this tab was working as: asks whether to log in
-   * again as `me`, keeping what is not saved, or go on as `now`. Replaces an open question, such
-   * as after that tab first logged out, and answers whatever waited on it.
+   * Another tab logged in as `now`, not `me` this tab was working as, or as someone this tab
+   * could not tell (null): asks whether to log in again as `me`, keeping what is not saved, or go
+   * on as the new login. Replaces an open question, such as after that tab first logged out, and
+   * answers whatever waited on it.
    */
-  const askSwitch = (me: StaffDto, now: StaffDto) => {
+  const askSwitch = (me: StaffDto, now: StaffDto | null) => {
     const before = pending.current
     setRelogin({
       me,
-      header: `其他标签页登录了${now.name}的账号`,
+      header: now ? `其他标签页登录了${now.name}的账号` : '其他标签页重新登录了',
       done: (ok) => {
         if (before) before.done(ok)
         else setRelogin(null)
       },
       other: {
-        label: `以${now.name}继续`,
+        label: now ? `以${now.name}继续` : '以新登录继续',
         run: async () => {
           if (!(await confirmLeave())) return
           takeLeave()
@@ -354,13 +355,21 @@ export function App() {
     if (!me || !hasUnsaved()) return follow()
     // Nothing goes out as the new login until it is known whose it is.
     holdRequests()
-    const now = await whoIs(token)
+    let now = await whoIs(token)
+    // Not told, as on a network blip: tried again a moment later, then asked.
+    for (const wait of [1000, 3000]) {
+      if (now || getToken() !== token || pending.current) break
+      await new Promise((resolve) => setTimeout(resolve, wait))
+      if (getToken() !== token || pending.current) break
+      now = await whoIs(token)
+    }
     // Changed again meanwhile, or asked already: the later change or the open question decides.
     if (getToken() !== token || pending.current) return
-    if (!now || now.id === me.id) {
+    if (now?.id === me.id) {
       releaseRequests(true)
       return follow()
     }
+    // Someone else, or not known whom: changes held meanwhile are never sent as them unasked.
     askSwitch(me, now)
   }
 
