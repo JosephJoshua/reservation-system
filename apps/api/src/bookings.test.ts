@@ -1826,6 +1826,39 @@ describe('lessons the venue cannot give', () => {
       .where(eq(refunds.bookingId, b?.id ?? 0))
       .get()
     expect(refund).toMatchObject({ amount: b?.price, reason: '这节课的时间场馆闭馆，自动退款' })
+    // The student is told the lesson cannot go ahead, not that they paid late.
+    const status = await h.call('GET', `/orders/${res.json.orderId}`, undefined, t)
+    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired' })
+    const view = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(view.json).toMatchObject({
+      status: 'expired',
+      disruption: 'closed',
+      refund: { amount: b?.price },
+      canCancel: false,
+      cancelDeadline: '2026-10-25T02:00:00.000Z',
+    })
+  })
+
+  it('says why a hold the coach went on leave for has lapsed', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id, lessonDay, 10).id, lesson.id)
+    const other = await book(h, t, h.slot(coach.id, '2026-10-28', 10).id, lesson.id)
+    await stopped(h, coach.id, 'off')
+    const pending = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(pending.json).toMatchObject({ status: 'pending_payment', disruption: 'off' })
+    h.clock.now = new Date(h.clock.now.getTime() + 20 * 60_000)
+    await sweep(h.deps)
+    const lapsed = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(lapsed.json).toMatchObject({ status: 'expired', disruption: 'off', refund: null })
+    // A hold that just ran out, with nothing in the way, says nothing more.
+    const plain = await h.call('GET', `/bookings/${other.json.bookingId}`, undefined, t)
+    expect(plain.json).toMatchObject({ status: 'expired', disruption: null })
+    // Still said once the lesson time has passed.
+    h.clock.now = new Date('2026-10-27T00:00:00Z')
+    const later = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(later.json).toMatchObject({ status: 'expired', disruption: 'off' })
   })
 
   it('refunds a late payment for a lapsed hold the coach is now on leave for, saying why', async () => {

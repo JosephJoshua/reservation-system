@@ -116,11 +116,14 @@ export function bookingViews(
   const refundByBooking = latestRefunds(tx, 'bookingId', ids)
   const invoiceByOrder = orderInvoices(tx, [...orderByBooking.values()])
   const moves = moveSummaries(tx, ids)
-  // Only lessons still ahead can be cancelled, so only those need checking.
+  // Only lessons still ahead can be cancelled, so only those need checking. An expired hold is
+  // checked too, so the student is told the venue stopped it rather than that they paid late.
   const disrupted = disruptions(
     tx,
     rows.filter(
-      (b) => (b.status === 'confirmed' || b.status === 'pending_payment') && b.startsAt > now,
+      (b) =>
+        b.status === 'expired' ||
+        ((b.status === 'confirmed' || b.status === 'pending_payment') && b.startsAt > now),
     ),
   )
   const feedback = withFeedback ? visibleFeedback(tx, ids) : null
@@ -134,7 +137,12 @@ export function bookingViews(
     const rules = rulesBook.termsOf(b)
     const type = rulesBook.of(b.lessonTypeId)
     const disruption = disrupted.get(b.id) ?? null
-    const deadline = freeCancelDeadline(b.startsAt, rules, moved?.lastMove, disruption)
+    const deadline = freeCancelDeadline(
+      b.startsAt,
+      rules,
+      moved?.lastMove,
+      status === 'expired' ? null : disruption,
+    )
     return {
       id: b.id,
       slotId: b.slotId,

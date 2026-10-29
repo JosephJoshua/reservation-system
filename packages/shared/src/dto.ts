@@ -149,7 +149,8 @@ export interface BookingDto {
   movedLate: boolean
   /**
    * Why the venue cannot give the lesson as booked (闭馆, the coach's 请假, an inactive coach):
-   * free to cancel until it starts.
+   * free to cancel until it starts. Also set on an expired booking whose lesson it falls in, so
+   * a hold that lapsed or was refunded because of it is not put down to paying late.
    */
   disruption: Disruption | null
   canCancel: boolean
