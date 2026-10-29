@@ -21,6 +21,7 @@ finish() {
 trap finish EXIT
 
 [ -n "${COS_BUCKET:-}" ] || fail "COS_BUCKET is not set"
+use_remote || fail "setting up encryption failed"
 [ -f "$DB" ] || fail "database $DB not found"
 tmp=$(mktemp -d)
 name="app-$(date -u +%Y%m%dT%H%M%SZ).db.gz"
@@ -52,4 +53,10 @@ for day in $days; do
     rclone purge "$REMOTE/uploads-removed/$day" || fail "pruning removed images failed"
   fi
 done
+# Not a failed backup, as the copy is in COS, but alerted: the app would otherwise report backups
+# as stopped, and an app restart in between would hide that.
+if ! touch "$MARKER"; then
+  echo "WARNING: could not touch $MARKER" >&2
+  alert "无法更新备份标记 $MARKER（本次备份已上传），应用会误报备份停止"
+fi
 echo "backup ok: db/$name ($(du -k "$tmp/app.db.gz" | cut -f1) KB)"

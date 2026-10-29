@@ -12,6 +12,7 @@ set -eu
 . /app/api/backup/common.sh
 die() { echo "restore failed: $1" >&2; exit 1; }
 [ -n "${COS_BUCKET:-}" ] || die "COS_BUCKET is not set"
+use_remote || die "setting up encryption failed"
 usage() { echo "usage: restore.sh list | images [<YYYYMMDD>] | check <name> | restore <name>  (name: latest or app-<time>.db.gz)" >&2; exit 2; }
 
 # Copies back what is missing, and lesson photos removed on or after day $1 (YYYYMMDD), which a

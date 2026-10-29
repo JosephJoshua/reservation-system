@@ -1,7 +1,9 @@
+import { dirname, join } from 'node:path'
 import { serve } from '@hono/node-server'
 import { CHECK_IN_PATH } from '@rs/shared'
 import { Hono } from 'hono'
 import { createApp } from './app'
+import { startBackupWatch } from './backup-watch'
 import { config } from './config'
 import { openDb } from './db/client'
 import { runMigrations } from './db/migrate'
@@ -47,6 +49,15 @@ const deps: Deps = {
 
 if (deps.gateway.fake) console.warn('[api] WeChat Pay not configured: using the fake gateway')
 const stopSweeper = startSweeper(deps)
+// The backup container leaves this file next to the database after each successful backup.
+if (config.alertWebhook) {
+  startBackupWatch({
+    markerPath: join(dirname(config.databasePath), 'backup-ok'),
+    webhook: config.alertWebhook,
+    now: deps.now,
+    log,
+  })
+}
 
 // In a deployment the API also serves the built admin app and the 使用手册, so one container holds
 // one environment.

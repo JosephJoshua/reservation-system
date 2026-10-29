@@ -207,7 +207,7 @@ describe('admin list filters and totals', () => {
         pricePaid: 100000,
         expiresAt: at('2027-01-01', 0),
         status: 'active',
-        orderId: 1,
+        orderId: 2,
       })
       .run()
     const ids = async (q: string) => {
