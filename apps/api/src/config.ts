@@ -90,6 +90,8 @@ export const config = {
   tencentMapKey: env.TENCENT_MAP_KEY || undefined,
   wechatPay: wechatPay(env),
   notices: notices(),
+  /** WeCom group robot told when backups stop; production only, as staging is not backed up. */
+  alertWebhook: env.ALERT_WEBHOOK || undefined,
 }
 
 if (production && (!config.wechatPay || !config.wechatAppSecret)) {

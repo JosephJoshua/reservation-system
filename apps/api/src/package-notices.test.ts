@@ -265,7 +265,13 @@ describe('package notices', () => {
     const { coach, lesson, t, pkg } = await withPackage(h, { lessonCount: 1 })
     const second = h.db
       .insert(packages)
-      .values({ ...pkg, id: undefined, coachIds: [coach.id + 1], lessonsRemaining: 5 })
+      .values({
+        ...pkg,
+        id: undefined,
+        orderId: pkg.orderId + 1000,
+        coachIds: [coach.id + 1],
+        lessonsRemaining: 5,
+      })
       .returning()
       .get()
     await book(h, t, h.slot(coach.id, '2026-10-26').id, lesson.id)

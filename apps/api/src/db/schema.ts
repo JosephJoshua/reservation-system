@@ -468,7 +468,13 @@ export const packages = sqliteTable(
     orderId: integer('order_id').notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index('packages_student').on(t.studentId)],
+  // Migration 0028 also adds triggers that refuse a negative lessons_remaining. A drizzle-kit table
+  // rebuild of packages would drop them, so carry them over by hand in that migration.
+  (t) => [
+    index('packages_student').on(t.studentId),
+    // One package per paid order; applyPayment and the front desk already create just one.
+    uniqueIndex('packages_order').on(t.orderId),
+  ],
 )
 
 /**
@@ -713,7 +719,13 @@ export const coachPayEntries = sqliteTable(
     lessons: integer('lessons').notNull(),
     amount: integer('amount').notNull(),
   },
-  (t) => [index('coach_pay_entries_month').on(t.month), index('coach_pay_entries_unit').on(t.unit)],
+  (t) => [
+    index('coach_pay_entries_month').on(t.month),
+    index('coach_pay_entries_unit').on(t.unit),
+    // A month pays each lesson once. Adjustments may repeat a unit: a moved lesson is taken back
+    // from one coach and paid to another in the same month.
+    uniqueIndex('coach_pay_entries_lesson').on(t.month, t.unit).where(sql`kind = 'lesson'`),
+  ],
 )
 
 /**

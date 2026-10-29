@@ -1,8 +1,19 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
-import { describe, expect, it } from 'vitest'
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
+import { afterEach, describe, expect, it } from 'vitest'
+import { openDb } from './client'
 import { migrationsFolder, packageRoot } from './migrate'
 
 const apiRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)))
@@ -311,5 +322,144 @@ describe('0027_action_log_coach_actor', () => {
       ),
     ).toThrow(/CHECK/)
     expect(db.pragma('foreign_key_check')).toEqual([])
+  })
+})
+
+interface Journal {
+  entries: { idx: number; when: number; tag: string }[]
+}
+const journal: Journal = JSON.parse(
+  readFileSync(join(migrationsFolder, 'meta/_journal.json'), 'utf8'),
+)
+
+describe('migration journal', () => {
+  it('lists every SQL file once, with strictly increasing times', () => {
+    // The migrator applies only entries newer than the last applied `when`, so a migration merged
+    // with an older time than the one before it would be skipped in production.
+    const whens = journal.entries.map((e) => e.when)
+    for (let i = 1; i < whens.length; i++) expect(whens[i]).toBeGreaterThan(whens[i - 1] as number)
+    const files = readdirSync(migrationsFolder).filter((f) => f.endsWith('.sql'))
+    expect(journal.entries.map((e) => `${e.tag}.sql`).sort()).toEqual(files.sort())
+  })
+})
+
+describe('migrating a populated database the way production does', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+
+  /** A migrations folder with the journal's entries up to and including `tag`. */
+  function folderUpTo(root: string, tag: string) {
+    const n = journal.entries.findIndex((e) => e.tag === tag) + 1
+    expect(n).toBeGreaterThan(0)
+    const dir = join(root, tag)
+    mkdirSync(join(dir, 'meta'), { recursive: true })
+    const entries = journal.entries.slice(0, n)
+    for (const e of entries)
+      copyFileSync(join(migrationsFolder, `${e.tag}.sql`), join(dir, `${e.tag}.sql`))
+    writeFileSync(join(dir, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }))
+    return dir
+  }
+
+  it('keeps foreign keys and integrity with data from the first releases', () => {
+    const root = mkdtempSync(join(tmpdir(), 'rs-migrate-'))
+    dirs.push(root)
+    // openDb turns foreign keys on, as the server does when it migrates at start.
+    const db = openDb(join(root, 'app.db'))
+    const sqlite = db.$client
+    expect(sqlite.pragma('foreign_keys', { simple: true })).toBe(1)
+
+    migrate(db, { migrationsFolder: folderUpTo(root, '0001_coach_mode') })
+    sqlite.exec(`
+      insert into students (id, openid, name, phone) values (1,'o1','A','13800000000'),(2,'o2','B','');
+      insert into coaches (id, name, bio) values (1,'C1','hello <b> & me'),(2,'C2','');
+      insert into lesson_types (id, name, duration_minutes, price) values (1,'私教',60,20000);
+      insert into coach_lesson_types (coach_id, lesson_type_id, price) values (1,1,30000),(2,1,null);
+      insert into slots (id, coach_id, starts_at, ends_at, open) values
+        (1,1,4102444800000,4102448400000,1),(2,1,4102452000000,4102455600000,1),(3,2,1000,2000,0);
+      insert into orders (id, out_trade_no, student_id, kind, description, amount, provider, status, booking_id) values
+        (1,'t1',1,'class','x',20000,'wechat','paid',1),(2,'t2',1,'package','10次',100,'wechat','paid',null);
+      insert into bookings (id, slot_id, student_id, lesson_type_id, starts_at, ends_at, status, paid_with, price) values
+        (1,1,1,1,4102444800000,4102448400000,'confirmed','order',20000),(2,3,2,1,1000,2000,'cancelled','order',20000);
+      insert into package_products (id,name,lesson_type_id,lesson_count,price,validity_days) values (1,'10次',1,10,100,30);
+      insert into packages (id,student_id,product_id,name,lesson_type_id,coach_ids,lessons_purchased,lessons_remaining,price_paid,expires_at,status,order_id) values
+        (1,1,1,'10次',1,'[]',10,0,100,4102444800000,'active',2);
+      insert into sessions (token, role, student_id, expires_at) values ('s1','student',1,4102444800000),('a1','admin',null,4102444800000);
+      insert into settings (id, data, updated_at) values (1, '{"booking":{"cancelDeadlineHours":12,"lateCancel":{"kind":"partial","percent":50},"studentMoves":2}}', 0);
+    `)
+
+    // Coach pay as a confirmed month leaves it: a lesson, and a moved one paid back and forth.
+    migrate(db, { migrationsFolder: folderUpTo(root, '0022_schedule') })
+    sqlite.exec(`
+      insert into staff (id, name, username, password_hash) values (1, 'S', 's', 'x');
+      insert into coach_pay_months (month, rules, total, confirmed_at, staff_id) values ('2026-09', '{}', 0, 0, 1);
+      insert into coach_pay_entries (month, kind, unit, coach_id, lesson_type_id, starts_at, rate, lessons, amount) values
+        ('2026-09','lesson','b1',1,1,0,100,1,100),
+        ('2026-09','adjustment','b2',1,1,0,100,-1,-100),
+        ('2026-09','adjustment','b2',2,1,0,100,1,100);
+    `)
+
+    migrate(db, { migrationsFolder })
+    expect(sqlite.pragma('foreign_key_check')).toEqual([])
+    expect(sqlite.pragma('integrity_check', { simple: true })).toBe('ok')
+    const applied = sqlite.prepare('select count(*) as n from __drizzle_migrations').get()
+    expect(applied).toEqual({ n: journal.entries.length })
+    expect(sqlite.prepare('select id, lessons_remaining as left from packages').all()).toEqual([
+      { id: 1, left: 0 },
+    ])
+    sqlite.close()
+  })
+})
+
+describe('0028_data_backstops', () => {
+  function migrated() {
+    const db = openDb(':memory:')
+    migrate(db, { migrationsFolder })
+    const sqlite = db.$client
+    sqlite.exec(`
+      insert into students (id, openid, name) values (1, 'o1', 'A');
+      insert into lesson_types (id, name, duration_minutes, price) values (1, '私教', 60, 100);
+      insert into coaches (id, name) values (1, 'C');
+      insert into package_products (id, name, lesson_type_id, lesson_count, price, validity_days) values (1, 'p', 1, 2, 100, 30);
+      insert into orders (id, out_trade_no, student_id, kind, description, amount, provider, status) values
+        (1, 't1', 1, 'package', 'p', 100, 'offline', 'paid'), (2, 't2', 1, 'package', 'p', 100, 'offline', 'paid');
+      insert into staff (id, name, username, password_hash) values (1, 'S', 's', 'x');
+      insert into coach_pay_months (month, rules, total, confirmed_at, staff_id) values ('2026-09', '{}', 0, 0, 1);
+    `)
+    const pkg = sqlite.prepare(
+      "insert into packages (student_id, product_id, name, lesson_type_id, coach_ids, lessons_purchased, lessons_remaining, price_paid, expires_at, status, order_id) values (1, 1, 'p', 1, '[]', 2, ?, 100, 0, 'active', ?)",
+    )
+    return { sqlite, pkg }
+  }
+
+  it('refuses a second package for one order', () => {
+    const { sqlite, pkg } = migrated()
+    pkg.run(2, 1)
+    expect(() => pkg.run(2, 1)).toThrow(/UNIQUE/)
+    pkg.run(2, 2)
+    expect(sqlite.prepare('select count(*) as n from packages').get()).toEqual({ n: 2 })
+  })
+
+  it('refuses a package below zero lessons, and allows grants past what was bought', () => {
+    const { sqlite, pkg } = migrated()
+    expect(() => pkg.run(-1, 1)).toThrow(/below 0/)
+    pkg.run(1, 1)
+    const set = sqlite.prepare('update packages set lessons_remaining = lessons_remaining + ?')
+    set.run(-1)
+    expect(() => set.run(-1)).toThrow(/below 0/)
+    set.run(5)
+    expect(sqlite.prepare('select lessons_remaining as n from packages').get()).toEqual({ n: 5 })
+  })
+
+  it('pays a lesson once per month, and lets adjustments repeat a lesson', () => {
+    const { sqlite } = migrated()
+    const entry = sqlite.prepare(
+      "insert into coach_pay_entries (month, kind, unit, coach_id, lesson_type_id, starts_at, rate, lessons, amount) values ('2026-09', ?, 'b1', 1, 1, 0, 100, ?, ?)",
+    )
+    entry.run('lesson', 1, 100)
+    expect(() => entry.run('lesson', 1, 100)).toThrow(/UNIQUE/)
+    entry.run('adjustment', -1, -100)
+    entry.run('adjustment', 1, 100)
   })
 })

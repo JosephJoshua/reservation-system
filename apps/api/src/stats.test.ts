@@ -364,6 +364,8 @@ describe('GET /admin/reports/stats', () => {
     const h = setup({ now: '2026-10-24T12:00:00Z' })
     const v = october(h)
     const admin = await h.admin()
+    // Packages need an order each; these stand-ins are not looked up.
+    let fakeOrder = 9000
     const old = (studentId: number, fields: Partial<typeof packages.$inferInsert>) =>
       h.db
         .insert(packages)
@@ -378,7 +380,7 @@ describe('GET /admin/reports/stats', () => {
           pricePaid: 150000,
           expiresAt: at('2026-12-01', 0),
           status: 'active',
-          orderId: v.pkg.orderId,
+          orderId: fakeOrder++,
           createdAt: at('2026-07-01', 0),
           ...fields,
         })
@@ -479,7 +481,7 @@ describe('GET /admin/reports/dormant', () => {
         pricePaid: 150000,
         expiresAt: at('2027-02-01', 0),
         status: 'active',
-        orderId: v.pkg.orderId,
+        orderId: 9999,
         createdAt: at('2026-11-20', 0),
       })
       .run()
