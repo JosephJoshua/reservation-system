@@ -6,7 +6,7 @@
     <view class="intro-text">请向场馆获取 8 位绑定码。绑定后，可以在这里查看课表、签到和设置可约时间。</view>
   </view>
   <t-cell-group theme="card">
-    <t-input label="绑定码" placeholder="8 位字母或数字" maxlength="{{9}}" value="{{code}}" confirm-type="done" bind:change="onCode" bind:enter="submit" />
+    <t-input label="绑定码" placeholder="8 位字母或数字" maxlength="{{10}}" value="{{code}}" confirm-type="done" bind:change="onCode" bind:enter="submit" />
   </t-cell-group>
   <view class="footnote">绑定码 24 小时内有效，只能用一次。</view>
 </view>

@@ -1,5 +1,14 @@
 import type { CoachLoginResponse, CoachMeDto } from '../../lib/shared'
-import { ApiError, type Method, request, upload, wxCode } from '../../utils/api'
+import {
+  ApiError,
+  actionHeaders,
+  type Method,
+  newKey,
+  request,
+  requestKeyed,
+  upload,
+  wxCode,
+} from '../../utils/api'
 
 // Separate from the student token: one WeChat user can be both, with different sessions.
 const TOKEN_KEY = 'coachToken'
@@ -21,7 +30,10 @@ function login(): Promise<string> {
   return loggingIn
 }
 
-/** Runs a call with the coach token, logging in again once when the saved one has expired. */
+/**
+ * Runs a call with the coach token, logging in again once when the saved one has expired. Only
+ * the refused token is forgotten: a parallel call may have saved a newer one, which is used.
+ */
 async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
   const saved = wx.getStorageSync(TOKEN_KEY) as string
   const token = saved || (await login())
@@ -29,7 +41,9 @@ async function withToken<T>(call: (token: string) => Promise<T>): Promise<T> {
     return await call(token)
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e
-    wx.removeStorageSync(TOKEN_KEY)
+    const current = wx.getStorageSync(TOKEN_KEY) as string
+    if (current && current !== token) return call(current)
+    if (current) wx.removeStorageSync(TOKEN_KEY)
     return call(await login())
   }
 }
@@ -41,17 +55,32 @@ export function coachApi<T>(
   data?: unknown,
   headers?: Record<string, string>,
 ): Promise<T> {
-  return withToken((token) => request<T>(method, `/coach${path}`, data, token, headers))
+  // One key for this action, on every attempt.
+  const keyed = actionHeaders(method, headers)
+  return withToken((token) => requestKeyed<T>(method, `/coach${path}`, data, token, keyed))
 }
 
 /** Uploads a local file to the coach API, like coachApi. */
 export function coachUpload<T>(path: string, filePath: string): Promise<T> {
-  return withToken((token) => upload<T>(`/coach${path}`, filePath, token))
+  const key = newKey()
+  return withToken((token) => upload<T>(`/coach${path}`, filePath, token, key))
 }
 
 export async function bind(bindCode: string): Promise<CoachMeDto> {
   const code = await wxCode()
-  const res = await request<CoachLoginResponse>('POST', '/coach/bind', { code, bindCode })
+  let res: CoachLoginResponse
+  try {
+    res = await request<CoachLoginResponse>('POST', '/coach/bind', { code, bindCode })
+  } catch (e) {
+    // A bind code works once. When an earlier tap bound this WeChat but its answer was lost, the
+    // code is refused now, yet logging in works: that is the bind the coach asked for.
+    if (!(e instanceof ApiError) || e.code !== 'bad_bind_code') throw e
+    const bound = await wxCode()
+      .then((again) => request<CoachLoginResponse>('POST', '/coach/login', { code: again }))
+      .catch(() => null)
+    if (!bound) throw e
+    res = bound
+  }
   wx.setStorageSync(TOKEN_KEY, res.token)
   remember(res.coach)
   return res.coach

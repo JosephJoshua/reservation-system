@@ -195,6 +195,10 @@ Page({
     }
   },
 
+  retrySlots() {
+    this.loadSlots()
+  },
+
   pickCoach(e: WechatMiniprogram.TouchEvent) {
     const coachId = Number(e.currentTarget.dataset.id)
     if (coachId === this.data.coachId) return

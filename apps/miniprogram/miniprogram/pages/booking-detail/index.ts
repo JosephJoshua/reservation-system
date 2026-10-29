@@ -4,7 +4,15 @@ import {
   cancellationOutcome,
   type HomeDto,
 } from '../../lib/shared'
-import { ApiError, api, assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
+import {
+  ApiError,
+  api,
+  assetUrl,
+  errorMessage,
+  publicApi,
+  serverNow,
+  showError,
+} from '../../utils/api'
 import { addLessonToCalendar } from '../../utils/calendar'
 import { scanToCheckIn } from '../../utils/check-in'
 import { cancelRuleText } from '../../utils/data'
@@ -86,6 +94,8 @@ Page({
   },
 
   id: 0,
+  /** Set once the student has gone back from this page. */
+  left: false,
   cancelChecking: false,
   timer: 0 as number,
   venue: null as HomeDto['venue'] | null,
@@ -107,6 +117,7 @@ Page({
   },
 
   onUnload() {
+    this.left = true
     this.stopTimer()
   },
 
@@ -151,7 +162,7 @@ Page({
   },
 
   show(fetched: BookingDto) {
-    const b = settled(fetched, Date.now())
+    const b = settled(fetched, serverNow())
     const status = STATUS[b.status]
     this.setData({
       state: 'ready',
@@ -159,7 +170,7 @@ Page({
       statusTitle: status.title,
       statusIcon: status.icon,
       statusTone: status.tone,
-      statusText: subtitle(b, Date.now()),
+      statusText: subtitle(b, serverNow()),
       when: lessonTime(b.startsAt, b.endsAt),
       movedFrom: b.movedFrom ? dateTime(b.movedFrom) : '',
       payment:
@@ -168,7 +179,7 @@ Page({
           : b.price > 0
             ? `${b.paidOffline ? '前台付款' : '微信支付'} · ${yuan(b.price)}`
             : '免费',
-      deadline: `${dateTime(b.cancelDeadline)}${Date.parse(b.cancelDeadline) <= Date.now() ? '（已过）' : ''}`,
+      deadline: `${dateTime(b.cancelDeadline)}${Date.parse(b.cancelDeadline) <= serverNow() ? '（已过）' : ''}`,
       refund: b.refund
         ? `${yuan(b.refund.amount)} · ${refundStatus(b.refund.status, b.paidOffline)}`
         : '',
@@ -193,7 +204,7 @@ Page({
             ? '缺席'
             : '',
       address: this.venue?.address ?? '',
-      canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > Date.now(),
+      canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > serverNow(),
       cancelRule:
         // Moved by the venue or coach after the usual deadline: free until it starts.
         (b.movedLate
@@ -221,8 +232,8 @@ Page({
     this.timer = setInterval(() => {
       const b = this.data.booking
       if (b?.status !== 'pending_payment') return this.stopTimer()
-      if (b.payBy && Date.parse(b.payBy) <= Date.now()) return this.show(b)
-      this.setData({ statusText: subtitle(b, Date.now()) })
+      if (b.payBy && Date.parse(b.payBy) <= serverNow()) return this.show(b)
+      this.setData({ statusText: subtitle(b, serverNow()) })
     }, 1000) as unknown as number
   },
 
@@ -236,12 +247,14 @@ Page({
     if (!b?.orderId || this.data.busy) return
     this.setData({ busy: true })
     try {
-      const result = await payOrder(b.orderId, b.price)
+      const result = await payOrder(b.orderId, b.price, null, () => !this.left)
+      if (this.left) return
       await this.refresh()
       if (result === 'pending' && this.data.booking?.status === 'pending_payment') {
         wx.showToast({ title: '支付结果确认中，请稍后下拉刷新', icon: 'none', duration: 2500 })
       }
     } catch (e) {
+      if (this.left) return
       showError(e)
       await this.refresh()
     } finally {
@@ -260,7 +273,7 @@ Page({
     const outcome = cancellationOutcome({
       startsAt: new Date(b.startsAt),
       endsAt: new Date(b.endsAt),
-      now: new Date(),
+      now: new Date(serverNow()),
       cancelledBy: 'student',
       paidWith: b.paidWith,
       amountPaid: b.price,
@@ -351,7 +364,7 @@ Page({
     const b = this.data.booking
     if (!b) return
     // The page may have stayed open until the lesson began.
-    if (Date.parse(b.startsAt) <= Date.now()) {
+    if (Date.parse(b.startsAt) <= serverNow()) {
       this.setData({ canAddToCalendar: false })
       wx.showToast({ title: '课程已开始', icon: 'none' })
       return

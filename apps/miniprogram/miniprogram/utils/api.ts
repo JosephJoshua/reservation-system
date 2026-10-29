@@ -19,6 +19,44 @@ export class ApiError extends Error {
 
 const networkError = () => new ApiError(0, 'network', '网络不佳，请稍后再试')
 
+/** How far the server's clock is ahead of the phone's, from the Date header of its answers. */
+let clockOffset = 0
+
+/**
+ * The time now by the server's clock, to the second. The phone's clock can be wrong, which would
+ * show a lesson's deadline or a payment's time limit as passed, or not yet, by mistake.
+ */
+export function serverNow(): number {
+  return Date.now() + clockOffset
+}
+
+function noteServerTime(header: WechatMiniprogram.IAnyObject | undefined): void {
+  const date = header?.Date ?? header?.date
+  const at = typeof date === 'string' ? Date.parse(date) : Number.NaN
+  // The header is rounded down to the second, so half a second is added back.
+  if (Number.isFinite(at)) clockOffset = at + 500 - Date.now()
+}
+
+/**
+ * A fresh Idempotency-Key for one user action. It only has to differ from the student's other
+ * keys, since the server keeps keys per session.
+ */
+export function newKey(): string {
+  const part = () => Math.random().toString(36).slice(2, 10).padEnd(8, '0')
+  return `${Date.now().toString(36)}${part()}${part()}`
+}
+
+/**
+ * Headers for one user action. A change carries an Idempotency-Key, sent with every attempt of
+ * that action, so a repeat after a lost answer gets the first answer back instead of acting twice.
+ */
+export function actionHeaders(
+  method: Method,
+  headers: Record<string, string> = {},
+): Record<string, string> {
+  return method === 'GET' ? headers : { ...headers, 'Idempotency-Key': newKey() }
+}
+
 /** The API's error from a failed response, or `fallback` when the body does not say. */
 function responseError(statusCode: number, body: unknown, fallback: string): ApiError {
   const error = (body as Partial<ApiErrorBody> | undefined)?.error
@@ -41,6 +79,7 @@ export function request<T>(
       header: token ? { ...headers, Authorization: `Bearer ${token}` } : headers,
       timeout: 15000,
       success(res) {
+        noteServerTime(res.header)
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data as T)
           return
@@ -54,14 +93,39 @@ export function request<T>(
   })
 }
 
+/**
+ * Sends a signed-in request, once more when the network loses a change that carries an
+ * Idempotency-Key: the server then answers the repeat with the first result if it got there.
+ */
+export async function requestKeyed<T>(
+  method: Method,
+  path: string,
+  data: unknown,
+  token: string,
+  headers: Record<string, string>,
+): Promise<T> {
+  try {
+    return await request<T>(method, path, data, token, headers)
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 0 || !headers['Idempotency-Key']) throw e
+    return request<T>(method, path, data, token, headers)
+  }
+}
+
 /** Sends a local file as the `file` field of a multipart POST; answers like request. */
-export function upload<T>(path: string, filePath: string, token: string): Promise<T> {
+export function upload<T>(
+  path: string,
+  filePath: string,
+  token: string,
+  /** The upload's Idempotency-Key, the same when it is sent again. */
+  key: string,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     wx.uploadFile({
       url: `${apiBaseUrl}/api${path}`,
       filePath,
       name: 'file',
-      header: { Authorization: `Bearer ${token}` },
+      header: { Authorization: `Bearer ${token}`, 'Idempotency-Key': key },
       timeout: 60000,
       success(res) {
         let body: unknown
@@ -122,16 +186,27 @@ function login(): Promise<string> {
   return loggingIn
 }
 
+/**
+ * The session to use after `token` was refused: one another call saved meanwhile, or a new login.
+ * Only the refused token is forgotten, never a newer one.
+ */
+async function nextToken(token: string): Promise<string> {
+  const current = wx.getStorageSync(TOKEN_KEY) as string
+  if (current && current !== token) return current
+  if (current) wx.removeStorageSync(TOKEN_KEY)
+  return login()
+}
+
 /** Calls the student API, logging in first when there is no session or it has expired. */
 export async function api<T>(method: Method, path: string, data?: unknown): Promise<T> {
+  const headers = actionHeaders(method)
   const saved = wx.getStorageSync(TOKEN_KEY) as string
   const token = saved || (await login())
   try {
-    return await request<T>(method, path, data, token)
+    return await requestKeyed<T>(method, path, data, token, headers)
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e
-    wx.removeStorageSync(TOKEN_KEY)
-    return request<T>(method, path, data, await login())
+    return requestKeyed<T>(method, path, data, await nextToken(token), headers)
   }
 }
 
@@ -142,7 +217,9 @@ export async function api<T>(method: Method, path: string, data?: unknown): Prom
 export function apiOnce<T>(method: Method, path: string, data?: unknown): Promise<T> {
   const token = wx.getStorageSync(TOKEN_KEY) as string
   if (!token) return Promise.reject(new ApiError(401, 'unauthorized', '请重新登录'))
-  return request<T>(method, path, data, token)
+  // Not sent again by itself: a lost 注销 ends the session, so a repeat could only say 401, and
+  // the page tells that apart from an expired session by knowing it sent one.
+  return request<T>(method, path, data, token, actionHeaders(method))
 }
 
 function downloadWith(path: string, token: string): Promise<string> {
@@ -171,8 +248,7 @@ export async function download(path: string): Promise<string> {
     return await downloadWith(path, token)
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e
-    wx.removeStorageSync(TOKEN_KEY)
-    return downloadWith(path, await login())
+    return downloadWith(path, await nextToken(token))
   }
 }
 

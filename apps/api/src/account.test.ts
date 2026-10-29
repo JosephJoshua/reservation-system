@@ -117,7 +117,10 @@ describe('account deletion', () => {
     h.clock.now = new Date('2026-10-23T08:00:00Z') // after the lesson
 
     expect(await deletion(h, t)).toEqual([])
-    expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(204)
+    const key = { 'Idempotency-Key': 'delete-1' }
+    expect((await h.call('DELETE', '/me', undefined, t, key)).status).toBe(204)
+    // A repeat after a lost answer finds the session gone, which the mini program reads as done.
+    expect((await h.call('DELETE', '/me', undefined, t, key)).status).toBe(401)
 
     const row = h.db.select().from(students).where(eq(students.id, 1)).get()
     expect(row).toMatchObject({ name: '', phone: '', policyVersion: null, deletedAt: h.deps.now() })

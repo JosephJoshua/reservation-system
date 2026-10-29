@@ -40,6 +40,8 @@ Page({
   templates: {} as MeDto['noticeTemplates'],
   prompting: false,
   catalog: null as CatalogDto | null,
+  /** Set once the student has gone back from this page. */
+  left: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.highlight = Number(query.id ?? 0)
@@ -121,7 +123,9 @@ Page({
         // Refused if the price changed since the page loaded, rather than charging another one.
         { productId: product.id, expectedPrice: product.amount },
       )
-      const result = await payOrder(res.orderId, product.amount, res.payment)
+      // Gone back while the order was made: no cashier over the page they went back to.
+      const result = await payOrder(res.orderId, product.amount, res.payment, () => !this.left)
+      if (this.left && result !== 'paid') return
       if (result === 'paid' && !isTop(this)) {
         wx.showToast({ title: '购买成功', icon: 'success' })
       } else if (result === 'paid') {
@@ -137,6 +141,7 @@ Page({
         })
       }
     } catch (err) {
+      if (this.left) return
       if (err instanceof ApiError && (err.code === 'price_changed' || err.code === 'not_found')) {
         await this.load()
         const now = this.data.products.find((p) => p.id === product.id)
@@ -154,6 +159,10 @@ Page({
     } finally {
       this.setData({ buying: 0 })
     }
+  },
+
+  onUnload() {
+    this.left = true
   },
 
   onAgree(e: WechatMiniprogram.CustomEvent<{ checked: boolean }>) {

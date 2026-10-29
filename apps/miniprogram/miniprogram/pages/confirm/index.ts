@@ -75,6 +75,10 @@ Page({
   left: false,
   /** The cancel and move rules shown, which the booking must still be made under. */
   terms: null as BookingTerms | null,
+  /** Set after the first onShow, so coming back to the page can be told apart. */
+  shown: false,
+  /** Counts quotes asked for, so only the latest one is shown. */
+  quotes: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -90,24 +94,68 @@ Page({
     this.load()
   },
 
+  onShow() {
+    if (!this.shown) {
+      this.shown = true
+      return
+    }
+    // Back from buying a package (or from the coach or a policy page): the package to use and
+    // the price may have changed meanwhile.
+    if (this.data.state === 'ready' && !this.data.submitting) this.requote()
+  },
+
   /** Where the booking goes: the session, or the coach and start time. */
   target() {
     const { slotId, coachId, startsAt } = this.data
     return slotId ? { slotId } : { coachId, startsAt }
   },
 
+  /** The API says which package it will use and what it will charge. */
+  quote(): Promise<BookingQuoteDto> {
+    const target = Object.entries(this.target())
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join('&')
+    return api<BookingQuoteDto>(
+      'GET',
+      `/bookings/quote?${target}&lessonTypeId=${this.data.lessonTypeId}`,
+    )
+  },
+
+  /**
+   * Asks for the quote again and shows it, keeping the rest of the page. A package that is new
+   * since the last quote is picked; a student who chose WeChat Pay over the same package keeps it.
+   */
+  async requote() {
+    const asked = ++this.quotes
+    let quote: BookingQuoteDto
+    try {
+      quote = await this.quote()
+    } catch {
+      // The quote on screen stays; the booking is still checked against it.
+      return
+    }
+    if (asked !== this.quotes || this.data.submitting || this.left) return
+    const { price, package: pkg, perClassEnabled } = quote
+    const before = this.data.pkg
+    const usePackage =
+      pkg !== null &&
+      (!before || before.id !== pkg.id || this.data.payWith === 'package' || !perClassEnabled)
+    this.setData({
+      price: price.price,
+      priceText: yuan(price.price),
+      originalText: price.originalPrice == null ? '' : yuan(price.originalPrice),
+      pkg: pkg ? { id: pkg.id, name: pkg.name, remaining: pkg.lessonsRemaining } : null,
+      perClassEnabled,
+      payWith: usePackage ? 'package' : 'wechat',
+    })
+  },
+
   async load() {
+    // A quote still on its way would show over this one.
+    this.quotes++
     try {
       const { lessonTypeId } = this.data
-      const target = Object.entries(this.target())
-        .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
-        .join('&')
-      const [catalog, quote, me] = await Promise.all([
-        getCatalog(),
-        // The API says which package it will use and what it will charge.
-        api<BookingQuoteDto>('GET', `/bookings/quote?${target}&lessonTypeId=${lessonTypeId}`),
-        getMe(),
-      ])
+      const [catalog, quote, me] = await Promise.all([getCatalog(), this.quote(), getMe()])
       const lessonType = catalog.lessonTypes.find((t) => t.id === lessonTypeId)
       const coach = catalog.coaches.find((c) => c.id === this.data.coachId)
       if (!lessonType || !coach) {
@@ -254,7 +302,7 @@ Page({
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
-        if (!this.left) await payOrder(res.orderId, this.data.price, res.payment).catch(showError)
+        await payOrder(res.orderId, this.data.price, res.payment, () => !this.left).catch(showError)
         this.finish(res.bookingId)
         return
       }

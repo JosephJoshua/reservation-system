@@ -1,7 +1,9 @@
 import type { AccountDeletionDto } from '../../lib/shared'
-import { api, apiOnce, clearSession, errorMessage, showError } from '../../utils/api'
+import { ApiError, api, apiOnce, clearSession, errorMessage, showError } from '../../utils/api'
 import { ask } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
+
+const isSignedOut = (e: unknown) => e instanceof ApiError && e.status === 401
 
 Page({
   data: {
@@ -12,6 +14,12 @@ Page({
     deleting: false,
   },
 
+  /**
+   * Set once a 注销 was sent without a clear answer, such as a lost response. From then on the
+   * page never logs in again: that would make a new account if the old one is gone.
+   */
+  maybeDeleted: false,
+
   onShow() {
     // Coming back after cancelling a lesson or asking for a refund should update the list.
     this.load()
@@ -19,11 +27,27 @@ Page({
 
   async load() {
     try {
-      const { blockers } = await api<AccountDeletionDto>('GET', '/me/deletion')
+      const path = '/me/deletion'
+      const { blockers } = this.maybeDeleted
+        ? await apiOnce<AccountDeletionDto>('GET', path)
+        : await api<AccountDeletionDto>('GET', path)
       this.setData({ state: 'ready', blockers })
     } catch (e) {
+      if (this.maybeDeleted && isSignedOut(e)) {
+        this.deleted()
+        return
+      }
       this.setData({ state: 'error', error: errorMessage(e) })
     }
+  },
+
+  /** The account is gone: start again signed out, on the home tab. */
+  deleted() {
+    clearSession()
+    wx.reLaunch({
+      url: '/pages/booking/index',
+      success: () => wx.showToast({ title: '账号已注销', icon: 'success' }),
+    })
   },
 
   retry() {
@@ -43,12 +67,18 @@ Page({
         confirmColor: modalDangerColor(),
       })
       if (!answer?.confirm) return
-      await apiOnce('DELETE', '/me')
-      clearSession()
-      wx.reLaunch({
-        url: '/pages/booking/index',
-        success: () => wx.showToast({ title: '账号已注销', icon: 'success' }),
-      })
+      try {
+        await apiOnce('DELETE', '/me')
+      } catch (e) {
+        // Refused after an earlier 注销 whose answer was lost: that one ended the session.
+        if (this.maybeDeleted && isSignedOut(e)) {
+          this.deleted()
+          return
+        }
+        if (e instanceof ApiError && e.status === 0) this.maybeDeleted = true
+        throw e
+      }
+      this.deleted()
     } catch (e) {
       showError(e)
       // Something changed meanwhile, such as a new booking; show what now stands in the way.
