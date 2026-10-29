@@ -121,6 +121,21 @@ Page({
     return slotId ? { slotId } : { coachId, startsAt }
   },
 
+  /** Opened with a lesson and a time to book: a session, or a coach and a start time. */
+  complete(): boolean {
+    const { slotId, lessonTypeId, coachId, startsAt } = this.data
+    return lessonTypeId > 0 && coachId > 0 && (slotId > 0 || !Number.isNaN(Date.parse(startsAt)))
+  },
+
+  /** The page shows a lesson that can be booked, and a way to pay for it. */
+  bookable(): boolean {
+    return (
+      this.data.state === 'ready' &&
+      this.complete() &&
+      (!!this.data.pkg || this.data.perClassEnabled)
+    )
+  },
+
   /** The API says which package it will use and what it will charge. */
   quote(): Promise<BookingQuoteDto> {
     const target = Object.entries(this.target())
@@ -173,6 +188,10 @@ Page({
   async load() {
     // A quote still on its way would show over this one.
     this.quotes++
+    if (!this.complete()) {
+      this.setData({ state: 'error', error: '这门课程暂时不能预约' })
+      return
+    }
     try {
       const { lessonTypeId } = this.data
       const [catalog, quote, me] = await Promise.all([getCatalog(), this.quote(), getMe()])
@@ -282,15 +301,16 @@ Page({
   // the linked page instead of this one.
 
   async submit() {
-    if (this.data.submitting) return
+    if (this.data.submitting || !this.bookable()) return
     const problem = this.problem()
     if (problem) {
       wx.showToast({ title: problem, icon: 'none' })
       return
     }
     this.setData({ submitting: true })
-    // Going back now would leave a booking made out of sight, so WeChat asks first.
-    wx.enableAlertBeforeUnload({ message: '正在预约，确定离开吗？' })
+    // No native "leave?" guard while booking: its dialog can outlive the request and, confirmed
+    // over 预约详情, would leave that page instead. Going back is safe as it is: before the booking
+    // is sent nothing is booked, and once it is, finish() opens it over where the student went.
     try {
       // Asked first, while the tap still counts as the user's action for WeChat. WeChat asks for
       // three at most: news the student cannot see coming goes first (cancels and moves usually
@@ -438,7 +458,6 @@ Page({
       }
       showError(e)
     } finally {
-      wx.disableAlertBeforeUnload()
       this.setData({ submitting: false })
     }
   },
@@ -446,22 +465,17 @@ Page({
   /**
    * Replaces this page with the booking, so going back lands on the time picker. If the student
    * left while it was booking, the booking opens on top of where they are now, and `away` says
-   * what became of it in a toast in case it cannot open there. A toast is shown after the
+   * what became of it in a toast, since they did not see it happen. A toast is shown after the
    * switch, which would otherwise swallow it.
    */
   finish(bookingId: number, toast: string, away: string) {
-    wx.disableAlertBeforeUnload()
     const url = `/pages/booking-detail/index?id=${bookingId}`
-    const success = () => {
-      if (toast) wx.showToast({ title: toast, icon: 'none', duration: 2500 })
+    const say = (title: string) => {
+      if (title) wx.showToast({ title, icon: 'none', duration: 2500 })
     }
-    if (isTop(this)) wx.redirectTo({ url, success })
+    if (isTop(this)) wx.redirectTo({ url, success: () => say(toast) })
     else if (this.left) {
-      wx.navigateTo({
-        url,
-        success,
-        fail: () => wx.showToast({ title: toast || away, icon: 'none', duration: 2500 }),
-      })
+      wx.navigateTo({ url, complete: () => say(toast || away) })
     }
   },
 
