@@ -5,6 +5,7 @@ import { BookForStudent } from '../BookForStudent'
 import {
   AttendanceCell,
   CancelBookingDialog,
+  DisruptionTag,
   LessonTime,
   PaidCell,
   StatusCell,
@@ -332,7 +333,21 @@ function BookingList({ active }: { active: boolean }) {
             cell: ({ row }) => <StudentCell student={row.student} />,
           },
           { colKey: 'paid', title: '支付', cell: ({ row }) => <PaidCell row={row} /> },
-          { colKey: 'status', title: '状态', cell: ({ row }) => <StatusCell row={row} /> },
+          {
+            colKey: 'status',
+            title: '状态',
+            cell: ({ row }) => (
+              <>
+                <StatusCell row={row} />
+                {row.lessonDisruption && (
+                  <>
+                    {' '}
+                    <DisruptionTag disruption={row.lessonDisruption} />
+                  </>
+                )}
+              </>
+            ),
+          },
           {
             colKey: 'attendance',
             title: '签到',

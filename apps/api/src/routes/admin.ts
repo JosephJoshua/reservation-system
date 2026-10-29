@@ -96,6 +96,7 @@ import {
 } from '../services/auth'
 import { cancelBooking, LIVE } from '../services/bookings'
 import { newCoachBindCode, unbindCoach } from '../services/coaches'
+import { attendanceDisruptions } from '../services/disruption'
 import { buildExport, describeExport, type ExportKind, exportKinds } from '../services/exports'
 import {
   adminFeedback,
@@ -1269,6 +1270,9 @@ export function adminRoutes(deps: Deps) {
       lessonType,
       tableFull: slotsWithoutTable(db, [slot]).has(slot.id),
       movedTo: moved ? { slotId: moved.slotId, startsAt: moved.startsAt.toISOString() } : null,
+      // 闭馆, 请假 or the coach stopped: told to the desk before it marks 签到.
+      disruption:
+        attendanceDisruptions(db, [{ ...slot, slotId: slot.id }], deps.now()).get(slot.id) ?? null,
     })
   })
 
@@ -1475,12 +1479,20 @@ export function adminRoutes(deps: Deps) {
             .map((s) => [s.id, s])
         : [],
     )
+    // What stood in the way of a booked lesson, also once it ended, for staff marking 签到: not
+    // the student's `disruption`, which ends with the lesson.
+    const disrupted = attendanceDisruptions(
+      db,
+      rows.filter((r) => r.status === 'confirmed'),
+      now,
+    )
     return c.json(
       views.map((v, i) => ({
         ...v,
         student: people.get(rows[i]?.studentId ?? 0) ?? null,
         coachNote: rows[i]?.coachNote ?? '',
         bookedBy: bookedBy.get(rows[i]?.bookedByStaffId ?? 0) ?? null,
+        lessonDisruption: disrupted.get(rows[i]?.id ?? 0) ?? null,
       })),
     )
   })
@@ -2111,16 +2123,14 @@ export function adminRoutes(deps: Deps) {
     const done = refundDeskPackage(deps, id, amount, (current) =>
       checkVersion(c, packageViews(db, [current], deps.now())[0]),
     )
-    if (!done.repeat) {
-      const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
-      log(c.get('staffId'), {
-        action: 'package.refund',
-        summary: `课时包「${pkg?.name}」前台退款 ${yuan(amount)}`,
-        amount,
-        studentId: pkg?.studentId,
-        target: { kind: 'package', id },
-      })
-    }
+    const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
+    log(c.get('staffId'), {
+      action: 'package.refund',
+      summary: `课时包「${pkg?.name}」前台退款 ${yuan(amount)}`,
+      amount,
+      studentId: pkg?.studentId,
+      target: { kind: 'package', id },
+    })
     return c.json({ refundId: done.refundId })
   })
 

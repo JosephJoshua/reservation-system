@@ -48,6 +48,22 @@ export function disruptions(tx: Q, lessons: readonly Lesson[]): Map<number, Disr
   return map
 }
 
+/**
+ * What stood in the way of each lesson, for staff marking attendance, also after it ended: a
+ * 闭馆 or 请假 still covers its time, but a coach who stopped teaching since may have given it.
+ */
+export function attendanceDisruptions(
+  tx: Q,
+  lessons: readonly Lesson[],
+  now: Date,
+): Map<number, Disruption> {
+  const map = disruptions(tx, lessons)
+  for (const l of lessons) {
+    if (map.get(l.id) === 'inactive' && l.endsAt <= now) map.delete(l.id)
+  }
+  return map
+}
+
 export function disruptionOf(tx: Q, lesson: Lesson): Disruption | null {
   return disruptions(tx, [lesson]).get(lesson.id) ?? null
 }

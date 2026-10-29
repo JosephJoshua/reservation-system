@@ -15,8 +15,8 @@ const unsaved = new Set<string>()
 type TypedIn = 'page' | 'lesson' | 'header'
 const typedIn = new Map<Element, TypedIn>()
 
-// Picking from a dropdown or a calendar, confirming a time, or flipping a switch, fires no input
-// event. A time scrolled to is not picked until 确定.
+// Picking from a dropdown or a calendar, confirming a time, flipping a switch, removing a tag or
+// clearing a field, fires no input event. A time scrolled to is not picked until 确定.
 const CHOICE = [
   '.t-select-option',
   '.t-date-picker__cell',
@@ -24,7 +24,13 @@ const CHOICE = [
   '.t-time-picker__panel-section-footer .t-button',
   '.t-cascader__item',
   '.t-switch',
+  '.t-tag-input .t-tag__icon-close',
+  '.t-tag-input__suffix-clear',
+  // Not the eye of a password field, which shares the class.
+  '.t-input__suffix-clear.t-icon-close-circle-filled',
 ].join(', ')
+// The option a dropdown has highlighted from the keyboard, which Enter picks.
+const KEYBOARD_OPTION = '.t-select-option__hover:not(.t-is-disabled)'
 // What can't be picked.
 const DISABLED =
   '.t-is-disabled, .t-date-picker__cell--disabled, .t-date-range-picker__cell--disabled'
@@ -56,6 +62,13 @@ function openDropdown() {
   )
 }
 
+/** Whether an open dropdown has an option highlighted from the keyboard. */
+function keyboardOption() {
+  return [...document.querySelectorAll('.t-popup')].some(
+    (popup) => isShown(popup) && popup.querySelector(KEYBOARD_OPTION),
+  )
+}
+
 /**
  * The dialog `el` belongs to: the one it is in, or for a dropdown, which sits outside it, or
  * nothing focused while a dropdown is open, the dialog on top.
@@ -74,12 +87,17 @@ function changedDialog(e: Event) {
     if (!el.closest(CHOICE) || el.closest(DISABLED)) return null
     return el.closest('.t-dialog__ctx') ?? (el.closest('.t-popup') ? topDialog() : null)
   }
+  if (e.type === 'keydown') {
+    // Enter picks the highlighted option of an open dropdown; Enter that only opens one does not.
+    if ((e as KeyboardEvent).key !== 'Enter' || !keyboardOption()) return null
+    return el.closest('.t-dialog__ctx') ?? topDialog()
+  }
   return el.closest('.t-dialog__ctx')
 }
 
 /**
  * Notes typing, or a choice, in a dialog of the page or of the lesson open over it. Their content
- * passes its input and click events here: React hands them up from a dialog, and from
+ * passes its input, click and keydown events here: React hands them up from a dialog, and from
  * its dropdowns, to what opened it, though they sit elsewhere.
  */
 export function markTyped(e: Event, where: TypedIn = 'page') {
@@ -206,7 +224,7 @@ if (typeof window !== 'undefined') {
     document.addEventListener(type, (e) => (pressed = e.target as Element | null), true)
   }
   // Typing and choices in any dialog, those of the header too, which the page does not count.
-  for (const type of ['input', 'click']) {
+  for (const type of ['input', 'click', 'keydown']) {
     document.addEventListener(
       type,
       (e) => {
