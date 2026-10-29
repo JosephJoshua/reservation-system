@@ -1,4 +1,10 @@
-import { type ActionLogEntryDto, formatYuan, type StaffAction, venueParts } from '@rs/shared'
+import {
+  type ActionLogEntryDto,
+  formatYuan,
+  type StaffAction,
+  venueDateKey,
+  venueParts,
+} from '@rs/shared'
 import { and, desc, eq, gte, inArray, lt, or } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import {
@@ -7,6 +13,9 @@ import {
   bookings,
   coaches,
   lessonTypes,
+  orders,
+  packageLedger,
+  refunds,
   slots,
   staff,
   students,
@@ -22,14 +31,18 @@ export interface ActionEntry {
   target?: { kind: string; id: number }
 }
 
+/** Who did it: a staff member by id, or a coach in the mini program's coach mode. */
+export type Actor = number | { coachId: number }
+
 /**
- * Records what a staff member did. Routes call it right after the change commits, so a refused
- * change leaves no entry; changes made in one transaction here pass their own `tx`.
+ * Records what a staff member or a coach did. Routes call it right after the change commits, so a
+ * refused change leaves no entry; changes made in one transaction here pass their own `tx`.
  */
-export function logAction(tx: Q, now: Date, staffId: number, entry: ActionEntry) {
+export function logAction(tx: Q, now: Date, actor: Actor, entry: ActionEntry) {
   tx.insert(actionLog)
     .values({
-      staffId,
+      staffId: typeof actor === 'number' ? actor : null,
+      coachId: typeof actor === 'number' ? null : actor.coachId,
       action: entry.action,
       summary: entry.summary,
       amount: entry.amount ?? null,
@@ -45,6 +58,8 @@ export const ACTION_LOG_PAGE = 50
 
 export interface ActionFilters {
   staffId?: number
+  /** A coach's own actions, from the mini program. */
+  coachId?: number
   actions?: StaffAction[]
   studentId?: number
   /** What was done to one lesson: to the session itself and to each of its seats. */
@@ -89,6 +104,7 @@ function actionWhere(tx: Q, q: ActionFilters) {
     : undefined
   return and(
     q.staffId ? eq(actionLog.staffId, q.staffId) : undefined,
+    q.coachId ? eq(actionLog.coachId, q.coachId) : undefined,
     q.actions?.length ? inArray(actionLog.action, q.actions) : undefined,
     q.studentId ? eq(actionLog.studentId, q.studentId) : undefined,
     lesson,
@@ -111,10 +127,12 @@ export function listActions(
   const rows = tx
     .select({
       entry: actionLog,
-      staff: { id: staff.id, name: staff.name },
+      staffName: staff.name,
+      coachName: coaches.name,
     })
     .from(actionLog)
-    .innerJoin(staff, eq(staff.id, actionLog.staffId))
+    .leftJoin(staff, eq(staff.id, actionLog.staffId))
+    .leftJoin(coaches, eq(coaches.id, actionLog.coachId))
     .where(and(where, q.before ? lt(actionLog.id, q.before) : undefined))
     .orderBy(desc(actionLog.id))
     .limit(q.limit ?? ACTION_LOG_PAGE)
@@ -139,7 +157,7 @@ export function listActions(
           ])
       : [],
   )
-  const entries = rows.map(({ entry, staff }) => ({
+  const entries = rows.map(({ entry, staffName, coachName }) => ({
     id: entry.id,
     action: entry.action as StaffAction,
     summary: entry.summary,
@@ -147,7 +165,8 @@ export function listActions(
     targetKind: entry.targetKind,
     targetId: entry.targetId,
     createdAt: entry.createdAt.toISOString(),
-    staff,
+    staff: entry.staffId === null ? null : { id: entry.staffId, name: staffName ?? '' },
+    coach: entry.coachId === null ? null : { id: entry.coachId, name: coachName ?? '' },
     student: entry.studentId ? (people.get(entry.studentId) ?? null) : null,
   }))
   return { rows: entries, total }
@@ -156,16 +175,49 @@ export function listActions(
 const hm = (p: { hours: number; minutes: number }) =>
   `${String(p.hours).padStart(2, '0')}:${String(p.minutes).padStart(2, '0')}`
 
-/** 10月25日 14:00, venue time, for summaries. */
-export function venueMoment(instant: Date) {
+/** 10月25日 14:00, venue time, for summaries; 2027年1月1日 11:00 in another year than `now`'s. */
+export function venueMoment(instant: Date, now: Date) {
   const p = venueParts(instant)
-  return `${p.month}月${p.day}日 ${hm(p)}`
+  const year = p.year === venueParts(now).year ? '' : `${p.year}年`
+  return `${year}${p.month}月${p.day}日 ${hm(p)}`
+}
+
+/** 10月25日 14:00-16:00, or 10月25日 14:00 至 10月27日 12:00 over several days. */
+export function venueSpan(startsAt: Date, endsAt: Date, now: Date) {
+  const end = venueParts(endsAt)
+  const sameDay = venueDateKey(startsAt) === venueDateKey(new Date(endsAt.getTime() - 1))
+  return sameDay
+    ? `${venueMoment(startsAt, now)}-${end.hours || end.minutes ? hm(end) : '24:00'}`
+    : `${venueMoment(startsAt, now)} 至 ${venueMoment(endsAt, now)}`
 }
 
 export const yuan = (fen: number) => `¥${formatYuan(fen)}`
 
+/** What a venue or coach cancel gave back, as "，退款 ¥200" for its log summary. */
+export function cancelOutcome(tx: Q, bookingId: number) {
+  const refund = tx
+    .select({ amount: refunds.amount, provider: orders.provider })
+    .from(refunds)
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
+    .where(eq(refunds.bookingId, bookingId))
+    .orderBy(desc(refunds.id))
+    .get()
+  const returned = tx
+    .select({ id: packageLedger.id })
+    .from(packageLedger)
+    .where(and(eq(packageLedger.bookingId, bookingId), eq(packageLedger.kind, 'return')))
+    .get()
+  // An unpaid hold was simply released.
+  const text = refund
+    ? `，${refund.provider === 'offline' ? '待线下退还' : '退款'} ${yuan(refund.amount)}`
+    : returned
+      ? '，退回课时 1 节'
+      : ''
+  return { text, refunded: refund?.amount ?? null }
+}
+
 /** "10月25日 10:00 王教练 一对一私教" and whose booking it is, for log summaries. */
-export function describeBooking(tx: Q, bookingId: number) {
+export function describeBooking(tx: Q, bookingId: number, now: Date) {
   const row = tx
     .select({
       startsAt: bookings.startsAt,
@@ -180,7 +232,9 @@ export function describeBooking(tx: Q, bookingId: number) {
     .where(eq(bookings.id, bookingId))
     .get()
   return {
-    what: row ? `${venueMoment(row.startsAt)} ${row.coach} ${row.lesson}` : `预约 #${bookingId}`,
+    what: row
+      ? `${venueMoment(row.startsAt, now)} ${row.coach} ${row.lesson}`
+      : `预约 #${bookingId}`,
     studentId: row?.studentId ?? null,
   }
 }

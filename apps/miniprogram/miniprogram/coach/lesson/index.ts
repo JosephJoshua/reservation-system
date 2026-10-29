@@ -5,7 +5,7 @@ import {
   profileTraits,
   type StudentProfileDto,
 } from '../../lib/shared'
-import { assetUrl, errorMessage, showError } from '../../utils/api'
+import { ApiError, assetUrl, errorMessage, showError } from '../../utils/api'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
@@ -83,6 +83,9 @@ function feedbackClosed(l: CoachLessonDto): string {
 function attendanceNote(l: CoachLessonDto): string {
   const mark = l.attendance ? `${ATTENDANCE[l.attendance]}。` : ''
   if (l.coachMarksOff) return `${mark}签到由前台办理。`
+  if (l.attendance && l.attendanceBy === 'staff') {
+    return `${mark}由前台登记，如需修改请联系前台。`
+  }
   if (Date.parse(l.startsAt) > Date.now()) {
     return l.attendance ? `${mark}课程开始后可以修改。` : '课程开始后可以签到。'
   }
@@ -196,6 +199,8 @@ Page({
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
     } catch (err) {
       showError(err)
+      // The front desk marked it meanwhile: show their mark, which the coach cannot change.
+      if (err instanceof ApiError && err.code === 'staff_marked') this.load()
     } finally {
       this.setData({ marking: false })
     }

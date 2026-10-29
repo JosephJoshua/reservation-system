@@ -4,9 +4,17 @@ import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
-import { bookings } from '../db/schema'
+import { bookings, coaches } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, parseBody, parseQuery } from '../errors'
+import {
+  type ActionEntry,
+  cancelOutcome,
+  describeBooking,
+  logAction,
+  venueMoment,
+  venueSpan,
+} from '../services/action-log'
 import { setAttendance } from '../services/attendance'
 import { type CoachVars, logout, requireCoach } from '../services/auth'
 import { cancelBooking } from '../services/bookings'
@@ -72,6 +80,39 @@ export const exceptionBody = z.object({
 
 export function coachRoutes(deps: Deps) {
   const app = new Hono<CoachVars>()
+  const { db } = deps
+
+  /**
+   * Records what the coach did in the action log, after the change committed. The entry is worked
+   * out here too, so a failure in either is reported rather than thrown: the change is done, and an
+   * error would tell the coach it failed. Profile edits stay out of the log.
+   */
+  const log = (coachId: number, entry: () => ActionEntry) => {
+    try {
+      logAction(db, deps.now(), { coachId }, entry())
+    } catch (e) {
+      deps.log('action log write failed', { coachId, error: String(e) })
+    }
+  }
+  const coachName = (id: number) =>
+    db.select({ name: coaches.name }).from(coaches).where(eq(coaches.id, id)).get()?.name ?? ''
+  /** A removed 请假/加班 as a log entry: deleted, or cut short at now with what is left of it. */
+  const leaveRemoved = (
+    row: NonNullable<ReturnType<typeof removeException>['row']>,
+    by: 'coach',
+  ) => {
+    const what = `${coachName(row.coachId ?? 0)}：${row.kind === 'off' ? '请假' : '加班'}`
+    const now = deps.now()
+    return row.shortenedTo
+      ? {
+          action: `${by}.leave_end` as const,
+          summary: `${what} ${venueSpan(row.startsAt, row.endsAt, now)} 提前结束，改为 ${venueSpan(row.startsAt, row.shortenedTo, now)}`,
+        }
+      : {
+          action: `${by}.leave_remove` as const,
+          summary: `${what} ${venueSpan(row.startsAt, row.endsAt, now)}`,
+        }
+  }
 
   app.post('/login', async (c) => {
     const body = await parseBody(c, z.object({ code }))
@@ -224,8 +265,9 @@ export function coachRoutes(deps: Deps) {
         ),
       )
       .run().changes
+    let cancelled = false
     try {
-      await cancelBooking(deps, id, 'venue', { reason: cancelReason })
+      cancelled = await cancelBooking(deps, id, 'venue', { reason: cancelReason })
     } catch (e) {
       const row = deps.db.select().from(bookings).where(eq(bookings.id, id)).get()
       const ours = row?.cancelledBy === 'venue' && row.cancelReason === cancelReason
@@ -238,14 +280,53 @@ export function coachRoutes(deps: Deps) {
       }
       throw e
     }
+    const row = db.select().from(bookings).where(eq(bookings.id, id)).get()
+    // A repeat cancelled nothing; a cancel by the student or the venue that got in first is theirs.
+    if (cancelled && row?.status === 'cancelled' && row.cancelReason === cancelReason) {
+      log(coachId, () => {
+        const { what, studentId } = describeBooking(db, id, deps.now())
+        const outcome = cancelOutcome(db, id)
+        return {
+          action: 'coach.cancel',
+          summary: `${what}，原因：${reason}${outcome.text}`,
+          amount: outcome.refunded,
+          studentId,
+          target: { kind: 'booking', id },
+        }
+      })
+    }
     return c.json(coachLesson(deps, id, coachId))
   })
 
   app.post('/lessons/:id/move', async (c) => {
     const body = await parseBody(c, z.object(targetFields).refine(oneTarget, '请选择上课时间'))
     const coachId = c.get('coachId')
-    moveBooking(deps, idParam(c), toTarget(body), { coachId })
-    return c.json(coachLesson(deps, idParam(c), coachId))
+    const id = idParam(c)
+    // Described before the move, for the log only: a failure here must not stop the move.
+    let before: ReturnType<typeof describeBooking> | null = null
+    try {
+      before = describeBooking(db, id, deps.now())
+    } catch (e) {
+      deps.log('action log write failed', { coachId, error: String(e) })
+    }
+    // A repeat of a move that already happened logs nothing.
+    if (moveBooking(deps, id, toTarget(body), { coachId }) && before) {
+      const { what, studentId } = before
+      log(coachId, () => {
+        const to = db
+          .select({ startsAt: bookings.startsAt })
+          .from(bookings)
+          .where(eq(bookings.id, id))
+          .get()
+        return {
+          action: 'coach.move',
+          summary: `${what} 改到 ${to ? venueMoment(to.startsAt, deps.now()) : ''}`,
+          studentId,
+          target: { kind: 'booking', id },
+        }
+      })
+    }
+    return c.json(coachLesson(deps, id, coachId))
   })
 
   // 排班: the coach's weekly hours and 请假/加班, unless the venue keeps them to staff.
@@ -254,22 +335,46 @@ export function coachRoutes(deps: Deps) {
   app.put('/hours', async (c) => {
     const body = await parseBody(c, weeklyHoursBody)
     assertCoachMayEdit(deps.db)
-    const conflicts = saveHours(deps, c.get('coachId'), {
-      from: body.from ?? venueDateKey(deps.now()),
-      hours: body.hours,
-    })
+    const coachId = c.get('coachId')
+    const from = body.from ?? venueDateKey(deps.now())
+    const { conflicts, changed } = saveHours(deps, coachId, { from, hours: body.hours })
+    // Saving the same hours again logs nothing.
+    if (changed) {
+      log(coachId, () => ({
+        action: 'coach.hours',
+        summary: `${coachName(coachId)}：每周时间（${from} 起）`,
+        target: { kind: 'coach', id: coachId },
+      }))
+    }
     return c.json({ conflicts })
   })
 
   app.post('/exceptions', async (c) => {
     const body = await parseBody(c, exceptionBody)
     assertCoachMayEdit(deps.db)
-    return c.json(addException(deps, { ...body, coachId: c.get('coachId') }, null), 201)
+    const coachId = c.get('coachId')
+    const { created, ...result } = addException(deps, { ...body, coachId }, null)
+    if (created) {
+      log(coachId, () => ({
+        action: 'coach.leave_add',
+        summary: `${coachName(coachId)}：${body.kind === 'off' ? '请假' : '加班'} ${venueSpan(body.startsAt, body.endsAt, deps.now())}`,
+        target: { kind: 'coach', id: coachId },
+      }))
+    }
+    return c.json(result, 201)
   })
 
   app.delete('/exceptions/:id', (c) => {
     assertCoachMayEdit(deps.db)
-    const { conflicts } = removeException(deps, idParam(c), c.get('coachId'))
+    const coachId = c.get('coachId')
+    const { row, conflicts } = removeException(deps, idParam(c), coachId)
+    // Already gone: a repeat logs nothing.
+    if (row) {
+      log(coachId, () => ({
+        ...leaveRemoved(row, 'coach'),
+        target: { kind: 'coach', id: coachId },
+      }))
+    }
     return c.json({ conflicts })
   })
 

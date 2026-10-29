@@ -25,16 +25,27 @@ export function isCheckInCode(text: string): boolean {
   return checkInCode.test(text.trim())
 }
 
-export type AttendanceError = 'not_confirmed' | 'not_started' | 'too_late' | 'marked'
+export type AttendanceError =
+  | 'not_confirmed'
+  | 'not_started'
+  | 'too_late'
+  | 'marked'
+  | 'staff_marked'
 
 /**
  * Whether a lesson can be marked as `attendance` now; null clears a mark. The front desk and the
  * student can mark an arrival, or clear one, from CHECK_IN_EARLY_MINUTES before the start; 缺席
  * and every coach mark wait for the start. A student checks in only until the lesson ends and
- * only fills a lesson nobody has marked absent.
+ * only fills a lesson nobody has marked absent. A coach cannot change a mark the front desk made.
  */
 export function attendanceError(
-  booking: { status: string; startsAt: Date; endsAt: Date; attendance: Attendance | null },
+  booking: {
+    status: string
+    startsAt: Date
+    endsAt: Date
+    attendance: Attendance | null
+    attendanceBy: AttendanceBy | null
+  },
   now: Date,
   by: 'student' | 'coach' | 'admin',
   attendance: Attendance | null,
@@ -51,6 +62,14 @@ export function attendanceError(
   }
   if (by === 'coach' && now.getTime() - booking.endsAt.getTime() > COACH_ATTENDANCE_DAYS * DAY) {
     return 'too_late'
+  }
+  if (
+    by === 'coach' &&
+    booking.attendance !== null &&
+    booking.attendanceBy === 'staff' &&
+    attendance !== booking.attendance
+  ) {
+    return 'staff_marked'
   }
   return null
 }

@@ -69,3 +69,8 @@ export function defaultSaleWindow() {
     saleEndsAt: venueIso(addDays(start, 7), '00:00'),
   }
 }
+
+/** Who made an action log entry: the staff member, or the coach from the mini program. */
+export function actorName(e: { staff: { name: string } | null; coach: { name: string } | null }) {
+  return e.staff?.name ?? (e.coach ? `${e.coach.name}（教练）` : '')
+}

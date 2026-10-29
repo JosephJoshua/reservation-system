@@ -1,7 +1,7 @@
 import { type StaffAction, staffActionLabels } from '@rs/shared'
 import { Select, Tag } from 'tdesign-react'
 import { DataTable } from '../DataTable'
-import { fmtDateTime, yuan } from '../format'
+import { actorName, fmtDateTime, yuan } from '../format'
 import { useApi } from '../hooks'
 import {
   DateFilter,
@@ -17,12 +17,35 @@ import {
   usePagedList,
 } from '../lists'
 import { StudentCell } from '../StudentCell'
-import type { ActionLogEntry, Staff } from '../types'
+import type { ActionLogEntry, Coach, Staff } from '../types'
 
 const groups: { label: string; actions: StaffAction[] }[] = [
   {
     label: '预约',
     actions: ['booking.create', 'booking.cancel', 'booking.move', 'booking.attendance'],
+  },
+  {
+    label: '排班',
+    actions: [
+      'schedule.hours',
+      'schedule.add',
+      'schedule.remove',
+      'schedule.end',
+      'session.create',
+      'session.update',
+      'session.cancel',
+    ],
+  },
+  {
+    label: '教练操作',
+    actions: [
+      'coach.cancel',
+      'coach.move',
+      'coach.hours',
+      'coach.leave_add',
+      'coach.leave_remove',
+      'coach.leave_end',
+    ],
   },
   { label: '点评', actions: ['feedback.hide', 'feedback.show'] },
   { label: '课时包', actions: ['package.sell', 'package.grant', 'package.extend'] },
@@ -57,15 +80,17 @@ const groups: { label: string; actions: StaffAction[] }[] = [
   { label: '员工', actions: ['staff.create', 'staff.update', 'staff.roles', 'staff.password'] },
 ]
 
-/** Read-only record of what each staff member did, newest first. */
+/** Read-only record of what each staff member, and each coach in the mini program, did. */
 export function ActionLog() {
   const staff = useApi<Staff[]>('/admin/staff')
+  const coaches = useApi<Coach[]>('/admin/coaches')
   const filters = useListFilters(
-    { staff: '', group: '', from: '', to: '', q: '' },
+    { staff: '', coach: '', group: '', from: '', to: '', q: '' },
     {
       path: '#/actions',
       valid: {
         staff: isId,
+        coach: isId,
         group: oneOf(...groups.map((g) => g.label)),
         from: isDay,
         to: isDay,
@@ -75,12 +100,13 @@ export function ActionLog() {
   const f = filters.values
   const params = new URLSearchParams()
   if (f.staff) params.set('staffId', f.staff)
+  if (f.coach) params.set('coachId', f.coach)
   const actions = groups.find((g) => g.label === f.group)?.actions
   if (actions) params.set('actions', actions.join(','))
   setRange(params, f.from, f.to)
   if (f.q) params.set('q', f.q)
   const list = usePagedList<ActionLogEntry>(`/admin/actions?${params}`, filters)
-  const more = ['staff', 'group'] as const
+  const more = ['staff', 'coach', 'group'] as const
 
   return (
     <div className="paged-list">
@@ -110,6 +136,16 @@ export function ActionLog() {
                 value={f.staff ? Number(f.staff) : undefined}
                 options={(staff.data ?? []).map((s) => ({ label: s.name, value: s.id }))}
                 onChange={(v) => filters.set({ staff: v ? String(v) : '' })}
+              />
+            </Filter>
+            <Filter label="教练">
+              <Select
+                style={{ width: 120 }}
+                clearable
+                placeholder="全部教练"
+                value={f.coach ? Number(f.coach) : undefined}
+                options={(coaches.data ?? []).map((c) => ({ label: c.name, value: c.id }))}
+                onChange={(v) => filters.set({ coach: v ? String(v) : '' })}
               />
             </Filter>
             <Filter label="操作">
@@ -142,7 +178,12 @@ export function ActionLog() {
             width: 120,
             cell: ({ row }) => <span className="nowrap">{fmtDateTime(row.createdAt)}</span>,
           },
-          { colKey: 'staff', title: '员工', width: 100, cell: ({ row }) => row.staff.name },
+          {
+            colKey: 'staff',
+            title: '操作人',
+            width: 130,
+            cell: ({ row }) => <span className="nowrap">{actorName(row)}</span>,
+          },
           {
             colKey: 'action',
             title: '操作',

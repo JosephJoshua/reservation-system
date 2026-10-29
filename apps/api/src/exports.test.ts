@@ -69,7 +69,8 @@ describe('CSV exports', () => {
       '王教练',
       '一对一私教',
       '林小雨',
-      '13800001111',
+      // As ="...", so Excel keeps every digit.
+      '"=""13800001111"""',
       '已预约',
       '线下（现金）',
       '200.50',
@@ -199,6 +200,8 @@ describe('CSV exports', () => {
       ['bookings?from=2026-10-31&to=2026-10-01', '结束日期不能早于开始日期'],
       ['bookings?from=2025-01-01&to=2026-10-31', '一次最多导出一年'],
       ['bookings?from=2026-02-30&to=2026-03-01', '请选择正确的日期'],
+      ['bookings?from=9999-12-31&to=9999-12-31', '请选择正确的日期'],
+      ['bookings?from=0000-01-01&to=0000-01-02', '请选择正确的日期'],
     ] as const
     for (const [path, message] of tries) {
       const res = await csv(h, path, admin)

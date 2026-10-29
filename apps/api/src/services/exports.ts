@@ -1,17 +1,23 @@
 import {
+  type CsvCell,
+  cancelSource,
   formatYuan,
   invoiceStatusLabels,
   invoiceTitleKindLabels,
   offlineMethodLabels,
   orderKindLabels,
+  toCsv,
+  venueDateKey,
   venueInstant,
   venueParts,
 } from '@rs/shared'
-import { and, asc, eq, gte, inArray, lt } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, lt, lte, type SQL, sql } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import {
   bookings,
   coaches,
+  coachPayEntries,
+  coachPayMonths,
   invoices,
   lessonTypes,
   orders,
@@ -22,7 +28,7 @@ import {
   students,
 } from '../db/schema'
 import { ApiError } from '../errors'
-import { countsForPay, payRateLookup } from './coach-pay'
+import { countsForPay, type PayableLesson, payRateLookup } from './coach-pay'
 import { flaggedIds } from './invoices'
 import {
   type BookingFilters,
@@ -72,8 +78,7 @@ export interface ExportQuery {
   titleKind?: InvoiceFilters['titleKind']
 }
 
-type Cell = string | number | null
-type Table = { header: string[]; rows: Cell[][] }
+type Table = { header: string[]; rows: CsvCell[][] }
 
 // The most rows one file holds; a longer range is refused rather than cut short.
 const MAX_ROWS = 50_000
@@ -105,6 +110,8 @@ const packageStatusText = {
 
 const payText = { package: '课时包', wechat: '微信支付', offline: '线下' } as const
 
+const cancelBy = { venue: '场馆', coach: '教练', student: '学员', none: '' } as const
+
 const DELETED = '已注销学员'
 
 /** Venue time as 2026-10-24 18:00, or empty. */
@@ -128,22 +135,12 @@ function payCell(rate: number | null) {
   return rate === null ? '未设置' : yuanCell(rate)
 }
 
-function cell(v: Cell) {
-  let s = v === null ? '' : String(v)
-  // A student can type a name such as =HYPERLINK(...); spreadsheets must not run it.
-  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-/** A UTF-8 CSV with a BOM, so Excel shows the Chinese text correctly. */
-export function toCsv(t: Table) {
-  return `﻿${[t.header, ...t.rows].map((r) => r.map(cell).join(',')).join('\r\n')}\r\n`
-}
-
 function range(q: ExportQuery) {
   let from: Date
   let to: Date
   try {
+    // Years within 2000-2999, like every other date the API takes.
+    if (![q.from, q.to].every((d) => /^2\d{3}-/.test(d))) throw new RangeError(q.from)
     from = venueInstant(q.from, 0)
     to = venueInstant(q.to, 24 * 60)
   } catch {
@@ -227,6 +224,153 @@ function studentsTable(tx: Q, q: ExportQuery, now: Date): Table {
   }
 }
 
+const monthOf = (d: Date) => venueDateKey(d).slice(0, 7)
+
+/**
+ * The 课时费 column, by booking id: what the coach is paid for each lesson, as the monthly report
+ * counts it. A confirmed month shows what it recorded; an open one today's rates and rules. A group
+ * session is paid once, on the first of all its seats that counts, whichever seats are exported.
+ * `adjusted` is what later confirmed months paid or took back for the lesson, as 2026-11 调整 -80.00.
+ */
+function coachPayColumn(
+  tx: Q,
+  rows: { id: number; slotId: number; startsAt: Date; coachId: number; sessionId: number | null }[],
+  now: Date,
+) {
+  const rules = getSettings(tx).pay
+  const rateOf = payRateLookup(tx)
+  const months = [...new Set(rows.map((r) => monthOf(r.startsAt)))]
+  const confirmed = new Map(
+    months.length
+      ? tx
+          .select({ month: coachPayMonths.month, rules: coachPayMonths.rules })
+          .from(coachPayMonths)
+          .where(inArray(coachPayMonths.month, months))
+          .all()
+          .map((m) => [m.month, m.rules])
+      : [],
+  )
+  // The rate each lesson of a confirmed month was paid at, by month and lesson.
+  const recorded = new Map(
+    confirmed.size
+      ? tx
+          .select({
+            month: coachPayEntries.month,
+            unit: coachPayEntries.unit,
+            rate: coachPayEntries.rate,
+          })
+          .from(coachPayEntries)
+          .where(
+            and(
+              inArray(coachPayEntries.month, [...confirmed.keys()]),
+              eq(coachPayEntries.kind, 'lesson'),
+            ),
+          )
+          .all()
+          .map((e) => [`${e.month}:${e.unit}`, e.rate])
+      : [],
+  )
+  const rulesOf = (d: Date) => confirmed.get(monthOf(d)) ?? rules
+
+  // Every lesson exported, and every seat of the group sessions among them.
+  const ids = rows.map((r) => r.id)
+  const sessionIds = [...new Set(rows.filter((r) => r.sessionId !== null).map((r) => r.slotId))]
+  const lessons = new Map<
+    number,
+    PayableLesson & { id: number; slotId: number; lessonTypeId: number }
+  >()
+  const load = (where: SQL) => {
+    for (const b of tx
+      .select({
+        id: bookings.id,
+        slotId: bookings.slotId,
+        lessonTypeId: bookings.lessonTypeId,
+        status: bookings.status,
+        endsAt: bookings.endsAt,
+        attendance: bookings.attendance,
+        cancelledBy: bookings.cancelledBy,
+        late: bookings.late,
+        sessionCancelled: sql<boolean>`${slots.cancelledAt} is not null`.mapWith(Boolean),
+      })
+      .from(bookings)
+      .innerJoin(slots, eq(slots.id, bookings.slotId))
+      .where(where)
+      .orderBy(asc(bookings.startsAt), asc(bookings.id))
+      .all()) {
+      lessons.set(b.id, b)
+    }
+  }
+  for (let i = 0; i < ids.length; i += 500) load(inArray(bookings.id, ids.slice(i, i + 500)))
+  for (let i = 0; i < sessionIds.length; i += 500) {
+    load(inArray(bookings.slotId, sessionIds.slice(i, i + 500)))
+  }
+  // Each session's paying seat: the first that counts, else its first seat.
+  const sessionStarts = new Map(
+    rows.flatMap((r) => (r.sessionId === null ? [] : [[r.slotId, r.startsAt] as const])),
+  )
+  const carrier = new Map<number, { id: number; counts: boolean }>()
+  for (const b of [...lessons.values()].sort((x, y) => x.id - y.id)) {
+    const startsAt = sessionStarts.get(b.slotId)
+    if (!startsAt) continue
+    const counts = countsForPay(b, rulesOf(startsAt), now)
+    const held = carrier.get(b.slotId)
+    if (!held || (counts && !held.counts)) carrier.set(b.slotId, { id: b.id, counts })
+  }
+
+  // Adjustments confirmed months recorded for these lessons, by lesson.
+  const times = rows.map((r) => r.startsAt.getTime())
+  const later = new Map<string, { month: string; amount: number }[]>()
+  if (times.length) {
+    for (const e of tx
+      .select({
+        month: coachPayEntries.month,
+        unit: coachPayEntries.unit,
+        amount: coachPayEntries.amount,
+      })
+      .from(coachPayEntries)
+      .where(
+        and(
+          eq(coachPayEntries.kind, 'adjustment'),
+          gte(coachPayEntries.startsAt, new Date(Math.min(...times))),
+          lte(coachPayEntries.startsAt, new Date(Math.max(...times))),
+        ),
+      )
+      .orderBy(asc(coachPayEntries.month), asc(coachPayEntries.id))
+      .all()) {
+      const list = later.get(e.unit) ?? []
+      list.push(e)
+      later.set(e.unit, list)
+    }
+  }
+
+  const column = new Map<number, string>()
+  const adjusted = new Map<number, string>()
+  for (const r of rows) {
+    const b = lessons.get(r.id)
+    if (!b) continue
+    let counts: boolean
+    let unit = `b${r.id}`
+    if (r.sessionId !== null) {
+      const held = carrier.get(r.slotId)
+      if (held?.id !== r.id) continue
+      counts = held.counts
+      unit = `s${r.slotId}`
+    } else counts = countsForPay(b, rules, now)
+    const changes = later.get(unit)
+    if (changes) {
+      const total = changes.reduce((sum, e) => sum + e.amount, 0)
+      const months = [...new Set(changes.map((e) => e.month))].join('、')
+      adjusted.set(r.id, `${months} 调整 ${yuanCell(total)}`)
+    }
+    const month = monthOf(r.startsAt)
+    if (confirmed.has(month)) {
+      const rate = recorded.get(`${month}:${unit}`)
+      if (rate !== undefined) column.set(r.id, payCell(rate))
+    } else if (counts) column.set(r.id, payCell(rateOf(r.coachId, b.lessonTypeId)))
+  }
+  return { column, adjusted }
+}
+
 function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
   const { from, to } = range(q)
   const rows = tx
@@ -258,21 +402,11 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
     tx,
     rows.map((r) => r.b.studentId),
   )
-  const payRules = getSettings(tx).pay
-  const rateOf = payRateLookup(tx)
-  // A group session is paid once, on the first of its seats that counts.
-  const paidSessions = new Set<number>()
-  const payFor = (
-    b: (typeof rows)[number]['b'],
-    r: { coachId: number; sessionId: number | null },
-  ) => {
-    if (!countsForPay(b, payRules, now)) return ''
-    if (r.sessionId !== null) {
-      if (paidSessions.has(b.slotId)) return ''
-      paidSessions.add(b.slotId)
-    }
-    return payCell(rateOf(r.coachId, b.lessonTypeId))
-  }
+  const payFor = coachPayColumn(
+    tx,
+    rows.map((r) => ({ ...r.b, coachId: r.coachId, sessionId: r.sessionId })),
+    now,
+  )
   return {
     header: [
       '预约ID',
@@ -293,6 +427,7 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
       '取消原因',
       '课时费（元）',
       '小班课',
+      '课时费调整',
     ],
     rows: rows.map(({ b, ...r }) => {
       const shown = b.status === 'confirmed' && b.endsAt <= now ? 'completed' : b.status
@@ -318,11 +453,12 @@ function bookingsTable(tx: Q, q: ExportQuery, now: Date): Table {
         r.bookedBy ?? '',
         b.attendance === 'attended' ? '已到课' : b.attendance === 'no_show' ? '缺席' : '',
         venueTime(b.cancelledAt),
-        b.cancelledBy === 'venue' ? '场馆' : b.cancelledBy === 'student' ? '学员' : '',
-        b.cancelReason ?? '',
-        payFor(b, r),
+        cancelBy[cancelSource(b).by ?? 'none'],
+        cancelSource(b).reason,
+        payFor.column.get(b.id) ?? '',
         // The session it is a seat in: its slot and size, so seats of one session group together.
         r.sessionId === null ? '' : `#${b.slotId}（${r.capacity}人）`,
+        payFor.adjusted.get(b.id) ?? '',
       ]
     }),
   }
@@ -588,7 +724,7 @@ export function buildExport(tx: Q, kind: ExportKind, q: ExportQuery, now: Date) 
             : kind === 'packages'
               ? packagesTable(tx, q, now)
               : invoicesTable(tx, q)
-  return { csv: toCsv(table), rows: table.rows.length }
+  return { csv: toCsv([table.header, ...table.rows]), rows: table.rows.length }
 }
 
 /** The filters an export used, in words for the action log. Never the search text itself. */

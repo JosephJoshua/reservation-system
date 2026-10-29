@@ -208,8 +208,31 @@ describe('front desk 签到', () => {
     expect((await mark('attended')).status).toBe(204)
     expect((await list())[0].markedBy).toEqual({ kind: 'staff', name: '管理员' })
 
-    // The coach corrects it after the start.
+    // The coach cannot change or clear the front desk's mark.
     h.clock.now = new Date('2026-10-26T02:05:00Z')
+    for (const attendance of ['no_show', null]) {
+      const res = await h.call(
+        'PUT',
+        `/coach/lessons/${bookingId}/attendance`,
+        { attendance },
+        coachToken,
+      )
+      expect(res.status).toBe(409)
+      expect(res.json.error).toEqual({
+        code: 'staff_marked',
+        message: '前台已登记这节课的签到，如需修改请联系前台',
+      })
+    }
+    const seen = await h.call('GET', `/coach/lessons/${bookingId}`, undefined, coachToken)
+    expect(seen.json).toMatchObject({
+      attendance: 'attended',
+      attendanceBy: 'staff',
+      canMarkAttendance: false,
+    })
+    expect((await list())[0].markedBy).toEqual({ kind: 'staff', name: '管理员' })
+
+    // Once the desk clears it, the coach marks it.
+    expect((await mark(null)).status).toBe(204)
     await h.call(
       'PUT',
       `/coach/lessons/${bookingId}/attendance`,

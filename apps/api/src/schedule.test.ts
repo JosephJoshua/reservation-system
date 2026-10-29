@@ -626,6 +626,47 @@ describe('请假, 加班 and 闭馆', () => {
     expect(h.db.select().from(scheduleExceptions).all()).toHaveLength(1)
     const view = (await h.call('GET', `/admin/coaches/${coach.id}/hours`, undefined, later)).json
     expect(view.exceptions).toEqual([])
+    // Logged as cut short, with what is left, not as deleted.
+    const log = (
+      await h.call('GET', '/admin/actions?actions=schedule.end,schedule.remove', undefined, later)
+    ).json
+    expect(log.map((e: { action: string; summary: string }) => [e.action, e.summary])).toEqual([
+      ['schedule.end', '王教练：请假 10月25日 09:00-12:00 提前结束，改为 10月25日 09:00-10:05'],
+    ])
+  })
+
+  it('logs a coach cutting their own 请假 short, and hours saved again only once', async () => {
+    const h = setup()
+    const { coach, admin } = await venue(h)
+    const token = await coachToken(h, admin, coach.id)
+    const hours = { hours: [{ weekday: 0, startMinute: 540, endMinute: 720 }] }
+    for (let i = 0; i < 2; i++) {
+      expect((await h.call('PUT', '/coach/hours', hours, token)).status).toBe(200)
+    }
+    const leave = await h.call(
+      'POST',
+      '/coach/exceptions',
+      { kind: 'off', startsAt: at(SUN, '09:00'), endsAt: at(SUN, '12:00'), note: '' },
+      token,
+    )
+    h.clock.now = new Date(Date.parse(at(SUN, '10:02')))
+    const later = await h.admin()
+    const again = await coachToken(h, later, coach.id)
+    expect(
+      (await h.call('DELETE', `/coach/exceptions/${leave.json.id}`, undefined, again)).status,
+    ).toBe(200)
+    const log = (await h.call('GET', '/admin/actions', undefined, later)).json
+    expect(
+      log.map((e: { action: string; summary: string }) => [e.action, e.summary]).reverse(),
+    ).toEqual([
+      ['coach.hours', '王教练：每周时间（2026-10-23 起）'],
+      ['coach.leave_add', '王教练：请假 10月25日 09:00-12:00'],
+      ['coach.leave_end', '王教练：请假 10月25日 09:00-12:00 提前结束，改为 10月25日 09:00-10:05'],
+    ])
+    // Different hours are a change again.
+    await h.call('PUT', '/coach/hours', { hours: [] }, again)
+    const hoursLog = await h.call('GET', '/admin/actions?actions=coach.hours', undefined, later)
+    expect(hoursLog.json).toHaveLength(2)
   })
 
   it('adds a repeated request once and refuses odd times', async () => {
@@ -710,6 +751,15 @@ describe('the coach keeping their own 排班', () => {
       token,
     )
     expect(leave.status).toBe(201)
+    // The same request again adds nothing and logs nothing.
+    const again = await h.call(
+      'POST',
+      '/coach/exceptions',
+      { kind: 'off', startsAt: at(SUN, '09:00'), endsAt: at(SUN, '10:00'), note: '有事' },
+      token,
+    )
+    expect(again.json.id).toBe(leave.json.id)
+    expect(again.json.created).toBeUndefined()
     expect(await times(h, student, SUN, lesson.id)).toEqual(['10:00', '10:30', '11:00'])
     const view = (await h.call('GET', '/coach/hours', undefined, token)).json
     expect(view).toMatchObject({
@@ -721,6 +771,19 @@ describe('the coach keeping their own 排班', () => {
       (await h.call('DELETE', `/coach/exceptions/${leave.json.id}`, undefined, token)).status,
     ).toBe(200)
     expect(await times(h, student, SUN, lesson.id)).toHaveLength(5)
+    // A repeat of the delete removes nothing and logs nothing.
+    await h.call('DELETE', `/coach/exceptions/${leave.json.id}`, undefined, token)
+    const log = (await h.call('GET', '/admin/actions', undefined, admin)).json as {
+      action: string
+      summary: string
+      staff: unknown
+      coach: { id: number; name: string } | null
+    }[]
+    expect(log.map((e) => [e.action, e.summary, e.staff, e.coach?.id]).reverse()).toEqual([
+      ['coach.hours', '王教练：每周时间（2026-10-23 起）', null, coach.id],
+      ['coach.leave_add', '王教练：请假 10月25日 09:00-10:00', null, coach.id],
+      ['coach.leave_remove', '王教练：请假 10月25日 09:00-10:00', null, coach.id],
+    ])
   })
 
   it("reaches as far as the coach's lesson with the longest booking window", async () => {

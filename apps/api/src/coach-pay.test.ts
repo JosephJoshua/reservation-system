@@ -17,6 +17,7 @@ describe('countsForPay', () => {
     attendance: null,
     cancelledBy: null,
     late: false,
+    sessionCancelled: false,
   } as const
 
   it('pays lessons that ended, marked or not', () => {
@@ -45,6 +46,13 @@ describe('countsForPay', () => {
     expect(countsForPay({ ...late, cancelledBy: 'venue' }, all, now)).toBe(false)
     expect(countsForPay({ ...lesson, status: 'pending_payment' }, all, now)).toBe(false)
     expect(countsForPay({ ...lesson, status: 'expired' }, all, now)).toBe(false)
+  })
+
+  it('never pays a seat of a session the venue called off', () => {
+    const all = { noShows: true, lateCancels: true }
+    const late = { ...lesson, status: 'cancelled', cancelledBy: 'student', late: true } as const
+    expect(countsForPay({ ...late, sessionCancelled: true }, all, now)).toBe(false)
+    expect(countsForPay({ ...lesson, sessionCancelled: true }, all, now)).toBe(false)
   })
 })
 
@@ -337,7 +345,7 @@ describe('课时费 in the bookings export', () => {
     const rows = (await res.text())
       .trimEnd()
       .split('\r\n')
-      .map((l) => l.split(',').at(-2))
+      .map((l) => l.split(',').at(-3))
     expect(rows).toEqual(['课时费（元）', '80.50', '', '未设置', ''])
   })
 })
@@ -413,7 +421,125 @@ describe('coach pay for group sessions', () => {
       .trimEnd()
       .split('\r\n')
       .slice(1)
-      .map((l) => l.split(',').at(-2))
+      .map((l) => l.split(',').at(-3))
     expect(pay).toEqual(['100.00', '', '', '', ''])
+  })
+
+  it('pays nothing for a session the venue called off after a student late-cancelled', async () => {
+    const h = setup({ now: '2026-10-28T12:00:00Z' })
+    const { wang } = venue(h)
+    const admin = await h.admin()
+    h.settings((s) => {
+      s.pay.lateCancels = true
+    })
+    const group = h.db
+      .insert(lessonTypes)
+      .values({ name: '小班课', durationMinutes: 60, price: 8000, capacity: 4 })
+      .returning()
+      .get()
+    const cat = await category(h, admin, '主教练', [{ lessonTypeId: group.id, rate: 12000 }])
+    h.db.update(coaches).set({ categoryId: cat.id }).where(eq(coaches.id, wang.id)).run()
+    const slot = h.slot(wang.id, '2026-10-20', 15)
+    h.db
+      .update(slots)
+      .set({ lessonTypeId: group.id, capacity: 4, cancelledAt: new Date('2026-10-20T05:00:00Z') })
+      .where(eq(slots.id, slot.id))
+      .run()
+    const seat = (n: number, fields: Partial<typeof bookings.$inferInsert>) =>
+      h.db
+        .insert(bookings)
+        .values({
+          slotId: slot.id,
+          seat: n,
+          studentId: h.db
+            .insert(students)
+            .values({ openid: `g${n}`, name: `学员${n}` })
+            .returning()
+            .get().id,
+          lessonTypeId: group.id,
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          status: 'cancelled',
+          paidWith: 'order',
+          price: 8000,
+          ...fields,
+        })
+        .run()
+    seat(1, { cancelledBy: 'student', late: true })
+    seat(2, { cancelledBy: 'venue' })
+    // A seat the venue's cancel did not reach is not taught either.
+    seat(3, { status: 'confirmed', attendance: 'attended' })
+
+    const r = (await h.call('GET', '/admin/reports/monthly?month=2026-10', undefined, admin)).json
+    expect(r.coaches[0]).toMatchObject({
+      taught: 0,
+      attended: 0,
+      venueCancelled: 1,
+      lateCancelled: 0,
+      pay: { amount: 0, lessons: 0 },
+    })
+    const res = await h.app.request('/api/admin/exports/bookings?from=2026-10-01&to=2026-10-31', {
+      headers: { Authorization: `Bearer ${admin}` },
+    })
+    const pay = (await res.text())
+      .trimEnd()
+      .split('\r\n')
+      .slice(1)
+      .map((l) => l.split(',').at(-3))
+    expect(pay).toEqual(['', '', ''])
+  })
+
+  it('puts the pay on the same seat whichever seats are exported', async () => {
+    const h = setup({ now: '2026-10-28T12:00:00Z' })
+    const { wang } = venue(h)
+    const admin = await h.admin()
+    const group = h.db
+      .insert(lessonTypes)
+      .values({ name: '小班课', durationMinutes: 60, price: 8000, capacity: 4 })
+      .returning()
+      .get()
+    const cat = await category(h, admin, '主教练', [{ lessonTypeId: group.id, rate: 12000 }])
+    h.db.update(coaches).set({ categoryId: cat.id }).where(eq(coaches.id, wang.id)).run()
+    const slot = h.slot(wang.id, '2026-10-20', 15)
+    h.db
+      .update(slots)
+      .set({ lessonTypeId: group.id, capacity: 4 })
+      .where(eq(slots.id, slot.id))
+      .run()
+    for (const n of [1, 2]) {
+      h.db
+        .insert(bookings)
+        .values({
+          slotId: slot.id,
+          seat: n,
+          studentId: h.db
+            .insert(students)
+            .values({ openid: `g${n}`, name: `学员${n}` })
+            .returning()
+            .get().id,
+          lessonTypeId: group.id,
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          status: 'confirmed',
+          attendance: 'attended',
+          paidWith: 'order',
+          price: 8000,
+        })
+        .run()
+    }
+    const payOf = async (q: string) => {
+      const res = await h.app.request(
+        `/api/admin/exports/bookings?from=2026-10-01&to=2026-10-31${q}`,
+        { headers: { Authorization: `Bearer ${admin}` } },
+      )
+      return (await res.text())
+        .trimEnd()
+        .split('\r\n')
+        .slice(1)
+        .map((l) => l.split(',').at(-3))
+    }
+    expect(await payOf('')).toEqual(['120.00', ''])
+    expect(await payOf(`&q=${encodeURIComponent('学员2')}`)).toEqual([''])
+    expect(await payOf(`&q=${encodeURIComponent('学员1')}`)).toEqual(['120.00'])
   })
 })

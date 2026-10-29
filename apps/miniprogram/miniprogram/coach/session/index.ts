@@ -65,7 +65,9 @@ Page({
       const tag = lessonTag(st, s.startsAt, now)
       const parts = [
         st.status === 'pending_payment' ? '待支付' : '',
-        st.attendance ? ATTENDANCE[st.attendance] : '',
+        st.attendance
+          ? `${ATTENDANCE[st.attendance]}${st.attendanceBy === 'staff' ? '（前台）' : ''}`
+          : '',
         st.hasFeedback ? '已点评' : '',
       ].filter(Boolean)
       return {

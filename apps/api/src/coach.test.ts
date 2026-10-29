@@ -419,6 +419,59 @@ describe('the coach schedule and lessons', () => {
     expect(offline.json).toMatchObject({ paidWith: 'order', price: 20000, paidOffline: true })
   })
 
+  it('still cancels when the action log cannot be written', async () => {
+    const h = setup()
+    const { token, bookingId } = await bookedLesson(h)
+    h.db.$client.exec('DROP TABLE action_log')
+    const res = await h.call(
+      'POST',
+      `/coach/lessons/${bookingId}/cancel`,
+      { reason: '生病' },
+      token,
+    )
+    expect(res.status).toBe(200)
+    expect(res.json.status).toBe('cancelled')
+  })
+
+  it('logs a coach cancel once, as the coach, and staff see it as 教练取消', async () => {
+    const h = setup()
+    const { token, bookingId } = await bookedLesson(h)
+    for (let i = 0; i < 2; i++) {
+      const res = await h.call(
+        'POST',
+        `/coach/lessons/${bookingId}/cancel`,
+        { reason: '生病' },
+        token,
+      )
+      expect(res.status).toBe(200)
+    }
+    const admin = await h.admin()
+    const log = (await h.call('GET', '/admin/actions', undefined, admin)).json
+    expect(log).toMatchObject([
+      {
+        action: 'coach.cancel',
+        summary: '10月26日 10:00 王教练 一对一私教，原因：生病，退款 ¥200',
+        amount: 20000,
+        staff: null,
+        coach: { name: '王教练' },
+        targetKind: 'booking',
+        targetId: bookingId,
+      },
+    ])
+    expect(log).toHaveLength(1)
+    const coachId = log[0].coach.id
+    const own = await h.call('GET', `/admin/actions?coachId=${coachId}`, undefined, admin)
+    expect(own.json).toHaveLength(1)
+    const byStaff = await h.call('GET', '/admin/actions?staffId=1', undefined, admin)
+    expect(byStaff.json).toEqual([])
+    // The bookings export names the coach, with the reason as they gave it.
+    const res = await h.app.request('/api/admin/exports/bookings?from=2026-10-01&to=2026-10-31', {
+      headers: { Authorization: `Bearer ${admin}` },
+    })
+    const row = (await res.text()).trimEnd().split('\r\n')[1]?.split(',') ?? []
+    expect(row.slice(14, 16)).toEqual(['教练', '生病'])
+  })
+
   it('still announces a student cancel that beat the coach cancel', async () => {
     const h = setup()
     const { token, student, bookingId } = await bookedLesson(h)

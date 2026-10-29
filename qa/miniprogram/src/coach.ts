@@ -294,6 +294,30 @@ try {
     )
   })
 
+  await step('shows a front desk mark read-only', async () => {
+    await call('PUT', `/admin/bookings/${past}/attendance`, { attendance: 'attended' }, admin)
+    const home = await waitForPage('coach/index/index', (d) => d.state === 'ready')
+    const rows = (await home.data('rows')) as { bookingId: number }[]
+    await tap(
+      home,
+      '.row',
+      rows.findIndex((s) => s.bookingId === past),
+    )
+    const page = await waitForPage('coach/lesson/index', (d) => d.state === 'ready')
+    const lesson = (await page.data('lesson')) as {
+      attendance: string | null
+      attendanceBy: string | null
+      canMarkAttendance: boolean
+    }
+    check(lesson.attendanceBy === 'staff', `should be marked by staff, got ${lesson.attendanceBy}`)
+    check(!lesson.canMarkAttendance, 'a front desk mark is not markable')
+    const note = (await page.data('attendanceNote')) as string
+    check(note.includes('由前台登记'), `should say the desk marked it, got ${note}`)
+    check((await page.$$('.attendance')).length === 0, 'no mark buttons')
+    await screenshot('lesson-staff-marked')
+    await miniProgram.navigateBack()
+  })
+
   await step('opens the future lesson and writes a note', async () => {
     const home = await waitForPage('coach/index/index', (d) => d.state === 'ready')
     const days = (await home.data('days')) as { key: string; lessons: number }[]

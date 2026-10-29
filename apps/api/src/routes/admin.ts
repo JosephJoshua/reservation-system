@@ -22,7 +22,6 @@ import {
   staffRoleLabels,
   staffRoles,
   venueDateKey,
-  venueParts,
   venueSettings,
 } from '@rs/shared'
 import {
@@ -69,7 +68,15 @@ import {
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, notFound, parseBody, parseQuery } from '../errors'
 import { accountDeleted, personColumns } from '../services/account'
-import { describeBooking, listActions, logAction, venueMoment, yuan } from '../services/action-log'
+import {
+  cancelOutcome,
+  describeBooking,
+  listActions,
+  logAction,
+  venueMoment,
+  venueSpan,
+  yuan,
+} from '../services/action-log'
 import { frontDeskLessons, setAttendance } from '../services/attendance'
 import {
   type AdminVars,
@@ -132,7 +139,7 @@ import {
   rejectPackageRefund,
   sellPackageOffline,
 } from '../services/packages'
-import { confirmMonth, monthRange, unconfirmMonth } from '../services/pay-months'
+import { confirmMonth, unconfirmMonth } from '../services/pay-months'
 import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
@@ -170,7 +177,7 @@ import { profileInput, saveStudentProfile, studentProfile } from '../services/st
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { exceptionBody, weeklyHoursBody } from './coach'
-import { dateKey, oneTarget, targetFields, toTarget } from './target'
+import { dateKey, monthKey, oneTarget, targetFields, toTarget } from './target'
 
 const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
 const id = z.coerce.number().int().positive().optional()
@@ -211,9 +218,15 @@ const settingsSectionLabel = {
 } as const
 
 /** A price and its sale, if any, as one line for the action log. */
-function priceLine(price: number, sale: string | null, startsAt: Date | null, endsAt: Date | null) {
+function priceLine(
+  price: number,
+  sale: string | null,
+  startsAt: Date | null,
+  endsAt: Date | null,
+  now: Date,
+) {
   if (!sale || !startsAt || !endsAt) return yuan(price)
-  return `${yuan(price)}，${sale}（${venueMoment(startsAt)} 至 ${venueMoment(endsAt)}）`
+  return `${yuan(price)}，${sale}（${venueMoment(startsAt, now)} 至 ${venueMoment(endsAt, now)}）`
 }
 
 const coachBody = z.object({
@@ -449,6 +462,7 @@ export function adminRoutes(deps: Deps) {
       c,
       z.object({
         staffId: z.coerce.number().int().positive().optional(),
+        coachId: z.coerce.number().int().positive().optional(),
         studentId: z.coerce.number().int().positive().optional(),
         slotId: z.coerce.number().int().positive().optional(),
         // Comma separated.
@@ -815,14 +829,7 @@ export function adminRoutes(deps: Deps) {
 
   const coachName = (id: number) =>
     db.select({ name: coaches.name }).from(coaches).where(eq(coaches.id, id)).get()?.name ?? ''
-  const spanText = (startsAt: Date, endsAt: Date) => {
-    const end = venueParts(endsAt)
-    const sameDay = venueDateKey(startsAt) === venueDateKey(new Date(endsAt.getTime() - 1))
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return sameDay
-      ? `${venueMoment(startsAt)}-${end.hours || end.minutes ? `${pad(end.hours)}:${pad(end.minutes)}` : '24:00'}`
-      : `${venueMoment(startsAt)} 至 ${venueMoment(endsAt)}`
-  }
+  const spanText = (startsAt: Date, endsAt: Date) => venueSpan(startsAt, endsAt, deps.now())
 
   app.get('/coaches/:id/hours', need('view'), (c) =>
     c.json(scheduleView(db, deps.now(), idParam(c))),
@@ -832,24 +839,27 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, weeklyHoursBody)
     const id = idParam(c)
     const from = body.from ?? venueDateKey(deps.now())
-    const conflicts = saveHours(deps, id, { from, hours: body.hours })
-    log(c.get('staffId'), {
-      action: 'schedule.hours',
-      summary: `${coachName(id)}：每周时间（${from} 起）`,
-      target: { kind: 'coach', id },
-    })
+    const { conflicts, changed } = saveHours(deps, id, { from, hours: body.hours })
+    if (changed) {
+      log(c.get('staffId'), {
+        action: 'schedule.hours',
+        summary: `${coachName(id)}：每周时间（${from} 起）`,
+        target: { kind: 'coach', id },
+      })
+    }
     return c.json({ conflicts })
   })
 
   app.post('/coaches/:id/exceptions', need('bookings'), async (c) => {
     const body = await parseBody(c, exceptionBody)
     const id = idParam(c)
-    const result = addException(deps, { ...body, coachId: id }, c.get('staffId'))
-    log(c.get('staffId'), {
-      action: 'schedule.add',
-      summary: `${coachName(id)}：${body.kind === 'off' ? '请假' : '加班'} ${spanText(body.startsAt, body.endsAt)}`,
-      target: { kind: 'coach', id },
-    })
+    const { created, ...result } = addException(deps, { ...body, coachId: id }, c.get('staffId'))
+    if (created)
+      log(c.get('staffId'), {
+        action: 'schedule.add',
+        summary: `${coachName(id)}：${body.kind === 'off' ? '请假' : '加班'} ${spanText(body.startsAt, body.endsAt)}`,
+        target: { kind: 'coach', id },
+      })
     return c.json(result, 201)
   })
 
@@ -865,11 +875,16 @@ export function adminRoutes(deps: Deps) {
         note: z.string().trim().max(40).default(''),
       }),
     )
-    const result = addException(deps, { ...body, kind: 'off', coachId: null }, c.get('staffId'))
-    log(c.get('staffId'), {
-      action: 'schedule.add',
-      summary: `闭馆 ${spanText(body.startsAt, body.endsAt)}${body.note ? `（${body.note}）` : ''}`,
-    })
+    const { created, ...result } = addException(
+      deps,
+      { ...body, kind: 'off', coachId: null },
+      c.get('staffId'),
+    )
+    if (created)
+      log(c.get('staffId'), {
+        action: 'schedule.add',
+        summary: `闭馆 ${spanText(body.startsAt, body.endsAt)}${body.note ? `（${body.note}）` : ''}`,
+      })
     return c.json(result, 201)
   })
 
@@ -880,8 +895,10 @@ export function adminRoutes(deps: Deps) {
         ? '闭馆'
         : `${coachName(row.coachId)}：${row.kind === 'off' ? '请假' : '加班'}`
     log(staffId, {
-      action: 'schedule.remove',
-      summary: `${what} ${spanText(row.startsAt, row.endsAt)}`,
+      action: row.shortenedTo ? 'schedule.end' : 'schedule.remove',
+      summary: row.shortenedTo
+        ? `${what} ${spanText(row.startsAt, row.endsAt)} 提前结束，改为 ${spanText(row.startsAt, row.shortenedTo)}`
+        : `${what} ${spanText(row.startsAt, row.endsAt)}`,
       target: row.coachId === null ? undefined : { kind: 'coach', id: row.coachId },
     })
   }
@@ -986,7 +1003,13 @@ export function adminRoutes(deps: Deps) {
   )
 
   const lessonPriceLine = (t: z.infer<typeof lessonTypeBody>) =>
-    priceLine(t.price, t.salePercent ? `${t.salePercent}%` : null, t.saleStartsAt, t.saleEndsAt)
+    priceLine(
+      t.price,
+      t.salePercent ? `${t.salePercent}%` : null,
+      t.saleStartsAt,
+      t.saleEndsAt,
+      deps.now(),
+    )
 
   app.post('/lesson-types', need('manage'), async (c) => {
     const body = await parseBody(c, lessonTypeBody)
@@ -1274,7 +1297,7 @@ export function adminRoutes(deps: Deps) {
           .where(eq(lessonTypes.id, slot.lessonTypeId))
           .get()
       : undefined
-    return `${venueMoment(slot.startsAt)} ${coach?.name ?? ''} ${lessonType?.name ?? ''}`
+    return `${venueMoment(slot.startsAt, deps.now())} ${coach?.name ?? ''} ${lessonType?.name ?? ''}`
   }
 
   // 小班课: sessions of a group class the venue schedules.
@@ -1300,7 +1323,7 @@ export function adminRoutes(deps: Deps) {
         summary:
           ids.length === 1
             ? `${await sessionName({ ...first, lessonTypeId: lessonType.id })}，${body.capacity} 人`
-            : `${lessonType.name} ${ids.length} 节，每节 ${body.capacity} 人，首节 ${venueMoment(first.startsAt)}`,
+            : `${lessonType.name} ${ids.length} 节，每节 ${body.capacity} 人，首节 ${venueMoment(first.startsAt, deps.now())}`,
         target: { kind: 'slot', id: ids[0] ?? 0 },
       })
     }
@@ -1487,7 +1510,7 @@ export function adminRoutes(deps: Deps) {
       .get()
     setAttendance(deps, id, attendance, { staffId: c.get('staffId') })
     if (before && before.attendance !== attendance) {
-      const { what, studentId } = describeBooking(db, id)
+      const { what, studentId } = describeBooking(db, id, deps.now())
       const label = { attended: '到课', no_show: '缺席' }
       log(c.get('staffId'), {
         action: 'booking.attendance',
@@ -1509,29 +1532,12 @@ export function adminRoutes(deps: Deps) {
     if (!cancelled || booking?.status !== 'cancelled' || booking.cancelledBy !== 'venue') {
       return c.body(null, 204)
     }
-    const { what, studentId } = describeBooking(db, id)
-    const refund = db
-      .select({ amount: refunds.amount, provider: orders.provider })
-      .from(refunds)
-      .innerJoin(orders, eq(orders.id, refunds.orderId))
-      .where(eq(refunds.bookingId, id))
-      .orderBy(desc(refunds.id))
-      .get()
-    const returned = db
-      .select({ id: packageLedger.id })
-      .from(packageLedger)
-      .where(and(eq(packageLedger.bookingId, id), eq(packageLedger.kind, 'return')))
-      .get()
-    // An unpaid hold was simply released.
-    const outcome = refund
-      ? `，${refund.provider === 'offline' ? '待线下退还' : '退款'} ${yuan(refund.amount)}`
-      : returned
-        ? '，退回课时 1 节'
-        : ''
+    const { what, studentId } = describeBooking(db, id, deps.now())
+    const outcome = cancelOutcome(db, id)
     log(c.get('staffId'), {
       action: 'booking.cancel',
-      summary: `${what}，原因：${reason}${outcome}`,
-      amount: refund?.amount ?? null,
+      summary: `${what}，原因：${reason}${outcome.text}`,
+      amount: outcome.refunded,
       studentId,
       target: { kind: 'booking', id },
     })
@@ -1546,7 +1552,7 @@ export function adminRoutes(deps: Deps) {
         .refine(oneTarget, '请选择上课时间'),
     )
     const id = idParam(c)
-    const before = describeBooking(db, id)
+    const before = describeBooking(db, id, deps.now())
     // A repeat of a move that already happened logs nothing.
     const moved = moveBooking(deps, id, toTarget(body), 'venue', { anyTime: body.anyTime })
     if (moved === 'agreed') {
@@ -1566,7 +1572,7 @@ export function adminRoutes(deps: Deps) {
         .get()
       log(c.get('staffId'), {
         action: 'booking.move',
-        summary: `${before.what} 改到 ${to ? `${venueMoment(to.startsAt)} ${to.coach}` : ''}`,
+        summary: `${before.what} 改到 ${to ? `${venueMoment(to.startsAt, deps.now())} ${to.coach}` : ''}`,
         studentId: before.studentId,
         target: { kind: 'booking', id },
       })
@@ -1617,7 +1623,7 @@ export function adminRoutes(deps: Deps) {
     if (!item) throw notFound('点评')
     // A repeat changed nothing and logs nothing.
     if (changed) {
-      const { what, studentId } = describeBooking(db, item.bookingId)
+      const { what, studentId } = describeBooking(db, item.bookingId, deps.now())
       log(c.get('staffId'), {
         action: hidden ? 'feedback.hide' : 'feedback.show',
         summary: `${what} 的课后点评`,
@@ -1659,6 +1665,7 @@ export function adminRoutes(deps: Deps) {
       p.salePrice === null ? null : `限时价 ${yuan(p.salePrice)}`,
       p.saleStartsAt,
       p.saleEndsAt,
+      deps.now(),
     )
 
   app.post('/package-products', need('manage'), async (c) => {
@@ -2537,14 +2544,13 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.get('/reports/monthly', need('finance'), (c) => {
-    const { month } = parseQuery(c, z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }))
+    const { month } = parseQuery(c, z.object({ month: monthKey }))
     return c.json(monthlyReport(deps, month))
   })
 
   const monthParam = (c: { req: { param: (name: string) => string } }) => {
     const month = c.req.param('month')
-    if (!/^\d{4}-\d{2}$/.test(month)) throw new ApiError(400, 'invalid_query', '月份无效')
-    monthRange(month)
+    if (!monthKey.safeParse(month).success) throw new ApiError(400, 'invalid_query', '月份无效')
     return month
   }
 
@@ -2575,8 +2581,7 @@ export function adminRoutes(deps: Deps) {
   })
 
   app.get('/reports/stats', need('finance'), (c) => {
-    const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-    const { from, to } = parseQuery(c, z.object({ from: date, to: date }))
+    const { from, to } = parseQuery(c, z.object({ from: dateKey, to: dateKey }))
     return c.json(statsReport(deps, from, to))
   })
 

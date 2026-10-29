@@ -310,6 +310,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
     paidOffline: order?.provider === 'offline',
     packageName: pkg?.name ?? null,
     attendance: b.attendance,
+    attendanceBy: b.attendance ? b.attendanceBy : null,
     coachNote: b.coachNote,
     feedback:
       feedback && !feedback.deletedAt
@@ -406,6 +407,7 @@ export function coachSession(deps: Deps, slotId: number, coachId: number): Coach
       name: deletedAt ? DELETED_NAME : name,
       status: bookingStatus(b, now),
       attendance: b.attendance,
+      attendanceBy: b.attendance ? b.attendanceBy : null,
       canMarkAttendance: coachCanMark(b, now, coachMarks),
       hasFeedback: written.has(b.id),
     })),
