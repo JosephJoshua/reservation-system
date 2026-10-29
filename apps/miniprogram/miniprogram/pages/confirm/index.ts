@@ -7,7 +7,7 @@ import {
   minCheckHours,
   type StudentDto,
 } from '../../lib/shared'
-import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
+import { ApiError, api, assetUrl, errorMessage, RESULT_UNKNOWN, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
@@ -140,14 +140,23 @@ Page({
     const usePackage =
       pkg !== null &&
       (!before || before.id !== pkg.id || this.data.payWith === 'package' || !perClassEnabled)
+    const payWith: PayWith = usePackage ? 'package' : 'wechat'
+    const switched = payWith !== this.data.payWith
     this.setData({
       price: price.price,
       priceText: yuan(price.price),
       originalText: price.originalPrice == null ? '' : yuan(price.originalPrice),
       pkg: pkg ? { id: pkg.id, name: pkg.name, remaining: pkg.lessonsRemaining } : null,
       perClassEnabled,
-      payWith: usePackage ? 'package' : 'wechat',
+      payWith,
     })
+    // Said out loud, so the way to pay never changes unseen.
+    if (switched && perClassEnabled) {
+      wx.showToast({
+        title: payWith === 'package' ? '已改用课时包支付' : '课时包不可用，已改用微信支付',
+        icon: 'none',
+      })
+    }
   },
 
   async load() {
@@ -361,6 +370,16 @@ Page({
             showCancel: false,
           })
         }
+        return
+      }
+      if (e instanceof ApiError && (e.code === 'in_progress' || e.code === RESULT_UNKNOWN)) {
+        // The booking may have been made: the lessons list shows it if so.
+        await wx.showModal({
+          title: '预约结果确认中',
+          content: '请在“课程”中查看是否已预约成功，未成功可重新预约。',
+          showCancel: false,
+        })
+        if (isTop(this)) wx.switchTab({ url: '/pages/lessons/index' })
         return
       }
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {

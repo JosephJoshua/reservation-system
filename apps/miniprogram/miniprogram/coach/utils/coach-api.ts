@@ -67,15 +67,19 @@ export function coachUpload<T>(path: string, filePath: string): Promise<T> {
   return withToken((token) => upload<T>(`/coach${path}`, filePath, token, key))
 }
 
-export async function bind(bindCode: string): Promise<CoachMeDto> {
+/**
+ * Binds this WeChat user with a bind code. `lostBefore` is true when an earlier try of the same
+ * code got no answer: it may have bound, and a bind code works only once.
+ */
+export async function bind(bindCode: string, lostBefore: boolean): Promise<CoachMeDto> {
   const code = await wxCode()
   let res: CoachLoginResponse
   try {
     res = await request<CoachLoginResponse>('POST', '/coach/bind', { code, bindCode })
   } catch (e) {
-    // A bind code works once. When an earlier tap bound this WeChat but its answer was lost, the
-    // code is refused now, yet logging in works: that is the bind the coach asked for.
-    if (!(e instanceof ApiError) || e.code !== 'bad_bind_code') throw e
+    // Refused after a lost answer: if logging in works now, the earlier try bound this WeChat.
+    // Without one, a refused code is a wrong code, even for a WeChat bound to a coach already.
+    if (!lostBefore || !(e instanceof ApiError) || e.code !== 'bad_bind_code') throw e
     const bound = await wxCode()
       .then((again) => request<CoachLoginResponse>('POST', '/coach/login', { code: again }))
       .catch(() => null)
@@ -103,11 +107,12 @@ export function isNotBound(e: unknown): boolean {
 
 /**
  * Opened by a WeChat user who is not a coach (yet): goes on to 绑定 instead of an error with a
- * retry that cannot help. True when it did, so the page shows nothing else.
+ * retry that cannot help. True when it did, so the page shows nothing else; false when the page
+ * is no longer on screen, which then shows its error state.
  */
 export function bindInstead(e: unknown, page: unknown): boolean {
-  if (!isNotBound(e)) return false
-  if (isTop(page)) wx.redirectTo({ url: '/coach/bind/index' })
+  if (!isNotBound(e) || !isTop(page)) return false
+  wx.redirectTo({ url: '/coach/bind/index' })
   return true
 }
 

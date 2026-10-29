@@ -31,6 +31,8 @@ Page({
       const { blockers } = this.maybeDeleted
         ? await apiOnce<AccountDeletionDto>('GET', path)
         : await api<AccountDeletionDto>('GET', path)
+      // Answered with this session: the account is still there.
+      this.maybeDeleted = false
       this.setData({ state: 'ready', blockers })
     } catch (e) {
       if (this.maybeDeleted && isSignedOut(e)) {

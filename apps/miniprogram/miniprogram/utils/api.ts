@@ -94,6 +94,12 @@ export function request<T>(
 }
 
 /**
+ * The first send of a change was lost and its resend was refused for the session, so it may have
+ * gone through. Not a 401: logging in again would send it afresh under a new session.
+ */
+export const RESULT_UNKNOWN = 'result_unknown'
+
+/**
  * Sends a signed-in request, once more when the network loses a change that carries an
  * Idempotency-Key: the server then answers the repeat with the first result if it got there.
  */
@@ -108,7 +114,14 @@ export async function requestKeyed<T>(
     return await request<T>(method, path, data, token, headers)
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 0 || !headers['Idempotency-Key']) throw e
-    return request<T>(method, path, data, token, headers)
+  }
+  try {
+    return await request<T>(method, path, data, token, headers)
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) {
+      throw new ApiError(0, RESULT_UNKNOWN, '网络不佳，请刷新后查看是否已成功')
+    }
+    throw e
   }
 }
 
