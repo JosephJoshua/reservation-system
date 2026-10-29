@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
+import { instantString } from './api'
 import { venueDateKey, venueInstant } from './time'
+
+describe('instantString', () => {
+  it('takes venue dates in 2000-2999 only', () => {
+    const ok = (s: string) => instantString.safeParse(s).success
+    expect(ok('2026-10-26T02:00:00Z')).toBe(true)
+    expect(ok('2026-10-26T10:00:00+08:00')).toBe(true)
+    expect(ok('1999-12-31T16:00:00Z')).toBe(true) // 2000-01-01 00:00 at the venue
+    expect(ok('1999-12-31T15:59:59Z')).toBe(false)
+    expect(ok('2999-12-31T15:59:59Z')).toBe(true)
+    expect(ok('2999-12-31T16:00:00Z')).toBe(false)
+    for (const s of [
+      '9999-12-31T20:00:00Z',
+      '0000-01-01T00:00:00Z',
+      '1970-01-01T00:00:00Z',
+      '2026-10-26',
+    ]) {
+      expect(ok(s), s).toBe(false)
+    }
+  })
+})
 
 describe('venueDateKey', () => {
   it('uses the venue date, not the UTC date', () => {

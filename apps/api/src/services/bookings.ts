@@ -26,6 +26,7 @@ import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { PaymentParams } from '../pay/gateway'
 import { priceFor, trialsUsed, visibleTo } from './catalog'
+import { disruptionOf } from './disruption'
 import { newOutTradeNo } from './ids'
 import { moveSummaries } from './move-history'
 import { closeOrder, startPaymentOrRelease } from './orders'
@@ -523,6 +524,7 @@ export async function cancelBooking(
         booking.startsAt,
         terms,
         moveSummaries(tx, [booking.id]).get(booking.id)?.lastMove,
+        disruptionOf(tx, booking),
       ),
     })
     // A payment that landed during the cancel is refunded in full, since the student was told
@@ -548,6 +550,8 @@ export async function cancelBooking(
         // A venue cancel mid-lesson drops a mark the coach already made.
         attendance: null,
         attendanceAt: null,
+        attendanceBy: null,
+        attendanceStaffId: null,
       })
       .where(and(eq(bookings.id, booking.id), eq(bookings.status, 'confirmed')))
       .run()

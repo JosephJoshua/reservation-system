@@ -68,7 +68,7 @@
 
   <view wx:if="{{booking.canCancel && cancelRule}}" class="footnote">{{cancelRule}}</view>
 
-  <view wx:if="{{booking.status === 'pending_payment'}}" class="action-bar">
+  <view wx:if="{{booking.status === 'pending_payment' && !booking.disruption}}" class="action-bar">
     <view class="grow">
       <t-button block t-class="action-button" theme="default" disabled="{{busy}}" bind:tap="cancel">取消预约</t-button>
     </view>

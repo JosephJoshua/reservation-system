@@ -190,6 +190,41 @@ describe('booking rules per lesson type', () => {
     expect(h.db.select().from(bookings).get()?.terms).toMatchObject({ studentMoves: 3 })
   })
 
+  it('refuses a length off the 5-minute marks, and still lists one stored before', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const message = '时长需为 5 分钟的整数倍'
+    const bad = await h.call(
+      'POST',
+      '/admin/lesson-types',
+      { ...lessonBody, durationMinutes: 47 },
+      admin,
+    )
+    expect(bad.status).toBe(400)
+    expect(bad.json.error).toEqual({ code: 'invalid_body', message })
+    const ok = await h.call(
+      'POST',
+      '/admin/lesson-types',
+      { ...lessonBody, durationMinutes: 45 },
+      admin,
+    )
+    expect(ok.status).toBe(201)
+    const edit = await h.call(
+      'PUT',
+      `/admin/lesson-types/${ok.json.id}`,
+      { ...ok.json, durationMinutes: 52 },
+      admin,
+    )
+    expect(edit.json.error).toEqual({ code: 'invalid_body', message })
+    h.db
+      .update(lessonTypes)
+      .set({ durationMinutes: 47 })
+      .where(eq(lessonTypes.id, ok.json.id))
+      .run()
+    const listed = await h.call('GET', '/admin/lesson-types', undefined, admin)
+    expect(listed.json[0].durationMinutes).toBe(47)
+  })
+
   it('saves, validates and logs a lesson type’s own rules', async () => {
     const h = setup()
     const admin = await h.admin()
