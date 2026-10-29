@@ -1,4 +1,4 @@
-import type { RefundStatus } from '@rs/shared'
+import { REFUND_PAID_TWICE, type RefundStatus } from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
@@ -246,8 +246,12 @@ export function Refunds() {
                   {row.settledNote !== null && (
                     <div className="muted">另行退款：{row.settledNote}</div>
                   )}
-                  {/* On a success, a warning that the order was refunded more than paid. */}
-                  {row.failure && <div className="muted">{row.failure}</div>}
+                  {/* On a success, a warning that the order was refunded more than paid. Once
+                  settled outside the system, WeChat Pay's earlier failure no longer applies. */}
+                  {row.failure &&
+                    (row.settledNote === null || row.failure === REFUND_PAID_TWICE) && (
+                      <div className="muted">{row.failure}</div>
+                    )}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
                   )}

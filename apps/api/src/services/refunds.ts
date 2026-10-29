@@ -1,3 +1,4 @@
+import { REFUND_PAID_TWICE } from '@rs/shared'
 import { and, eq, inArray, isNotNull, isNull, lt, notInArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { orders, refunds } from '../db/schema'
@@ -356,9 +357,6 @@ export async function settleFailedRefund(
   })
 }
 
-// Shown to staff on a refund they settled outside the system that WeChat Pay then made too.
-const PAID_TWICE_NOTE = '微信支付也已退款成功，学员可能收到两次退款，请核对'
-
 /**
  * WeChat Pay reports a refund done that staff had settled outside the system: the money went
  * back twice. Recorded, with a warning for staff.
@@ -366,7 +364,7 @@ const PAID_TWICE_NOTE = '微信支付也已退款成功，学员可能收到两�
 function recordPaidTwice(deps: Deps, outRefundNo: string, refundId: string) {
   const changed = deps.db
     .update(refunds)
-    .set({ providerRefundId: refundId, failure: PAID_TWICE_NOTE, updatedAt: deps.now() })
+    .set({ providerRefundId: refundId, failure: REFUND_PAID_TWICE, updatedAt: deps.now() })
     .where(
       and(
         eq(refunds.outRefundNo, outRefundNo),

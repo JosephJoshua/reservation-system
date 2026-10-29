@@ -106,6 +106,12 @@ export type RefundStatus =
   | 'failed'
   | 'rejected'
 
+/**
+ * The failure note on a refund staff settled outside the system that WeChat Pay then made too.
+ * Any other failure note on a settled refund is why WeChat Pay failed before it was settled.
+ */
+export const REFUND_PAID_TWICE = '微信支付也已退款成功，学员可能收到两次退款，请核对'
+
 export interface BookingDto {
   id: number
   /** The lesson it is a seat in, which a move changes. */
