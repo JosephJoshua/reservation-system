@@ -168,6 +168,19 @@ describe('image metadata', () => {
     )
   })
 
+  it('skips stray bytes before a marker and still drops the EXIF after them', () => {
+    const photo = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      jfif,
+      Buffer.from([0x00, 0x00]),
+      seg(0xe1, exifWithGps()),
+      scan,
+    ])
+    const out = stripImageMetadata(photo, 'jpg')
+    expect(out.includes(Buffer.from('GPS-31.2304', 'latin1'))).toBe(false)
+    expect(out.subarray(-scan.length)).toEqual(scan)
+  })
+
   it('refuses a JPEG of thousands of tiny segments quickly', () => {
     const b = Buffer.alloc(5 * 1024 * 1024)
     b[0] = 0xff

@@ -73,9 +73,11 @@ function stripJpeg(data: Buffer): Buffer {
   while (at + 2 <= data.length) {
     if (slot === -1 && !(at === 2 && data[at] === 0xff && data[at + 1] === 0xe0)) slot = out.mark()
     if (data[at] !== 0xff) {
-      // Not a marker where one belongs: keep the rest as it is, but nothing past its end.
-      out.keep(at, data.length)
-      break
+      // Stray bytes where a marker belongs: skipped up to the next marker, as libjpeg does.
+      const next = data.indexOf(0xff, at)
+      if (next === -1) break
+      at = next
+      continue
     }
     const marker = data[at + 1] as number
     // Fill bytes before a marker.
