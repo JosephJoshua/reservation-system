@@ -271,3 +271,45 @@ describe('0026_outside_agreed', () => {
     ])
   })
 })
+
+describe('0027_action_log_coach_actor', () => {
+  it('keeps every entry and the id counter, and takes either a staff member or a coach', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = off')
+    const run = (file: string) => {
+      const sql = readFileSync(join(migrationsFolder, file), 'utf8')
+      for (const statement of sql.split('--> statement-breakpoint')) db.exec(statement)
+    }
+    const files = readdirSync(migrationsFolder)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+    for (const file of files.slice(0, files.indexOf('0027_action_log_coach_actor.sql'))) run(file)
+    db.pragma('foreign_keys = on')
+    db.exec(
+      "insert into staff (id, name, username, password_hash) values (1, '管理员', 'admin', 'x')",
+    )
+    db.exec("insert into coaches (id, name) values (1, '王教练')")
+    for (let i = 1; i <= 100; i++) {
+      db.exec(
+        `insert into action_log (staff_id, action, summary) values (1, 'data.export', 'e${i}')`,
+      )
+    }
+    db.exec('delete from action_log where id > 8')
+    run('0027_action_log_coach_actor.sql')
+    expect(db.prepare('select count(*) n from action_log where staff_id = 1').get()).toEqual({
+      n: 8,
+    })
+    // Ids of deleted entries are not handed out again.
+    db.exec("insert into action_log (coach_id, action, summary) values (1, 'coach.hours', 'x')")
+    expect(db.prepare('select max(id) id from action_log').get()).toEqual({ id: 101 })
+    expect(() => db.exec("insert into action_log (action, summary) values ('x', 'y')")).toThrow(
+      /CHECK/,
+    )
+    expect(() =>
+      db.exec(
+        "insert into action_log (staff_id, coach_id, action, summary) values (1, 1, 'x', 'y')",
+      ),
+    ).toThrow(/CHECK/)
+    expect(db.pragma('foreign_key_check')).toEqual([])
+  })
+})

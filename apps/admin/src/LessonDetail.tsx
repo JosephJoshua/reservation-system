@@ -5,7 +5,7 @@ import { api, RequestError } from './api'
 import { BookForStudent } from './BookForStudent'
 import { AttendanceCell, CancelBookingDialog, PaidCell, StatusCell } from './bookingCells'
 import { DataTable } from './DataTable'
-import { fmtDate, fmtDateTime, fmtTime, fmtWeekday } from './format'
+import { actorName, fmtDate, fmtDateTime, fmtTime, fmtWeekday } from './format'
 import {
   attempt,
   hashParam,
@@ -405,7 +405,12 @@ function LessonLog({ slotId, version }: { slotId: number; version: number }) {
             width: 120,
             cell: ({ row }) => <span className="nowrap">{fmtDateTime(row.createdAt)}</span>,
           },
-          { colKey: 'staff', title: '员工', width: 100, cell: ({ row }) => row.staff.name },
+          {
+            colKey: 'staff',
+            title: '操作人',
+            width: 130,
+            cell: ({ row }) => <span className="nowrap">{actorName(row)}</span>,
+          },
           {
             colKey: 'action',
             title: '操作',

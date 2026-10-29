@@ -1,3 +1,4 @@
+import { cancelSource } from '@rs/shared'
 import type { MouseEvent } from 'react'
 import { useState } from 'react'
 import { Dialog, Select, Tag, Textarea } from 'tdesign-react'
@@ -28,6 +29,14 @@ export function PaidCell({ row }: { row: AdminBooking }) {
   )
 }
 
+/** Who cancelled it: 场馆取消, 学员逾时取消, or 教练取消 with the coach's reason. */
+function cancelText(row: AdminBooking) {
+  const { by, reason } = cancelSource(row)
+  if (by === 'coach') return reason ? `教练取消：${reason}` : '教练取消'
+  if (by === 'venue') return '场馆取消'
+  return row.late ? '学员逾时取消' : '学员取消'
+}
+
 /** Its status, who cancelled it and any refund. */
 export function StatusCell({ row }: { row: AdminBooking }) {
   const [label, theme] = bookingStatusLabel[row.status]
@@ -40,9 +49,7 @@ export function StatusCell({ row }: { row: AdminBooking }) {
       {row.status === 'cancelled' && (
         <>
           {' '}
-          <span className="muted nowrap">
-            {row.cancelledBy === 'venue' ? '场馆取消' : row.late ? '学员逾时取消' : '学员取消'}
-          </span>
+          <span className="muted nowrap">{cancelText(row)}</span>
         </>
       )}
       {refund && row.refund && (

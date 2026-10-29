@@ -11,7 +11,15 @@ import {
   studentNoticeKinds,
 } from '@rs/shared'
 import { sql } from 'drizzle-orm'
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core'
 
 const id = () => integer('id').primaryKey({ autoIncrement: true })
 const instant = (name: string) => integer(name, { mode: 'timestamp_ms' })
@@ -716,9 +724,9 @@ export const actionLog = sqliteTable(
   'action_log',
   {
     id: id(),
-    staffId: integer('staff_id')
-      .notNull()
-      .references(() => staff.id),
+    // Who did it: a staff member in the admin app, or a coach in the mini program's coach mode.
+    staffId: integer('staff_id').references(() => staff.id),
+    coachId: integer('coach_id').references(() => coaches.id),
     action: text('action').notNull(),
     // Short Chinese description, written when the action happens so later edits never change it.
     summary: text('summary').notNull(),
@@ -735,5 +743,7 @@ export const actionLog = sqliteTable(
     index('action_log_time').on(t.createdAt),
     index('action_log_staff').on(t.staffId),
     index('action_log_student').on(t.studentId),
+    index('action_log_coach').on(t.coachId),
+    check('action_log_actor', sql`(${t.staffId} is null) <> (${t.coachId} is null)`),
   ],
 )

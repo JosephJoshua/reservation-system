@@ -272,6 +272,80 @@ describe('confirming a month of coach pay', () => {
   })
 })
 
+describe('confirming a month whose last lesson runs past midnight', () => {
+  it('waits until that lesson has ended', async () => {
+    // 2026-10-31 23:30 to 2026-11-01 00:30, venue time.
+    const h = setup({ now: '2026-10-31T16:10:00Z' })
+    const v = await venue(h)
+    const slot = h.slot(v.wang.id, '2026-10-31', 23.5)
+    v.lessonAt(v.wang.id, '2026-10-31', { endsAt: new Date('2026-10-31T16:30:00Z') }, slot.id)
+    const refused = await v.confirm('2026-10')
+    expect(refused.status).toBe(409)
+    expect(refused.json.error.message).toBe('本月最后一节课还没结束，下课后再确认')
+    h.clock.now = new Date('2026-10-31T16:30:00Z')
+    await v.relogin()
+    const done = await v.confirm('2026-10')
+    expect(done.status).toBe(200)
+    expect(done.json.coaches[0].pay.amount).toBe(8000)
+  })
+})
+
+describe('课时费 in the bookings export of a confirmed month', () => {
+  it("shows what the month recorded, not today's rates and rules", async () => {
+    const h = setup({ now: '2026-11-05T02:00:00Z' })
+    const v = await venue(h)
+    const paid = v.lessonAt(v.wang.id, '2026-10-20', { attendance: 'attended' })
+    const unpaid = v.lessonAt(v.wang.id, '2026-10-21', {
+      status: 'cancelled',
+      cancelledBy: 'student',
+      late: true,
+    })
+    v.lessonAt(v.wang.id, '2026-11-02', { attendance: 'attended' })
+    expect((await v.confirm('2026-10')).status).toBe(200)
+    // Changes after the confirm go to the next month as adjustments.
+    await v.setRate(9900)
+    await v.setPayRules({ noShows: false, lateCancels: true })
+    await v.setAttendance(paid.id, 'no_show')
+    const column = async () => {
+      const res = await h.app.request('/api/admin/exports/bookings?from=2026-10-01&to=2026-11-30', {
+        headers: { Authorization: `Bearer ${await v.relogin()}` },
+      })
+      return (await res.text())
+        .trimEnd()
+        .split('\r\n')
+        .slice(1)
+        .map((l) => [Number(l.split(',')[0]), l.split(',').at(-3), l.split(',').at(-1)])
+    }
+    // October as confirmed; November, still open, at today's rate.
+    expect(await column()).toEqual([
+      [paid.id, '80.00', ''],
+      [unpaid.id, '', ''],
+      [paid.id + 2, '99.00', ''],
+    ])
+    expect(v.pay(await v.report('2026-10'))).toEqual({ 王教练: 8000, 李教练: 0 })
+    // October keeps the rules it was confirmed with, so only changes to the lessons themselves
+    // adjust it. Once November is confirmed, they show on the October lessons they change.
+    h.db
+      .update(bookings)
+      .set({ status: 'cancelled', cancelledBy: 'venue' })
+      .where(eq(bookings.id, paid.id))
+      .run()
+    h.db
+      .update(bookings)
+      .set({ status: 'confirmed', cancelledBy: null, late: false })
+      .where(eq(bookings.id, unpaid.id))
+      .run()
+    h.clock.now = new Date('2026-12-05T02:00:00Z')
+    await v.relogin()
+    expect((await v.confirm('2026-11')).status).toBe(200)
+    expect(await column()).toEqual([
+      [paid.id, '80.00', '2026-11 调整 -80.00'],
+      [unpaid.id, '', '2026-11 调整 99.00'],
+      [paid.id + 2, '99.00', ''],
+    ])
+  })
+})
+
 describe('reopening a confirmed month', () => {
   it('reopens only the last one, for 管理员, and logs it once', async () => {
     const h = setup({ now: '2026-12-05T02:00:00Z' })
@@ -312,14 +386,37 @@ describe('reopening a confirmed month', () => {
   it('refuses a bad month', async () => {
     const h = setup()
     const admin = await h.admin()
-    for (const month of ['2026-13', '2026-1', 'abc']) {
+    for (const month of ['2026-13', '2026-1', 'abc', '2026-00', '9999-12', '0000-01', '1999-12']) {
       const res = await h.call(
         'POST',
         `/admin/reports/pay-months/${month}/confirm`,
         { version: 'x' },
         admin,
       )
+      expect(res.status, month).toBe(400)
+      expect(
+        (await h.call('GET', `/admin/reports/monthly?month=${month}`, undefined, admin)).status,
+        month,
+      ).toBe(400)
+      expect(
+        (await h.call('DELETE', `/admin/reports/pay-months/${month}`, undefined, admin)).status,
+        month,
+      ).toBe(400)
+    }
+    for (const [from, to] of [
+      ['0000-01-01', '0000-01-02'],
+      ['9999-12-30', '9999-12-31'],
+    ]) {
+      const res = await h.call(
+        'GET',
+        `/admin/reports/stats?from=${from}&to=${to}`,
+        undefined,
+        admin,
+      )
       expect(res.status).toBe(400)
     }
+    expect(
+      (await h.call('GET', '/admin/reports/monthly?month=2999-12', undefined, admin)).status,
+    ).toBe(200)
   })
 })

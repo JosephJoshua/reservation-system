@@ -25,11 +25,18 @@ const messages: Record<AttendanceError, string> = {
   not_started: `课前 ${CHECK_IN_EARLY_MINUTES} 分钟起可签到，课程开始后可记缺席`,
   too_late: '已超过签到期限，请联系场馆修改',
   marked: '该课程已记为缺席，请联系前台',
+  staff_marked: '前台已登记这节课的签到，如需修改请联系前台',
 }
 
-type Booking = Pick<typeof bookings.$inferSelect, 'status' | 'startsAt' | 'endsAt' | 'attendance'>
+type Booking = Pick<
+  typeof bookings.$inferSelect,
+  'status' | 'startsAt' | 'endsAt' | 'attendance' | 'attendanceBy'
+>
 
-/** Whether the coach can mark this lesson now: 点名 is on and the lesson has started. */
+/**
+ * Whether the coach can mark this lesson now: 点名 is on, the lesson has started and the front desk
+ * has not marked it.
+ */
 export function coachCanMark(b: Booking, now: Date, coachMarks: boolean) {
   return coachMarks && attendanceError(b, now, 'coach', null) === null
 }

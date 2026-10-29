@@ -8,10 +8,9 @@ import { getSettings } from './settings'
 
 type PayRules = VenueSettings['pay']
 
-/** Venue month YYYY-MM to its start and the next month's start. */
+/** Venue month YYYY-MM, in 2000-2999, to its start and the next month's start. */
 export function monthRange(month: string) {
-  const [y, m] = month.split('-').map(Number)
-  if (!y || !m || m < 1 || m > 12) throw new ApiError(400, 'invalid_query', '月份无效')
+  if (!/^2\d{3}-(0[1-9]|1[0-2])$/.test(month)) throw new ApiError(400, 'invalid_query', '月份无效')
   return { from: monthStart(month), to: monthStart(nextMonth(month)) }
 }
 
@@ -96,6 +95,7 @@ function loadUnits(tx: Q, from: Date, to: Date, now: Date, rulesFor: (month: str
       attendance: bookings.attendance,
       cancelledBy: bookings.cancelledBy,
       late: bookings.late,
+      sessionCancelled: sql<boolean>`${slots.cancelledAt} is not null`.mapWith(Boolean),
     })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
@@ -124,6 +124,22 @@ function loadUnits(tx: Q, from: Date, to: Date, now: Date, rulesFor: (month: str
       })
   }
   return [...units.values()]
+}
+
+/** When the last lesson that started in [from, to) ends, or the epoch when there is none. */
+function lastEnd(tx: Q, from: Date, to: Date) {
+  const row = tx
+    .select({ endsAt: sql<number | null>`max(${bookings.endsAt})` })
+    .from(bookings)
+    .where(
+      and(
+        gte(bookings.startsAt, from),
+        lt(bookings.startsAt, to),
+        inArray(bookings.status, ['pending_payment', 'confirmed', 'cancelled']),
+      ),
+    )
+    .get()
+  return new Date(row?.endsAt ?? 0)
 }
 
 function confirmedMonths(tx: Q) {
@@ -315,7 +331,10 @@ export function monthPay(tx: Q, month: string, now: Date) {
   if (!done) {
     const unrated = [...byCoach.values()].reduce((sum, p) => sum + p.unrated, 0)
     if (to > now) blocked = '这个月还没结束'
-    else if (last && month < last.month) blocked = '早于已确认的月份，不能再确认'
+    else if (lastEnd(tx, monthRange(month).from, to) > now) {
+      // A lesson that started on the month's last evening can run past midnight.
+      blocked = '本月最后一节课还没结束，下课后再确认'
+    } else if (last && month < last.month) blocked = '早于已确认的月份，不能再确认'
     else if (last && month !== nextMonth(last.month)) {
       blocked = `请先确认 ${nextMonth(last.month)} 的课时费`
     } else if (unrated > 0) {

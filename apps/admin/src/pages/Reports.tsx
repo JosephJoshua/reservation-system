@@ -1,3 +1,4 @@
+import { toCsv } from '@rs/shared'
 import { useState } from 'react'
 import { Button, Card, DatePicker, Dialog, Popconfirm, Space, Tabs, Tag } from 'tdesign-react'
 import { api } from '../api'
@@ -128,7 +129,7 @@ function PayCell({ row }: { row: CoachRow }) {
   )
 }
 
-/** A UTF-8 CSV with a BOM, so Excel shows the Chinese headers correctly. */
+/** The month as a UTF-8 CSV with a BOM, so Excel shows the Chinese headers correctly. */
 function downloadCsv(report: MonthlyReport) {
   const y = (fen: number) => (fen / 100).toFixed(2)
   const lines: (string | number)[][] = [
@@ -176,11 +177,8 @@ function downloadCsv(report: MonthlyReport) {
     ['未上课时（当前）', report.packagesOutstanding.lessons],
     ['对应预收金额（元）', y(report.packagesOutstanding.value)],
   ]
-  const cell = (v: string | number) => {
-    const s = String(v)
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const csv = `﻿${lines.map((l) => l.map(cell).join(',')).join('\r\n')}`
+  // Coach and lesson names are typed by staff; the shared helper keeps formulas from running.
+  const csv = toCsv(lines)
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url

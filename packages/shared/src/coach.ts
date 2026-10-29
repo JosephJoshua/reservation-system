@@ -1,10 +1,25 @@
 // Response shapes of the coach API. Instants are ISO strings; money is fen.
-import type { Attendance } from './availability'
+import type { Attendance, AttendanceBy } from './availability'
 import type { BookingStatus, FeedbackDto } from './dto'
 import type { StudentProfileDto } from './students'
 
 /** Starts the stored reason of a lesson the coach cancelled, before the coach's own words. */
 export const COACH_CANCEL_PREFIX = '教练取消：'
+
+/**
+ * Who cancelled a booking: a coach's cancel is stored as the venue's, with its reason starting
+ * with COACH_CANCEL_PREFIX. `reason` is the reason without that prefix.
+ */
+export function cancelSource(b: {
+  cancelledBy: 'student' | 'venue' | null
+  cancelReason: string | null
+}): { by: 'student' | 'venue' | 'coach' | null; reason: string } {
+  const reason = b.cancelReason ?? ''
+  if (b.cancelledBy === 'venue' && reason.startsWith(COACH_CANCEL_PREFIX)) {
+    return { by: 'coach', reason: reason.slice(COACH_CANCEL_PREFIX.length) }
+  }
+  return { by: b.cancelledBy, reason }
+}
 
 export interface CoachMeDto {
   id: number
@@ -62,6 +77,8 @@ export interface CoachSessionDto {
     name: string
     status: BookingStatus
     attendance: Attendance | null
+    /** Who marked it; a front desk mark the coach cannot change. */
+    attendanceBy: AttendanceBy | null
     canMarkAttendance: boolean
     hasFeedback: boolean
   }[]
@@ -88,6 +105,8 @@ export interface CoachLessonDto {
   paidOffline: boolean
   packageName: string | null
   attendance: Attendance | null
+  /** Who marked it; a front desk mark the coach cannot change. */
+  attendanceBy: AttendanceBy | null
   coachNote: string
   /**
    * The 课后点评; `hidden` when the venue took it down, `visible` while the student sees it: not
