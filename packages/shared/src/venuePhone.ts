@@ -20,8 +20,21 @@ function halfWidth(text: string) {
 
 // A note at the end, such as （微信同号）: brackets holding something besides a number.
 const NOTE = /\s*\([^()]*[^\d\s()+.-][^()]*\)\s*$/
-const EXTENSION = /\s*(?:转|分机|#|ext\.?|x)\s*\d{1,6}$/i
+// An extension at the end, as in 转 8 or #8, or in brackets, as in (8) or (转 8).
+const EXTENSION =
+  /\s*(?:(?:转|分机|#|ext\.?|x)\s*\d{1,6}|\(\s*(?:(?:转|分机|ext\.?|x)\s*)?\d{1,6}\s*\))$/i
 const NUMBER = /^(?:\+|\(\+)?[\d\s().-]+$/
+
+/**
+ * Whether `number`, without its extension, has as many digits as a phone number can: 5 for a
+ * short service number, up to 15 as E.164 allows. China's +86, and the trunk 0 some write after
+ * it, are not counted.
+ */
+function digitsFit(number: string) {
+  const digits = number.replace(/\D/g, '')
+  const counted = /^\(?\+/.test(number) ? digits.replace(/^860?/, '') : digits
+  return counted.length >= 5 && counted.length <= 15
+}
 
 /** The numbers in `phone`, each without its extension, or null when it is not a phone. */
 function numbers(phone: string): string[] | null {
@@ -31,7 +44,7 @@ function numbers(phone: string): string[] | null {
   const out: string[] = []
   for (const part of parts) {
     const number = part.replace(EXTENSION, '').trim()
-    if (!NUMBER.test(number) || (number.match(/\d/g)?.length ?? 0) < 5) return null
+    if (!NUMBER.test(number) || !digitsFit(number)) return null
     out.push(number)
   }
   return out

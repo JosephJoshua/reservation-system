@@ -24,6 +24,10 @@ describe('venuePhoneValid', () => {
       '010-62345678，13900000001',
       '13900000001（微信同号）',
       '010-62345678 / 13900000001 (微信同号)',
+      '13800138000(8)',
+      '13800138000（转 802）',
+      '+44 20 7946 0958',
+      '123456789012345',
     ]) {
       expect(venuePhoneValid(phone), phone).toBe(true)
     }
@@ -41,6 +45,12 @@ describe('venuePhoneValid', () => {
       '1-2-3-4',
       '010-62345678 / 13900000001 / 13900000002',
       '010-62345678 / 😀',
+      // Too many digits for one number, as when two are typed together.
+      '138001380001380013800138001380013800',
+      '1234567890123456',
+      '+86 1234567890123456',
+      // Brackets with more digits than an extension has.
+      '13800138000(1234567)',
     ]) {
       expect(venuePhoneValid(phone), phone).toBe(false)
     }
@@ -58,6 +68,12 @@ describe('dialablePhone', () => {
     expect(dialablePhone('0755—12345678')).toBe('075512345678')
   })
 
+  it('leaves out an extension in brackets rather than dialling it with the number', () => {
+    expect(dialablePhone('13800138000(8)')).toBe('13800138000')
+    expect(dialablePhone('13800138000（8）')).toBe('13800138000')
+    expect(dialablePhone('010-62345678 (转 802)')).toBe('01062345678')
+  })
+
   it('has nothing to dial when there is no phone', () => {
     expect(dialablePhone('')).toBe(null)
     expect(dialablePhone('前台')).toBe(null)
@@ -71,6 +87,10 @@ describe('phoneToDial', () => {
 
   it('dials an odd phone saved before the check as it is', () => {
     expect(phoneToDial(' 前台 010-62345678 ')).toBe('前台 010-62345678')
+  })
+
+  it('dials a bracketed extension phone by its number alone', () => {
+    expect(phoneToDial('13800138000(8)')).toBe('13800138000')
   })
 
   it('has nothing to dial without a phone', () => {
