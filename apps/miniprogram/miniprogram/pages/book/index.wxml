@@ -88,7 +88,7 @@
   </view>
   <view wx:else>
     <view wx:if="{{capacity > 1}}" class="section-title">
-      {{availableCount ? '可报名 ' + availableCount + ' 节，每节 ' + duration + ' 分钟' : '这一天已无可报名的课'}}
+      {{availableCount ? '可报名 ' + availableCount + ' 节，每节 ' + duration + ' 分钟' : mineCount ? '你已预约这一天的课' : '这一天已无可报名的课'}}
     </view>
     <view wx:else class="section-title">
       {{availableCount ? '可预约 ' + availableCount + ' 个时段，每节 ' + duration + ' 分钟' : '这一天已无可约时段'}}

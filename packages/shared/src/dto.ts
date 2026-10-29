@@ -125,6 +125,8 @@ export interface RefundDto {
   status: RefundStatus
   /** Settled by staff outside WeChat Pay: 线下另付 is not paid back to where it came from. */
   settledHow: RefundSettleWay | null
+  /** WeChat Pay could not pay it back to where it came from (退款异常); staff handle it. */
+  abnormal: boolean
 }
 
 /** The failure note on a refund staff paid back 线下另付 that WeChat Pay then reports done too. */

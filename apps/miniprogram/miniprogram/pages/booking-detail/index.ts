@@ -4,7 +4,6 @@ import {
   cancellationOutcome,
   DISRUPTION_TEXT,
   type HomeDto,
-  type RefundDto,
 } from '../../lib/shared'
 import {
   ApiError,
@@ -20,7 +19,7 @@ import { scanToCheckIn } from '../../utils/check-in'
 import { cancelRuleText } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
-import { refundStatus } from '../../utils/labels'
+import { refundBack, refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { PAY_PENDING, PAY_REFUNDED, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 import { previewPhotos } from '../../utils/photos'
@@ -89,19 +88,6 @@ function subtitle(b: BookingDto, now: number): string {
       return b.disruption ? `${DISRUPTION_TEXT[b.disruption]}，预约已失效` : '未在规定时间内支付'
     }
   }
-}
-
-/**
- * Where the money of a refund stands, in words that hold for how it is paid back: at the front
- * desk, by WeChat Pay, or by staff another way (线下另付) after WeChat Pay could not.
- */
-function refundBack(refund: RefundDto, paidOffline: boolean): string {
-  if (paidOffline) return refund.status === 'succeeded' ? '款项已到店退还' : '款项将到店退还'
-  if (refund.status === 'succeeded') {
-    return refund.settledHow === 'offline' ? '款项已退还' : '款项已原路退回'
-  }
-  // Failed at WeChat Pay: the venue retries it or pays it back another way.
-  return refund.status === 'failed' ? '退款处理中' : '款项将原路退回'
 }
 
 /** The server sweeps unpaid holds a little after payBy; show them as expired from payBy on. */

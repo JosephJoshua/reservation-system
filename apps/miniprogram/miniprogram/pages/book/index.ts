@@ -61,6 +61,8 @@ Page({
     slotsState: 'loading' as 'loading' | 'ready' | 'error',
     slots: [] as SlotView[],
     availableCount: 0,
+    /** Sessions that day the student has a seat in, so the header does not say none is left. */
+    mineCount: 0,
   },
 
   /** The lesson type's notice: a time closer than this to now cannot be booked. */
@@ -191,7 +193,8 @@ Page({
           return
         }
       }
-      this.setData({ slotsState: 'ready', slots, availableCount })
+      const mineCount = slots.filter((s) => s.mine).length
+      this.setData({ slotsState: 'ready', slots, availableCount, mineCount })
       const day = this.data.days.find((d) => d.key === date)
       if (moved && day && availableCount > 0) {
         wx.showToast({ title: `当天没有可约时段，已跳到 ${day.date}`, icon: 'none' })
