@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  addVenueDays,
   can,
   groupSettingsError,
   isGroup,
@@ -22,6 +23,7 @@ import {
   staffRoleLabels,
   staffRoles,
   venueDateKey,
+  venueInstant,
   venueSettings,
 } from '@rs/shared'
 import {
@@ -1506,6 +1508,15 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
+  // The 签到码 dialog: the venue name it prints, and whether students can scan it at all.
+  app.get('/check-in-code', need('attendance'), (c) => {
+    const settings = getSettings(db)
+    return c.json({
+      venueName: settings.venue.name,
+      selfCheckIn: settings.attendance.selfCheckIn,
+    })
+  })
+
   // The front desk's 签到 list: every student's lesson on one venue day.
   app.get('/front-desk', need('attendance'), (c) => {
     const q = parseQuery(c, z.object({ date: dateKey.optional() }))
@@ -2624,8 +2635,15 @@ export function adminRoutes(deps: Deps) {
     const { revenue, ...today } = dashboard(deps)
     // Money is left out for staff without finance, who could not act on it anyway.
     const money = can(c.get('roles'), 'finance')
+    // 待上课 opens 预约 on its default range, today and the next 13 days, so it counts those.
+    const day = venueDateKey(now)
+    const upcoming = and(
+      eq(bookings.status, 'confirmed'),
+      gte(bookings.startsAt, venueInstant(day, 0)),
+      lt(bookings.startsAt, venueInstant(addVenueDays(day, 13), 24 * 60)),
+    )
     return c.json({
-      upcomingBookings: count(and(eq(bookings.status, 'confirmed'), gt(bookings.startsAt, now))),
+      upcomingBookings: count(upcoming),
       pendingPayments: count(eq(bookings.status, 'pending_payment')),
       refundRequests: money ? refundCount(eq(refunds.status, 'requested')) : null,
       failedRefunds: money ? refundCount(eq(refunds.status, 'failed')) : null,
