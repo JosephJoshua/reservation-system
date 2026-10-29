@@ -361,5 +361,10 @@ request.
   ```
 
   Decide with the venue which row is real (the package bookings used, the pay line staff
-  confirmed) and delete only the other one the same way, with `.run()` for the `delete`. Then
-  `rs.sh promote` again.
+  confirmed). Before deleting a duplicate package, check what still points at it:
+  `select id, status from bookings where package_id = ?`, `select * from package_ledger where
+  package_id = ?`, `select id, status from refunds where package_id = ?` and `select * from
+  package_notices where package_id = ?`. Move those rows to the package you keep (an `update`
+  setting `package_id`), and fix its `lessons_remaining` to match, or ask the developer when that
+  is not clear. Then delete the duplicate the same way, with `.run()` for the `update` and
+  `delete` statements, and `rs.sh promote` again.
