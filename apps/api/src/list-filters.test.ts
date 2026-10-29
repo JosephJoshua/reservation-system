@@ -106,6 +106,9 @@ describe('admin list filters and totals', () => {
     expect(await ids('q=小美')).toEqual([a.id, c.id])
     expect(await ids('q=13900')).toEqual([b.id])
     expect(await ids(`q=${bob.id}`)).toEqual([b.id])
+    // A phone typed or pasted with spaces, dashes or +86 still matches.
+    expect(await ids(`q=${encodeURIComponent('139 0000 0002')}`)).toEqual([b.id])
+    expect(await ids(`q=${encodeURIComponent('+86 139-0000-0002')}`)).toEqual([b.id])
     // A search for % or _ is not a wildcard.
     expect(await ids('q=%25')).toEqual([])
     expect(await ids('q=_')).toEqual([])
