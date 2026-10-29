@@ -1,17 +1,10 @@
-import { addVenueDays, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/shared'
-
-const whole = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 })
-const withCents = new Intl.NumberFormat('zh-CN', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
+import { addVenueDays, formatMoney, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/shared'
 
 /**
  * Money shown anywhere in the admin: thousands separators, and two decimals unless whole, as
- * ¥9,640, ¥9,640.10 and ¥13,000.10.
+ * ¥9,640, ¥9,640.10 and ¥13,000.10. The API's 操作记录 writes it the same way.
  */
-export const yuan = (fen: number) =>
-  `¥${fen % 100 === 0 ? whole.format(fen / 100) : withCents.format(fen / 100)}`
+export const yuan = formatMoney
 
 /** Yuan typed by the admin to fen. Returns null when it is not a valid amount. */
 export function toFen(yuanValue: number | string | undefined | null): number | null {

@@ -239,7 +239,8 @@ export function Refunds() {
             cell: ({ row }) =>
               row.package ? (
                 <span>
-                  {row.package.name}，剩 {row.package.lessonsRemaining}/
+                  {row.package.name}，{row.lessonsRefunded === null ? '剩' : '退款时剩'}{' '}
+                  {row.lessonsRefunded ?? row.package.lessonsRemaining}/
                   {row.package.lessonsPurchased + row.package.lessonsGranted} 节，实付{' '}
                   {yuan(row.package.pricePaid)}
                   <br />
@@ -518,8 +519,8 @@ function Settle({
     >
       <div className="fields">
         <p className="muted">
-          {yuan(refund.amount)}{' '}
-          已在微信支付商户平台处理，或已通过现金、转账退给学员后再确认。确认后计为已退款，不再重试。
+          请先在微信支付商户平台处理这笔 {yuan(refund.amount)}{' '}
+          的退款，或通过现金、转账退给学员，再确认。确认后计为已退款，不再重试。
         </p>
         <Radio.Group
           value={how ?? undefined}
@@ -533,7 +534,9 @@ function Settle({
           placeholder={
             how === 'platform'
               ? '处理说明，例如：已在商户平台重新退款'
-              : '处理说明，例如：已现金退还'
+              : how === 'offline'
+                ? '处理说明，例如：已现金退还'
+                : '处理说明'
           }
           value={note}
           maxlength={100}
