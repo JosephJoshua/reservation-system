@@ -917,6 +917,26 @@ a:hover {
   color-scheme: dark;
 }
 
+/*
+ * TDesign's light tags in dark mode, such as 到课, put mid-tone text on a dark tint at about 3:1.
+ * A lighter step of each color reads at 4.5:1 or more.
+ */
+:root[theme-mode="dark"] .t-tag--primary:is(.t-tag--light, .t-tag--outline, .t-tag--light-outline) {
+  color: var(--td-brand-color-9);
+}
+
+:root[theme-mode="dark"] .t-tag--success:is(.t-tag--light, .t-tag--outline, .t-tag--light-outline) {
+  color: var(--td-success-color-7);
+}
+
+:root[theme-mode="dark"] .t-tag--warning:is(.t-tag--light, .t-tag--outline, .t-tag--light-outline) {
+  color: var(--td-warning-color-7);
+}
+
+:root[theme-mode="dark"] .t-tag--danger:is(.t-tag--light, .t-tag--outline, .t-tag--light-outline) {
+  color: var(--td-error-color-8);
+}
+
 /* Charts (charts.tsx). Series colors were checked for color-blind separation on both surfaces. */
 :root,
 :root[theme-mode="light"] {
@@ -2154,4 +2174,9 @@ a:hover {
 .filter-sheet .t-drawer__footer .t-button {
   flex: 1;
   margin: 0;
+}
+
+/* 报表 › 教练课时: headings on one line, as 时长（小时） otherwise breaks inside its brackets. */
+.coach-hours thead th {
+  white-space: nowrap;
 }
