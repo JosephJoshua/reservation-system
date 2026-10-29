@@ -7,6 +7,7 @@ import {
   attendanceError,
   CHECK_IN_EARLY_MINUTES,
   type CheckInLessonDto,
+  DISRUPTION_TEXT,
   type FrontDeskLessonDto,
   venueDateKey,
   venueInstant,
@@ -18,6 +19,7 @@ import { bookings, coaches, lessonTypes, slots, staff, students } from '../db/sc
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { personColumns } from './account'
+import { disruptions } from './disruption'
 import { getSettings } from './settings'
 
 const messages: Record<AttendanceError, string> = {
@@ -149,8 +151,18 @@ export function studentCheckIn(deps: Deps, studentId: number): CheckInLessonDto[
           : '没有待上的课程。如果是在前台预约的，请联系前台',
       )
     }
-    const done = open.filter((r) => r.booking.attendance !== 'no_show')
-    if (done.length === 0) throw new ApiError(409, 'marked', messages.marked)
+    const marked = open.filter((r) => r.booking.attendance !== 'no_show')
+    if (marked.length === 0) throw new ApiError(409, 'marked', messages.marked)
+    // A lesson the venue cannot give (闭馆, 请假, the coach stopped) is not checked in to.
+    const disrupted = disruptions(
+      tx,
+      marked.map((r) => r.booking),
+    )
+    const done = marked.filter((r) => !disrupted.has(r.booking.id))
+    const why = marked[0] ? disrupted.get(marked[0].booking.id) : undefined
+    if (done.length === 0 && why) {
+      throw new ApiError(409, 'lesson_unavailable', `${DISRUPTION_TEXT[why]}，无法签到`)
+    }
     for (const r of done) {
       if (r.booking.attendance === 'attended') continue
       tx.update(bookings)

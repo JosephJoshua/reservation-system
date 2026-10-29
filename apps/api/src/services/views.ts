@@ -24,6 +24,7 @@ import { disruptions } from './disruption'
 import { visibleFeedback, withVisibleFeedback } from './feedback'
 import { orderInvoices } from './invoices'
 import { movedFromIso, moveSummaries } from './move-history'
+import { autoRefundWhy } from './refunds'
 import { getSettings, ruleBook } from './settings'
 
 type BookingRow = typeof bookings.$inferSelect
@@ -116,14 +117,15 @@ export function bookingViews(
   const refundByBooking = latestRefunds(tx, 'bookingId', ids)
   const invoiceByOrder = orderInvoices(tx, [...orderByBooking.values()])
   const moves = moveSummaries(tx, ids)
-  // Only lessons still ahead can be cancelled, so only those need checking. An expired hold is
-  // checked too, so the student is told the venue stopped it rather than that they paid late.
+  // Lessons still ahead can be cancelled, so those are checked; a booked one until it ends too,
+  // so a student running late is not sent to it. An unpaid hold that lapsed is checked while its
+  // lesson is ahead: what stands in its way now, which a refunded one says from its refund.
   const disrupted = disruptions(
     tx,
-    rows.filter(
-      (b) =>
-        b.status === 'expired' ||
-        ((b.status === 'confirmed' || b.status === 'pending_payment') && b.startsAt > now),
+    rows.filter((b) =>
+      b.status === 'confirmed'
+        ? b.endsAt > now
+        : (b.status === 'pending_payment' || b.status === 'expired') && b.startsAt > now,
     ),
   )
   const feedback = withFeedback ? visibleFeedback(tx, ids) : null
@@ -137,12 +139,14 @@ export function bookingViews(
     const rules = rulesBook.termsOf(b)
     const type = rulesBook.of(b.lessonTypeId)
     const disruption = disrupted.get(b.id) ?? null
+    // Free to cancel until the start; nothing to cancel for a lapsed hold.
     const deadline = freeCancelDeadline(
       b.startsAt,
       rules,
       moved?.lastMove,
-      status === 'expired' ? null : disruption,
+      status === 'expired' || b.startsAt <= now ? null : disruption,
     )
+    const expiredWhy = status === 'expired' && refund ? autoRefundWhy(refund.reason) : null
     return {
       id: b.id,
       slotId: b.slotId,
@@ -163,7 +167,8 @@ export function bookingViews(
       movedLate:
         freeCancelDeadline(b.startsAt, rules, moved?.lastMove).getTime() !==
         cancelDeadline(b.startsAt, rules).getTime(),
-      disruption,
+      disruption: expiredWhy ? null : disruption,
+      expiredWhy,
       canCancel: (status === 'confirmed' || status === 'pending_payment') && b.startsAt > now,
       canMove: studentMoveError({ status: b.status, deadline, now, movesUsed, rules }) === null,
       movesLeft: Math.max(0, rules.studentMoves - movesUsed),
@@ -175,7 +180,7 @@ export function bookingViews(
       late: b.late,
       refund: refund ? { amount: refund.amount, status: refund.status } : null,
       attendance: b.attendance,
-      canCheckIn: studentCanCheckIn(b, now, selfCheckIn),
+      canCheckIn: !disruption && studentCanCheckIn(b, now, selfCheckIn),
       invoice: order ? (invoiceByOrder.get(order.id) ?? null) : null,
       hasFeedback: hasFeedback.has(b.id),
       feedback: feedback?.get(b.id) ?? null,
