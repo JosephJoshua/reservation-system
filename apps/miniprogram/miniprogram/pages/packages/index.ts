@@ -160,6 +160,9 @@ Page({
           content: '如已完成支付，课时包稍后会出现在“我的课时包”中。',
           showCancel: false,
         })
+      } else if (result === 'closed') {
+        wx.showToast({ title: '订单已关闭，请重新购买', icon: 'none', duration: 2500 })
+        this.load()
       }
     } catch (err) {
       if (this.left) return

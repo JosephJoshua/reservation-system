@@ -11,7 +11,7 @@ import { ApiError, api, assetUrl, errorMessage, RESULT_UNKNOWN, showError } from
 import { agreePolicies, askForNotices, cancelRuleText, getCatalog, getMe } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
-import { payOrder } from '../../utils/pay'
+import { PAY_PENDING, payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
 
@@ -315,13 +315,26 @@ Page({
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
-        const paid = await payOrder(res.orderId, this.data.price, res.payment, () => !this.left)
-          .then((result) => result === 'paid')
-          .catch((e) => {
-            showError(e)
-            return false
-          })
-        this.finish(res.bookingId, '', paid ? '预约成功' : '已预约，请尽快支付')
+        const result = await payOrder(
+          res.orderId,
+          this.data.price,
+          res.payment,
+          () => !this.left,
+        ).catch((e) => {
+          showError(e)
+          return 'failed' as const
+        })
+        // Paid but not confirmed yet: say so, so the booking's 待支付 does not invite paying again.
+        if (result === 'pending') {
+          this.finish(res.bookingId, PAY_PENDING, PAY_PENDING)
+          return
+        }
+        // Closed while the cashier was open, say past its time limit: the booking says what is left.
+        if (result === 'closed') {
+          this.finish(res.bookingId, '订单已关闭', '订单已关闭')
+          return
+        }
+        this.finish(res.bookingId, '', result === 'paid' ? '预约成功' : '已预约，请尽快支付')
         return
       }
       this.finish(res.bookingId, res.existing ? '你已预约这节课' : '', '预约成功')
@@ -411,7 +424,7 @@ Page({
     wx.disableAlertBeforeUnload()
     const url = `/pages/booking-detail/index?id=${bookingId}`
     const success = () => {
-      if (toast) wx.showToast({ title: toast, icon: 'none' })
+      if (toast) wx.showToast({ title: toast, icon: 'none', duration: 2500 })
     }
     if (isTop(this)) wx.redirectTo({ url, success })
     else if (this.left) {
