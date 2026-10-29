@@ -76,7 +76,7 @@ export function DisruptionTag({ disruption }: { disruption: Disruption }) {
 
 /**
  * Asks before 签到 on a lesson the venue could not give, which the student may have been told
- * not to come to and which counts for the coach's 课时费. Resolves true to go ahead.
+ * not to come to. Resolves true to go ahead.
  */
 export function confirmDisruptedArrival(disruption: Disruption): Promise<boolean> {
   return new Promise((resolve) => {
@@ -86,7 +86,7 @@ export function confirmDisruptedArrival(disruption: Disruption): Promise<boolean
     }
     const dialog = DialogPlugin.confirm({
       header: `${DISRUPTION_TEXT[disruption]}，仍要签到？`,
-      body: '学员可能已被告知这节课上不了。签到后这节课计入教练课时费。',
+      body: '学员可能已被告知这节课上不了。如果课程照常进行，请签到。',
       theme: 'warning',
       confirmBtn: '仍要签到',
       cancelBtn: '返回',
