@@ -1538,6 +1538,10 @@ function DeskRefund({
   useEffect(() => {
     if (q) setAmount(toYuan(q.suggested))
   }, [q])
+  // The confirm button that had focus is gone: 关闭 takes it, so Esc still closes the dialog.
+  useEffect(() => {
+    if (refunded) document.querySelector<HTMLElement>('.desk-refund .t-dialog__cancel')?.focus()
+  }, [refunded])
   const fen = toFen(amount)
   const valid = !!q && fen !== null && fen >= 1 && fen <= q.max
 
@@ -1558,6 +1562,8 @@ function DeskRefund({
         '已退款',
         {
           stale: ['package_refunded_elsewhere', 'edited_elsewhere'],
+          // Shown in the dialog instead.
+          quiet: ['package_refunded_elsewhere'],
           onStale: (e) => {
             if (e.code === 'package_refunded_elsewhere') setRefunded(e.message)
             else onDone()
@@ -1571,6 +1577,7 @@ function DeskRefund({
   return (
     <Dialog
       visible
+      className="desk-refund"
       header="前台退款"
       confirmBtn={
         refunded
