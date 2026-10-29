@@ -347,3 +347,19 @@ request.
   runs; start it with `docker compose -f compose.yml up -d backup` in `/srv/rs`. Then
   `rs.sh logs backup` for the last run, and `rs.sh backup` to make a copy now.
 - **Disk full**: `df -h`, then `rs.sh prune` and `docker system prune`.
+- **Duplicate rows at startup**: the API refuses to start with `The database cannot be migrated,
+  nothing was changed: ...`. A release adds a unique index (one 课时包 per order, one pay line
+  per lesson in a confirmed month) and the database already breaks it, from a bug in an older
+  release. Nothing was migrated, so `rs.sh rollback` brings the previous release back on the
+  same database. The message lists the rows by id (`packages` or `coach_pay_entries`). Take
+  `rs.sh backup` first, then look at them from a shell in `/srv/rs`:
+
+  ```sh
+  docker compose -f compose.yml run --rm --no-deps backup node -e '
+    const db = new (require("better-sqlite3"))(process.env.DATABASE_PATH)
+    console.log(db.prepare("select * from packages where id in (1, 2)").all())'
+  ```
+
+  Decide with the venue which row is real (the package bookings used, the pay line staff
+  confirmed) and delete only the other one the same way, with `.run()` for the `delete`. Then
+  `rs.sh promote` again.
