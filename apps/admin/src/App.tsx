@@ -584,8 +584,13 @@ function SignedInApp({
               <AccountMenu me={me.data} onLogout={onLogout} />
             </span>
           </header>
-          {/* Typing in the page's dialogs counts as unsaved when leaving the page. */}
-          <main className="admin-content" onInputCapture={(e) => markTyped(e.target)}>
+          {/* Typing or a choice in the page's dialogs counts as unsaved when leaving the page. */}
+          <main
+            className="admin-content"
+            onInputCapture={(e) => markTyped(e.nativeEvent)}
+            onClickCapture={(e) => markTyped(e.nativeEvent)}
+            onKeyDownCapture={(e) => markTyped(e.nativeEvent)}
+          >
             {Page ? (
               <Page key={account} />
             ) : me.error ? (
@@ -595,8 +600,14 @@ function SignedInApp({
             )}
           </main>
           {lessonId && allowed.includes('lessons') && (
-            // Typing in the lesson's dialogs counts as unsaved when it closes or the page changes.
-            <div className="lesson-scope" onInputCapture={(e) => markTyped(e.target, 'lesson')}>
+            // Typing or a choice in the lesson's dialogs counts as unsaved when it closes or the
+            // page changes.
+            <div
+              className="lesson-scope"
+              onInputCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
+              onClickCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
+              onKeyDownCapture={(e) => markTyped(e.nativeEvent, 'lesson')}
+            >
               <LessonDrawer key={lessonId} id={lessonId} />
             </div>
           )}
