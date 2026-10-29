@@ -220,7 +220,7 @@ try {
     },
     token,
   )
-  if (booked.orderId) await call('POST', `/dev/fake-pay/${booked.orderId}`)
+  if (booked.orderId) await call('POST', `/dev/fake-pay/${booked.orderId}`, undefined, token)
   // The venue tightens the lesson type afterwards; the booked lesson keeps what it was booked under.
   await setRules({ advanceDays: 7, cancelDeadlineHours: 2, studentMoves: 0 })
 
@@ -265,7 +265,7 @@ try {
       },
       token,
     ).catch(() => null)
-    if (again?.orderId) await call('POST', `/dev/fake-pay/${again.orderId}`)
+    if (again?.orderId) await call('POST', `/dev/fake-pay/${again.orderId}`, undefined, token)
     check(again, 'booking again under the new rules should work')
     await miniProgram.reLaunch(`/pages/move/index?id=${again.bookingId}`)
     await waitForPage('pages/move/index', (d) => d.state === 'error')

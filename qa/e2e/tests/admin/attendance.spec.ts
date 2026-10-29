@@ -86,7 +86,7 @@ test('three students book lessons around now', async ({ request }) => {
       startsAt: spans[i]?.startsAt,
       lessonTypeId: lesson.id,
     })
-    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, tokens[key])
     ids[key] = booked.bookingId
     moveTo(booked.bookingId, now + starts[key] * MIN)
   }

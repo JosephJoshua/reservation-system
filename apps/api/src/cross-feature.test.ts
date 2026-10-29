@@ -58,7 +58,7 @@ describe('front-desk payments seen by the student and the desk', () => {
       { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id },
       student,
     )
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     const view = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, student)
     expect(view.json.paidOffline).toBe(false)
     await h.call(

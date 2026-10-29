@@ -17,7 +17,7 @@ function ownRules(h: Harness, id: number, rules: object) {
 
 async function book(h: Harness, token: string, slotId: number, lessonTypeId: number) {
   const res = await h.call('POST', '/bookings', { slotId, lessonTypeId }, token)
-  if (res.json?.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  if (res.json?.orderId) await h.fakePay(res.json.orderId)
   return res
 }
 

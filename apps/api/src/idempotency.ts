@@ -4,10 +4,15 @@ import type { MiddlewareHandler } from 'hono'
 import { idempotencyKeys, sessions } from './db/schema'
 import type { Deps } from './deps'
 import { ApiError } from './errors'
+import { hashToken } from './services/ids'
 
 const KEEP_MS = 24 * 3_600_000
 const WAIT_STEP_MS = 50
-const MAX_WAITS = 200
+// A repeat waits for the first request until 45 seconds after the first began. A call to WeChat
+// gives up after at most 15 seconds and a request may make a couple in a row, so a repeat is not
+// told 正在处理 while the first can still finish. That matters most for a client that sends again
+// on its own after a timeout, as the mini program will once it sends keys (its 15-second timeout).
+const MAX_WAITS = 900
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
@@ -51,9 +56,14 @@ export function idempotency(deps: Deps): MiddlewareHandler {
     const { db } = deps
     const now = deps.now()
     const signedIn = db
-      .select({ token: sessions.token })
+      .select({ tokenHash: sessions.tokenHash })
       .from(sessions)
-      .where(and(eq(sessions.token, auth.replace(/^Bearer /, '')), gt(sessions.expiresAt, now)))
+      .where(
+        and(
+          eq(sessions.tokenHash, hashToken(auth.replace(/^Bearer /, ''))),
+          gt(sessions.expiresAt, now),
+        ),
+      )
       .get()
     // The route's own auth answers this one.
     if (!signedIn) return next()
@@ -83,6 +93,9 @@ export function idempotency(deps: Deps): MiddlewareHandler {
       if (wait >= MAX_WAITS || age > MAX_WAITS * WAIT_STEP_MS) {
         throw new ApiError(409, 'in_progress', '正在处理，请刷新后查看结果')
       }
+      // A caller that has gone away is not waited for.
+      if (c.req.raw.signal.aborted)
+        throw new ApiError(409, 'in_progress', '正在处理，请刷新后查看结果')
       await new Promise((resolve) => setTimeout(resolve, WAIT_STEP_MS))
     }
 
@@ -91,16 +104,23 @@ export function idempotency(deps: Deps): MiddlewareHandler {
       await next()
       ok = c.res.status < 300 && !c.error
     } finally {
-      if (ok) {
-        const body = await c.res.clone().text()
-        db.update(idempotencyKeys)
-          .set({ status: c.res.status, body, contentType: c.res.headers.get('Content-Type') })
-          .where(and(eq(idempotencyKeys.id, id), isNull(idempotencyKeys.status)))
-          .run()
-      } else {
-        db.delete(idempotencyKeys)
-          .where(and(eq(idempotencyKeys.id, id), isNull(idempotencyKeys.status)))
-          .run()
+      // The request's own answer stands whatever happens here. A response that could not be
+      // kept leaves the key busy, as for a request cut off by a restart, so a repeat is not run
+      // again on top of work already done.
+      try {
+        if (ok) {
+          const body = await c.res.clone().text()
+          db.update(idempotencyKeys)
+            .set({ status: c.res.status, body, contentType: c.res.headers.get('Content-Type') })
+            .where(and(eq(idempotencyKeys.id, id), isNull(idempotencyKeys.status)))
+            .run()
+        } else {
+          db.delete(idempotencyKeys)
+            .where(and(eq(idempotencyKeys.id, id), isNull(idempotencyKeys.status)))
+            .run()
+        }
+      } catch (e) {
+        deps.log('idempotency key not saved', { path: c.req.path, error: String(e) })
       }
     }
   }

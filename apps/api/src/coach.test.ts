@@ -23,7 +23,7 @@ async function withCoach(h: Harness) {
 
 async function book(h: Harness, token: string, slotId: number, lessonTypeId: number) {
   const res = await h.call('POST', '/bookings', { slotId, lessonTypeId }, token)
-  if (res.json.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  if (res.json.orderId) await h.fakePay(res.json.orderId)
   return res.json.bookingId as number
 }
 

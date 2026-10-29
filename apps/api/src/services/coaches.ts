@@ -5,7 +5,7 @@ import { coaches, sessions } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { templateIds } from '../wx-notify'
-import { startCoachSession } from './auth'
+import { limitedCheck, startCoachSession } from './auth'
 import { newBindCode, normalizeBindCode } from './ids'
 import { ruleBook, taughtBy } from './settings'
 
@@ -71,9 +71,14 @@ export async function bindCoach(deps: Deps, code: string, bindCode: string) {
   const normalized = normalizeBindCode(bindCode)
   const coach = immediate(deps.db, (tx) => {
     const coach = tx.select().from(coaches).where(eq(coaches.bindCode, normalized)).get()
-    if (!coach?.bindCodeExpiresAt || coach.bindCodeExpiresAt <= deps.now()) {
-      throw new ApiError(400, 'bad_bind_code', '绑定码无效或已过期，请向场馆重新获取')
-    }
+    // Limited per WeChat user, like a student's code, so codes cannot be tried at speed.
+    limitedCheck(
+      deps,
+      `coach-bind:${openid}`,
+      () => Boolean(coach?.bindCodeExpiresAt && coach.bindCodeExpiresAt > deps.now()),
+      new ApiError(400, 'bad_bind_code', '绑定码无效或已过期，请向场馆重新获取'),
+    )
+    if (!coach) throw new ApiError(400, 'bad_bind_code', '绑定码无效或已过期，请向场馆重新获取')
     if (!coach.active) throw new ApiError(403, 'coach_inactive', '教练账号已停用，请联系场馆')
     const other = tx.select().from(coaches).where(eq(coaches.openid, openid)).get()
     if (other && other.id !== coach.id) {

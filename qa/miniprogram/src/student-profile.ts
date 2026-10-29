@@ -204,7 +204,7 @@ try {
       },
       token,
     )
-    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
+    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`, undefined, token)
     booked.push(res.bookingId)
   }
   const [past, bookingId] = booked

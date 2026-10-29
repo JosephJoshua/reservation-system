@@ -43,7 +43,7 @@ async function requested(
       productId: product.id,
     },
   )
-  await call(request, 'POST', `/dev/fake-pay/${orderId}`)
+  await call(request, 'POST', `/dev/fake-pay/${orderId}`, token)
   await call(request, 'POST', '/invoices', token, { orderId, ...title })
   return token
 }

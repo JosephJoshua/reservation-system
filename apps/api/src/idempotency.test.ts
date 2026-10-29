@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { bookings, orders, packageLedger, packageProducts, packages, refunds } from './db/schema'
 import { applyPayment } from './services/orders'
 import { type Harness, setup } from './test/harness'
@@ -32,7 +32,7 @@ async function boughtPackage(h: Harness) {
   const p = product(h, lesson.id)
   const t = await h.student('a')
   const res = await h.call('POST', '/packages/purchase', { productId: p.id }, t)
-  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  await h.fakePay(res.json.orderId)
   const pkg = (await h.call('GET', '/packages', undefined, t)).json[0]
   return { coach, lesson, product: p, t, pkg, orderId: res.json.orderId as number }
 }
@@ -167,7 +167,7 @@ describe('repeated requests without a key', () => {
     expect(b.json.orderId).toBe(a.json.orderId)
     expect(h.db.select().from(orders).all()).toHaveLength(1)
     // Once that order is paid, buying again is a new purchase.
-    await h.call('POST', `/dev/fake-pay/${a.json.orderId}`)
+    await h.fakePay(a.json.orderId)
     const again = await h.call('POST', '/packages/purchase', { productId: p.id }, t)
     expect(again.json.orderId).not.toBe(a.json.orderId)
   })
@@ -186,7 +186,7 @@ describe('repeated requests without a key', () => {
       amount: order?.amount ?? 0,
     }
     for (let i = 0; i < 3; i++) applyPayment(h.deps, order?.outTradeNo ?? '', paid)
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     expect(h.db.select().from(packages).all()).toHaveLength(1)
   })
 
@@ -275,7 +275,7 @@ describe('repeated requests without a key', () => {
       { slotId: h.slot(coach.id, '2026-10-26').id, lessonTypeId: lesson.id },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     h.gateway.refundMode = 'fail'
     await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, undefined, t)
     h.gateway.refundMode = 'succeeded'
@@ -320,7 +320,7 @@ describe('repeated requests without a key', () => {
       { slotId: h.slot(coach.id, '2026-10-26').id, lessonTypeId: lesson.id },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     const admin = await h.admin()
     const cancel = (reason: string) =>
       h.call('POST', `/admin/bookings/${res.json.bookingId}/cancel`, { reason }, admin)
@@ -348,5 +348,116 @@ describe('repeated requests without a key', () => {
     await Promise.all([approve(), approve()])
     await approve()
     expect(sent).toBe(1)
+  })
+})
+
+describe('Idempotency-Key waits', () => {
+  async function blockedBooking(h: Harness) {
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const real = h.gateway.createOrder.bind(h.gateway)
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    // Settles once the first request holds its key and is calling WeChat.
+    let calling = () => {}
+    const started = new Promise<void>((resolve) => {
+      calling = resolve
+    })
+    h.gateway.createOrder = async (input) => {
+      calling()
+      await gate
+      return real(input)
+    }
+    const body = { slotId: h.slot(coach.id).id, lessonTypeId: lesson.id, payWith: 'wechat' }
+    return { t, body, release, started }
+  }
+
+  it('lets a repeat wait out a slow WeChat call', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const h = setup()
+      const { t, body, release, started } = await blockedBooking(h)
+      // The clock moves with the timers, as a real wait would.
+      const pass = async (ms: number) => {
+        for (let at = 0; at < ms; at += 1000) {
+          h.clock.now = new Date(h.clock.now.getTime() + 1000)
+          await vi.advanceTimersByTimeAsync(1000)
+        }
+      }
+      const first = keyed(h, '/bookings', body, t, 'slow')
+      await started
+      // The mini program gives up after 15 seconds and sends the same request again.
+      await pass(16_000)
+      let repeated = false
+      const repeat = keyed(h, '/bookings', body, t, 'slow').finally(() => {
+        repeated = true
+      })
+      // The first is still running 36 seconds in, and the resend waits for it.
+      await pass(20_000)
+      expect(repeated).toBe(false)
+      release()
+      await vi.advanceTimersByTimeAsync(100)
+      const [a, b] = await Promise.all([first, repeat])
+      expect(a.status).toBe(201)
+      expect(b).toEqual(a)
+      expect(h.db.select().from(orders).all()).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops waiting for a caller that has gone away', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const h = setup()
+      const { t, body, release, started } = await blockedBooking(h)
+      const first = keyed(h, '/bookings', body, t, 'gone')
+      await started
+      const caller = new AbortController()
+      let done = false
+      const repeat = Promise.resolve(
+        h.app.request('/api/bookings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t}`,
+            'Idempotency-Key': 'gone',
+          },
+          body: JSON.stringify(body),
+          signal: caller.signal,
+        }),
+      ).finally(() => {
+        done = true
+      })
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(done).toBe(false)
+      caller.abort()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(done).toBe(true)
+      expect((await repeat).status).toBe(409)
+      release()
+      await vi.advanceTimersByTimeAsync(100)
+      expect((await first).status).toBe(201)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('answers with the response even when it cannot be kept', async () => {
+    const h = setup()
+    const { t, body, release } = await blockedBooking(h)
+    release()
+    h.db.$client.exec(
+      "create trigger keys_full before update on idempotency_keys begin select raise(abort, 'disk full'); end",
+    )
+    const res = await keyed(h, '/bookings', body, t, 'k')
+    expect(res.status).toBe(201)
+    expect(h.logs.map((l) => l.message)).toContain('idempotency key not saved')
+    // The booking is done, so a repeat is not run again.
+    h.clock.now = new Date(h.clock.now.getTime() + 60_000)
+    expect((await keyed(h, '/bookings', body, t, 'k')).json.error.code).toBe('in_progress')
+    expect(h.db.select().from(bookings).all()).toHaveLength(1)
   })
 })

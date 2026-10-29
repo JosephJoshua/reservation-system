@@ -88,7 +88,7 @@ test('a coach writes feedback with a photo through the API', async ({ request })
     startsAt,
     lessonTypeId: lesson.id,
   })
-  await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+  await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, studentToken)
   bookingId = booked.bookingId
   moveIntoPast(bookingId)
   await call(request, 'PUT', `/coach/lessons/${bookingId}/attendance`, coachToken, {

@@ -105,7 +105,7 @@ test('shows a paid booking and refunds it in full when the venue cancels', async
     lessonTypeId: lesson.id,
   })
   expect(booking.status).toBe('pending_payment')
-  await call(request, 'POST', `/dev/fake-pay/${booking.orderId}`)
+  await call(request, 'POST', `/dev/fake-pay/${booking.orderId}`, token)
 
   await login(page)
   await page.goto('./#/bookings')

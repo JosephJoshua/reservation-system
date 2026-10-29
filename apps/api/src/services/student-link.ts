@@ -18,7 +18,7 @@ import { accountDeleted, eraseStudent, removeErasedFiles, requireConsent } from 
 import { logAction } from './action-log'
 import { limitedCheck } from './auth'
 import { LIVE } from './bookings'
-import { newBindCode, newToken, normalizeBindCode } from './ids'
+import { hashToken, newBindCode, newToken, normalizeBindCode } from './ids'
 
 /**
  * Students the front desk adds before they use the mini program. Their row holds a placeholder
@@ -144,7 +144,7 @@ export function linkDeskStudent(
     const studentId = tx
       .select({ studentId: sessions.studentId })
       .from(sessions)
-      .where(and(eq(sessions.token, token), eq(sessions.role, 'student')))
+      .where(and(eq(sessions.tokenHash, hashToken(token)), eq(sessions.role, 'student')))
       .get()?.studentId
     if (!studentId) throw new ApiError(401, 'unauthorized', '请重新登录')
     const desk = tx.select().from(students).where(eq(students.bindCode, normalized)).get()

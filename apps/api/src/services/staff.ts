@@ -1,4 +1,5 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
 import type { StaffRole } from '@rs/shared'
 import { and, eq, ne } from 'drizzle-orm'
 import type { Db } from '../db/client'
@@ -6,6 +7,7 @@ import { immediate } from '../db/client'
 import { sessions, staff } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
+import { hashToken } from './ids'
 
 const KEY_LENGTH = 32
 
@@ -18,11 +20,21 @@ export function hashPassword(password: string) {
 // Checked against when the username is unknown, so a miss takes as long as a wrong password.
 const DUMMY_HASH = hashPassword(randomBytes(16).toString('hex'))
 
-export function verifyPassword(password: string, stored: string | undefined) {
+const scryptAsync = promisify(scrypt) as (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+) => Promise<Buffer>
+
+/**
+ * Hashed off the main thread, since anyone can make the server check a password: many logins at
+ * once must not hold up every other request.
+ */
+export async function verifyPassword(password: string, stored: string | undefined) {
   const [scheme, salt, hash] = (stored ?? DUMMY_HASH).split('$')
   if (scheme !== 'scrypt' || !salt || !hash) return false
   const expected = Buffer.from(hash, 'hex')
-  const actual = scryptSync(password, Buffer.from(salt, 'hex'), expected.length)
+  const actual = await scryptAsync(password, Buffer.from(salt, 'hex'), expected.length)
   return timingSafeEqual(actual, expected) && stored !== undefined
 }
 
@@ -128,7 +140,12 @@ export function setStaffPassword(deps: Deps, id: number, password: string, keepT
       .run()
     if (changed.changes === 0) throw notFound('员工')
     tx.delete(sessions)
-      .where(and(eq(sessions.staffId, id), keepToken ? ne(sessions.token, keepToken) : undefined))
+      .where(
+        and(
+          eq(sessions.staffId, id),
+          keepToken ? ne(sessions.tokenHash, hashToken(keepToken)) : undefined,
+        ),
+      )
       .run()
   })
 }

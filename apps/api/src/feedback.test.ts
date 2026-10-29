@@ -26,7 +26,7 @@ async function taught(h: Harness, { attended = true } = {}) {
   const t = await h.student('a')
   const slot = h.slot(coach.id, '2026-10-25', 10)
   const res = await h.call('POST', '/bookings', { slotId: slot.id, lessonTypeId: lesson.id }, t)
-  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  await h.fakePay(res.json.orderId)
   const id = res.json.bookingId as number
   const ct = await bindCoach(h, coach.id)
   h.clock.now = new Date('2026-10-25T03:05:00Z')
@@ -210,7 +210,7 @@ describe('lesson feedback', () => {
     h.clock.now = new Date('2026-10-23T02:00:00Z')
     const slot = h.slot(coach.id, '2026-10-26', 10)
     const res = await h.call('POST', '/bookings', { slotId: slot.id, lessonTypeId: lesson.id }, t)
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     const second = res.json.bookingId as number
     h.clock.now = new Date('2026-10-26T03:05:00Z')
     await h.call('PUT', `/coach/lessons/${second}/attendance`, { attendance: 'attended' }, ct)

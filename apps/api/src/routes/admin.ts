@@ -60,6 +60,7 @@ import {
   packageProducts,
   packages,
   refunds,
+  sessions,
   slots,
   staff,
   students,
@@ -72,7 +73,7 @@ import { frontDeskLessons, setAttendance } from '../services/attendance'
 import {
   type AdminVars,
   bearer,
-  limitedCheck,
+  limitedCheckAsync,
   loginAdmin,
   logout,
   need,
@@ -315,7 +316,7 @@ export function adminRoutes(deps: Deps) {
     )
     // Behind the reverse proxy, the last X-Forwarded-For entry is the address it saw.
     const client = c.req.header('X-Forwarded-For')?.split(',').pop()?.trim() || 'direct'
-    return c.json(loginAdmin(deps, body.username, body.password, client))
+    return c.json(await loginAdmin(deps, body.username, body.password, client))
   })
 
   app.use('*', async (c, next) => {
@@ -351,7 +352,7 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, z.object({ current: z.string().max(200), password }))
     const me = findStaff(db, c.get('staffId'))
     // Limited like logins, so a session left open cannot guess its way to the password.
-    limitedCheck(
+    await limitedCheckAsync(
       deps,
       `password:${me.id}`,
       () => verifyPassword(body.current, me.passwordHash),
@@ -569,6 +570,9 @@ export function adminRoutes(deps: Deps) {
         .where(eq(coaches.id, coachId))
         .run()
       if (changed.changes === 0) throw notFound('教练')
+      // As for staff: a deactivated coach's phones sign out for good, so turning the coach back
+      // on later does not bring back a session on a phone that was lost meanwhile.
+      if (!fields.active) tx.delete(sessions).where(eq(sessions.coachId, coachId)).run()
     }
     tx.delete(coachLessonTypes).where(eq(coachLessonTypes.coachId, coachId)).run()
     for (const lessonTypeId of new Set(lessonTypeIds)) {

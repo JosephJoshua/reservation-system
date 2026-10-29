@@ -120,7 +120,7 @@ try {
   const product = catalog.packageProducts[0]
   check(product, 'seed the API first: no packages for sale')
   const { orderId } = await call('POST', '/packages/purchase', { productId: product.id }, token)
-  await call('POST', `/dev/fake-pay/${orderId}`)
+  await call('POST', `/dev/fake-pay/${orderId}`, undefined, token)
   const admin = (await call('POST', '/admin/login', { username: 'admin', password: adminPassword }))
     .token as string
 

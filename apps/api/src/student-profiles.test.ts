@@ -41,7 +41,7 @@ async function booked(h: Harness) {
     { slotId: h.slot(coach.id, '2026-10-25', 10).id, lessonTypeId: lesson.id },
     t,
   )
-  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  await h.fakePay(res.json.orderId)
   const studentId = (await h.call('GET', '/me', undefined, t)).json.id as number
   return { coach, lesson, t, studentId, bookingId: res.json.bookingId as number }
 }
@@ -190,7 +190,7 @@ describe('学员档案', () => {
         { slotId: h.slot(coach.id, date, hour).id, lessonTypeId: lesson.id },
         t,
       )
-      await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+      await h.fakePay(res.json.orderId)
       return res.json.bookingId as number
     }
     const missed = await book('2026-10-24', 10)
@@ -330,7 +330,7 @@ describe('学员档案 kept by coaches', () => {
       { slotId: h.slot(other.id, '2026-10-26', 10).id, lessonTypeId: lesson.id },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     const otherBooking = res.json.bookingId as number
     const wang = await bindCoach(h, coach.id)
     const li = await bindCoach(h, other.id, 'coach2')
@@ -431,7 +431,7 @@ describe('学员档案 kept by coaches', () => {
       { slotId: h.slot(coach.id, '2026-10-27', 10).id, lessonTypeId: lesson.id },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, {}, t)
     ct = await bindCoach(h, coach.id)
     const cancelled = await h.call('PUT', path(res.json.bookingId), profile(), ct, {
@@ -484,7 +484,7 @@ describe('学员档案 kept by coaches', () => {
         { slotId: h.slot(coachId, date, hour).id, lessonTypeId: lesson.id },
         t,
       )
-      await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+      await h.fakePay(res.json.orderId)
       return res.json.bookingId as number
     }
     const earlier = await book(other.id, '2026-10-23', 14)

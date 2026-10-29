@@ -13,11 +13,14 @@ import {
   coachHours,
   coachLessonTypes,
   lessonTypes,
+  orders,
   scheduleExceptions,
+  sessions,
   slots,
 } from '../db/schema'
 import type { Deps } from '../deps'
 import { FakeGateway } from '../pay/fake'
+import { hashToken, newToken } from '../services/ids'
 import { saveSettings } from '../services/settings'
 import { ensureFirstStaff, FIRST_USERNAME } from '../services/staff'
 import { devLogin } from '../wx'
@@ -80,6 +83,26 @@ export function setup(
   async function admin(username = FIRST_USERNAME, password = ADMIN_PASSWORD) {
     const res = await call('POST', '/admin/login', { username, password })
     return res.json.token as string
+  }
+
+  /**
+   * Pays an order at the fake WeChat Pay as the student who placed it, as the mini program does.
+   * `query` is `?callback=lost` to keep the payment from the API.
+   */
+  async function fakePay(orderId: number, query = '') {
+    const order = db.select().from(orders).where(eq(orders.id, orderId)).get()
+    const token = newToken()
+    if (order) {
+      db.insert(sessions)
+        .values({
+          tokenHash: hashToken(token),
+          role: 'student',
+          studentId: order.studentId,
+          expiresAt: new Date(clock.now.getTime() + 3_600_000),
+        })
+        .run()
+    }
+    return call('POST', `/dev/fake-pay/${orderId}${query}`, undefined, token)
   }
 
   function settings(patch: (s: VenueSettings) => void) {
@@ -165,6 +188,7 @@ export function setup(
     call,
     student,
     admin,
+    fakePay,
     settings,
     seed,
     category,

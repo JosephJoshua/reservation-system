@@ -73,7 +73,7 @@ const book = (h: Harness, t: string, slotId: number, lessonTypeId: number) =>
   h.call('POST', '/bookings', { slotId, lessonTypeId }, t)
 
 async function pay(h: Harness, res: { json: { orderId: number | null } }) {
-  if (res.json.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  if (res.json.orderId) await h.fakePay(res.json.orderId)
 }
 
 describe('table limit', () => {
@@ -225,7 +225,7 @@ describe('table limit', () => {
     h.db.update(orders).set({ status: 'closed' }).where(eq(orders.id, held.json.orderId)).run()
     await pay(h, await book(h, t2, h.slot(v.coach(1)).id, v.lesson.id))
     // The late payment lands.
-    await h.call('POST', `/dev/fake-pay/${held.json.orderId}`)
+    await h.fakePay(held.json.orderId)
     const row = h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get()
     expect(row?.status).toBe('expired')
     const refund = h.db.select().from(refunds).where(eq(refunds.orderId, held.json.orderId)).get()

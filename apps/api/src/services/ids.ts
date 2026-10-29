@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 
 // WeChat Pay allows 6-32 characters of [0-9a-zA-Z_-|*] for merchant order and refund numbers.
 function tradeNumber(prefix: string, now: Date) {
@@ -8,6 +8,12 @@ function tradeNumber(prefix: string, now: Date) {
 export const newOutTradeNo = (now: Date) => tradeNumber('RS', now)
 export const newOutRefundNo = (now: Date) => tradeNumber('RF', now)
 export const newToken = () => randomBytes(32).toString('hex')
+
+/**
+ * What the sessions table keeps of a token: its SHA-256, so a copy of the database (a backup)
+ * holds no token anyone could sign in with.
+ */
+export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex')
 
 // No 0/O, 1/I/L: a bind code is read off a screen and typed on a phone.
 const BIND_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'

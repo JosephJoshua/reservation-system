@@ -21,7 +21,7 @@ async function lesson(h: Harness) {
     { slotId: slot.id, lessonTypeId: lesson.id },
     student,
   )
-  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  await h.fakePay(res.json.orderId)
   return {
     coach,
     lesson,
@@ -133,7 +133,7 @@ describe('student check-in', () => {
       { slotId: next.id, lessonTypeId: type.id },
       student,
     )
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
     const cancelled = h.slot(coach.id, '2026-10-26', 9)
     const c = await h.call(
       'POST',
@@ -141,7 +141,7 @@ describe('student check-in', () => {
       { slotId: cancelled.id, lessonTypeId: type.id },
       student,
     )
-    await h.call('POST', `/dev/fake-pay/${c.json.orderId}`)
+    await h.fakePay(c.json.orderId)
     await h.call('POST', `/bookings/${c.json.bookingId}/cancel`, { acceptLate: true }, student)
 
     // 10:40: the 10:00 lesson is under way and the 11:00 one opens at 10:30.

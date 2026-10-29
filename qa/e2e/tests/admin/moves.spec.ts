@@ -55,7 +55,7 @@ test('sets up a booked lesson through the API', async ({ request }) => {
     startsAt: at(10),
     lessonTypeId: lesson.id,
   })
-  await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+  await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, token)
   bookingId = booked.bookingId
 })
 

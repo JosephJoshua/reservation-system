@@ -25,7 +25,7 @@ import type { NoticeKind, NoticeValues, Notifier } from './wx-notify'
 async function book(h: Harness, token: string, slotId: number, lessonTypeId: number) {
   const res = await h.call('POST', '/bookings', { slotId, lessonTypeId }, token)
   expect(res.status).toBe(201)
-  if (res.json.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  if (res.json.orderId) await h.fakePay(res.json.orderId)
   return res.json.bookingId as number
 }
 
@@ -338,7 +338,7 @@ describe('students moving a lesson', () => {
       .get()
     const t = await h.student('a')
     const order = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
-    await h.call('POST', `/dev/fake-pay/${order.json.orderId}`)
+    await h.fakePay(order.json.orderId)
     const id = await book(h, t, h.slot(coach.id, '2026-10-25', 10).id, lesson.id)
     expect(row(h, id)?.paidWith).toBe('package')
 

@@ -161,7 +161,7 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
       slotId: first.id,
       lessonTypeId,
     })
-    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, t)
   }
 
   await login(page)

@@ -29,7 +29,7 @@ async function paidPackage(h: Harness, name = 'a') {
   const t = await h.student(name)
   const p = product(h, lesson.id)
   const res = await h.call('POST', '/packages/purchase', { productId: p.id }, t)
-  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  await h.fakePay(res.json.orderId)
   return { t, lesson, coach, orderId: res.json.orderId as number }
 }
 
@@ -306,7 +306,7 @@ describe('invoice queue', () => {
       { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${booked.json.orderId}`)
+    await h.fakePay(booked.json.orderId)
     const id = (await h.call('POST', '/invoices', { orderId: booked.json.orderId, ...person }, t))
       .json.id
     await upload(h, id, admin)
@@ -373,7 +373,7 @@ describe('invoice queue', () => {
       { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${booked.json.orderId}`)
+    await h.fakePay(booked.json.orderId)
     await h.call('POST', '/invoices', { orderId: booked.json.orderId, ...person }, t)
     await h.call('POST', `/bookings/${booked.json.bookingId}/cancel`, {}, t)
 
@@ -412,7 +412,7 @@ describe('invoice queue', () => {
       { slotId: slot.id, lessonTypeId: lesson.id, payWith: 'wechat' },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${booked.json.orderId}`)
+    await h.fakePay(booked.json.orderId)
     const id = (await h.call('POST', '/invoices', { orderId: booked.json.orderId, ...person }, t))
       .json.id
     await h.call(

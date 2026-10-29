@@ -162,6 +162,13 @@
       "when": 1792924850152,
       "tag": "0022_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1793250239024,
+      "tag": "0023_hash_session_tokens",
+      "breakpoints": true
     }
   ]
 }

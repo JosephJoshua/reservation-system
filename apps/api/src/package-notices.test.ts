@@ -46,7 +46,7 @@ async function withPackage(h: Harness, { lessonCount = 3, validityDays = 30, nam
   await h.call('PUT', '/me', { name: '小明' }, t)
   const res = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
   expect(res.status).toBe(201)
-  await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  await h.fakePay(res.json.orderId)
   const pkg = h.db.select().from(packages).get()
   if (!pkg) throw new Error('no package')
   return { ...seeded, product, t, pkg }
@@ -219,7 +219,7 @@ describe('package notices', () => {
     const { sent } = withNotifier(h)
     const { coach, lesson, product, t } = await withPackage(h, { lessonCount: 1 })
     const again = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
-    await h.call('POST', `/dev/fake-pay/${again.json.orderId}`)
+    await h.fakePay(again.json.orderId)
     await book(h, t, h.slot(coach.id, '2026-10-26').id, lesson.id)
     await notifyPackages(h.deps)
     expect(sent).toEqual([])
@@ -335,7 +335,7 @@ describe('package notices', () => {
       [b, used],
     ] as const) {
       const res = await h.call('POST', '/packages/purchase', { productId: product.id }, token)
-      await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+      await h.fakePay(res.json.orderId)
     }
     h.db.update(packages).set({ lessonsRemaining: 0 }).where(eq(packages.name, '空包')).run()
     const admin = await h.admin()
