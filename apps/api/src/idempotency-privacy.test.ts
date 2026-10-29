@@ -183,17 +183,35 @@ describe('credential endpoints are never kept for repeats', () => {
 })
 
 describe('coach photo upload', () => {
-  function upload(h: Harness, token: string, bookingId: number, bytes: number, key?: string) {
-    const form = new FormData()
-    form.append('file', new File([new Uint8Array(bytes)], 'a.jpg', { type: 'image/jpeg' }))
-    return h.app.request(`/api/coach/lessons/${bookingId}/photos`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, ...(key ? { 'Idempotency-Key': key } : {}) },
-      body: form,
+  const CHUNK = 64 * 1024
+
+  /**
+   * Sends `bytes` of a form as a stream with no Content-Length, as a client may, and counts what
+   * the server pulled from it.
+   */
+  async function streamed(h: Harness, token: string, bookingId: number, bytes: number) {
+    let pulled = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= bytes) return controller.close()
+        pulled += CHUNK
+        controller.enqueue(new Uint8Array(CHUNK))
+      },
     })
+    const res = await h.app.request(`/api/coach/lessons/${bookingId}/photos`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Idempotency-Key': 'up-1',
+        'Content-Type': 'multipart/form-data; boundary=x',
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit)
+    return { status: res.status, pulled }
   }
 
-  async function lessonOf(h: Harness) {
+  async function lessonOf(h: Harness, { taught = false } = {}) {
     const { coach, lesson } = h.seed()
     const token = boundCoach(h, coach.id)
     const admin = await h.admin()
@@ -213,24 +231,36 @@ describe('coach photo upload', () => {
       },
       admin,
     )
-    return { token, bookingId: made.json.bookingId as number }
+    const bookingId = made.json.bookingId as number
+    if (taught) {
+      h.clock.now = new Date('2026-10-25T03:05:00Z')
+      const marked = await h.call(
+        'PUT',
+        `/coach/lessons/${bookingId}/attendance`,
+        { attendance: 'attended' },
+        token,
+      )
+      expect(marked.status).toBe(200)
+    }
+    return { token, bookingId }
   }
 
-  it('refuses one too large before the idempotency check reads it', async () => {
+  it('stops reading one too large at the photo limit, before idempotency reads it', async () => {
     const h = setup()
-    const { token, bookingId } = await lessonOf(h)
-    const res = await upload(h, token, bookingId, MAX_PHOTO_BYTES + 200 * 1024, 'big-1')
+    const { token, bookingId } = await lessonOf(h, { taught: true })
+    const res = await streamed(h, token, bookingId, 9 * 1024 * 1024)
     expect(res.status).toBe(413)
+    expect(res.pulled).toBeLessThanOrEqual(MAX_PHOTO_BYTES + 4 * CHUNK)
     expect(h.db.select().from(idempotencyKeys).all()).toEqual([])
   })
 
-  it('refuses one for a lesson that takes no photos yet before reading it', async () => {
+  it('refuses one for a lesson that takes no photos yet without reading it', async () => {
     const h = setup()
+    // Not yet taught: no feedback can be written.
     const { token, bookingId } = await lessonOf(h)
-    // Not yet started: no feedback can be written.
-    const res = await upload(h, token, bookingId, 1000, 'early-1')
-    expect(res.status).toBeGreaterThanOrEqual(400)
-    expect(res.status).not.toBe(413)
+    const res = await streamed(h, token, bookingId, 4 * 1024 * 1024)
+    expect(res.status).toBe(409)
+    expect(res.pulled).toBeLessThanOrEqual(4 * CHUNK)
     expect(h.db.select().from(idempotencyKeys).all()).toEqual([])
   })
 })

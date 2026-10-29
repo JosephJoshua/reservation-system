@@ -95,11 +95,10 @@ export function photoUploadGuard(deps: Deps): MiddlewareHandler<CoachVars> {
   })
   const coach = requireCoach(deps)
   return async (c, next) => {
-    await limit(c, async () => {
-      await coach(c, async () => {
-        if (!isKeptRepeat(deps, c)) checkPhotoUpload(deps, idParam(c), c.get('coachId'))
-        await next()
-      })
+    // The coach and the lesson first, which need no body; then the size, as it streams in.
+    await coach(c, async () => {
+      if (!isKeptRepeat(deps, c)) checkPhotoUpload(deps, idParam(c), c.get('coachId'))
+      await limit(c, next)
     })
   }
 }
