@@ -911,14 +911,16 @@ function SessionDialog({
   const capacityOk = Number.isInteger(capacity) && capacity >= minSeats && capacity <= maxSeats
 
   const patch = async (body: { open?: boolean; capacity?: number }, done: string) => {
+    // A key per change: a retry of this one is a repeat, a different change is new.
+    const name = `patch-${JSON.stringify(body)}`
     if (
       await attempt(
-        () => api('PATCH', `/admin/slots/${slot.id}`, body, { key: keys.get('patch') }),
+        () => api('PATCH', `/admin/slots/${slot.id}`, body, { key: keys.get(name) }),
         done,
         { onStale: onChanged },
       )
     ) {
-      keys.done('patch')
+      keys.done(name)
       onChanged()
     }
   }
