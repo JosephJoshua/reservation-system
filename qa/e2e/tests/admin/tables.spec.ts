@@ -62,7 +62,7 @@ test('sets up three lessons at once through the API', async ({ request }) => {
       startsAt: at(6 * 60),
       lessonTypeId: lesson.id,
     })
-    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, token)
   }
 })
 

@@ -277,7 +277,7 @@ try {
       },
       token,
     )
-    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
+    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`, undefined, token)
     bookingId = res.bookingId
   }
   check(bookingId, 'the coach has no free slot in the next week')

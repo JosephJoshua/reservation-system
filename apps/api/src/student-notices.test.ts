@@ -28,7 +28,7 @@ function withNotifier(h: Harness, result: 'sent' | 'refused' | 'fail' = 'sent', 
 async function book(h: Harness, token: string, slotId: number, lessonTypeId: number) {
   const res = await h.call('POST', '/bookings', { slotId, lessonTypeId }, token)
   expect(res.status).toBe(201)
-  if (res.json.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  if (res.json.orderId) await h.fakePay(res.json.orderId)
   return res.json.bookingId as number
 }
 

@@ -7,7 +7,7 @@ import { type Harness, setup } from './test/harness'
 
 /** Pays an order at the fake WeChat Pay without telling the API, like a lost callback. */
 function payWithoutCallback(h: Harness, orderId: number) {
-  return h.call('POST', `/dev/fake-pay/${orderId}?callback=lost`)
+  return h.fakePay(orderId, '?callback=lost')
 }
 
 async function pendingBooking(h: Harness) {
@@ -64,7 +64,7 @@ describe('a payment whose callback was lost', () => {
   it('answers order_paid for an order the callback already settled', async () => {
     const h = setup()
     const { t, orderId } = await pendingBooking(h)
-    await h.call('POST', `/dev/fake-pay/${orderId}`)
+    await h.fakePay(orderId)
 
     const res = await h.call('POST', `/orders/${orderId}/payment`, undefined, t)
     expect(res.json.error.code).toBe('order_paid')

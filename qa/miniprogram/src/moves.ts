@@ -201,7 +201,7 @@ try {
       { coachId: t.coachId, startsAt: t.startsAt, lessonTypeId: lesson.id, payWith: 'wechat' },
       token,
     )
-    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
+    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`, undefined, token)
     return res.bookingId as number
   }
   const first = mine[0]

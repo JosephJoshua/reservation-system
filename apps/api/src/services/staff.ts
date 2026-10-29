@@ -6,6 +6,7 @@ import { immediate } from '../db/client'
 import { sessions, staff } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
+import { hashToken } from './ids'
 
 const KEY_LENGTH = 32
 
@@ -128,7 +129,12 @@ export function setStaffPassword(deps: Deps, id: number, password: string, keepT
       .run()
     if (changed.changes === 0) throw notFound('员工')
     tx.delete(sessions)
-      .where(and(eq(sessions.staffId, id), keepToken ? ne(sessions.token, keepToken) : undefined))
+      .where(
+        and(
+          eq(sessions.staffId, id),
+          keepToken ? ne(sessions.tokenHash, hashToken(keepToken)) : undefined,
+        ),
+      )
       .run()
   })
 }

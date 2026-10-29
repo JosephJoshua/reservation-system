@@ -98,7 +98,7 @@ test('a coach fills in the profile and writes feedback through the API', async (
       startsAt,
       lessonTypeId: lesson.id,
     })
-    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+    await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, token)
     lessons.push(booked.bookingId)
   }
   // Three lessons in the past, a day apart, the oldest first; the last stays ahead.

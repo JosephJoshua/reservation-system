@@ -4,7 +4,7 @@ import type { MiddlewareHandler } from 'hono'
 import { coaches, sessions, staff, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
-import { newToken } from './ids'
+import { hashToken, newToken } from './ids'
 import { verifyPassword } from './staff'
 
 const STUDENT_SESSION_MS = 30 * 86_400_000
@@ -27,7 +27,7 @@ export async function loginStudent(deps: Deps, code: string) {
   deps.db
     .insert(sessions)
     .values({
-      token,
+      tokenHash: hashToken(token),
       role: 'student',
       studentId: student.id,
       expiresAt: new Date(now.getTime() + STUDENT_SESSION_MS),
@@ -37,7 +37,7 @@ export async function loginStudent(deps: Deps, code: string) {
   return { token, student }
 }
 
-// Failed staff logins per client, so passwords cannot be guessed at speed.
+// Failed password checks per key, so passwords and codes cannot be guessed at speed.
 const LOGIN_WINDOW_MS = 15 * 60_000
 const MAX_FAILED_LOGINS = 10
 // Kept per app instance, so separate test apps never share counts.
@@ -68,25 +68,90 @@ export function limitedCheck(deps: Deps, key: string, check: () => boolean, wron
   failedLogins.delete(key)
 }
 
+// Staff logins are limited per login name and per address. A login name backs off after a run
+// of wrong passwords from anywhere, so one login cannot keep guessing at another between its own
+// good logins. The wait starts short, so someone typing wrong passwords on purpose keeps the real
+// person out for a minute rather than for good, and a name that signed in from an address before
+// counts its failures there on their own. Each address also has a looser limit for all names
+// together, which a good login does not reset.
+const NAME_FREE_FAILURES = 10
+const NAME_MAX_WAIT_MS = 15 * 60_000
+const ADDRESS_MAX_FAILURES = 50
+const KNOWN_ADDRESS_MS = 30 * 86_400_000
+
+type LoginLimits = {
+  /** Wrong passwords in a row, forgotten 15 minutes after the last one. */
+  failures: Map<string, { count: number; last: number }>
+  /** When each login name last signed in from each address. */
+  known: Map<string, number>
+}
+const loginLimitsByApp = new WeakMap<Deps, LoginLimits>()
+
+const tooMany = (waitMs: number) =>
+  new ApiError(
+    429,
+    'too_many_attempts',
+    `尝试次数过多，请 ${Math.max(1, Math.ceil(waitMs / 60_000))} 分钟后再试`,
+  )
+
+/**
+ * How long a login name waits after `count` wrong passwords: nothing for the first ten, then a
+ * minute, doubling with each further one up to 15 minutes.
+ */
+export function loginNameWaitMs(count: number) {
+  if (count < NAME_FREE_FAILURES) return 0
+  return Math.min(60_000 * 2 ** (count - NAME_FREE_FAILURES), NAME_MAX_WAIT_MS)
+}
+
 /** `client` identifies the caller, such as the address the reverse proxy saw. */
 export function loginAdmin(deps: Deps, username: string, password: string, client: string) {
+  const now = deps.now().getTime()
+  let limits = loginLimitsByApp.get(deps)
+  if (!limits) {
+    limits = { failures: new Map(), known: new Map() }
+    loginLimitsByApp.set(deps, limits)
+  }
+  const { failures, known } = limits
+  for (const [k, entry] of failures) {
+    if (now - entry.last > LOGIN_WINDOW_MS) failures.delete(k)
+  }
+  for (const [k, at] of known) {
+    if (now - at > KNOWN_ADDRESS_MS) known.delete(k)
+  }
+  const pair = JSON.stringify([username, client])
+  const addressKey = `address:${client}`
+  const anyKey = `name:${username}`
+  const nameKey = known.has(pair) ? `pair:${pair}` : anyKey
+  // Checked before the password, so a locked name costs no hashing and reveals nothing.
+  const address = failures.get(addressKey)
+  if (address && address.count >= ADDRESS_MAX_FAILURES) {
+    throw tooMany(address.last + LOGIN_WINDOW_MS - now)
+  }
+  const name = failures.get(nameKey)
+  const wait = name ? name.last + loginNameWaitMs(name.count) - now : 0
+  if (wait > 0) throw tooMany(wait)
+
   const member = deps.db.select().from(staff).where(eq(staff.username, username)).get()
   // The hash is checked even for an unknown name, so timing does not reveal which names exist.
-  limitedCheck(
-    deps,
-    `login:${client}`,
-    () => verifyPassword(password, member?.passwordHash) && member?.active === true,
-    new ApiError(401, 'bad_password', '登录名或密码错误'),
-  )
-  if (!member) throw new ApiError(401, 'bad_password', '登录名或密码错误')
+  const right = verifyPassword(password, member?.passwordHash) && member?.active === true
+  if (!right || !member) {
+    for (const key of new Set([addressKey, nameKey, anyKey])) {
+      failures.set(key, { count: (failures.get(key)?.count ?? 0) + 1, last: now })
+    }
+    throw new ApiError(401, 'bad_password', '登录名或密码错误')
+  }
+  // Only this name's counts: other names' failures from the address still stand.
+  failures.delete(nameKey)
+  failures.delete(anyKey)
+  known.set(pair, now)
   const token = newToken()
   deps.db
     .insert(sessions)
     .values({
-      token,
+      tokenHash: hashToken(token),
       role: 'admin',
       staffId: member.id,
-      expiresAt: new Date(deps.now().getTime() + ADMIN_SESSION_MS),
+      expiresAt: new Date(now + ADMIN_SESSION_MS),
     })
     .run()
   return { token, staff: { id: member.id, name: member.name, username: member.username } }
@@ -98,7 +163,7 @@ export function startCoachSession(deps: Deps, coachId: number) {
   deps.db
     .insert(sessions)
     .values({
-      token,
+      tokenHash: hashToken(token),
       role: 'coach',
       coachId,
       expiresAt: new Date(deps.now().getTime() + COACH_SESSION_MS),
@@ -117,7 +182,11 @@ function session(deps: Deps, token: string | undefined, role: 'student' | 'admin
     .select()
     .from(sessions)
     .where(
-      and(eq(sessions.token, token), eq(sessions.role, role), gt(sessions.expiresAt, deps.now())),
+      and(
+        eq(sessions.tokenHash, hashToken(token)),
+        eq(sessions.role, role),
+        gt(sessions.expiresAt, deps.now()),
+      ),
     )
     .get()
 }
@@ -175,5 +244,9 @@ export function requireCoach(deps: Deps): MiddlewareHandler<CoachVars> {
 
 export function logout(deps: Deps, header: string | undefined) {
   const token = bearer(header)
-  if (token) deps.db.delete(sessions).where(eq(sessions.token, token)).run()
+  if (token)
+    deps.db
+      .delete(sessions)
+      .where(eq(sessions.tokenHash, hashToken(token)))
+      .run()
 }

@@ -211,7 +211,7 @@ try {
       { coachId: coach.id, startsAt, lessonTypeId: lesson.id, payWith: 'wechat' },
       token,
     )
-    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`)
+    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`, undefined, token)
     return res.bookingId as number
   }
   const future = await book(`qa_a_${run}`, 2)

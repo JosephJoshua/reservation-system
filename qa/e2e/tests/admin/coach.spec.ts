@@ -179,7 +179,7 @@ test('marks attendance and shows the coach note on bookings', async ({ page, req
     startsAt: startsAt.toISOString(),
     lessonTypeId,
   })
-  if (booked.orderId) await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`)
+  if (booked.orderId) await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, token)
   bookingId = booked.bookingId
   await call(request, 'PUT', `/coach/lessons/${bookingId}/note`, coachToken, {
     note: '正手很稳，下次练发球',

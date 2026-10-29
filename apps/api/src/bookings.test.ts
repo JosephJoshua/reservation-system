@@ -16,7 +16,7 @@ async function book(
 }
 
 async function pay(h: Harness, orderId: number) {
-  return h.call('POST', `/dev/fake-pay/${orderId}`)
+  return h.fakePay(orderId)
 }
 
 describe('booking one slot concurrently', () => {

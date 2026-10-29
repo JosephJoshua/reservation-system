@@ -211,8 +211,8 @@ async function enroll(name: string, kid: boolean, joinDay: number) {
   })
 }
 
-async function pay(orderId: number | null) {
-  if (orderId) await call('POST', `/dev/fake-pay/${orderId}`)
+async function pay(orderId: number | null, token: string) {
+  if (orderId) await call('POST', `/dev/fake-pay/${orderId}`, undefined, token)
 }
 
 async function buyPackage(s: Student, productName: string) {
@@ -226,7 +226,7 @@ async function buyPackage(s: Student, productName: string) {
     { productId: product.id, expectedPrice: price },
     s.token,
   )
-  await pay(res?.orderId ?? null)
+  await pay(res?.orderId ?? null, s.token)
 }
 
 const packagesOf = async (s: Student) =>
@@ -281,7 +281,7 @@ async function book(s: Student, date: string, lessonTypeId: number) {
     s.token,
   )
   if (!res) return null
-  await pay(res.orderId)
+  await pay(res.orderId, s.token)
   return res.bookingId as number
 }
 

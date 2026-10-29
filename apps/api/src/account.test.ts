@@ -5,7 +5,7 @@ import { bookings, orders, packageProducts, packages, sessions, students } from 
 import { type Harness, setup } from './test/harness'
 
 async function pay(h: Harness, orderId: number) {
-  return h.call('POST', `/dev/fake-pay/${orderId}`)
+  return h.fakePay(orderId)
 }
 
 function product(h: Harness, lessonTypeId: number, lessonCount = 2) {

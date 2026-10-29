@@ -13,6 +13,7 @@ import {
   refunds,
   sessions,
 } from './db/schema'
+import { hashToken } from './services/ids'
 import { updateStaff } from './services/staff'
 import { type Harness, setup } from './test/harness'
 
@@ -221,7 +222,7 @@ describe('staff logins', () => {
     const h = setup()
     h.db
       .insert(sessions)
-      .values({ token: 'old', role: 'admin', expiresAt: new Date('2030-01-01') })
+      .values({ tokenHash: hashToken('old'), role: 'admin', expiresAt: new Date('2030-01-01') })
       .run()
     expect((await h.call('GET', '/admin/settings', undefined, 'old')).status).toBe(401)
   })
@@ -420,7 +421,7 @@ describe('action log', () => {
       { slotId: slot.id, lessonTypeId: lesson.id },
       t,
     )
-    await h.call('POST', `/dev/fake-pay/${booked.json.orderId}`)
+    await h.fakePay(booked.json.orderId)
     await h.call(
       'POST',
       `/admin/bookings/${booked.json.bookingId}/cancel`,

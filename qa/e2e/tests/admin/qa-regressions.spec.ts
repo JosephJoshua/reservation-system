@@ -210,7 +210,7 @@ test('a venue cancel on a booking the student already cancelled closes and refre
       lessonTypeId: lesson.id,
       payWith: 'wechat',
     })
-    await call(request, 'POST', `/dev/fake-pay/${b.orderId}`)
+    await call(request, 'POST', `/dev/fake-pay/${b.orderId}`, studentToken)
     booked.push(b)
   }
 

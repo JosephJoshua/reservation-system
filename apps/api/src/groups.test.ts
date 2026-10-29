@@ -83,7 +83,7 @@ async function students<N extends string[]>(h: Harness, ...names: N) {
 async function seat(h: Harness, token: string, slotId: number, lessonTypeId: number) {
   const res = await book(h, token, slotId, lessonTypeId)
   expect(res.status).toBe(201)
-  if (res.json.orderId) await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+  if (res.json.orderId) await h.fakePay(res.json.orderId)
   return res.json.bookingId as number
 }
 
@@ -478,7 +478,7 @@ describe('booking seats', () => {
       .get()
     const t = await h.student('a')
     const bought = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
-    await h.call('POST', `/dev/fake-pay/${bought.json.orderId}`)
+    await h.fakePay(bought.json.orderId)
     const id = await session(h, admin, kids.id, coach.id)
     const quote = await h.call(
       'GET',
@@ -846,7 +846,7 @@ describe('calling off a session', () => {
     await cancelUnderfilledSessions(h.deps)
     expect(live(h, id)).toHaveLength(2)
     expect(h.db.select().from(slots).where(eq(slots.id, id)).get()?.minCheckedAt).toBeNull()
-    await h.call('POST', `/dev/fake-pay/${paying.json.orderId}`)
+    await h.fakePay(paying.json.orderId)
     await cancelUnderfilledSessions(h.deps)
     expect(live(h, id).map((x) => x.status)).toEqual(['confirmed', 'confirmed'])
     expect(h.db.select().from(slots).where(eq(slots.id, id)).get()?.minCheckedAt).not.toBeNull()

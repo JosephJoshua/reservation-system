@@ -60,6 +60,7 @@ import {
   packageProducts,
   packages,
   refunds,
+  sessions,
   slots,
   staff,
   students,
@@ -569,6 +570,9 @@ export function adminRoutes(deps: Deps) {
         .where(eq(coaches.id, coachId))
         .run()
       if (changed.changes === 0) throw notFound('教练')
+      // As for staff: a deactivated coach's phones sign out for good, so turning the coach back
+      // on later does not bring back a session on a phone that was lost meanwhile.
+      if (!fields.active) tx.delete(sessions).where(eq(sessions.coachId, coachId)).run()
     }
     tx.delete(coachLessonTypes).where(eq(coachLessonTypes.coachId, coachId)).run()
     for (const lessonTypeId of new Set(lessonTypeIds)) {

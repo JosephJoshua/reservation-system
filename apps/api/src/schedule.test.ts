@@ -70,7 +70,7 @@ async function book(
 ) {
   const res = await h.call('POST', '/bookings', { coachId, startsAt, lessonTypeId }, token)
   if (res.status === 201 && pay && res.json.orderId) {
-    await h.call('POST', `/dev/fake-pay/${res.json.orderId}`)
+    await h.fakePay(res.json.orderId)
   }
   return res
 }

@@ -4,6 +4,7 @@ import { orders } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, idParam, notFound } from '../errors'
 import type { FakeGateway } from '../pay/fake'
+import { type AuthVars, requireStudent } from '../services/auth'
 import { applyPayment } from '../services/orders'
 import { settleRefund } from '../services/refunds'
 
@@ -48,19 +49,20 @@ export function payRoutes(deps: Deps) {
 }
 
 /**
- * Development only: lets the mini program finish a payment against the fake gateway. With
+ * Development and staging only: lets the mini program finish a payment against the fake gateway.
+ * Only the signed-in student who owns the order can pay it, as in the real cashier. With
  * `?callback=lost` the payment is taken but the API is not told, as when WeChat Pay's callback is
  * late or lost, so QA can check that the student still sees it.
  */
 export function devPayRoutes(deps: Deps, gateway: FakeGateway) {
-  const app = new Hono()
-  app.post('/dev/fake-pay/:orderId', (c) => {
+  const app = new Hono<AuthVars>()
+  app.post('/dev/fake-pay/:orderId', requireStudent(deps), (c) => {
     const order = deps.db
       .select()
       .from(orders)
       .where(eq(orders.id, idParam(c, 'orderId')))
       .get()
-    if (!order) throw notFound('订单')
+    if (!order || order.studentId !== c.get('studentId')) throw notFound('订单')
     const outTradeNo = order.outTradeNo
     let result: ReturnType<FakeGateway['pay']>
     try {

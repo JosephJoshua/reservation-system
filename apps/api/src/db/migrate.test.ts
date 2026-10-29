@@ -177,3 +177,39 @@ describe('0022_schedule', () => {
     ).toEqual([])
   })
 })
+
+describe('0023_hash_session_tokens', () => {
+  it('ends every session, since a plain token cannot be hashed in SQL', () => {
+    const db = new Database(':memory:')
+    db.pragma('foreign_keys = off')
+    const run = (file: string) => {
+      const sql = readFileSync(join(migrationsFolder, file), 'utf8')
+      for (const statement of sql.split('--> statement-breakpoint')) db.exec(statement)
+    }
+    const files = readdirSync(migrationsFolder)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+    for (const file of files.slice(0, files.indexOf('0023_hash_session_tokens.sql'))) run(file)
+    db.pragma('foreign_keys = on')
+    db.exec("insert into students (id, openid) values (1, 'wx')")
+    db.exec(
+      "insert into staff (id, name, username, password_hash) values (1, '管理员', 'admin', 'x')",
+    )
+    db.exec(
+      "insert into sessions (token, role, student_id, expires_at) values ('a', 'student', 1, 9e12)",
+    )
+    db.exec(
+      "insert into sessions (token, role, staff_id, expires_at) values ('b', 'admin', 1, 9e12)",
+    )
+    run('0023_hash_session_tokens.sql')
+    expect(db.prepare('select * from sessions').all()).toEqual([])
+    expect(
+      db
+        .prepare('pragma table_info(sessions)')
+        .all()
+        .map((c) => (c as { name: string }).name),
+    ).toEqual(['token_hash', 'role', 'student_id', 'expires_at', 'coach_id', 'staff_id'])
+    expect(db.prepare('select id from students').all()).toEqual([{ id: 1 }])
+    expect(db.pragma('foreign_key_check')).toEqual([])
+  })
+})

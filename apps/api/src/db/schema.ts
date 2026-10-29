@@ -83,7 +83,8 @@ export const staff = sqliteTable('staff', {
 })
 
 export const sessions = sqliteTable('sessions', {
-  token: text('token').primaryKey(),
+  // The SHA-256 of the bearer token (hashToken), never the token itself.
+  tokenHash: text('token_hash').primaryKey(),
   role: text('role', { enum: ['student', 'admin', 'coach'] }).notNull(),
   studentId: integer('student_id').references(() => students.id),
   coachId: integer('coach_id').references(() => coaches.id),
