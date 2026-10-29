@@ -17,7 +17,7 @@ import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDate, fmtDateTime, toFen, toYuan, yuan } from '../format'
-import { attempt, useIdempotencyKey, useSubmitting } from '../hooks'
+import { attempt, onceKey, useActionKeys, useIdempotencyKey, useSubmitting } from '../hooks'
 import { providerOptions, refundLabel } from '../labels'
 import {
   DateFilter,
@@ -88,13 +88,18 @@ export function Refunds() {
   const more = ['status', 'provider', 'abnormal'] as const
   const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
+  const keys = useActionKeys()
 
   const paidBack = async (r: Refund) => {
     if (
-      await attempt(() => api('POST', `/admin/refunds/${r.id}/paid-back`), '已记录退还', {
-        onStale: reload,
-        key: `paid-back-${r.id}`,
-      })
+      await attempt(
+        () =>
+          api('POST', `/admin/refunds/${r.id}/paid-back`, undefined, {
+            key: onceKey(`paid-back-${r.id}`),
+          }),
+        '已记录退还',
+        { onStale: reload, key: `paid-back-${r.id}` },
+      )
     )
       await reload()
   }
@@ -104,12 +109,16 @@ export function Refunds() {
     if (
       await attempt(
         async () => {
-          outcome = await api<RefundOutcome>('POST', `/admin/refunds/${r.id}/retry`)
+          outcome = await api<RefundOutcome>('POST', `/admin/refunds/${r.id}/retry`, undefined, {
+            key: keys.get(`retry-${r.id}`),
+          })
         },
         undefined,
         { onStale: reload, key: `retry-${r.id}` },
       )
     ) {
+      // A later retry, should this one fail again, is a new one.
+      keys.done(`retry-${r.id}`)
       tellOutcome(outcome, '已重新提交')
       await reload()
     }

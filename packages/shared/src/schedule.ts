@@ -261,6 +261,8 @@ export interface ScheduleExceptionDto {
 export interface ScheduleViewDto {
   /** The first period starts today; later ones are changes already planned. */
   periods: HoursPeriod[]
+  /** Sent back as If-Match (through versionOf) with a save of the weekly hours. */
+  hoursVersion: string
   /** The coach's 请假 and 加班 that have not ended. */
   exceptions: ScheduleExceptionDto[]
   /** 闭馆 that has not ended. */

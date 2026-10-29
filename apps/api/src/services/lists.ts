@@ -48,9 +48,13 @@ export function contains(column: Column, text: string): SQL {
 /** Students whose name or phone contains the text, or whose 学员编号 it is. */
 export function studentSearch(text: string | undefined): SQL | undefined {
   if (!text) return undefined
+  // A phone as people write it, such as `139 0000 0001` or `+86 139-0000-0001`, is its digits.
+  const digits = /^[+\d\s-]*\d[+\d\s-]*$/.test(text)
+    ? text.replace(/\D/g, '').replace(/^86(?=1\d{10}$)/, '')
+    : text
   return or(
     contains(students.name, text),
-    contains(students.phone, text),
+    contains(students.phone, digits),
     // A short number is also a 学员编号, which the student can show on their 我的 page.
     /^\d{1,6}$/.test(text) ? eq(students.id, Number(text)) : undefined,
   )

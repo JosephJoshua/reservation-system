@@ -4,8 +4,8 @@ import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { EditPage } from '../EditPage'
 import { Field } from '../Field'
-import { fmtDate, isoToPicker, pickerToIso } from '../format'
-import { type ApiData, attempt } from '../hooks'
+import { fmtDate, fmtLastDay, isoToPicker, pickerToIso } from '../format'
+import { type ApiData, attempt, onceKey } from '../hooks'
 import { BANNER_IMAGE, useImageUpload } from '../ImageCrop'
 import { LinkPicker, type LinkTargets, useLinkTargets } from '../LinkPicker'
 import type { BannerForm } from '../preview/data'
@@ -46,7 +46,12 @@ export function Banners({
 
   const remove = async (id: number) => {
     if (
-      await attempt(() => api('DELETE', `/admin/banners/${id}`), '已删除', { key: `banner-${id}` })
+      await attempt(
+        () =>
+          api('DELETE', `/admin/banners/${id}`, undefined, { key: onceKey(`delete-banner-${id}`) }),
+        '已删除',
+        { key: `banner-${id}` },
+      )
     )
       await banners.reload()
   }
@@ -109,7 +114,7 @@ export function Banners({
                   <br />
                   展示：
                   {row.startsAt || row.endsAt
-                    ? `${row.startsAt ? fmtDate(row.startsAt) : '不限'} 至 ${row.endsAt ? fmtDate(row.endsAt) : '不限'}`
+                    ? `${row.startsAt ? fmtDate(row.startsAt) : '不限'} 至 ${row.endsAt ? fmtLastDay(row.endsAt) : '不限'}`
                     : '长期'}
                 </div>
               </div>

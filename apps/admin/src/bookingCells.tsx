@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { Dialog, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from './api'
 import { fmtDateTime, yuan } from './format'
-import { attempt, useSubmitting } from './hooks'
+import { attempt, onceKey, useSubmitting } from './hooks'
 import { bookingStatusLabel, refundLabel } from './labels'
 import { openLesson } from './lessonLink'
+import { useCan } from './me'
 import type { AdminBooking } from './types'
 
 /** How a booking was paid for, and who booked it at the desk. */
@@ -148,11 +149,19 @@ export function CancelBookingDialog({
 }) {
   const [reason, setReason] = useState('')
   const submitting = useSubmitting()
+  // The 退款 page, where a desk payment handed back is recorded, is for 财务 only.
+  const canRefund = useCan('finance')
   const cancel = async () => {
     if (!reason.trim()) return
     if (
       await attempt(
-        () => api('POST', `/admin/bookings/${booking.id}/cancel`, { reason }),
+        () =>
+          api(
+            'POST',
+            `/admin/bookings/${booking.id}/cancel`,
+            { reason },
+            { key: onceKey(`cancel-booking-${booking.id}`) },
+          ),
         '已取消',
         {
           onStale: () => {
@@ -184,7 +193,10 @@ export function CancelBookingDialog({
         {booking.student?.name} {fmtDateTime(booking.startsAt)} {booking.lessonType.name}
       </p>
       <p className="muted">
-        场馆取消时，已付的款项会全额退款，用课时包约的课会退回课时。前台收款的订单，请在退款页确认已当面退还。
+        场馆取消时，已付的款项会全额退款，用课时包约的课会退回课时。
+        {canRefund
+          ? '前台收款的订单，当面退还后请在退款页点“已退还”。'
+          : '前台收款的订单，请当面把款项退还学员，并告知财务在退款页登记。'}
       </p>
       <Textarea
         placeholder="取消原因（学员可见）"

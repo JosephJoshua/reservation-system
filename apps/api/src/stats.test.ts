@@ -560,5 +560,46 @@ describe('GET /admin/summary', () => {
     expect(s.revenue.today).toBe(0)
     expect(s.newStudents).toEqual({ month: 2, lastMonth: 1 })
     expect(s.upcomingBookings).toBe(1)
+    // 待上课预约 opens the same bookings: 预约's default range of two weeks from today.
+    const twoWeeks = await h.call(
+      'GET',
+      `/admin/bookings?status=confirmed&from=${at('2026-10-24', 0).toISOString()}&to=${at('2026-11-07', 0).toISOString()}`,
+      undefined,
+      admin,
+    )
+    expect(twoWeeks.json).toHaveLength(s.upcomingBookings)
+  })
+
+  it('counts upcoming bookings over the range its link opens', async () => {
+    const h = setup({ now: '2026-10-24T12:00:00Z' })
+    const { coach, lesson } = h.seed()
+    const admin = await h.admin()
+    const t = await h.student('a')
+    const book = async (date: string) => {
+      const res = await h.call(
+        'POST',
+        '/bookings',
+        { slotId: h.slot(coach.id, date).id, lessonTypeId: lesson.id },
+        t,
+      )
+      await h.call('POST', `/dev/fake-pay/${res.json.orderId}`, undefined, t)
+    }
+    await book('2026-10-26')
+    await book('2026-11-06')
+    await book('2026-10-28')
+    // Past the two weeks the tile opens.
+    h.db
+      .update(bookings)
+      .set({ startsAt: at('2026-11-07', 10) })
+      .where(eq(bookings.id, 2))
+      .run()
+    // Earlier today, already over: no longer to come, as in the list the tile opens.
+    h.db
+      .update(bookings)
+      .set({ startsAt: at('2026-10-24', 10), endsAt: at('2026-10-24', 11) })
+      .where(eq(bookings.id, 3))
+      .run()
+    const s = (await h.call('GET', '/admin/summary', undefined, admin)).json
+    expect(s.upcomingBookings).toBe(1)
   })
 })

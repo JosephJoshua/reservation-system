@@ -7,7 +7,13 @@ import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
 import { fmtDateTime, yuan } from '../format'
 import { attempt, useSubmitting } from '../hooks'
-import { offlineMethodLabel, orderAnomalyLabel, orderStatusLabel, providerOptions } from '../labels'
+import {
+  offlineMethodLabel,
+  orderAnomalyLabel,
+  orderStatusLabel,
+  packageStatusLabel,
+  providerOptions,
+} from '../labels'
 import {
   DateFilter,
   Filter,
@@ -112,25 +118,36 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
         set={filters.changed([...more])}
         onClear={() => filters.reset([...more])}
         actions={
-          // The export has no student or 支付异常 filter, so it stays on the plain 订单 page.
+          // The exports have no student or 支付异常 filter, so they stay on the plain 订单 page.
           !studentId &&
           !anomaly && (
-            <ExportButton
-              kind="orders"
-              range={f.from && f.to ? [f.from, f.to] : undefined}
-              filters={{ q: f.q, status: f.status, kind: f.kind, provider: f.provider }}
-              filterText={
-                [
-                  f.q && `搜索“${f.q}”`,
-                  f.status && `状态：${orderStatusLabel[f.status as 'paid'][0]}`,
-                  f.kind && `类型：${orderKindLabels[f.kind as 'class']}`,
-                  f.provider &&
-                    `支付方式：${providerOptions.find((o) => o.value === f.provider)?.label}`,
-                ]
-                  .filter(Boolean)
-                  .join('，') || undefined
-              }
-            />
+            <>
+              {/* 课时包 too, as 财务 can't open the 课时包 page, which is for setting them up. */}
+              <ExportButton
+                kind="packages"
+                label="导出课时包"
+                statuses={Object.entries(packageStatusLabel).map(([value, [label]]) => ({
+                  value,
+                  label,
+                }))}
+              />
+              <ExportButton
+                kind="orders"
+                range={f.from && f.to ? [f.from, f.to] : undefined}
+                filters={{ q: f.q, status: f.status, kind: f.kind, provider: f.provider }}
+                filterText={
+                  [
+                    f.q && `搜索“${f.q}”`,
+                    f.status && `状态：${orderStatusLabel[f.status as 'paid'][0]}`,
+                    f.kind && `类型：${orderKindLabels[f.kind as 'class']}`,
+                    f.provider &&
+                      `支付方式：${providerOptions.find((o) => o.value === f.provider)?.label}`,
+                  ]
+                    .filter(Boolean)
+                    .join('，') || undefined
+                }
+              />
+            </>
           )
         }
       />

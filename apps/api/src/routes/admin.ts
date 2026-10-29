@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  addVenueDays,
   can,
   groupSettingsError,
   isGroup,
@@ -22,6 +23,7 @@ import {
   staffRoleLabels,
   staffRoles,
   venueDateKey,
+  venueInstant,
   venueSettings,
 } from '@rs/shared'
 import {
@@ -193,6 +195,7 @@ const PAGE_SIZE = 50
 const password = z
   .string()
   .refine((v) => v.length >= 8 && v.length <= 100, { message: '密码需为 8 到 100 位' })
+  .refine((v) => v.trim() === v, { message: '密码不能以空格开头或结尾' })
 const username = z
   .string()
   .trim()
@@ -203,7 +206,8 @@ const username = z
 const staffName = z.string().trim().min(1).max(20)
 const roles = z
   .array(z.enum(staffRoles))
-  .min(1, '请选择角色')
+  // A refinement, so the message is shown as written.
+  .refine((v) => v.length > 0, { message: '请选择角色' })
   .max(staffRoles.length)
   .transform((r) => staffRoles.filter((role) => r.includes(role)))
 const rolesText = (r: readonly StaffRole[]) => r.map((role) => staffRoleLabels[role]).join('、')
@@ -273,9 +277,7 @@ const lessonTypeBody = z
     // A rule left out follows the venue's 默认预约规则. Left out altogether, an edit keeps them.
     rules: ruleOverrides.optional(),
   })
-  .refine((v) => saleDatesValid(v.salePercent, v.saleStartsAt, v.saleEndsAt), {
-    message: '折扣需要设置开始和结束时间',
-  })
+  .superRefine((v, ctx) => saleDatesCheck(ctx, '折扣', v.salePercent, v.saleStartsAt, v.saleEndsAt))
   .superRefine((v, ctx) => {
     const error = groupSettingsError(v)
     if (error) ctx.addIssue({ code: 'custom', message: error, path: ['capacity'] })
@@ -295,9 +297,7 @@ const productBody = z
     saleStartsAt: nullableInstant.default(null),
     saleEndsAt: nullableInstant.default(null),
   })
-  .refine((v) => saleDatesValid(v.salePrice, v.saleStartsAt, v.saleEndsAt), {
-    message: '限时价需要设置开始和结束时间',
-  })
+  .superRefine((v, ctx) => saleDatesCheck(ctx, '限时价', v.salePrice, v.saleStartsAt, v.saleEndsAt))
 
 const bannerBody = z
   .object({
@@ -321,9 +321,20 @@ const bannerBody = z
 
 const orderBody = z.object({ ids: z.array(z.number().int().positive()).max(500) })
 
-function saleDatesValid(value: number | null, startsAt: Date | null, endsAt: Date | null) {
-  if (value === null) return true
-  return startsAt !== null && endsAt !== null && startsAt < endsAt
+/** A sale needs a start and an end, the end after the start. */
+function saleDatesCheck(
+  ctx: z.RefinementCtx,
+  what: string,
+  value: number | null,
+  startsAt: Date | null,
+  endsAt: Date | null,
+) {
+  if (value === null) return
+  if (startsAt === null || endsAt === null) {
+    ctx.addIssue({ code: 'custom', message: `${what}需要设置开始和结束时间` })
+  } else if (startsAt >= endsAt) {
+    ctx.addIssue({ code: 'custom', message: '结束时间要晚于开始时间' })
+  }
 }
 
 export function adminRoutes(deps: Deps) {
@@ -343,14 +354,15 @@ export function adminRoutes(deps: Deps) {
     return c.json(await loginAdmin(deps, body.username, body.password, client))
   })
 
-  app.use('*', async (c, next) => {
-    if (c.req.path.endsWith('/admin/login')) return next()
-    return requireAdmin(deps)(c, next)
-  })
-
-  app.post('/logout', need('view'), (c) => {
+  // Any session may end itself, a deactivated login's too: it needs no access to anything.
+  app.post('/logout', (c) => {
     logout(deps, c.req.header('Authorization'))
     return c.body(null, 204)
+  })
+
+  app.use('*', async (c, next) => {
+    if (c.req.path.endsWith('/admin/login') || c.req.path.endsWith('/admin/logout')) return next()
+    return requireAdmin(deps)(c, next)
   })
 
   /**
@@ -839,7 +851,9 @@ export function adminRoutes(deps: Deps) {
     const body = await parseBody(c, weeklyHoursBody)
     const id = idParam(c)
     const from = body.from ?? venueDateKey(deps.now())
-    const { conflicts, changed } = saveHours(deps, id, { from, hours: body.hours })
+    const { conflicts, changed } = saveHours(deps, id, { from, hours: body.hours }, (current) =>
+      checkVersion(c, current),
+    )
     if (changed) {
       log(c.get('staffId'), {
         action: 'schedule.hours',
@@ -1473,7 +1487,11 @@ export function adminRoutes(deps: Deps) {
       c,
       z
         .discriminatedUnion('payWith', [
-          z.object({ ...frontDeskTarget, payWith: z.literal('package') }),
+          z.object({
+            ...frontDeskTarget,
+            payWith: z.literal('package'),
+            expectedPackageId: z.number().int().positive().optional(),
+          }),
           z.object({
             ...frontDeskTarget,
             payWith: z.literal('offline'),
@@ -1489,6 +1507,15 @@ export function adminRoutes(deps: Deps) {
       bookForStudent(deps, c.get('staffId'), { ...body, target: toTarget(body), listedPriceOnly }),
       201,
     )
+  })
+
+  // The 签到码 dialog: the venue name it prints, and whether students can scan it at all.
+  app.get('/check-in-code', need('attendance'), (c) => {
+    const settings = getSettings(db)
+    return c.json({
+      venueName: settings.venue.name,
+      selfCheckIn: settings.attendance.selfCheckIn,
+    })
   })
 
   // The front desk's 签到 list: every student's lesson on one venue day.
@@ -1984,6 +2011,8 @@ export function adminRoutes(deps: Deps) {
     const before = db.select().from(students).where(eq(students.id, id)).get()
     if (!before) throw notFound('学员')
     if (before.deletedAt) throw accountDeleted()
+    // The desk edits the name and phone the student also keeps in the mini program.
+    checkVersion(c, { name: before.name, phone: before.phone })
     const changed = db.update(students).set(body).where(eq(students.id, id)).run()
     if (changed.changes === 0) throw notFound('学员')
     // Field names only: the log keeps no copy of a student's name or phone.
@@ -2607,8 +2636,17 @@ export function adminRoutes(deps: Deps) {
     const { revenue, ...today } = dashboard(deps)
     // Money is left out for staff without finance, who could not act on it anyway.
     const money = can(c.get('roles'), 'finance')
+    // 待上课 opens 预约 on today and the next 13 days with 待上课, which leaves out lessons
+    // already over, so it counts those the same way.
+    const day = venueDateKey(now)
+    const upcoming = and(
+      eq(bookings.status, 'confirmed'),
+      gt(bookings.endsAt, now),
+      gte(bookings.startsAt, venueInstant(day, 0)),
+      lt(bookings.startsAt, venueInstant(addVenueDays(day, 13), 24 * 60)),
+    )
     return c.json({
-      upcomingBookings: count(and(eq(bookings.status, 'confirmed'), gt(bookings.startsAt, now))),
+      upcomingBookings: count(upcoming),
       pendingPayments: count(eq(bookings.status, 'pending_payment')),
       refundRequests: money ? refundCount(eq(refunds.status, 'requested')) : null,
       failedRefunds: money ? refundCount(eq(refunds.status, 'failed')) : null,

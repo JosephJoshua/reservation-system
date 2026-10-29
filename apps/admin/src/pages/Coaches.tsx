@@ -19,7 +19,7 @@ import { DataTable } from '../DataTable'
 import { EditPage, useRecordId } from '../EditPage'
 import { Field } from '../Field'
 import { toFen, toYuan, yuan } from '../format'
-import { type ApiData, attempt, hashParam, newKey, useApi, useSubmitting } from '../hooks'
+import { type ApiData, attempt, hashParam, newKey, onceKey, useApi, useSubmitting } from '../hooks'
 import { COACH_PHOTO, useImageUpload } from '../ImageCrop'
 import type { CoachForm } from '../preview/data'
 import { PreviewDialog } from '../preview/EditorWithPreview'
@@ -399,7 +399,11 @@ function Categories({
   }
 
   const remove = async (id: number) => {
-    const ok = await attempt(() => api('DELETE', `/admin/coach-categories/${id}`), '已删除', {
+    const del = () =>
+      api('DELETE', `/admin/coach-categories/${id}`, undefined, {
+        key: onceKey(`delete-category-${id}`),
+      })
+    const ok = await attempt(del, '已删除', {
       key: `category-${id}`,
       onStale: categories.reload,
     })

@@ -1,6 +1,6 @@
 import { canOpenPage, type StaffDto } from '@rs/shared'
 import type { ComponentType } from 'react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AssignmentIcon,
   BillIcon,
@@ -19,9 +19,10 @@ import {
   UsergroupIcon,
   UserIcon,
 } from 'tdesign-icons-react'
-import { Button, ConfigProvider, Drawer, Loading } from 'tdesign-react'
+import { Button, ConfigProvider, Dialog, Drawer, Loading } from 'tdesign-react'
 import zhCN from 'tdesign-react/es/locale/zh_CN'
-import { api, getToken, handleUnauthorized, setToken } from './api'
+import { AccountMenu, ReLogin } from './AccountMenu'
+import { getToken, handleUnauthorized, onTokenChange, setToken } from './api'
 import { CommandMenu } from './CommandMenu'
 import { useApi, useIsPhone } from './hooks'
 import { LessonDrawer, LessonPage } from './LessonDetail'
@@ -105,14 +106,79 @@ export function App() {
   useThemeMode()
   const [authed, setAuthed] = useState(() => !!getToken())
   const [page, setPage] = useState<PageKey>(currentPage)
-  // Set when the API turned the session away, so the login page can say why it is back.
-  const [expired, setExpired] = useState(false)
+  // Why the login page is back, such as an expired session.
+  const [notice, setNotice] = useState<string>()
   const phone = useIsPhone()
+  // Who is signed in, once known, for logging in again over the page.
+  const signedIn = useRef<StaffDto | null>(null)
+  // The session ended while working: asks for the password over the page.
+  const [relogin, setRelogin] = useState<{
+    me: StaffDto
+    done: (ok: boolean) => void
+  } | null>(null)
+  const pending = useRef(relogin)
+  pending.current = relogin
 
+  const rememberMe = useCallback((me: StaffDto | null) => {
+    signedIn.current = me
+  }, [])
+
+  /** Back to the login page, which says why. */
+  const signOut = (why?: string) => {
+    pending.current?.done(false)
+    setRelogin(null)
+    setToken(null)
+    signedIn.current = null
+    setAuthed(false)
+    setNotice(why)
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registered once, reading refs
   useEffect(() => {
-    handleUnauthorized(() => {
-      setAuthed(false)
-      setExpired(true)
+    // The API turned the session away. Nothing on the page is lost: the staff member logs in
+    // again over it and the request goes again. Before anyone is known, it is the login page.
+    handleUnauthorized(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const me = signedIn.current
+          if (!me) {
+            signOut('登录已过期，请重新登录')
+            resolve(false)
+            return
+          }
+          setRelogin({
+            me,
+            done: (ok) => {
+              setRelogin(null)
+              resolve(ok)
+            },
+          })
+        }),
+      () => signOut('账号已停用，请联系管理员'),
+    )
+    // Another tab of this browser logged in or out: the token is shared, so this tab follows,
+    // and SignedInApp says so if that made it someone else.
+    const offToken = onTokenChange((token) => {
+      if (!token) {
+        if (signedIn.current || pending.current) signOut('已在其他标签页退出登录')
+        else setAuthed(false)
+        return
+      }
+      setAuthed(true)
+      setNotice(undefined)
+      const asked = pending.current
+      if (!asked) {
+        window.dispatchEvent(new Event(STAFF_CHANGED))
+        return
+      }
+      // Asking for the password here: logged in again there as the same person, this tab
+      // carries on too. Someone else leaves the question here open.
+      void fetch('/api/admin/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then((res) => (res.ok ? (res.json() as Promise<StaffDto>) : null))
+        .then((me) => {
+          if (me && me.id === asked.me.id && pending.current === asked) asked.done(true)
+        })
+        .catch(() => {})
     })
     // Leaving a page with unsaved changes asks first. Links ask before the address changes; the
     // back and forward buttons have already changed it, so it is put back while the admin decides
@@ -166,6 +232,7 @@ export function App() {
     window.addEventListener('hashchange', onHash)
     window.addEventListener(SHOW_SECTION, onSection)
     return () => {
+      offToken()
       window.removeEventListener('hashchange', onHash)
       window.removeEventListener(SHOW_SECTION, onSection)
       document.removeEventListener('click', onClick, true)
@@ -181,23 +248,44 @@ export function App() {
   const logout = async () => {
     if (!(await confirmLeave())) return
     takeLeave()
-    await api('POST', '/admin/logout').catch(() => {})
-    setToken(null)
-    setAuthed(false)
+    // Not through api(): an ended session needs no logging in again just to log out.
+    const token = getToken()
+    await fetch('/api/admin/logout', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => {})
+    signOut()
   }
 
   return (
     <ConfigProvider globalConfig={zhCN}>
       {!authed ? (
         <Login
-          notice={expired ? '登录已过期，请重新登录' : undefined}
+          notice={notice}
           onDone={() => {
             setAuthed(true)
-            setExpired(false)
+            setNotice(undefined)
           }}
         />
       ) : (
-        <SignedInApp page={page} phone={phone} onLogout={logout} />
+        <SignedInApp page={page} phone={phone} onLogout={logout} onMe={rememberMe} />
+      )}
+      {authed && relogin && (
+        <ReLogin
+          me={relogin.me}
+          onDone={async (ok) => {
+            if (ok) {
+              relogin.done(true)
+              // Roles may have changed meanwhile.
+              window.dispatchEvent(new Event(STAFF_CHANGED))
+              return
+            }
+            // Another account: the page and anything unsaved on it go.
+            if (!(await confirmLeave())) return
+            takeLeave()
+            signOut()
+          }}
+        />
       )}
     </ConfigProvider>
   )
@@ -207,10 +295,12 @@ function SignedInApp({
   page: requested,
   phone,
   onLogout,
+  onMe,
 }: {
   page: PageKey
   phone: boolean
   onLogout: () => void
+  onMe: (me: StaffDto | null) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   // A menu tap that first asked about unsaved changes closes the menu once the page changes.
@@ -218,6 +308,17 @@ function SignedInApp({
   useEffect(() => setMenuOpen(false), [requested])
   const me = useApi<StaffDto>('/admin/me')
   const { reload } = me
+  // Another tab logged in as someone else: said once, as the page now acts as them.
+  const seen = useRef<number | null>(null)
+  const [switched, setSwitched] = useState<string | null>(null)
+  useEffect(() => {
+    if (!me.data) return
+    onMe(me.data)
+    if (seen.current !== null && seen.current !== me.data.id) setSwitched(me.data.name)
+    seen.current = me.data.id
+  }, [me.data, onMe])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: forgets the account on leaving
+  useEffect(() => () => onMe(null), [])
   useEffect(() => {
     const onChange = () => void reload()
     window.addEventListener(STAFF_CHANGED, onChange)
@@ -324,10 +425,7 @@ function SignedInApp({
                 />
               )}
               <ThemeMenu />
-              {me.data && <span className="muted signed-in">{me.data.name}</span>}
-              <Button variant="text" onClick={onLogout}>
-                退出登录
-              </Button>
+              <AccountMenu me={me.data} onLogout={onLogout} />
             </span>
           </header>
           <main className="admin-content">
@@ -336,6 +434,18 @@ function SignedInApp({
           {lessonId && allowed.includes('lessons') && <LessonDrawer key={lessonId} id={lessonId} />}
         </div>
       </div>
+      {switched && (
+        <Dialog
+          visible
+          header="账号已切换"
+          cancelBtn={null}
+          confirmBtn="知道了"
+          onConfirm={() => setSwitched(null)}
+          onClose={() => setSwitched(null)}
+        >
+          <p>{`这个浏览器的其他标签页登录了${switched}的账号，此页面现在也以${switched}的身份操作，请核对后再继续。`}</p>
+        </Dialog>
+      )}
     </MeContext.Provider>
   )
 }

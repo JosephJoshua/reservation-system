@@ -55,8 +55,8 @@ test('sets up a lesson, a coach category with its own price, a package and 排�
   await typeNumber(field(editForm(page), '限时价').locator('.t-input-number input'), '2500')
   await saveEdit(page)
   const row = page.getByRole('row').filter({ hasText: productName })
-  await expect(row).toContainText('¥2500')
-  await expect(row.locator('.strike')).toHaveText('¥2800')
+  await expect(row).toContainText('¥2,500')
+  await expect(row.locator('.strike')).toHaveText('¥2,800')
 
   // The coach takes lessons on Wednesday mornings.
   await page.goto('./#/coaches')
@@ -136,7 +136,7 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
   await dialog(page).getByRole('button', { name: '确认收款' }).click()
   const pkgRow = page.locator('.t-drawer').getByRole('row').filter({ hasText: productName })
   await expect(pkgRow).toContainText('10/10')
-  await expect(pkgRow).toContainText('¥2400')
+  await expect(pkgRow).toContainText('¥2,400')
 
   await pkgRow.getByRole('button', { name: '加课时' }).click()
   await dialog(page).locator('textarea').fill('补课')
@@ -149,7 +149,7 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
   await page.goto('./#/refunds')
   await page.reload()
   const refundRow = page.getByRole('row').filter({ hasText: `前台${run}` })
-  await expect(refundRow).toContainText('建议 ¥2400')
+  await expect(refundRow).toContainText('建议 ¥2,400')
   // The gifted lesson counts in the total.
   await expect(refundRow).toContainText('剩 11/11 节')
   await refundRow.getByRole('button', { name: '同意' }).click()

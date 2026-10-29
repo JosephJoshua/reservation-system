@@ -158,7 +158,7 @@ test('the schedule fits the screen and 排班 saves once on a double click', asy
   await page.getByPlaceholder('搜索教练').fill(coachName)
   // The board scrolls on its own; the page and its header stay put.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024)
-  await expect(page.getByRole('button', { name: '退出登录' })).toBeInViewport()
+  await expect(page.getByRole('button', { name: /^账号/ })).toBeInViewport()
   await page.screenshot({ path: `${shots}/schedule-1024.png` })
 
   await page.goto('./#/coaches')
@@ -317,19 +317,23 @@ test('a lesson edit from a stale tab is refused and keeps what was typed', async
   await expect(other.getByRole('region', { name: '保存修改' })).toHaveCount(0)
 })
 
-test('an expired session says so on the login page', async ({ page }) => {
+test('an expired session asks for the password again over the page', async ({ page }) => {
   await login(page)
   await page.evaluate(() => {
     for (const k of Object.keys(localStorage)) localStorage.setItem(k, 'expired')
   })
   await page.goto('./#/bookings')
-  await expect(page.getByText('登录已过期，请重新登录')).toBeVisible()
-  await page.getByPlaceholder('登录名').fill('admin')
-  await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD)
-  await page.getByRole('button', { name: '登录' }).click()
-  await expect(page.getByRole('button', { name: '退出登录' })).toBeVisible()
+  const relogin = page.locator('.t-dialog:visible', { hasText: '登录已过期' })
+  await expect(relogin).toBeVisible()
+  await expect(relogin.locator('input').first()).toHaveValue('admin')
+  await relogin.locator('input[type=password]').fill(ADMIN_PASSWORD)
+  await relogin.getByRole('button', { name: '登录', exact: true }).click()
+  await expect(relogin).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '代约' })).toBeVisible()
+  await page.getByRole('button', { name: /^账号/ }).click()
   await page.getByRole('button', { name: '退出登录' }).click()
-  await expect(page.getByText('登录已过期，请重新登录')).toHaveCount(0)
+  await expect(page.getByPlaceholder('登录名')).toBeVisible()
+  await expect(page.getByText('登录已过期')).toHaveCount(0)
 })
 
 test('on a phone the menu is a drawer, lists fit the screen and dialog actions sit at the bottom', async ({

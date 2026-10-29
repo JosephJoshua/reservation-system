@@ -95,7 +95,8 @@ export function createStaff(
 
 /**
  * Renames, (de)activates or changes the roles of a login. Deactivating logs it out everywhere at
- * once; new roles apply on its next request.
+ * once (its sessions are refused, and end on enabling it again); new roles apply on its next
+ * request.
  */
 export function updateStaff(
   deps: Deps,
@@ -125,7 +126,9 @@ export function updateStaff(
     if (admins.length === 0) {
       throw new ApiError(409, 'last_admin', '至少要保留一个启用的管理员')
     }
-    if (!after.active) tx.delete(sessions).where(eq(sessions.staffId, id)).run()
+    // Deactivated, the sessions stay so the app can tell them why they are refused; they never work
+    // again, as they end when the login is enabled again.
+    if (!before.active && after.active) tx.delete(sessions).where(eq(sessions.staffId, id)).run()
     return { before, after }
   })
 }

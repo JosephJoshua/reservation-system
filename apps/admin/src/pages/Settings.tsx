@@ -1,4 +1,10 @@
-import { CHECK_IN_EARLY_MINUTES, ownRuleLabels, type VenueSettings } from '@rs/shared'
+import {
+  CHECK_IN_EARLY_MINUTES,
+  ownRuleLabels,
+  ruleLabels,
+  type VenueSettings,
+  venueSettings,
+} from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -15,7 +21,7 @@ import {
 import { DefaultRuleFields } from '../BookingRules'
 import { Field } from '../Field'
 import { useApi } from '../hooks'
-import { SaveBar } from '../SaveBar'
+import { SaveBar, StaleNotice } from '../SaveBar'
 import { SectionNav, useSections } from '../SectionNav'
 import { useSettingsDraft } from '../settingsDraft'
 import type { LessonType } from '../types'
@@ -50,6 +56,61 @@ export const sections = [
 ] as const
 
 type SettingsSection = (typeof sections)[number]['key']
+
+// What the fields that can be wrong are called on the page, by their path in the settings.
+const fieldLabels: Record<string, string> = {
+  'venue.name': '场馆名称',
+  'venue.address': '地址',
+  'venue.phone': '电话',
+  'venue.openingHours': '营业时间',
+  ...Object.fromEntries(Object.entries(ruleLabels).map(([k, v]) => [`booking.${k}`, v])),
+  'booking.lateCancel.percent': '退款比例',
+  'booking.tables': '球台数',
+  'booking.bufferMinutes': '课间休息',
+  'payment.timeoutMinutes': '支付时限',
+  'payment.trialLimitPerStudent': '每人体验课次数',
+  'policies.agreement': '用户协议',
+  'legal.operator': '主体名称',
+  'legal.contact': '隐私联系方式',
+}
+
+/**
+ * Why the settings can't be saved, checked here with the API's own schema so a field shown red
+ * is named before saving instead of the server answering with a general error.
+ */
+function settingsProblem(
+  body: VenueSettings,
+): { message: string; section: SettingsSection } | null {
+  if (!body.venue.name.trim()) return { message: '请填写场馆名称', section: 'venue' }
+  const result = venueSettings.safeParse(body)
+  if (result.success) return null
+  const issue = result.error.issues[0]
+  if (!issue) return null
+  const path = issue.path.filter((p) => typeof p === 'string').join('.')
+  const label = fieldLabels[path] ?? fieldLabels[path.split('.').slice(0, 2).join('.')] ?? '设置'
+  const top = path.split('.')[0]
+  const section: SettingsSection =
+    top === 'booking'
+      ? path === 'booking.bufferMinutes'
+        ? 'schedule'
+        : 'booking'
+      : top === 'policies'
+        ? 'legal'
+        : sectionKeys.includes(top as SettingsSection)
+          ? (top as SettingsSection)
+          : 'venue'
+  const message =
+    issue.code === 'too_big' && issue.origin === 'string'
+      ? `${label}太长`
+      : issue.code === 'too_small' || issue.code === 'too_big'
+        ? `${label}超出允许范围`
+        : issue.code === 'invalid_type' && issue.expected === 'int'
+          ? `${label}需为整数`
+          : issue.code === 'not_multiple_of'
+            ? `${label}需为 ${issue.divisor} 的倍数`
+            : `${label}格式不对`
+  return { message, section }
+}
 const sectionKeys = sections.map((x) => x.key)
 
 export function Settings() {
@@ -61,6 +122,7 @@ export function Settings() {
     reset: resetDraft,
     save: saveDraft,
     saving,
+    stale,
     isSaving,
     changed,
   } = useSettingsDraft()
@@ -117,6 +179,12 @@ export function Settings() {
     const body = structuredClone(s)
     body.venue.latitude = lat ? Number(lat) : null
     body.venue.longitude = lng ? Number(lng) : null
+    const problem = settingsProblem(body)
+    if (problem) {
+      void MessagePlugin.warning(problem.message)
+      nav.scrollTo(problem.section)
+      return
+    }
     sentCoord.current = coord
     if (!(await saveDraft(body))) sentCoord.current = null
   }
@@ -128,6 +196,7 @@ export function Settings() {
   return (
     <Space direction="vertical" size={16} className="settings-layout" style={{ width: '100%' }}>
       <SectionNav sections={sections} nav={nav} dirty={dirtySections} />
+      {stale && <StaleNotice what="设置" onLoad={reset} />}
       <Card title="场馆信息" bordered ref={nav.refs.venue}>
         <div className="fields form-narrow">
           <Field label="名称">
@@ -463,7 +532,13 @@ export function Settings() {
           </Field>
         </div>
       </Card>
-      <SaveBar dirty={dirty} saving={saving} onSave={save} onReset={reset} />
+      <SaveBar
+        dirty={dirty}
+        saving={saving}
+        onSave={save}
+        onReset={reset}
+        note={stale ? '已被其他人修改' : undefined}
+      />
     </Space>
   )
 }

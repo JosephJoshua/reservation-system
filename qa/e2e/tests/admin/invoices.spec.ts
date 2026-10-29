@@ -83,7 +83,7 @@ test('uploads an invoice, rejects another, and exports the queue', async ({ page
   const person = page.getByRole('row').filter({ hasText: personName }).filter({ hasText: '个人' })
   const company = page.getByRole('row').filter({ hasText: companyName })
   await expect(person).toContainText('开票中')
-  await expect(person).toContainText('¥1800')
+  await expect(person).toContainText('¥1,800')
   // The tax number is upper-cased when it is saved.
   await expect(company).toContainText('91110108MA01ABCD2X')
 

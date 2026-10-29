@@ -32,7 +32,15 @@ import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { Field } from '../Field'
 import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, useApi, useIdempotencyKey, useIsPhone, useSubmitting } from '../hooks'
+import {
+  attempt,
+  onceKey,
+  useActionKeys,
+  useApi,
+  useIdempotencyKey,
+  useIsPhone,
+  useSubmitting,
+} from '../hooks'
 import { bookingStatusLabel } from '../labels'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
@@ -746,7 +754,13 @@ function LessonDialog({
     if (!reason.trim()) return
     if (
       await attempt(
-        () => api('POST', `/admin/bookings/${b.id}/cancel`, { reason }),
+        () =>
+          api(
+            'POST',
+            `/admin/bookings/${b.id}/cancel`,
+            { reason },
+            { key: onceKey(`cancel-booking-${b.id}`) },
+          ),
         '已取消，学员会收到全额退款或退回的课时',
         { onStale: onChanged },
       )
@@ -880,6 +894,7 @@ function SessionDialog({
   const [booking, setBooking] = useState(false)
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
+  const keys = useActionKeys()
   const now = new Date()
   const started = new Date(slot.startsAt) <= now
   const ended = new Date(slot.endsAt) <= now
@@ -896,12 +911,18 @@ function SessionDialog({
   const capacityOk = Number.isInteger(capacity) && capacity >= minSeats && capacity <= maxSeats
 
   const patch = async (body: { open?: boolean; capacity?: number }, done: string) => {
+    // A key per change: a retry of this one is a repeat, a different change is new.
+    const name = `patch-${JSON.stringify(body)}`
     if (
-      await attempt(() => api('PATCH', `/admin/slots/${slot.id}`, body), done, {
-        onStale: onChanged,
-      })
-    )
+      await attempt(
+        () => api('PATCH', `/admin/slots/${slot.id}`, body, { key: keys.get(name) }),
+        done,
+        { onStale: onChanged },
+      )
+    ) {
+      keys.done(name)
       onChanged()
+    }
   }
   // Held from the click until the dialog closes: a second click landing after the request but
   // before the dialog goes away must not cancel again.
@@ -917,7 +938,13 @@ function SessionDialog({
             { onStale: onChanged },
           )
         : await attempt(
-            () => api('POST', `/admin/bookings/${cancelling}/cancel`, { reason }),
+            () =>
+              api(
+                'POST',
+                `/admin/bookings/${cancelling}/cancel`,
+                { reason },
+                { key: onceKey(`cancel-booking-${cancelling}`) },
+              ),
             '已取消，学员会收到全额退款或退回的课时',
             { onStale: onChanged },
           )
@@ -939,9 +966,14 @@ function SessionDialog({
   }
   const remove = async () => {
     if (
-      await attempt(() => api('DELETE', `/admin/slots/${slot.id}`), '已删除', {
-        onStale: onChanged,
-      })
+      await attempt(
+        () =>
+          api('DELETE', `/admin/slots/${slot.id}`, undefined, {
+            key: onceKey(`delete-slot-${slot.id}`),
+          }),
+        '已删除',
+        { onStale: onChanged },
+      )
     )
       onChanged()
   }

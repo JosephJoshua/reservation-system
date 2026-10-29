@@ -25,12 +25,15 @@ const dateLabels = {
  */
 export function ExportButton({
   kind,
+  label = '导出',
   filters = {},
   filterText,
   range,
   statuses,
 }: {
   kind: Kind
+  /** The button's text, for a page with more than one export. */
+  label?: string
   filters?: Filters
   filterText?: string
   range?: [string, string]
@@ -40,7 +43,7 @@ export function ExportButton({
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
-        导出
+        {label}
       </Button>
       {open && (
         <ExportDialog

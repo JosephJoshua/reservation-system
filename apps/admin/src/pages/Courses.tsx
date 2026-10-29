@@ -17,7 +17,16 @@ import { RuleOverrideFields } from '../BookingRules'
 import { DataTable } from '../DataTable'
 import { EditPage, useRecordId } from '../EditPage'
 import { Field } from '../Field'
-import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
+import {
+  defaultSaleWindow,
+  fmtDate,
+  fmtLastDay,
+  isoToPicker,
+  pickerToIso,
+  toFen,
+  toYuan,
+  yuan,
+} from '../format'
 import { type ApiData, useApi } from '../hooks'
 import type { LessonForm } from '../preview/data'
 import { PreviewDialog } from '../preview/EditorWithPreview'
@@ -108,7 +117,7 @@ function CourseList({ types }: { types: ApiData<LessonType[]> }) {
             title: '折扣',
             cell: ({ row }) =>
               row.salePercent
-                ? `${row.salePercent / 10} 折，${isoToPicker(row.saleStartsAt).slice(0, 10)} 至 ${isoToPicker(row.saleEndsAt).slice(0, 10)}`
+                ? `${row.salePercent / 10} 折，${row.saleStartsAt ? fmtDate(row.saleStartsAt) : ''} 至 ${row.saleEndsAt ? fmtLastDay(row.saleEndsAt) : ''}`
                 : '-',
           },
           {

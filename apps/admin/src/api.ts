@@ -28,9 +28,32 @@ export function setToken(token: string | null) {
   } catch {}
 }
 
-let onUnauthorized = () => {}
-export function handleUnauthorized(fn: () => void) {
+/** Calls `fn` when another tab of this browser logs in or out, with the token it left. */
+export function onTokenChange(fn: (token: string | null) => void) {
+  const onStorage = (e: StorageEvent) => {
+    // null when the other tab cleared all of the site's storage.
+    if (e.key === TOKEN_KEY || e.key === null) fn(getToken())
+  }
+  window.addEventListener('storage', onStorage)
+  return () => window.removeEventListener('storage', onStorage)
+}
+
+// Asks the signed-in staff member to log in again, resolving true once they have. Requests
+// turned away meanwhile all wait on the one question.
+let onUnauthorized: () => Promise<boolean> = async () => false
+let onDisabled = () => {}
+let asking: Promise<boolean> | null = null
+/** `disabled` runs instead when the login itself was deactivated. */
+export function handleUnauthorized(fn: () => Promise<boolean>, disabled: () => void) {
   onUnauthorized = fn
+  onDisabled = disabled
+}
+
+function signInAgain() {
+  asking ??= onUnauthorized().finally(() => {
+    asking = null
+  })
+  return asking
 }
 
 /**
@@ -60,6 +83,7 @@ async function request<T>(
   path: string,
   body?: unknown,
   { key, ifMatch }: { key?: string; ifMatch?: unknown } = {},
+  retried = false,
 ): Promise<{ data: T; res: Response }> {
   const token = getToken()
   const isForm = body instanceof FormData
@@ -82,9 +106,15 @@ async function request<T>(
   const data = await res.json().catch(() => null)
   if (!res.ok) {
     const err = (data as ApiErrorBody | null)?.error
-    if (res.status === 401 && !path.startsWith('/admin/login')) {
-      setToken(null)
-      onUnauthorized()
+    // The session ended: the page stays as it is while the staff member logs in again, and then
+    // the request goes again. The server turned it away before doing anything, so this is safe.
+    if (res.status === 401 && err?.code === 'account_disabled') onDisabled()
+    else if (res.status === 401 && !path.startsWith('/admin/login') && !retried) {
+      // Logged in again meanwhile, such as in another tab, or asked now.
+      const fresh = getToken()
+      if ((fresh && fresh !== token) || (await signInAgain())) {
+        return request<T>(method, path, body, { key, ifMatch }, true)
+      }
     }
     // Roles changed since the page loaded: reload them, so the menu drops what is no longer allowed.
     if (res.status === 403 && err?.code === 'forbidden')
@@ -105,7 +135,10 @@ export async function uploadImage(file: File): Promise<string> {
 }
 
 /** Fetches a file the API only gives to a signed-in admin, such as an export or an invoice. */
-export async function fetchFile(path: string): Promise<{ blob: Blob; name: string }> {
+export async function fetchFile(
+  path: string,
+  retried = false,
+): Promise<{ blob: Blob; name: string }> {
   const token = getToken()
   let res: Response
   try {
@@ -117,9 +150,10 @@ export async function fetchFile(path: string): Promise<{ blob: Blob; name: strin
   }
   if (!res.ok) {
     const err = ((await res.json().catch(() => null)) as ApiErrorBody | null)?.error
-    if (res.status === 401) {
-      setToken(null)
-      onUnauthorized()
+    if (res.status === 401 && err?.code === 'account_disabled') onDisabled()
+    else if (res.status === 401 && !retried) {
+      const fresh = getToken()
+      if ((fresh && fresh !== token) || (await signInAgain())) return fetchFile(path, true)
     }
     // Roles changed since the page loaded: reload them, so the menu drops what is no longer allowed.
     if (res.status === 403 && err?.code === 'forbidden')

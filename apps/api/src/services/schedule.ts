@@ -19,6 +19,7 @@ import {
   type Span,
   venueDateKey,
   venueInstant,
+  versionOf,
   type WeeklyHours,
   weeklyHoursError,
   withinSpans,
@@ -512,6 +513,32 @@ export function shortestLesson(tx: Q, coachId: number): number | null {
   return row?.minutes ?? null
 }
 
+/**
+ * What a save of a coach's weekly hours is checked against (If-Match), so one made on top of
+ * another's change is refused. Taken from all of the coach's rows, not the periods from today,
+ * so it stays the same over the venue's midnight while nothing changes.
+ */
+export function hoursVersion(tx: Q, coachId: number): string {
+  const rows = tx
+    .select({
+      fromDate: coachHours.fromDate,
+      toDate: coachHours.toDate,
+      weekday: coachHours.weekday,
+      startMinute: coachHours.startMinute,
+      endMinute: coachHours.endMinute,
+    })
+    .from(coachHours)
+    .where(eq(coachHours.coachId, coachId))
+    .orderBy(
+      asc(coachHours.fromDate),
+      asc(coachHours.weekday),
+      asc(coachHours.startMinute),
+      asc(coachHours.endMinute),
+    )
+    .all()
+  return versionOf(rows)
+}
+
 /** A coach's 排班 from today on, for the editors in the admin app and the mini program. */
 export function scheduleView(tx: Q, now: Date, coachId: number): ScheduleViewDto {
   assertCoach(tx, coachId)
@@ -534,6 +561,7 @@ export function scheduleView(tx: Q, now: Date, coachId: number): ScheduleViewDto
   const settings = getSettings(tx)
   return {
     periods: fromToday,
+    hoursVersion: hoursVersion(tx, coachId),
     exceptions: rows.map((r) => exceptionDto(r, names)),
     closures: upcomingClosures(tx, now),
     coachEdits: settings.booking.coachEditsHours,
@@ -553,6 +581,7 @@ export function saveHours(
   deps: Deps,
   coachId: number,
   input: { from: string; hours: WeeklyHours[] },
+  check?: (current: string) => void,
 ): { conflicts: ScheduleConflictDto[]; changed: boolean } {
   const now = deps.now()
   const today = venueDateKey(now)
@@ -569,6 +598,7 @@ export function saveHours(
   if (error) throw new ApiError(400, 'invalid_hours', error)
   return immediate(deps.db, (tx) => {
     assertCoach(tx, coachId)
+    check?.(hoursVersion(tx, coachId))
     // In force on `from` or planned later. Unchanged when they all run on with no end and hold
     // exactly the new hours.
     const current = tx

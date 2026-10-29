@@ -163,30 +163,34 @@ export function BookForStudent({
     })
   }, [at, lessonType])
 
-  // Asks the server what the booking would cost, and whether it is allowed at all.
+  // Asks the server what the booking would cost, and whether it is allowed at all; again after a
+  // refused booking (`refresh`), as the price or the student's package may have changed.
   const seq = useRef(0)
+  // The booking the last quote was for, so a fresh quote for the same one keeps a typed amount.
+  const quoted = useRef<string | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh asks again for the same booking
   useEffect(() => {
     setQuote(null)
     setQuoteError(null)
     if (!student || !pick || !lessonTypeId) return
     const mine = ++seq.current
-    api<Quote>('POST', '/admin/bookings/quote', {
-      studentId: student.id,
-      lessonTypeId,
-      ...pickBody(pick),
-    })
+    const body = { studentId: student.id, lessonTypeId, ...pickBody(pick) }
+    const same = quoted.current === JSON.stringify(body)
+    api<Quote>('POST', '/admin/bookings/quote', body)
       .then((q) => {
         if (mine !== seq.current) return
+        quoted.current = JSON.stringify(body)
         setQuote(q)
-        setPayWith(q.package ? 'package' : 'offline')
-        setAmount(toYuan(q.price.price))
+        setPayWith((was) => ((same && was === 'offline') || !q.package ? 'offline' : 'package'))
+        // Only 管理员 types an amount; others always charge the price quoted.
+        setAmount((was) => (same && canPrice && was !== undefined ? was : toYuan(q.price.price)))
       })
       .catch((e) => {
         if (mine === seq.current) {
           setQuoteError(e instanceof RequestError ? e.message : '操作失败，请重试')
         }
       })
-  }, [student, pick, lessonTypeId])
+  }, [student, pick, lessonTypeId, refresh])
 
   const fen = toFen(amount)
   const ready =
@@ -198,12 +202,14 @@ export function BookForStudent({
     const target = { studentId: student.id, lessonTypeId, ...pickBody(pick) }
     const body =
       payWith === 'package'
-        ? { ...target, payWith }
+        ? // The package shown: another one picked meanwhile is refused, not used unseen.
+          { ...target, payWith, expectedPackageId: quote.package?.id }
         : { ...target, payWith, amount: fen, method, note }
     const booked = await attempt(
       () => api('POST', '/admin/bookings', body, { key: requestKey }),
       '已代约',
-      // The time may have gone meanwhile: the list drops it if so.
+      // The time may have gone meanwhile, or the price or package changed: the list drops the
+      // time and the quote is asked for again.
       { onRefused: () => setRefresh((n) => n + 1) },
     )
     if (booked) onDone()
@@ -305,10 +311,17 @@ export function BookForStudent({
               <>
                 <Field
                   label="实收金额"
-                  help={canPrice ? '填 0 即为免费' : '按标价收款，改价请联系管理员'}
+                  help={
+                    canPrice && (fen === null || fen > 10_000_000)
+                      ? '请填写 0 到 100000 元之间的金额'
+                      : canPrice
+                        ? '填 0 即为免费'
+                        : '按标价收款，改价请联系管理员'
+                  }
                 >
                   <InputNumber
                     theme="normal"
+                    status={canPrice && (fen === null || fen > 10_000_000) ? 'error' : 'default'}
                     value={amount}
                     disabled={!canPrice}
                     min={0}

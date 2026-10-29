@@ -21,7 +21,11 @@ async function login(h: Harness, admin: string, username: string, roles: StaffRo
 /** Every admin route with the permission its `need` middleware asks for. */
 function adminRoutes(h: Harness) {
   const routes = h.app.routes.filter(
-    (r) => r.path.startsWith('/api/admin/') && r.method !== 'ALL' && r.path !== '/api/admin/login',
+    (r) =>
+      r.path.startsWith('/api/admin/') &&
+      r.method !== 'ALL' &&
+      // Open to any session, which they only end.
+      !['/api/admin/login', '/api/admin/logout'].includes(r.path),
   )
   const byRoute = new Map<string, StaffPermission | null>()
   for (const r of routes) {
