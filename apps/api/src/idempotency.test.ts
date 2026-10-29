@@ -19,6 +19,17 @@ async function keyed(h: Harness, path: string, body: unknown, token: string, key
   return { status: res.status, json: text ? JSON.parse(text) : null }
 }
 
+/** Another staff login, signed in, with every role. */
+async function otherStaff(h: Harness, admin: string, username = 'desk') {
+  const res = await h.call(
+    'POST',
+    '/admin/staff',
+    { name: '前台', username, password: 'password1', roles: ['admin'] },
+    admin,
+  )
+  return { id: res.json.id as number, token: await h.admin(username, 'password1') }
+}
+
 function product(h: Harness, lessonTypeId: number) {
   return h.db
     .insert(packageProducts)
@@ -95,11 +106,46 @@ describe('Idempotency-Key', () => {
     const h = setup()
     const { pkg } = await boughtPackage(h)
     const admin = await h.admin()
-    const other = await h.admin()
+    const other = (await otherStaff(h, admin)).token
     await keyed(h, `/admin/packages/${pkg.id}/grant`, { lessons: 1, note: 'a' }, admin, 'same')
     await keyed(h, `/admin/packages/${pkg.id}/grant`, { lessons: 1, note: 'b' }, other, 'same')
     await keyed(h, `/admin/packages/${pkg.id}/extend`, { days: 1 }, admin, 'same')
     expect(h.db.select().from(packages).get()?.lessonsRemaining).toBe(12)
+  })
+
+  it('replays a sale sent again after logging in again, as the same person', async () => {
+    const h = setup()
+    const { lesson } = h.seed()
+    const p = product(h, lesson.id)
+    await h.student('a')
+    const admin = await h.admin()
+    const desk = await otherStaff(h, admin)
+    const body = { studentId: 1, productId: p.id, amount: 180000, method: 'cash' }
+    const first = await keyed(h, '/admin/packages/offline-sale', body, desk.token, 'sale-1')
+    // The session ended and the desk logged in again: the same submit goes again.
+    await h.call('POST', '/admin/logout', undefined, desk.token)
+    const again = await h.admin('desk', 'password1')
+    const repeat = await keyed(h, '/admin/packages/offline-sale', body, again, 'sale-1')
+    expect([first.status, repeat.status]).toEqual([201, 201])
+    expect(repeat.json).toEqual(first.json)
+    expect(h.db.select().from(packages).all()).toHaveLength(1)
+    // Someone else's request with the same key is their own.
+    const theirs = await keyed(h, '/admin/packages/offline-sale', body, admin, 'sale-1')
+    expect(theirs.status).toBe(201)
+    expect(h.db.select().from(packages).all()).toHaveLength(2)
+  })
+
+  it('replays nothing to a session whose owner can no longer act', async () => {
+    const h = setup()
+    const { pkg } = await boughtPackage(h)
+    const admin = await h.admin()
+    const desk = await otherStaff(h, admin)
+    const send = () =>
+      keyed(h, `/admin/packages/${pkg.id}/grant`, { lessons: 1, note: 'a' }, desk.token, 'k')
+    expect((await send()).status).toBe(204)
+    await h.call('PATCH', `/admin/staff/${desk.id}`, { active: false }, admin)
+    const refused = await send()
+    expect([refused.status, refused.json.error.code]).toEqual([401, 'account_disabled'])
   })
 
   it('never reruns a request that was cut off, since its work may be done', async () => {

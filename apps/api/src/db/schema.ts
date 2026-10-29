@@ -660,7 +660,8 @@ export const banners = sqliteTable('banners', {
 export const idempotencyKeys = sqliteTable(
   'idempotency_keys',
   {
-    // Hash of the caller's token, the method, the path and the client's key.
+    // Hash of who the caller acts for (staff:3, coach:2, student:7), the method, the path and the
+    // client's key.
     id: text('id').primaryKey(),
     // A repeat must send the same body; a different one under the same key is refused.
     bodyHash: text('body_hash').notNull(),
