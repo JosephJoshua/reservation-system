@@ -1,7 +1,7 @@
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { POLICY_VERSION } from '@rs/shared'
-import { and, eq, gt, inArray, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -201,6 +201,13 @@ export function eraseStudent(
   tx.delete(sessions).where(eq(sessions.studentId, studentId)).run()
   // Responses kept for repeats of their requests hold their name and phone.
   tx.delete(idempotencyKeys).where(eq(idempotencyKeys.studentId, studentId)).run()
+  // Staff's and coaches' answers kept for repeats may show them too (a lesson, a booking, their
+  // 档案), and which ones is not recorded, so all of those lose their answer. Each keeps its
+  // status, so a repeat is still not run again; one still running drops its answer when done.
+  tx.update(idempotencyKeys)
+    .set({ body: null, contentType: null })
+    .where(and(isNull(idempotencyKeys.studentId), isNotNull(idempotencyKeys.status)))
+    .run()
   // Invoices stay for the accounts, without the email. One made out to the student by name
   // loses the name and its PDF; a company's title is not personal data.
   const personal = tx

@@ -49,6 +49,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: '名称',
   bio: '简介',
   description: '说明',
+  how: '处理方式',
   address: '地址',
   phone: '手机号',
   openingHours: '营业时间',

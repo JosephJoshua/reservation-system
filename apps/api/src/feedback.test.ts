@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
@@ -622,5 +622,76 @@ describe('lesson photo files', () => {
     const served = await get(h, url)
     expect(served.status).toBe(200)
     expect(served.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+  })
+})
+
+describe('photo metadata', () => {
+  it('stores a lesson photo without the GPS position its EXIF carried', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const exif = Buffer.from('Exif\0\0MM\0*\0\0\0\x08\0\0GPS 31.2304N 121.4737E', 'latin1')
+    const app1 = Buffer.concat([Buffer.from([0xff, 0xe1, 0, exif.length + 2]), exif])
+    const photo = Buffer.concat([JPEG.subarray(0, 2), app1, JPEG.subarray(2)])
+    const res = await upload(h, ct, id, photo)
+    expect(res.status).toBe(201)
+    const [name] = files(h)
+    const stored = readFileSync(join(h.deps.uploadsDir, name ?? ''))
+    expect(stored.toString('latin1')).not.toContain('GPS')
+    expect(stored).toEqual(JPEG)
+  })
+})
+
+describe('photo upload repeats', () => {
+  it('answers a repeat of the upload that filled the cap with its first answer', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    for (let i = 0; i < 23; i++) expect((await upload(h, ct, id)).status).toBe(201)
+    const send = () => {
+      const form = new FormData()
+      form.append('file', new Blob([JPEG], { type: 'image/jpeg' }), 'photo.jpg')
+      return h.app.request(`/api/coach/lessons/${id}/photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ct}`, 'Idempotency-Key': 'last' },
+        body: form,
+      })
+    }
+    const first = await send()
+    expect(first.status).toBe(201)
+    const url = ((await first.json()) as { url: string }).url
+    // The cap is full now, but a repeat is not a new upload.
+    const again = await send()
+    expect(again.status).toBe(201)
+    expect(((await again.json()) as { url: string }).url).toBe(url)
+    expect((await upload(h, ct, id)).json.error.code).toBe('too_many_photos')
+    expect(files(h)).toHaveLength(24)
+  })
+
+  it('tells the coach to add a photo again when its answer was dropped by an erasure', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const send = () => {
+      const form = new FormData()
+      form.append('file', new Blob([JPEG], { type: 'image/jpeg' }), 'photo.jpg')
+      return h.app.request(`/api/coach/lessons/${id}/photos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ct}`, 'Idempotency-Key': 'p1' },
+        body: form,
+      })
+    }
+    const first = await send()
+    expect(first.status).toBe(201)
+    const url = ((await first.json()) as { url: string }).url
+    const other = await h.student('b')
+    await h.call('PUT', '/me', { name: '乙某某', phone: '13800000002' }, other)
+    h.clock.now = new Date(h.clock.now.getTime() + 60_000)
+    expect((await h.call('DELETE', '/me', undefined, other)).status).toBe(204)
+    // Erasures drop every staff and coach answer kept for repeats, this one too.
+    const again = await send()
+    expect(again.status).toBe(409)
+    expect(await again.json()).toMatchObject({
+      error: { code: 'in_progress', message: '照片未能添加，请重新选择' },
+    })
+    // Not uploaded a second time.
+    expect(files(h)).toEqual([url.replace('/api/uploads/', '')])
   })
 })

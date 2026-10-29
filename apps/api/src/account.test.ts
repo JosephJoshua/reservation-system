@@ -157,9 +157,13 @@ describe('account deletion', () => {
     expect(row).toMatchObject({ name: '', phone: '', policyVersion: null, deletedAt: h.deps.now() })
     expect(row?.openid).toMatch(/^deleted:1:[0-9a-f]{64}$/)
     expect(h.db.select().from(sessions).where(eq(sessions.studentId, 1)).all()).toHaveLength(0)
-    // Their kept responses go too; staff's stay.
+    // Their kept responses go too. Staff's stay as done, without their answers, which may have
+    // shown the student.
     expect(kept().some((b) => b.includes('13800000000'))).toBe(false)
-    expect(kept().some((b) => b.includes('团课'))).toBe(true)
+    expect(kept().some((b) => b.includes('团课'))).toBe(false)
+    expect(h.db.select().from(idempotencyKeys).all()).toMatchObject([
+      { studentId: null, status: 201, body: null },
+    ])
     // The lesson and its payment stay for the accounts, without the coach's note.
     expect(h.db.select().from(bookings).get()).toMatchObject({ studentId: 1, coachNote: '' })
     expect(h.db.select().from(orders).get()).toMatchObject({ studentId: 1, status: 'paid' })

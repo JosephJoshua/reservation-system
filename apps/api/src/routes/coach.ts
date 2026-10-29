@@ -7,12 +7,13 @@ import {
   venueInstant,
 } from '@rs/shared'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { Hono } from 'hono'
+import { Hono, type MiddlewareHandler } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
 import { bookings, coaches } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, checkVersion, idParam, parseBody, parseQuery } from '../errors'
+import { isKeptRepeat } from '../idempotency'
 import {
   type ActionEntry,
   cancelOutcome,
@@ -83,6 +84,30 @@ export const exceptionBody = z.object({
   endsAt: instantString.transform((s) => new Date(s)),
   note: z.string().trim().max(40).default(''),
 })
+
+/**
+ * Mounted at the coach's photo upload ahead of the app's other middleware, idempotency included,
+ * which reads the whole body: an upload too large, or for a lesson that takes no photos, is
+ * refused before more of it than the limit is held in memory. A repeat of an upload already kept
+ * skips the lesson check and gets the first answer.
+ */
+export function photoUploadGuard(deps: Deps): MiddlewareHandler<CoachVars> {
+  // Refused while it streams in, before the whole body is held in memory.
+  const limit = bodyLimit({
+    maxSize: MAX_PHOTO_BYTES + 64 * 1024,
+    onError: () => {
+      throw new ApiError(413, 'too_large', '图片不能超过 5MB')
+    },
+  })
+  const coach = requireCoach(deps)
+  return async (c, next) => {
+    // The coach and the lesson first, which need no body; then the size, as it streams in.
+    await coach(c, async () => {
+      if (!isKeptRepeat(deps, c)) checkPhotoUpload(deps, idParam(c), c.get('coachId'))
+      await limit(c, next)
+    })
+  }
+}
 
 export function coachRoutes(deps: Deps) {
   const app = new Hono<CoachVars>()
@@ -226,25 +251,14 @@ export function coachRoutes(deps: Deps) {
     return c.json(coachLesson(deps, idParam(c), coachId))
   })
 
-  app.post(
-    '/lessons/:id/photos',
-    // Refused while it streams in, before the whole body is held in memory.
-    bodyLimit({
-      maxSize: MAX_PHOTO_BYTES + 64 * 1024,
-      onError: () => {
-        throw new ApiError(413, 'too_large', '图片不能超过 5MB')
-      },
-    }),
-    async (c) => {
-      const id = idParam(c)
-      // Before the body is read, so a lesson that takes no photos costs no upload.
-      checkPhotoUpload(deps, id, c.get('coachId'))
-      const form = await c.req.formData().catch(() => null)
-      const file = form?.get('file')
-      if (!(file instanceof File)) throw new ApiError(400, 'no_file', '请选择图片')
-      return c.json({ url: await savePhoto(deps, id, c.get('coachId'), file) }, 201)
-    },
-  )
+  // The size limit and the check that the lesson takes photos run first, in photoUploadGuard.
+  app.post('/lessons/:id/photos', async (c) => {
+    const id = idParam(c)
+    const form = await c.req.formData().catch(() => null)
+    const file = form?.get('file')
+    if (!(file instanceof File)) throw new ApiError(400, 'no_file', '请选择图片')
+    return c.json({ url: await savePhoto(deps, id, c.get('coachId'), file) }, 201)
+  })
 
   app.post('/lessons/:id/cancel', async (c) => {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))

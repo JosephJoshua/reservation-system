@@ -1,8 +1,9 @@
-import { and, eq, inArray, lt, notInArray, sql } from 'drizzle-orm'
+import { REFUND_PAID_TWICE, type RefundSettleWay } from '@rs/shared'
+import { and, eq, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import { orders, refunds } from '../db/schema'
 import type { Deps } from '../deps'
-import { ApiError } from '../errors'
+import { ApiError, notFound } from '../errors'
 import { GatewayError, type RefundState, UNKNOWN_OUTCOME } from '../pay/gateway'
 import { newOutRefundNo } from './ids'
 import { closeRefundedRequests } from './invoices'
@@ -175,6 +176,7 @@ function applyRefundState(
  * under the same number: WeChat Pay has the last word on whether the money went back.
  */
 export function settleRefund(deps: Deps, outRefundNo: string, result: RefundState) {
+  if (result.status === 'succeeded') recordPaidTwice(deps, outRefundNo, result.refundId)
   applyRefundState(
     deps,
     outRefundNo,
@@ -287,6 +289,120 @@ export async function retryRefund(
   return 'resent'
 }
 
+/** A refund staff may settle outside the system: failed, or stuck as 退款异常. */
+const settleable = (r: { status: string; abnormal: boolean }) =>
+  r.status === 'failed' || (r.status === 'processing' && r.abnormal)
+
+/**
+ * Staff settled a WeChat Pay refund outside the system, in cash or on the merchant platform: one
+ * that failed, or one WeChat Pay reports as 退款异常. The venue no longer owes it, so it counts as
+ * refunded from now, with their note. WeChat Pay is asked about it first, as for a retry: one
+ * that went through after all is recorded as such instead, so the money is not handed back
+ * twice. `repeat` is a settle already recorded with this note; `overtaken` means a retry or
+ * WeChat Pay got there first, and the refund is as the caller then finds it.
+ */
+export async function settleFailedRefund(
+  deps: Deps,
+  refundId: number,
+  how: RefundSettleWay,
+  note: string,
+): Promise<'settled' | 'updated' | 'repeat' | 'overtaken'> {
+  const row = deps.db
+    .select({ refund: refunds, provider: orders.provider })
+    .from(refunds)
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
+    .where(eq(refunds.id, refundId))
+    .get()
+  if (!row) throw notFound('退款')
+  if (
+    row.refund.status === 'succeeded' &&
+    row.refund.settledNote === note &&
+    row.refund.settledHow === how
+  ) {
+    return 'repeat'
+  }
+  if (!settleable(row.refund) || row.provider !== 'wechat') {
+    throw new ApiError(409, 'refund_not_failed', '只能处理退款失败或退款异常的微信支付退款')
+  }
+  const old = row.refund.outRefundNo
+  let state: RefundState | null
+  try {
+    state = await lookUpRefund(deps, old)
+  } catch (e) {
+    deps.log('refund query failed', { refundId, error: (e as Error).message })
+    throw new ApiError(502, 'payment_unavailable', '微信支付暂时不可用，请稍后再试')
+  }
+  // Done, or on its way and not stuck: WeChat Pay's word stands.
+  const stuck =
+    !state ||
+    state.status === 'failed' ||
+    (state.status === 'processing' && state.abnormal === true)
+  if (!stuck && state) {
+    return applyRefundState(deps, old, state, ['failed', 'processing']) ? 'updated' : 'overtaken'
+  }
+  const now = deps.now()
+  return immediate(deps.db, (tx) => {
+    const current = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
+    // A retry, or WeChat Pay, got there first.
+    if (!current || current.outRefundNo !== old || !settleable(current)) return 'overtaken'
+    const total = tx
+      .select({ amount: orders.amount })
+      .from(orders)
+      .where(eq(orders.id, current.orderId))
+      .get()?.amount
+    // A refund stuck in processing is counted already; a failed one is not.
+    const adding = current.status === 'failed' ? current.amount : 0
+    if (total === undefined || refundedSoFar(tx, current.orderId) + adding > total) {
+      throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
+    }
+    tx.update(refunds)
+      .set({
+        status: 'succeeded',
+        settledNote: note,
+        settledHow: how,
+        abnormal: false,
+        updatedAt: now,
+      })
+      .where(eq(refunds.id, refundId))
+      .run()
+    closeRefundedRequests(tx, current.orderId)
+    return 'settled' as const
+  })
+}
+
+/**
+ * WeChat Pay reports a refund done that staff had settled outside the system. Its refund id is
+ * recorded. Settled 商户平台处理, that is most likely the same refund put right there; paid back
+ * 线下另付, the money may have gone back twice, so staff are warned. Neither moves the refund's
+ * time, which places it in a report month.
+ */
+function recordPaidTwice(deps: Deps, outRefundNo: string, refundId: string) {
+  const settled = and(
+    eq(refunds.outRefundNo, outRefundNo),
+    eq(refunds.status, 'succeeded'),
+    isNotNull(refunds.settledNote),
+  )
+  const warned = deps.db
+    .update(refunds)
+    .set({ providerRefundId: refundId, failure: REFUND_PAID_TWICE })
+    .where(
+      and(
+        settled,
+        eq(refunds.settledHow, 'offline'),
+        or(isNull(refunds.failure), ne(refunds.failure, REFUND_PAID_TWICE)),
+      ),
+    )
+    .run()
+  if (warned.changes > 0) deps.log('refund paid back by staff also made by wechat', { outRefundNo })
+  deps.db
+    .update(refunds)
+    .set({ providerRefundId: refundId })
+    .where(
+      and(settled, or(isNull(refunds.providerRefundId), ne(refunds.providerRefundId, refundId))),
+    )
+    .run()
+}
+
 /**
  * Staff handed an offline refund back at the front desk. Returns false for a repeat of a
  * hand-back already recorded.
@@ -300,8 +416,19 @@ export function markOfflineRefundPaid(deps: Deps, refundId: number) {
       .innerJoin(orders, eq(orders.id, refunds.orderId))
       .where(eq(refunds.id, refundId))
       .get()
-    if (row?.provider === 'offline' && row.status === 'succeeded') return false
-    if (row?.provider !== 'offline' || row.status !== 'pending') {
+    if (!row) throw notFound('退款')
+    if (row.provider === 'offline' && row.status === 'succeeded') return false
+    // Sent back through WeChat Pay, so not handed back at the desk.
+    if (row.provider !== 'offline') {
+      throw new ApiError(
+        409,
+        'refund_not_offline',
+        row.status === 'failed'
+          ? '这笔退款走微信支付，请重试或标为已另行退款'
+          : '这笔退款走微信支付原路退回，无需线下退还',
+      )
+    }
+    if (row.status !== 'pending') {
       throw new ApiError(409, 'refund_not_pending', '该退款已处理')
     }
     tx.update(refunds)

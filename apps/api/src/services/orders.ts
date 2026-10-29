@@ -48,9 +48,16 @@ export async function startPayment(
     order = deps.db.select().from(orders).where(eq(orders.id, orderId)).get() ?? order
   }
   if (order.status === 'paid') throw orderPaid()
-  if (order.status !== 'pending' || !order.expiresAt || order.expiresAt <= deps.now()) {
+  if (order.status === 'pending' && order.expiresAt && order.expiresAt <= deps.now()) {
+    // Past its time but not yet closed by the sweeper: closed now, so its slot is free for the
+    // booking made again.
+    // WeChat Pay unreachable: whether it was paid is not known yet, so the student is not told
+    // it is closed.
+    const closed = await closeOrder(deps, orderId)
+    if (closed === 'paid') throw orderPaid()
     throw orderNotPayable()
   }
+  if (order.status !== 'pending' || !order.expiresAt) throw orderNotPayable()
   // A 闭馆 or 请假 added, or the coach stopped, while the student was paying.
   const held = order.bookingId
     ? deps.db.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
@@ -87,6 +94,9 @@ export async function startPayment(
 }
 
 const orderNotPayable = () => new ApiError(409, 'order_not_payable', '订单已关闭，请重新下单')
+
+const paymentUnavailable = () =>
+  new ApiError(502, 'payment_unavailable', '微信支付暂时不可用，请稍后再试')
 
 /**
  * Closes an order at WeChat Pay that is closed here already, so it can never be paid. If it was
@@ -448,7 +458,15 @@ export async function closeOrder(
   if (!order) throw notFound('订单')
   if (order.status === 'paid') return 'paid'
   if (order.status === 'pending' && order.prepayId) {
-    const state = await deps.gateway.closeOrder(order.outTradeNo)
+    let state: Awaited<ReturnType<typeof deps.gateway.closeOrder>>
+    try {
+      state = await deps.gateway.closeOrder(order.outTradeNo)
+    } catch (e) {
+      // Not closed here either: a payment may still land, so the slot stays held until WeChat
+      // Pay answers.
+      deps.log('close order failed', { orderId, error: (e as Error).message })
+      throw paymentUnavailable()
+    }
     if (state.state === 'paid') {
       applyPayment(deps, order.outTradeNo, state)
       // A payment flagged for staff instead (see applyPayment) left the order closed and its
