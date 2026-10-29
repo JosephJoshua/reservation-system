@@ -23,6 +23,9 @@ const NOTE = /\s*\([^()]*[^\d\s()+.-][^()]*\)\s*$/
 // An extension at the end, as in 转 8 or #8, or in brackets, as in (8) or (转 8).
 const EXTENSION =
   /\s*(?:(?:转|分机|#|ext\.?|x)\s*\d{1,6}|\(\s*(?:(?:转|分机|ext\.?|x)\s*)?\d{1,6}\s*\))$/i
+// An extension after a hyphen, as in 0571-88888888-802: only after an area code and a full local
+// number, so 010-6234-5678 stays one number.
+const DASH_EXTENSION = /^(\(?0\d{2,3}\)?[\s.-]?\d{3,4}[\s.-]?\d{4})\s*-\s*\d{1,6}$/
 const NUMBER = /^(?:\+|\(\+)?[\d\s().-]+$/
 
 /**
@@ -43,7 +46,8 @@ function numbers(phone: string): string[] | null {
   if (parts.length > 2) return null
   const out: string[] = []
   for (const part of parts) {
-    const number = part.replace(EXTENSION, '').trim()
+    const bare = part.replace(EXTENSION, '').trim()
+    const number = bare.match(DASH_EXTENSION)?.[1] ?? bare
     if (!NUMBER.test(number) || !digitsFit(number)) return null
     out.push(number)
   }

@@ -68,6 +68,17 @@ describe('dialablePhone', () => {
     expect(dialablePhone('0755—12345678')).toBe('075512345678')
   })
 
+  it('leaves out an extension after a hyphen that follows a full landline number', () => {
+    expect(venuePhoneValid('0571-88888888-8023')).toBe(true)
+    expect(dialablePhone('0571-88888888-8023')).toBe('057188888888')
+    expect(dialablePhone('0571-88888888-802')).toBe('057188888888')
+    expect(dialablePhone('010-62345678-8')).toBe('01062345678')
+    expect(dialablePhone('(0571) 8888-8888-802')).toBe('057188888888')
+    // Hyphens inside a number are not an extension.
+    expect(dialablePhone('010-6234-5678')).toBe('01062345678')
+    expect(dialablePhone('138-0013-8000')).toBe('13800138000')
+  })
+
   it('leaves out an extension in brackets rather than dialling it with the number', () => {
     expect(dialablePhone('13800138000(8)')).toBe('13800138000')
     expect(dialablePhone('13800138000（8）')).toBe('13800138000')
