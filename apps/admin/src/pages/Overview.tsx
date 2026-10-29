@@ -24,6 +24,8 @@ interface Summary {
   // Null for staff without finance, as is revenue.
   refundRequests: number | null
   failedRefunds: number | null
+  orderAnomalies: number | null
+  abnormalRefunds: number | null
   offlineRefundsOwed: number | null
   date: string
   sessions: TodaySession[]
@@ -100,6 +102,8 @@ export function Overview() {
           ['待审核退款', data?.refundRequests, '#/refunds?status=requested'],
           ['待线下退还', data?.offlineRefundsOwed, '#/refunds?status=pending'],
           ['退款失败', data?.failedRefunds, '#/refunds?status=failed'],
+          ['退款异常', data?.abnormalRefunds, '#/refunds?status=processing&abnormal=1'],
+          ['支付异常', data?.orderAnomalies, '#/orders?anomaly=1'],
         ]
       : []) as typeof todo),
   ]

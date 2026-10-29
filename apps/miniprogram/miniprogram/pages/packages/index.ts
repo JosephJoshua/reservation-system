@@ -1,4 +1,10 @@
-import { type CatalogDto, formatYuan, type MeDto, type PaymentParamsDto } from '../../lib/shared'
+import {
+  type CatalogDto,
+  formatYuan,
+  type MeDto,
+  type PackageTerms,
+  type PaymentParamsDto,
+} from '../../lib/shared'
 import { ApiError, api, errorMessage, showError } from '../../utils/api'
 import { agreePolicies, askForNotices, getCatalog, getMe } from '../../utils/data'
 import { yuan } from '../../utils/format'
@@ -21,6 +27,8 @@ interface ProductView {
   amount: number
   unit: string
   highlighted: boolean
+  /** What the student is shown the package grants, sent with the purchase. */
+  terms: PackageTerms
 }
 
 Page({
@@ -72,6 +80,12 @@ Page({
             amount: p.price.price,
             unit: `¥${formatYuan(Math.round(p.price.price / p.lessonCount))}/节`,
             highlighted: p.id === this.highlight,
+            terms: {
+              lessonTypeId: p.lessonTypeId,
+              coachIds: p.coachIds,
+              lessonCount: p.lessonCount,
+              validityDays: p.validityDays,
+            },
           }
         })
       this.setData({
@@ -120,8 +134,9 @@ Page({
       const res = await api<{ orderId: number; payment: PaymentParamsDto | null }>(
         'POST',
         '/packages/purchase',
-        // Refused if the price changed since the page loaded, rather than charging another one.
-        { productId: product.id, expectedPrice: product.amount },
+        // Refused if the price or what the package grants changed since the page loaded, rather
+        // than selling the student something other than what they saw.
+        { productId: product.id, expectedPrice: product.amount, expectedTerms: product.terms },
       )
       // Gone back while the order was made: no cashier over the page they went back to.
       const result = await payOrder(res.orderId, product.amount, res.payment, () => !this.left)
@@ -142,6 +157,11 @@ Page({
       }
     } catch (err) {
       if (this.left) return
+      if (err instanceof ApiError && err.code === 'package_changed') {
+        await this.load()
+        wx.showToast({ title: '课时包内容已变动，请重新确认', icon: 'none' })
+        return
+      }
       if (err instanceof ApiError && (err.code === 'price_changed' || err.code === 'not_found')) {
         await this.load()
         const now = this.data.products.find((p) => p.id === product.id)

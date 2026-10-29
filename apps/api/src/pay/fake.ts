@@ -9,6 +9,12 @@ import type {
 } from './gateway'
 import { GatewayError } from './gateway'
 
+export const fakeRefundModes = ['succeeded', 'processing', 'fail', 'abnormal', 'unknown'] as const
+export type FakeRefundMode = (typeof fakeRefundModes)[number]
+
+/** A payment as WeChat Pay should never report it, for QA of how the API copes. */
+export type FakePayOddity = 'mismatch' | 'refunded'
+
 interface FakeOrder extends CreateOrderInput {
   state: OrderState
 }
@@ -21,8 +27,12 @@ export class FakeGateway implements PaymentGateway {
   readonly fake = true
   readonly orders = new Map<string, FakeOrder>()
   readonly refunds = new Map<string, RefundInput & { state: RefundState }>()
-  /** Refunds settle immediately unless set to 'processing'. */
-  refundMode: 'succeeded' | 'processing' | 'fail' = 'succeeded'
+  /**
+   * How the next refunds go. They settle at once by default. `abnormal` is WeChat Pay's ABNORMAL
+   * (the card could not take the money back); `unknown` takes the refund but answers with an
+   * error, as when WeChat Pay's answer cannot be verified.
+   */
+  refundMode: FakeRefundMode = 'succeeded'
   failCreate = false
   private seq = 0
 
@@ -45,8 +55,11 @@ export class FakeGateway implements PaymentGateway {
     }
   }
 
-  /** Marks the order paid, as a successful wx.requestPayment would. */
-  pay(outTradeNo: string, now = new Date()): PaymentNotification {
+  /**
+   * Marks the order paid, as a successful wx.requestPayment would. With `oddity`, the payment is
+   * reported with another amount (`mismatch`) or as already refunded (`refunded`).
+   */
+  pay(outTradeNo: string, now = new Date(), oddity?: FakePayOddity): PaymentNotification {
     const order = this.orders.get(outTradeNo)
     if (!order) throw new GatewayError('order not found', 'ORDER_NOT_EXIST', 404)
     if (order.state.state === 'closed') throw new GatewayError('order closed', 'ORDER_CLOSED', 400)
@@ -55,7 +68,8 @@ export class FakeGateway implements PaymentGateway {
         state: 'paid',
         transactionId: `fake_txn_${++this.seq}`,
         paidAt: now,
-        amount: order.amount,
+        amount: oddity === 'mismatch' ? order.amount + 1 : order.amount,
+        ...(oddity === 'refunded' ? { refunded: true as const } : {}),
       }
     }
     return { outTradeNo, order: order.state }
@@ -82,11 +96,19 @@ export class FakeGateway implements PaymentGateway {
     if (order?.state.state !== 'paid') {
       throw new GatewayError('order not paid', 'INVALID_REQUEST', 400)
     }
+    const refundId = `fake_refund_${++this.seq}`
     const state: RefundState =
       this.refundMode === 'fail'
         ? { status: 'failed', reason: 'fake failure' }
-        : { status: this.refundMode, refundId: `fake_refund_${++this.seq}` }
+        : this.refundMode === 'abnormal'
+          ? { status: 'processing', refundId, abnormal: true }
+          : this.refundMode === 'processing'
+            ? { status: 'processing', refundId }
+            : { status: 'succeeded', refundId }
     this.refunds.set(input.outRefundNo, { ...input, state })
+    if (this.refundMode === 'unknown') {
+      throw new GatewayError('fake unreadable response', 'BAD_RESPONSE', 200)
+    }
     return state
   }
 
@@ -94,6 +116,7 @@ export class FakeGateway implements PaymentGateway {
   settleRefund(outRefundNo: string): RefundNotification {
     const refund = this.refunds.get(outRefundNo)
     if (!refund) throw new GatewayError('refund not found', 'RESOURCE_NOT_EXISTS', 404)
+    // An ABNORMAL one settles too, as when staff handle it on the merchant platform.
     if (refund.state.status === 'processing') {
       refund.state = { status: 'succeeded', refundId: refund.state.refundId }
     }

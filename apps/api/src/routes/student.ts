@@ -18,6 +18,7 @@ import {
   type PackageProductDto,
   POLICY_VERSION,
   packagePrice,
+  packageTermsSchema,
   privacyPolicyText,
   type SlotDto,
   studentNoticeKinds,
@@ -639,16 +640,21 @@ export function studentRoutes(deps: Deps) {
   })
 
   app.post('/packages/purchase', async (c) => {
-    const { productId, expectedPrice } = await parseBody(
+    const { productId, expectedPrice, expectedTerms } = await parseBody(
       c,
       z.object({
         productId: z.number().int().positive(),
         /** The price the student was shown, in fen. */
         expectedPrice: z.number().int().nonnegative().optional(),
+        /** The lessons, validity, lesson type and coaches the student was shown. */
+        expectedTerms: packageTermsSchema.optional(),
       }),
     )
     requireConsent(db, c.get('studentId'))
-    return c.json(await purchasePackage(deps, c.get('studentId'), productId, expectedPrice), 201)
+    return c.json(
+      await purchasePackage(deps, c.get('studentId'), productId, expectedPrice, expectedTerms),
+      201,
+    )
   })
 
   app.post('/packages/:id/refund-request', (c) => {
