@@ -162,6 +162,17 @@ describe('staff logins', () => {
     expect((await h.admin('xiaoli', PASSWORD)).length).toBeGreaterThan(10)
   })
 
+  it('lets a deactivated login log out of the session it still holds', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const li = await addStaff(h, admin)
+    const token = await h.admin('xiaoli', PASSWORD)
+    await h.call('PATCH', `/admin/staff/${li.id}`, { active: false }, admin)
+    const out = await h.call('POST', '/admin/logout', undefined, token)
+    expect(out.status).toBe(204)
+    expect(h.db.select().from(sessions).where(eq(sessions.staffId, li.id)).all()).toHaveLength(0)
+  })
+
   it('counts logins of a deactivated account as failures, right password or not', async () => {
     const h = setup()
     const admin = await h.admin()

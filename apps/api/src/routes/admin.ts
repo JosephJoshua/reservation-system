@@ -354,14 +354,15 @@ export function adminRoutes(deps: Deps) {
     return c.json(await loginAdmin(deps, body.username, body.password, client))
   })
 
-  app.use('*', async (c, next) => {
-    if (c.req.path.endsWith('/admin/login')) return next()
-    return requireAdmin(deps)(c, next)
-  })
-
-  app.post('/logout', need('view'), (c) => {
+  // Any session may end itself, a deactivated login's too: it needs no access to anything.
+  app.post('/logout', (c) => {
     logout(deps, c.req.header('Authorization'))
     return c.body(null, 204)
+  })
+
+  app.use('*', async (c, next) => {
+    if (c.req.path.endsWith('/admin/login') || c.req.path.endsWith('/admin/logout')) return next()
+    return requireAdmin(deps)(c, next)
   })
 
   /**
