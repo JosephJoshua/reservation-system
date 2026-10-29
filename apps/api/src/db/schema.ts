@@ -597,6 +597,10 @@ export const refunds = sqliteTable(
     // WeChat Pay reported ABNORMAL: the money could not go back to the card, and staff must handle
     // it on the merchant platform. The refund stays processing meanwhile.
     abnormal: integer('abnormal', { mode: 'boolean' }).notNull().default(false),
+    // A failed WeChat Pay refund that staff settled outside the system (in cash, or on the
+    // merchant platform): how, in their words. It is then succeeded, and failure says why it
+    // failed.
+    settledNote: text('settled_note'),
     createdAt: createdAt(),
     updatedAt: instant('updated_at').notNull(),
   },

@@ -42,6 +42,7 @@ export const staffActionLabels = {
   'refund.retry': '重试退款',
   'refund.synced': '退款状态已更新',
   'refund.paid_back': '线下退还',
+  'refund.settled': '已另行退款',
   'price.lesson_type': '课程价格',
   'price.product': '课时包价格',
   'price.coach': '教练价格',

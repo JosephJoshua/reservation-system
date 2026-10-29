@@ -142,7 +142,7 @@ import {
   sellPackageOffline,
 } from '../services/packages'
 import { confirmMonth, unconfirmMonth } from '../services/pay-months'
-import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
+import { markOfflineRefundPaid, retryRefund, settleFailedRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
 import {
@@ -2353,6 +2353,32 @@ export function adminRoutes(deps: Deps) {
       target: { kind: 'refund', id },
     })
     return c.body(null, 204)
+  })
+
+  // A failed WeChat Pay refund staff settled outside the system, in cash or on the merchant
+  // platform.
+  app.post('/refunds/:id/settled', need('finance'), async (c) => {
+    const { note } = await parseBody(
+      c,
+      z.object({ note: z.string().trim().min(1, '请填写处理说明').max(100) }),
+    )
+    const id = idParam(c)
+    const done = await settleFailedRefund(deps, id, note)
+    if (done) {
+      const r = refundContext(id)
+      log(c.get('staffId'), {
+        action: done === 'settled' ? 'refund.settled' : 'refund.synced',
+        summary:
+          done === 'settled'
+            ? `${r.what}退款 ${yuan(r.amount)} 已另行退款：${note}`
+            : `${r.what}退款 ${yuan(r.amount)} 状态已按微信支付更新`,
+        amount: r.amount,
+        studentId: r.studentId,
+        target: { kind: 'refund', id },
+      })
+    }
+    // `updated`: WeChat Pay had it done or on its way after all, so it was not settled by hand.
+    return c.json({ ...refundOutcome(id), settled: done !== 'updated' })
   })
 
   app.post('/refunds/:id/retry', need('finance'), async (c) => {

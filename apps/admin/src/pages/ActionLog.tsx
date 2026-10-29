@@ -57,6 +57,7 @@ const groups: { label: string; actions: StaffAction[] }[] = [
       'refund.retry',
       'refund.synced',
       'refund.paid_back',
+      'refund.settled',
     ],
   },
   { label: '发票', actions: ['invoice.issue', 'invoice.reject', 'invoice.refund_seen'] },

@@ -191,6 +191,8 @@ export interface Refund {
   reason: string
   status: RefundStatus
   failure: string | null
+  /** A failed refund staff settled outside the system: how. */
+  settledNote: string | null
   createdAt: string
   updatedAt: string
   order: {

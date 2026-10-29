@@ -1,0 +1,153 @@
+import { eq } from 'drizzle-orm'
+import { describe, expect, it, vi } from 'vitest'
+import { actionLog, refunds } from './db/schema'
+import { GatewayError } from './pay/gateway'
+import { type Harness, setup } from './test/harness'
+
+/** A paid lesson the venue cancelled, whose WeChat Pay refund failed for good. */
+async function failedRefund(h: Harness) {
+  const { coach, lesson } = h.seed()
+  const slot = h.slot(coach.id)
+  const t = await h.student('a')
+  await h.call('PUT', '/me', { name: '小红' }, t)
+  const b = await h.call('POST', '/bookings', { slotId: slot.id, lessonTypeId: lesson.id }, t)
+  await h.fakePay(b.json.orderId)
+  h.gateway.refundMode = 'fail'
+  const admin = await h.admin()
+  const c = await h.call(
+    'POST',
+    `/admin/bookings/${b.json.bookingId}/cancel`,
+    { reason: '教练生病' },
+    admin,
+  )
+  expect(c.status).toBeLessThan(300)
+  const refund = h.db.select().from(refunds).get()
+  expect(refund?.status).toBe('failed')
+  return { t, admin, orderId: b.json.orderId as number, refundId: refund?.id as number }
+}
+
+describe('a failed WeChat Pay refund settled outside the system', () => {
+  it('stops blocking 注销 and 发票 once settled, and is logged once', async () => {
+    const h = setup()
+    const { t, admin, orderId, refundId } = await failedRefund(h)
+    expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(409)
+
+    const settle = () =>
+      h.call('POST', `/admin/refunds/${refundId}/settled`, { note: '已现金退还' }, admin, {
+        'Idempotency-Key': 'settle-1',
+      })
+    const res = await settle()
+    expect(res.status).toBe(200)
+    expect(res.json).toMatchObject({ status: 'succeeded', settled: true })
+    expect((await settle()).status).toBe(200)
+    // The same settle again without the key is a repeat too.
+    const bare = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '已现金退还' },
+      admin,
+    )
+    expect(bare.status).toBe(200)
+    const row = h.db.select().from(refunds).where(eq(refunds.id, refundId)).get()
+    expect(row).toMatchObject({ status: 'succeeded', settledNote: '已现金退还' })
+    const logged = h.db.select().from(actionLog).where(eq(actionLog.action, 'refund.settled')).all()
+    expect(logged).toHaveLength(1)
+    expect(logged[0]?.summary).toContain('已现金退还')
+
+    // Fully refunded now, so no invoice; and nothing is owed, so the account can go.
+    const inv = await h.call(
+      'POST',
+      '/invoices',
+      { orderId, kind: 'personal', name: '小红', email: 'a@b.cn' },
+      t,
+    )
+    expect(inv.json.error.code).toBe('order_refunded')
+    const exported = await h.app.request(
+      '/api/admin/exports/refunds?from=2026-10-01&to=2026-10-31',
+      {
+        headers: { Authorization: `Bearer ${admin}` },
+      },
+    )
+    const csv = await exported.text()
+    expect(csv).toContain('已另行退款')
+    expect(csv).toContain('已现金退还；微信支付退款失败：fake failure')
+    expect((await h.call('DELETE', '/me', undefined, t)).status).toBe(204)
+  })
+
+  it('needs a note, the finance role, and a refund that failed', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    const empty = await h.call('POST', `/admin/refunds/${refundId}/settled`, { note: ' ' }, admin)
+    expect(empty.status).toBe(400)
+    const desk = await h.call(
+      'POST',
+      '/admin/staff',
+      { name: '前台', username: 'desk', password: 'password1', roles: ['front_desk'] },
+      admin,
+    )
+    expect(desk.status).toBe(201)
+    const deskToken = await h.admin('desk', 'password1')
+    const refused = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '已现金退还' },
+      deskToken,
+    )
+    expect(refused.status).toBe(403)
+    await h.call('POST', `/admin/refunds/${refundId}/settled`, { note: '已现金退还' }, admin)
+    const other = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '另一种说法' },
+      admin,
+    )
+    expect(other.json.error.code).toBe('refund_not_failed')
+  })
+
+  it('records a refund WeChat Pay had done after all instead of settling it', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    const row = h.db.select().from(refunds).where(eq(refunds.id, refundId)).get()
+    vi.spyOn(h.gateway, 'queryRefund').mockResolvedValue({
+      status: 'succeeded',
+      refundId: 'wx-late',
+    })
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '已现金退还' },
+      admin,
+    )
+    expect(res.json).toMatchObject({ status: 'succeeded', settled: false })
+    const after = h.db.select().from(refunds).where(eq(refunds.id, refundId)).get()
+    expect(after).toMatchObject({ settledNote: null, providerRefundId: 'wx-late' })
+    expect(after?.outRefundNo).toBe(row?.outRefundNo)
+  })
+
+  it('is not settled while WeChat Pay cannot be asked', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    vi.spyOn(h.gateway, 'queryRefund').mockRejectedValue(
+      new GatewayError('down', 'SYSTEM_ERROR', 500),
+    )
+    const res = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { note: '已现金退还' },
+      admin,
+    )
+    expect(res.status).toBe(502)
+    expect(h.db.select().from(refunds).get()?.status).toBe('failed')
+  })
+
+  it('tells staff a WeChat Pay refund is not handed back at the desk', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    const res = await h.call('POST', `/admin/refunds/${refundId}/paid-back`, {}, admin)
+    expect(res.status).toBe(409)
+    expect(res.json.error).toMatchObject({
+      code: 'refund_not_offline',
+      message: '这笔退款走微信支付，请重试或标为已另行退款',
+    })
+  })
+})

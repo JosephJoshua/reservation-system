@@ -595,8 +595,13 @@ function refundsTable(tx: Q, q: ExportQuery): Table {
       channel(o),
       o.provider === 'offline' && r.status === 'pending'
         ? '待线下退还'
-        : refundStatusText[r.status],
-      r.failure ?? '',
+        : r.settledNote !== null
+          ? '已另行退款'
+          : refundStatusText[r.status],
+      // A failed refund settled outside the system: how, and why WeChat Pay failed it.
+      r.settledNote !== null
+        ? [r.settledNote, r.failure && `微信支付退款失败：${r.failure}`].filter(Boolean).join('；')
+        : (r.failure ?? ''),
     ]),
   }
 }

@@ -88,6 +88,7 @@ export function Refunds() {
   const more = ['status', 'provider', 'abnormal'] as const
   const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
+  const [settling, setSettling] = useState<Refund | null>(null)
   const keys = useActionKeys()
 
   const paidBack = async (r: Refund) => {
@@ -242,8 +243,12 @@ export function Refunds() {
                   <Tag theme={theme} variant="light">
                     {label}
                   </Tag>
-                  {/* On a success, a warning that the order was refunded more than paid. */}
-                  {row.failure && <div className="muted">{row.failure}</div>}
+                  {row.settledNote !== null ? (
+                    <div className="muted">另行退款：{row.settledNote}</div>
+                  ) : (
+                    // On a success, a warning that the order was refunded more than paid.
+                    row.failure && <div className="muted">{row.failure}</div>
+                  )}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
                   )}
@@ -291,14 +296,29 @@ export function Refunds() {
                   </Button>
                 </Popconfirm>
               ) : row.status === 'failed' ? (
-                <Button variant="text" theme="primary" onClick={() => retry(row)}>
-                  重试
-                </Button>
+                <Space size={0}>
+                  <Button variant="text" theme="primary" onClick={() => retry(row)}>
+                    重试
+                  </Button>
+                  <Button variant="text" theme="primary" onClick={() => setSettling(row)}>
+                    已另行退款
+                  </Button>
+                </Space>
               ) : null,
           },
         ]}
       />
       <Pager list={list} filters={filters} />
+      {settling && (
+        <Settle
+          refund={settling}
+          onClose={() => setSettling(null)}
+          onDone={() => {
+            setSettling(null)
+            void reload()
+          }}
+        />
+      )}
       {deciding && (
         <Decide
           refund={deciding.refund}
@@ -401,6 +421,73 @@ function Decide({
           onChange={(v) => setNote(String(v))}
         />
       )}
+    </Dialog>
+  )
+}
+
+/** A failed WeChat Pay refund handed back outside the system, in cash or on the merchant platform. */
+function Settle({
+  refund,
+  onClose,
+  onDone,
+}: {
+  refund: Refund
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [note, setNote] = useState('')
+  const submitting = useSubmitting()
+  const key = useIdempotencyKey()
+
+  const submit = async () => {
+    let outcome: (RefundOutcome & { settled: boolean }) | undefined
+    const ok = await attempt(
+      async () => {
+        outcome = await api<RefundOutcome & { settled: boolean }>(
+          'POST',
+          `/admin/refunds/${refund.id}/settled`,
+          { note },
+          { key },
+        )
+      },
+      undefined,
+      { onStale: onDone },
+    )
+    if (!ok) return
+    if (outcome?.settled === false) {
+      void MessagePlugin.success('原退款已在微信支付处理，已更新状态')
+    } else {
+      void MessagePlugin.success('已标为另行退款')
+    }
+    onDone()
+  }
+
+  return (
+    <Dialog
+      visible
+      header="标为已另行退款"
+      confirmBtn={{
+        content: '确认',
+        theme: 'primary',
+        disabled: !note.trim(),
+        loading: submitting,
+      }}
+      cancelBtn="返回"
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <div className="fields">
+        <p className="muted">
+          {yuan(refund.amount)}{' '}
+          已通过现金或微信支付商户平台退给学员后再确认。确认后计为已退款，不再重试。
+        </p>
+        <Textarea
+          placeholder="处理说明，例如：已现金退还"
+          value={note}
+          maxlength={100}
+          onChange={(v) => setNote(String(v))}
+        />
+      </div>
     </Dialog>
   )
 }
