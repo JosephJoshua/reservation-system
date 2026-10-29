@@ -14,7 +14,15 @@ import {
   withinSpans,
 } from '@rs/shared'
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne } from 'drizzle-orm'
-import { bookings, lessonFeedback, lessonTypes, packages, slots, students } from '../db/schema'
+import {
+  bookings,
+  lessonFeedback,
+  lessonTypes,
+  orders,
+  packages,
+  slots,
+  students,
+} from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { accountDeleted, DELETED_NAME } from './account'
@@ -246,6 +254,11 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
   const pkg = b.packageId
     ? db.select({ name: packages.name }).from(packages).where(eq(packages.id, b.packageId)).get()
     : undefined
+  const order = db
+    .select({ provider: orders.provider })
+    .from(orders)
+    .where(eq(orders.bookingId, b.id))
+    .get()
   // Earlier lessons of this student with this coach that have ended, newest first.
   const together = db
     .select({
@@ -293,6 +306,7 @@ export function coachLesson(deps: Deps, bookingId: number, coachId: number): Coa
       student && profileOpen(b, student.deletedAt, now) ? coachView(db, student.id, now) : null,
     paidWith: b.paidWith,
     price: b.price,
+    paidOffline: order?.provider === 'offline',
     packageName: pkg?.name ?? null,
     attendance: b.attendance,
     coachNote: b.coachNote,
