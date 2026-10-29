@@ -10,10 +10,10 @@ import {
   agreementFor,
   agreePolicies,
   askForNotices,
-  askToAgreeAgain,
+  askToAgree,
   getCatalog,
   getMe,
-  isPolicyChanged,
+  needsAgreement,
 } from '../../utils/data'
 import { yuan } from '../../utils/format'
 import { isTop } from '../../utils/nav'
@@ -182,9 +182,9 @@ Page({
       }
     } catch (err) {
       if (this.left) return
-      if (isPolicyChanged(err)) {
-        this.setData({ agreed: false })
-        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+      if (needsAgreement(err)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
         return
       }
       if (err instanceof ApiError && err.code === 'package_changed') {

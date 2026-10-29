@@ -1,11 +1,5 @@
 import { api, errorMessage, showError } from '../../utils/api'
-import {
-  agreementFor,
-  agreePolicies,
-  askToAgreeAgain,
-  getMe,
-  isPolicyChanged,
-} from '../../utils/data'
+import { agreementFor, agreePolicies, askToAgree, getMe, needsAgreement } from '../../utils/data'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
 
 Page({
@@ -89,9 +83,9 @@ Page({
       if (isTop(this)) backOr('/pages/profile/index', done)
       else done()
     } catch (e) {
-      if (isPolicyChanged(e)) {
-        this.setData({ agreed: false })
-        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
         return
       }
       showError(e)

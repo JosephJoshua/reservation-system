@@ -8,13 +8,7 @@ import {
   type StudentInvoicesDto,
 } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
-import {
-  agreementFor,
-  agreePolicies,
-  askToAgreeAgain,
-  getMe,
-  isPolicyChanged,
-} from '../../utils/data'
+import { agreementFor, agreePolicies, askToAgree, getMe, needsAgreement } from '../../utils/data'
 import { yuan } from '../../utils/format'
 import { isTop } from '../../utils/nav'
 
@@ -150,9 +144,9 @@ Page({
       else if (getCurrentPages().length > 1) wx.navigateBack({ success: done })
       else wx.redirectTo({ url: '/pages/invoices/index', success: done })
     } catch (e) {
-      if (isPolicyChanged(e)) {
-        this.setData({ agreed: false })
-        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
         return
       }
       showError(e)

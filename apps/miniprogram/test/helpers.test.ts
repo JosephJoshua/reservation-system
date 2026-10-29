@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError, refreshAfter } from '../miniprogram/utils/api'
-import { isPolicyChanged } from '../miniprogram/utils/data'
+import { needsAgreement } from '../miniprogram/utils/data'
 import { bookableDays } from '../miniprogram/utils/format'
 import { moveFailure } from '../miniprogram/utils/move'
 
@@ -37,11 +37,12 @@ describe('moveFailure', () => {
   })
 })
 
-describe('isPolicyChanged', () => {
-  it('tells a refusal of an older policy text from other errors', () => {
-    expect(isPolicyChanged(new ApiError(409, 'policy_changed', ''))).toBe(true)
-    expect(isPolicyChanged(new ApiError(403, 'consent_required', ''))).toBe(false)
-    expect(isPolicyChanged(new Error('policy_changed'))).toBe(false)
+describe('needsAgreement', () => {
+  it('tells a refusal for want of consent from other errors', () => {
+    expect(needsAgreement(new ApiError(409, 'policy_changed', ''))).toBe(true)
+    expect(needsAgreement(new ApiError(403, 'consent_required', ''))).toBe(true)
+    expect(needsAgreement(new ApiError(403, 'coach_marks_off', ''))).toBe(false)
+    expect(needsAgreement(new Error('policy_changed'))).toBe(false)
   })
 })
 

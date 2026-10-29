@@ -1,11 +1,5 @@
 import { ApiError, api, showError } from '../../utils/api'
-import {
-  agreementFor,
-  agreePolicies,
-  askToAgreeAgain,
-  getMe,
-  isPolicyChanged,
-} from '../../utils/data'
+import { agreementFor, agreePolicies, askToAgree, getMe, needsAgreement } from '../../utils/data'
 import { isTop } from '../../utils/nav'
 
 const clean = (code: string) =>
@@ -85,9 +79,9 @@ Page({
         success: () => wx.showToast({ title: '已同步', icon: 'success' }),
       })
     } catch (e) {
-      if (isPolicyChanged(e)) {
-        this.setData({ agreed: false })
-        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(this.policyVersion !== '')) ?? this.policyVersion
         return
       }
       showError(e)

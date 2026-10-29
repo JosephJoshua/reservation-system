@@ -12,11 +12,11 @@ import {
   agreementFor,
   agreePolicies,
   askForNotices,
-  askToAgreeAgain,
+  askToAgree,
   cancelRuleText,
   getCatalog,
   getMe,
-  isPolicyChanged,
+  needsAgreement,
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
@@ -354,9 +354,9 @@ Page({
     } catch (e) {
       // Gone back while it was booking: nothing here to reload or ask about.
       if (this.left) return
-      if (isPolicyChanged(e)) {
-        this.setData({ agreed: false })
-        this.policyVersion = (await askToAgreeAgain()) ?? this.policyVersion
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
         return
       }
       if (e instanceof ApiError && e.code === 'price_changed') {

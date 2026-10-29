@@ -80,18 +80,24 @@ export async function agreePolicies(version: string): Promise<void> {
   await api<void>('POST', '/me/consent', { version })
 }
 
-export const isPolicyChanged = (e: unknown): boolean =>
-  e instanceof ApiError && e.code === 'policy_changed'
+/**
+ * Whether a submit was refused for want of consent to the policies in force: agreed to an older
+ * version than the page offered (policy_changed), or the policies changed after the page loaded
+ * for a student who had agreed, so it showed no agreement (consent_required).
+ */
+export const needsAgreement = (e: unknown): boolean =>
+  e instanceof ApiError && (e.code === 'policy_changed' || e.code === 'consent_required')
 
 /**
- * After policy_changed: says the texts were updated and answers the version now in force, for
- * the student to read and agree to again, or null when it could not be loaded.
+ * After needsAgreement: asks the student to read and agree, and answers the version now in force
+ * for the page's agreement row, or null when it could not be loaded. `updated` is false for a
+ * student who was offered no version yet, who is not told the texts changed.
  */
-export async function askToAgreeAgain(): Promise<string | null> {
+export async function askToAgree(updated: boolean): Promise<string | null> {
   const version = await policyVersion().catch(() => null)
   await wx.showModal({
-    title: '条款已更新',
-    content: '请重新阅读用户协议和隐私政策，同意后再提交。',
+    title: updated ? '条款已更新' : '请阅读并同意用户协议和隐私政策',
+    content: updated ? '请重新阅读用户协议和隐私政策，同意后再提交。' : '勾选同意后再提交。',
     showCancel: false,
   })
   return version
