@@ -1,3 +1,4 @@
+import { REFUND_SETTLED_WARNINGS } from '@rs/shared'
 import {
   and,
   type Column,
@@ -180,6 +181,8 @@ export interface RefundFilters {
   q?: string
   /** Only refunds WeChat Pay reported as ABNORMAL. */
   abnormal?: boolean
+  /** Only refunds settled outside the system that carry a warning for staff to check. */
+  check?: boolean
 }
 
 /** Refunds that match, by when they were asked for, for a query that joins `orders`. */
@@ -190,6 +193,9 @@ export function refundWhere(q: RefundFilters): SQL | undefined {
     q.status ? eq(refunds.status, q.status) : undefined,
     q.provider ? eq(orders.provider, q.provider) : undefined,
     q.abnormal ? eq(refunds.abnormal, true) : undefined,
+    q.check
+      ? and(isNotNull(refunds.settledNote), inArray(refunds.failure, [...REFUND_SETTLED_WARNINGS]))
+      : undefined,
     ofStudents(orders.studentId, q.q),
   )
 }

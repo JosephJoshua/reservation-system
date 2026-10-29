@@ -6,8 +6,9 @@ import {
   invoiceTitleKindLabels,
   offlineMethodLabels,
   orderKindLabels,
-  REFUND_PAID_TWICE,
   REFUND_SETTLE_WAYS,
+  REFUND_WECHAT_CONFIRMED,
+  settledRefundWarning,
   toCsv,
   venueDateKey,
   venueInstant,
@@ -43,6 +44,7 @@ import {
   refundWhere,
   studentSearch,
 } from './lists'
+import { ABNORMAL_NOTE } from './refunds'
 import { getSettings } from './settings'
 import { grantedLessons, packageStatus } from './views'
 
@@ -600,14 +602,19 @@ function refundsTable(tx: Q, q: ExportQuery): Table {
         : r.settledNote !== null
           ? '已另行退款'
           : refundStatusText[r.status],
-      // A failed refund settled outside the system: how, and why WeChat Pay failed it, or the
-      // warning that WeChat Pay reported it done too.
+      // A refund settled outside the system: how, and why WeChat Pay failed it (or that it was
+      // 退款异常, without the note asking staff to handle it), or a warning raised after the
+      // settle.
       r.settledNote !== null
         ? [
             r.settledHow && REFUND_SETTLE_WAYS[r.settledHow],
             r.settledNote,
             r.failure &&
-              (r.failure === REFUND_PAID_TWICE ? r.failure : `微信支付退款失败：${r.failure}`),
+              (settledRefundWarning(r.failure) || r.failure === REFUND_WECHAT_CONFIRMED
+                ? r.failure
+                : r.failure === ABNORMAL_NOTE
+                  ? '微信支付退款异常'
+                  : `微信支付退款失败：${r.failure}`),
           ]
             .filter(Boolean)
             .join('；')
