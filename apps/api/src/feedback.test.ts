@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
@@ -622,6 +622,22 @@ describe('lesson photo files', () => {
     const served = await get(h, url)
     expect(served.status).toBe(200)
     expect(served.headers.get('cache-control')).toBe('public, max-age=31536000, immutable')
+  })
+})
+
+describe('photo metadata', () => {
+  it('stores a lesson photo without the GPS position its EXIF carried', async () => {
+    const h = setup()
+    const { ct, id } = await taught(h)
+    const exif = Buffer.from('Exif\0\0MM\0*\0\0\0\x08\0\0GPS 31.2304N 121.4737E', 'latin1')
+    const app1 = Buffer.concat([Buffer.from([0xff, 0xe1, 0, exif.length + 2]), exif])
+    const photo = Buffer.concat([JPEG.subarray(0, 2), app1, JPEG.subarray(2)])
+    const res = await upload(h, ct, id, photo)
+    expect(res.status).toBe(201)
+    const [name] = files(h)
+    const stored = readFileSync(join(h.deps.uploadsDir, name ?? ''))
+    expect(stored.toString('latin1')).not.toContain('GPS')
+    expect(stored).toEqual(JPEG)
   })
 })
 

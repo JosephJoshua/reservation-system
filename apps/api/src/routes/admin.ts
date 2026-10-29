@@ -102,6 +102,7 @@ import {
   studentFeedback,
 } from '../services/feedback'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
+import { stripImageMetadata } from '../services/image-meta'
 import {
   adminInvoice,
   adminInvoices,
@@ -2594,7 +2595,8 @@ export function adminRoutes(deps: Deps) {
     if (!ext) throw new ApiError(400, 'bad_type', '只支持 JPG、PNG、WebP 图片')
     const name = `${Date.now()}-${randomBytes(6).toString('hex')}.${ext}`
     mkdirSync(deps.uploadsDir, { recursive: true })
-    writeFileSync(join(deps.uploadsDir, name), data)
+    // Public images: no GPS position or camera details go with them.
+    writeFileSync(join(deps.uploadsDir, name), stripImageMetadata(data, ext))
     return c.json({ url: `/api/uploads/${name}` }, 201)
   })
 
