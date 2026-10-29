@@ -97,4 +97,15 @@ describe('booking the same time again after the payment time ran out', () => {
     const pay = await h.call('POST', `/orders/${b.orderId}/payment`, {}, t)
     expect(pay.json.error.code).toBe('order_paid')
   })
+
+  it('answers 502, not 订单已关闭, when WeChat Pay cannot be asked about the lapsed order', async () => {
+    const h = setup()
+    const { t, b } = await unpaid(h)
+    later(h, 11)
+    vi.spyOn(h.gateway, 'queryOrder').mockRejectedValue(new GatewayError('down', 'SYSTEM_ERROR'))
+    vi.spyOn(h.gateway, 'closeOrder').mockRejectedValue(new GatewayError('down', 'SYSTEM_ERROR'))
+    const pay = await h.call('POST', `/orders/${b.orderId}/payment`, {}, t)
+    expect(pay).toMatchObject({ status: 502, json: { error: { code: 'payment_unavailable' } } })
+    expect(h.db.select().from(orders).get()?.status).toBe('pending')
+  })
 })

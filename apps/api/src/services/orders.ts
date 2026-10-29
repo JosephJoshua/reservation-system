@@ -50,12 +50,9 @@ export async function startPayment(
   if (order.status === 'pending' && order.expiresAt && order.expiresAt <= deps.now()) {
     // Past its time but not yet closed by the sweeper: closed now, so its slot is free for the
     // booking made again.
-    let closed: 'closed' | 'paid' = 'closed'
-    try {
-      closed = await closeOrder(deps, orderId)
-    } catch (e) {
-      deps.log('close expired order failed', { orderId, error: (e as Error).message })
-    }
+    // WeChat Pay unreachable: whether it was paid is not known yet, so the student is not told
+    // it is closed.
+    const closed = await closeOrder(deps, orderId)
     if (closed === 'paid') throw orderPaid()
     throw orderNotPayable()
   }
