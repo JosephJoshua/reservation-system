@@ -1,6 +1,6 @@
 # 改约与取消
 
-<Clip phone src="video/mp-move-cancel.mp4" title="把课程改到另一个时间，再取消预约" />
+<Clip phone src="video/mp-move-cancel.mp4" title="选择改约的新时间，以及取消预约" />
 
 ## 改约
 
