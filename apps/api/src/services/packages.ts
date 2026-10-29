@@ -1,4 +1,11 @@
-import { formatYuan, packagePrice, suggestedPackageRefund, validityEnd } from '@rs/shared'
+import {
+  formatYuan,
+  type PackageTerms,
+  packagePrice,
+  samePackageTerms,
+  suggestedPackageRefund,
+  validityEnd,
+} from '@rs/shared'
 import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -27,6 +34,26 @@ import { grantedLessons } from './views'
 // An open order is reused only while there is still time to pay it.
 const REUSE_MARGIN_MS = 2 * 60_000
 
+type ProductRow = typeof packageProducts.$inferSelect
+
+/** What a package bought from this product now grants, kept on its order. */
+function termsOf(product: ProductRow): PackageTerms & { name: string } {
+  return {
+    name: product.name,
+    lessonTypeId: product.lessonTypeId,
+    coachIds: product.coachIds,
+    lessonCount: product.lessonCount,
+    validityDays: product.validityDays,
+  }
+}
+
+/** Refuses a sale when the product no longer grants what the buyer was shown. */
+function assertTerms(product: ProductRow, expected: PackageTerms | undefined) {
+  if (expected && !samePackageTerms(expected, product)) {
+    throw new ApiError(409, 'package_changed', '课时包内容已变动，请重新确认')
+  }
+}
+
 /**
  * Starts a WeChat Pay purchase of a package product. `payment` is null when a repeat finds the
  * open order already paid.
@@ -37,6 +64,8 @@ export async function purchasePackage(
   productId: number,
   /** The price the student was shown, in fen; a different price now refuses the purchase. */
   expectedPrice?: number,
+  /** What the student was shown the package grants; anything else now refuses the purchase. */
+  expectedTerms?: PackageTerms,
 ): Promise<{ orderId: number; payment: PaymentParams | null }> {
   const now = deps.now()
   const { id: orderId, repeat } = immediate(deps.db, (tx) => {
@@ -68,10 +97,12 @@ export async function purchasePackage(
     if (expectedPrice !== undefined && expectedPrice !== price.price) {
       throw new ApiError(409, 'price_changed', '价格已变动')
     }
+    assertTerms(product, expectedTerms)
+    const terms = termsOf(product)
     // A repeated tap or a retry continues the order already open for this product, so the
     // student never ends up with two cashier sessions for one purchase.
     const open = tx
-      .select({ id: orders.id })
+      .select({ id: orders.id, terms: orders.packageTerms })
       .from(orders)
       .where(
         and(
@@ -82,7 +113,8 @@ export async function purchasePackage(
           gt(orders.expiresAt, new Date(now.getTime() + REUSE_MARGIN_MS)),
         ),
       )
-      .get()
+      .all()
+      .find((o) => !o.terms || samePackageTerms(o.terms, terms))
     if (open) return { id: open.id, repeat: true }
     const created = tx
       .insert(orders)
@@ -95,6 +127,7 @@ export async function purchasePackage(
         provider: 'wechat',
         status: 'pending',
         productId: product.id,
+        packageTerms: terms,
         expiresAt: new Date(now.getTime() + settings.payment.timeoutMinutes * 60_000),
       })
       .returning({ id: orders.id })
@@ -316,6 +349,8 @@ export function sellPackageOffline(
     note: string
     /** Set for staff who may not change prices: the product must be on sale, at its price. */
     listedPriceOnly?: boolean
+    /** What staff were shown the package grants; anything else now refuses the sale. */
+    expectedTerms?: PackageTerms
   },
 ) {
   const now = deps.now()
@@ -333,6 +368,7 @@ export function sellPackageOffline(
       .where(eq(packageProducts.id, input.productId))
       .get()
     if (!product) throw notFound('课时包')
+    assertTerms(product, input.expectedTerms)
     if (input.listedPriceOnly) {
       if (!product.onSale) throw new ApiError(409, 'product_off_sale', '该课时包已下架')
       const listed = packagePrice(
@@ -358,6 +394,7 @@ export function sellPackageOffline(
         offlineMethod: input.method,
         status: 'paid',
         productId: product.id,
+        packageTerms: termsOf(product),
         paidAt: now,
         note: input.note,
       })

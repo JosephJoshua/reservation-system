@@ -174,6 +174,12 @@ export interface Order {
   paidAt: string | null
   createdAt: string
   note: string
+  /** A payment WeChat Pay reported that could not be applied; see `orderAnomalyLabel`. */
+  anomaly: 'amount_mismatch' | 'refunded' | null
+  /** What WeChat Pay actually charged, in fen. */
+  anomalyAmount: number | null
+  anomalyHandledAt: string | null
+  anomalyNote: string | null
   student: Person
   refunded: number
 }

@@ -6,7 +6,7 @@ import {
   randomBytes,
 } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { GatewayError } from './gateway'
+import { GatewayError, UNKNOWN_OUTCOME } from './gateway'
 import { rfc3339, WechatPayGateway } from './wechat'
 
 const pair = () =>
@@ -220,7 +220,57 @@ describe('WechatPayGateway', () => {
     // Replace the platform key so every response signature fails.
     ;(gateway as unknown as { config: { platformPublicKey: string } }).config.platformPublicKey =
       pair().publicKey
-    await expect(gateway.queryOrder('RS1')).rejects.toMatchObject({ code: 'BAD_SIGNATURE' })
+    // WeChat Pay took the request, so the outcome is unknown rather than a refusal.
+    await expect(gateway.queryOrder('RS1')).rejects.toMatchObject({
+      code: 'BAD_RESPONSE',
+      message: expect.stringMatching(/bad signature/),
+    })
+  })
+
+  it('reports a refund whose answer cannot be verified as unknown, not failed', async () => {
+    const { gateway } = server(() => ({
+      status: 200,
+      body: { refund_id: 'R1', status: 'SUCCESS' },
+    }))
+    ;(gateway as unknown as { config: { platformPublicKey: string } }).config.platformPublicKey =
+      pair().publicKey
+    const err = await gateway
+      .refund({ outTradeNo: 'RS1', outRefundNo: 'RF1', amount: 1, total: 1, reason: 'x' })
+      .catch((e) => e)
+    expect(err).toMatchObject({ code: 'BAD_RESPONSE', status: 200 })
+    expect(UNKNOWN_OUTCOME.has(err.code)).toBe(true)
+  })
+
+  it('maps refund states: only CLOSED is a failure', async () => {
+    const statuses: Record<string, string> = {
+      RF_OK: 'SUCCESS',
+      RF_WAIT: 'PROCESSING',
+      RF_CLOSED: 'CLOSED',
+      RF_ABNORMAL: 'ABNORMAL',
+      RF_NEW: 'SOMETHING_NEW',
+    }
+    const { gateway } = server((req) => {
+      const no = /refunds\/(\w+)/.exec(req.path)?.[1] ?? ''
+      return { status: 200, body: { refund_id: `id_${no}`, status: statuses[no] } }
+    })
+    expect(await gateway.queryRefund('RF_OK')).toEqual({
+      status: 'succeeded',
+      refundId: 'id_RF_OK',
+    })
+    expect(await gateway.queryRefund('RF_WAIT')).toEqual({
+      status: 'processing',
+      refundId: 'id_RF_WAIT',
+    })
+    expect(await gateway.queryRefund('RF_CLOSED')).toEqual({ status: 'failed', reason: 'CLOSED' })
+    expect(await gateway.queryRefund('RF_ABNORMAL')).toEqual({
+      status: 'processing',
+      refundId: 'id_RF_ABNORMAL',
+      abnormal: true,
+    })
+    expect(await gateway.queryRefund('RF_NEW')).toEqual({
+      status: 'processing',
+      refundId: 'id_RF_NEW',
+    })
   })
 
   it('verifies and decrypts a payment callback', () => {
@@ -230,6 +280,8 @@ describe('WechatPayGateway', () => {
       event_type: 'TRANSACTION.SUCCESS',
       resource_type: 'encrypt-resource',
       resource: encrypt({
+        appid: 'wx1234567890',
+        mchid: '1900000001',
         out_trade_no: 'RS1',
         trade_state: 'SUCCESS',
         transaction_id: 'T9',
@@ -245,6 +297,40 @@ describe('WechatPayGateway', () => {
         paidAt: new Date('2026-10-23T02:01:00Z'),
         amount: 20000,
       },
+    })
+  })
+
+  it('refuses a payment callback for another app or merchant', () => {
+    const { gateway } = server(() => ({ status: 500 }))
+    for (const ids of [
+      { appid: 'wx_other', mchid: '1900000001' },
+      { appid: 'wx1234567890', mchid: '1900000999' },
+      {},
+    ]) {
+      const body = JSON.stringify({
+        resource: encrypt({ ...ids, out_trade_no: 'RS1', trade_state: 'SUCCESS' }),
+      })
+      expect(() => gateway.parsePaymentNotification(signedHeaders(body), body)).toThrow(
+        expect.objectContaining({ code: 'FOREIGN_NOTIFICATION' }),
+      )
+    }
+  })
+
+  it('marks an order refunded at WeChat Pay as such', () => {
+    const { gateway } = server(() => ({ status: 500 }))
+    const body = JSON.stringify({
+      resource: encrypt({
+        appid: 'wx1234567890',
+        mchid: '1900000001',
+        out_trade_no: 'RS1',
+        trade_state: 'REFUND',
+        transaction_id: 'T9',
+        amount: { total: 20000 },
+      }),
+    })
+    expect(gateway.parsePaymentNotification(signedHeaders(body), body).order).toMatchObject({
+      state: 'paid',
+      refunded: true,
     })
   })
 

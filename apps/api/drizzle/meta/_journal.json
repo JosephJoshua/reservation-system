@@ -176,6 +176,13 @@
       "when": 1793254422889,
       "tag": "0024_notice_retries_and_key_student",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1793254599648,
+      "tag": "0025_order_terms_and_anomalies",
+      "breakpoints": true
     }
   ]
 }

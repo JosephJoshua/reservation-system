@@ -1,4 +1,4 @@
-import { type CancelledBy, clashes, validityEnd } from '@rs/shared'
+import { type CancelledBy, validityEnd } from '@rs/shared'
 import { and, eq, gt, inArray, isNotNull, lt } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
@@ -15,9 +15,9 @@ import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import type { OrderState, PaymentParams } from '../pay/gateway'
 import { seatFor } from './bookings'
-import { trialsUsed } from './catalog'
+import { priceFor, trialsUsed, visibleTo } from './catalog'
 import { createRefund, submitRefund } from './refunds'
-import { busyTime, exceptionsFor } from './schedule'
+import { assertPrivateTime, exceptionsFor } from './schedule'
 import { getSettings } from './settings'
 import { hasFreeTable } from './tables'
 
@@ -48,7 +48,7 @@ export async function startPayment(
   }
   if (order.status === 'paid') throw orderPaid()
   if (order.status !== 'pending' || !order.expiresAt || order.expiresAt <= deps.now()) {
-    throw new ApiError(409, 'order_not_payable', '订单已关闭，请重新下单')
+    throw orderNotPayable()
   }
   let prepayId = order.prepayId
   if (!prepayId) {
@@ -64,9 +64,45 @@ export async function startPayment(
       deps.log('create order failed', { orderId, error: (e as Error).message })
       throw new ApiError(502, 'payment_unavailable', '支付暂时不可用，请稍后再试')
     }
-    deps.db.update(orders).set({ prepayId }).where(eq(orders.id, orderId)).run()
+    // Closed meanwhile (cancelled, or the hold ran out) while WeChat Pay was placing it: a cancel
+    // that saw no prepay id closed it here only, so close it at WeChat Pay too and give no cashier.
+    const saved = deps.db
+      .update(orders)
+      .set({ prepayId })
+      .where(and(eq(orders.id, orderId), eq(orders.status, 'pending')))
+      .run()
+    if (saved.changes === 0) {
+      await closeAtWechat(deps, order.outTradeNo)
+      if (closeStatus(deps, orderId) === 'paid') throw orderPaid()
+      throw orderNotPayable()
+    }
   }
   return deps.gateway.paymentParams(prepayId)
+}
+
+const orderNotPayable = () => new ApiError(409, 'order_not_payable', '订单已关闭，请重新下单')
+
+/**
+ * Closes an order at WeChat Pay that is closed here already, so it can never be paid. If it was
+ * paid meanwhile, the payment is applied: a late payment then revives or refunds the booking.
+ */
+async function closeAtWechat(deps: Deps, outTradeNo: string) {
+  try {
+    const state = await deps.gateway.closeOrder(outTradeNo)
+    if (state.state === 'paid') applyPayment(deps, outTradeNo, state)
+  } catch (e) {
+    // WeChat Pay closes it at time_expire anyway, and a payment still arrives by callback.
+    deps.log('close order at wechat failed', { outTradeNo, error: (e as Error).message })
+  }
+}
+
+function closeStatus(deps: Deps, orderId: number): 'closed' | 'paid' {
+  const row = deps.db
+    .select({ status: orders.status })
+    .from(orders)
+    .where(eq(orders.id, orderId))
+    .get()
+  return row?.status === 'paid' ? 'paid' : 'closed'
 }
 
 /**
@@ -111,16 +147,39 @@ export function applyPayment(
   const refundIds = immediate(deps.db, (tx) => {
     const order = tx.select().from(orders).where(eq(orders.outTradeNo, outTradeNo)).get()
     if (!order) throw notFound('订单')
-    if (order.status === 'paid') return []
+    // Flagged for staff already: nothing more to apply.
+    if (order.status === 'paid' || order.anomaly) return []
     // WeChat Pay charges the amount the order was created with, so a difference means something is
-    // badly wrong. Refuse to confirm anything; the callback fails and the order needs a person.
-    if (paid.amount !== order.amount) {
-      deps.log('paid amount differs from order', {
+    // badly wrong; and an order refunded at WeChat Pay before it was paid here was settled outside
+    // this system. Confirm nothing: release what the order held and flag it for staff.
+    const anomaly = paid.refunded
+      ? ('refunded' as const)
+      : paid.amount !== order.amount
+        ? ('amount_mismatch' as const)
+        : null
+    if (anomaly) {
+      deps.log('payment not applied, flagged for staff', {
         outTradeNo,
+        anomaly,
         paid: paid.amount,
         order: order.amount,
       })
-      throw new Error(`paid amount ${paid.amount} differs from order amount ${order.amount}`)
+      tx.update(orders)
+        .set({
+          status: 'closed',
+          anomaly,
+          anomalyAmount: paid.amount,
+          transactionId: paid.transactionId || null,
+        })
+        .where(eq(orders.id, order.id))
+        .run()
+      if (order.bookingId) {
+        tx.update(bookings)
+          .set({ status: 'expired' })
+          .where(and(eq(bookings.id, order.bookingId), eq(bookings.status, 'pending_payment')))
+          .run()
+      }
+      return []
     }
     tx.update(orders)
       .set({ status: 'paid', paidAt: paid.paidAt, transactionId: paid.transactionId })
@@ -187,30 +246,44 @@ function revivedSeat(tx: Q, slotId: number) {
 
 /**
  * Whether a booking whose hold ran out can still be confirmed by a late payment: the lesson is
- * ahead, the slot still takes bookings (for a private lesson, the coach is still free and not on
- * leave), a trial is still within the student's limit, the student has not booked that time since,
- * and a table is still free. Whether a seat is left is checked when it is revived, and the unique
- * index backs that up.
+ * ahead, and it passes what a new booking would. The lesson type is still offered to the student,
+ * the coach still teaches it, the slot still takes bookings (for a private lesson, a time 排班
+ * still offers, buffer included, with the coach free and not on leave), a trial is still within
+ * the student's limit, the student has not booked that time since, and a table is still free.
+ * Whether a seat is left is checked when it is revived, and the unique index backs that up. The
+ * booking window is not checked again: the student booked within it.
  */
 function revivable(tx: Q, booking: typeof bookings.$inferSelect, now: Date) {
   if (booking.startsAt <= now) return false
   const slot = tx.select().from(slots).where(eq(slots.id, booking.slotId)).get()
   if (!slot || slot.cancelledAt || !hasFreeTable(tx, slot)) return false
   if (slot.lessonTypeId !== null && !slot.open) return false
-  // A private lesson's coach may have taken another lesson or 请假 at that time since.
-  if (slot.lessonTypeId === null) {
-    const span = { startsAt: booking.startsAt, endsAt: booking.endsAt }
-    const busy = busyTime(tx, [slot.coachId], span, booking.id).get(slot.coachId) ?? []
-    if (busy.some((b) => clashes(span, b))) return false
-    const off = exceptionsFor(tx, [slot.coachId], span).get(slot.coachId) ?? []
-    if (off.some((e) => e.kind === 'off')) return false
-  }
   const lessonType = tx
-    .select({ isTrial: lessonTypes.isTrial })
+    .select()
     .from(lessonTypes)
     .where(eq(lessonTypes.id, booking.lessonTypeId))
     .get()
-  if (lessonType?.isTrial) {
+  const student = tx
+    .select({ tester: students.tester, deletedAt: students.deletedAt })
+    .from(students)
+    .where(eq(students.id, booking.studentId))
+    .get()
+  if (!lessonType || !student || student.deletedAt || !visibleTo(lessonType, student)) return false
+  // Turned off by the venue, or no longer teaching this lesson type.
+  if (!priceFor(tx, slot.coachId, lessonType, now)) return false
+  const span = { startsAt: booking.startsAt, endsAt: booking.endsAt }
+  const off = exceptionsFor(tx, [slot.coachId], span).get(slot.coachId) ?? []
+  if (off.some((e) => e.kind === 'off')) return false
+  if (slot.lessonTypeId === null) {
+    // The coach may have taken another lesson next to it, or changed 排班, since.
+    try {
+      assertPrivateTime(tx, { coachId: slot.coachId, span, rule: 'schedule', except: booking.id })
+    } catch (e) {
+      if (e instanceof ApiError) return false
+      throw e
+    }
+  }
+  if (lessonType.isTrial) {
     const { trialEnabled, trialLimitPerStudent } = getSettings(tx).payment
     if (!trialEnabled || trialsUsed(tx, booking.studentId) >= trialLimitPerStudent) return false
   }
@@ -238,31 +311,31 @@ export function createPackageFromOrder(
 ): number {
   const order = tx.select().from(orders).where(eq(orders.id, orderId)).get()
   if (!order?.productId) throw new Error(`order ${orderId} has no product`)
-  const product = tx
-    .select()
-    .from(packageProducts)
-    .where(eq(packageProducts.id, order.productId))
-    .get()
-  if (!product) throw new Error(`product ${order.productId} missing`)
+  // What the student bought, not the product as it is now. Orders from before terms were kept
+  // fall back to the product, which could not change while they were being paid.
+  const terms =
+    order.packageTerms ??
+    tx.select().from(packageProducts).where(eq(packageProducts.id, order.productId)).get()
+  if (!terms) throw new Error(`product ${order.productId} missing`)
   const pkg = tx
     .insert(packages)
     .values({
       studentId: order.studentId,
-      productId: product.id,
-      name: product.name,
-      lessonTypeId: product.lessonTypeId,
-      coachIds: product.coachIds,
-      lessonsPurchased: product.lessonCount,
-      lessonsRemaining: product.lessonCount,
+      productId: order.productId,
+      name: terms.name,
+      lessonTypeId: terms.lessonTypeId,
+      coachIds: terms.coachIds,
+      lessonsPurchased: terms.lessonCount,
+      lessonsRemaining: terms.lessonCount,
       pricePaid: order.amount,
-      expiresAt: validityEnd(paidAt, product.validityDays),
+      expiresAt: validityEnd(paidAt, terms.validityDays),
       status: 'active',
       orderId: order.id,
     })
     .returning({ id: packages.id })
     .get()
   tx.insert(packageLedger)
-    .values({ packageId: pkg.id, delta: product.lessonCount, kind: 'purchase', actor })
+    .values({ packageId: pkg.id, delta: terms.lessonCount, kind: 'purchase', actor })
     .run()
   return pkg.id
 }
@@ -360,7 +433,9 @@ export async function closeOrder(
     const state = await deps.gateway.closeOrder(order.outTradeNo)
     if (state.state === 'paid') {
       applyPayment(deps, order.outTradeNo, state)
-      return 'paid'
+      // A payment flagged for staff instead (see applyPayment) left the order closed and its
+      // booking released: report it closed, not paid.
+      if (closeStatus(deps, orderId) === 'paid') return 'paid'
     }
   }
   const now = deps.now()
@@ -389,7 +464,18 @@ export async function closeOrder(
     }
     return true
   })
-  return closed ? 'closed' : 'paid'
+  if (!closed) return 'paid'
+  // A payment being started placed the order at WeChat Pay after it was read above: close it
+  // there too, so the cashier it handed out cannot take money.
+  if (order.status === 'pending' && !order.prepayId) {
+    const placed = deps.db
+      .select({ prepayId: orders.prepayId })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .get()
+    if (placed?.prepayId) await closeAtWechat(deps, order.outTradeNo)
+  }
+  return closeStatus(deps, orderId)
 }
 
 /** Closes orders past their payment time. Run by the sweeper. */

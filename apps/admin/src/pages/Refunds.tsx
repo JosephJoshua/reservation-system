@@ -2,6 +2,7 @@ import type { RefundStatus } from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
+  Checkbox,
   Dialog,
   InputNumber,
   MessagePlugin,
@@ -45,11 +46,15 @@ const statusOptions = [
 interface RefundOutcome {
   status: RefundStatus
   failure: string | null
+  /** Set by a retry: false when WeChat Pay already had the old refund done or on its way. */
+  resent?: boolean
 }
 
 /** WeChat Pay can refuse a refund at once (balance too low, say), so say so instead of success. */
 function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
-  if (outcome?.status === 'failed') {
+  if (outcome?.resent === false && outcome.status !== 'failed') {
+    void MessagePlugin.success('原退款已在微信支付处理，已更新状态，未重复退款')
+  } else if (outcome?.status === 'failed') {
     void MessagePlugin.warning(
       `退款没有成功${outcome.failure ? `：${outcome.failure}` : ''}，可在“退款失败”中重试`,
       5000,
@@ -62,11 +67,12 @@ function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
 export function Refunds() {
   // The overview links here with the status it counted.
   const filters = useListFilters(
-    { status: 'requested', from: '', to: '', q: '', provider: '' },
+    { status: 'requested', from: '', to: '', q: '', provider: '', abnormal: '' },
     {
       path: '#/refunds',
       valid: {
         status: oneOf(...statusOptions.map((o) => o.value)),
+        abnormal: oneOf('1'),
         from: isDay,
         to: isDay,
         provider: oneOf(...providerOptions.map((o) => o.value)),
@@ -76,9 +82,10 @@ export function Refunds() {
   const f = filters.values
   const params = new URLSearchParams()
   setRange(params, f.from, f.to)
-  for (const key of ['q', 'status', 'provider'] as const) if (f[key]) params.set(key, f[key])
+  for (const key of ['q', 'status', 'provider', 'abnormal'] as const)
+    if (f[key]) params.set(key, f[key])
   const list = usePagedList<Refund>(`/admin/refunds?${params}`, filters)
-  const more = ['status', 'provider'] as const
+  const more = ['status', 'provider', 'abnormal'] as const
   const { reload } = list
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
 
@@ -144,26 +151,37 @@ export function Refunds() {
                 options={providerOptions}
               />
             </Filter>
+            <Filter label="">
+              <Checkbox
+                checked={f.abnormal === '1'}
+                onChange={(v) => filters.set({ abnormal: v ? '1' : '' })}
+              >
+                退款异常
+              </Checkbox>
+            </Filter>
           </>
         }
         set={filters.changed([...more])}
         onClear={() => filters.reset([...more])}
         actions={
-          <ExportButton
-            kind="refunds"
-            range={f.from && f.to ? [f.from, f.to] : undefined}
-            filters={{ q: f.q, status: f.status, provider: f.provider }}
-            filterText={
-              [
-                f.q && `搜索“${f.q}”`,
-                f.status && `状态：${statusOptions.find((o) => o.value === f.status)?.label}`,
-                f.provider &&
-                  `支付方式：${providerOptions.find((o) => o.value === f.provider)?.label}`,
-              ]
-                .filter(Boolean)
-                .join('，') || undefined
-            }
-          />
+          // The export has no 退款异常 filter.
+          f.abnormal !== '1' && (
+            <ExportButton
+              kind="refunds"
+              range={f.from && f.to ? [f.from, f.to] : undefined}
+              filters={{ q: f.q, status: f.status, provider: f.provider }}
+              filterText={
+                [
+                  f.q && `搜索“${f.q}”`,
+                  f.status && `状态：${statusOptions.find((o) => o.value === f.status)?.label}`,
+                  f.provider &&
+                    `支付方式：${providerOptions.find((o) => o.value === f.provider)?.label}`,
+                ]
+                  .filter(Boolean)
+                  .join('，') || undefined
+              }
+            />
+          )
         }
       />
       <DataTable
@@ -215,9 +233,8 @@ export function Refunds() {
                   <Tag theme={theme} variant="light">
                     {label}
                   </Tag>
-                  {row.failure && row.status !== 'succeeded' && (
-                    <div className="muted">{row.failure}</div>
-                  )}
+                  {/* On a success, a warning that the order was refunded more than paid. */}
+                  {row.failure && <div className="muted">{row.failure}</div>}
                   {row.order.provider === 'offline' && (
                     <div className="muted">前台付款，线下退还</div>
                   )}

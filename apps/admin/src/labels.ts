@@ -27,6 +27,12 @@ export const refundStatusLabel: Record<RefundStatus, [string, Theme]> = {
   rejected: ['已拒绝', 'default'],
 }
 
+/** Why a payment was not applied. */
+export const orderAnomalyLabel = {
+  amount_mismatch: '实付金额与订单不符，未确认',
+  refunded: '付款已在微信支付退回，未确认',
+} as const
+
 export const orderStatusLabel = {
   pending: ['待支付', 'warning'],
   paid: ['已支付', 'success'],

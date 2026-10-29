@@ -921,24 +921,115 @@ describe('review fixes', () => {
     expect(mid.status).toBe(204)
   })
 
-  it('does not confirm a payment whose amount differs from the order', async () => {
+  it('does not confirm a payment whose amount differs from the order, and flags it', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    expect(res.status).toBe(201)
+    const order = h.db.select().from(orders).get()
+    const { applyPayment } = await import('./services/orders')
+    const wrong = { state: 'paid', transactionId: 't1', paidAt: h.deps.now(), amount: 1 } as const
+    applyPayment(h.deps, order?.outTradeNo ?? '', wrong)
+    // A repeated callback changes nothing and no longer fails.
+    applyPayment(h.deps, order?.outTradeNo ?? '', wrong)
+    const flagged = h.db.select().from(orders).get()
+    expect(flagged).toMatchObject({
+      status: 'closed',
+      anomaly: 'amount_mismatch',
+      anomalyAmount: 1,
+    })
+    expect(flagged?.transactionId).toBe('t1')
+    // The slot and the unpaid-hold allowance are released.
+    expect(h.db.select().from(bookings).get()?.status).toBe('expired')
+    expect(h.db.select().from(refunds).all()).toEqual([])
+    // Staff see it on the overview and in the orders list until they mark it handled.
+    const admin = await h.admin()
+    expect((await h.call('GET', '/admin/summary', undefined, admin)).json.orderAnomalies).toBe(1)
+    const listed = await h.call('GET', '/admin/orders?anomaly=1', undefined, admin)
+    expect(listed.json.map((o: { id: number }) => o.id)).toEqual([flagged?.id])
+    // The student sees it on the booking, and cannot close the account until it is handled.
+    const mine = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(mine.json.paymentIssue).toBe('open')
+    const blocked = await h.call('GET', '/me/deletion', undefined, t)
+    expect(blocked.json.blockers).toContain('有一笔付款异常待场馆处理，请联系场馆')
+    // The export shows it with what was charged.
+    const csv = async () =>
+      (
+        await h.app.request('/api/admin/exports/orders?from=2026-10-01&to=2026-10-31', {
+          headers: { Authorization: `Bearer ${admin}` },
+        })
+      ).text()
+    expect(await csv()).toContain('实付金额不符（实付 ¥0.01）；待处理')
+    // Marking it handled needs a note of what was done.
+    const mark = (body?: unknown) =>
+      h.call('POST', `/admin/orders/${flagged?.id}/anomaly-handled`, body, admin)
+    expect((await mark()).status).toBe(400)
+    expect((await mark({ note: '  ' })).status).toBe(400)
+    expect((await mark({ note: '已在商户平台退款' })).status).toBe(204)
+    // A repeat of the mark is fine.
+    expect((await mark({ note: '已在商户平台退款' })).status).toBe(204)
+    expect(h.db.select().from(orders).get()?.anomalyNote).toBe('已在商户平台退款')
+    expect(await csv()).toContain('已处理：已在商户平台退款')
+    expect(
+      (await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)).json.paymentIssue,
+    ).toBe('handled')
+    expect((await h.call('GET', '/me/deletion', undefined, t)).json.blockers).toEqual([])
+    expect((await h.call('GET', '/admin/summary', undefined, admin)).json.orderAnomalies).toBe(0)
+    expect((await h.call('GET', '/admin/orders?anomaly=1', undefined, admin)).json).toEqual([])
+    const actions = await h.call('GET', '/admin/actions', undefined, admin)
+    expect(actions.json.map((a: { action: string }) => a.action)).toContain('order.anomaly_handled')
+  })
+
+  it('refuses to mark an order without an anomaly handled', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id).id, lesson.id)
+    const admin = await h.admin()
+    const r = await h.call(
+      'POST',
+      `/admin/orders/${res.json.orderId}/anomaly-handled`,
+      { note: '无' },
+      admin,
+    )
+    expect(r.status).toBe(409)
+  })
+
+  it('does not confirm an unpaid order WeChat Pay reports as paid and refunded', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
     const t = await h.student('a')
     const res = await book(h, t, h.slot(coach.id).id, lesson.id)
     const order = h.db.select().from(orders).get()
-    const { applyPayment } = await import('./services/orders')
-    expect(() =>
-      applyPayment(h.deps, order?.outTradeNo ?? '', {
+    h.gateway.parsePaymentNotification = () => ({
+      outTradeNo: order?.outTradeNo ?? '',
+      order: {
         state: 'paid',
         transactionId: 't1',
         paidAt: h.deps.now(),
-        amount: 1,
-      }),
-    ).toThrow()
-    expect(h.db.select().from(orders).get()?.status).toBe('pending')
-    expect(h.db.select().from(bookings).get()?.status).toBe('pending_payment')
-    expect(res.status).toBe(201)
+        amount: order?.amount ?? 0,
+        refunded: true,
+      },
+    })
+    const cb = await h.app.request('/api/pay/wechat/notify', { method: 'POST', body: '{}' })
+    expect(cb.status).toBe(204)
+    expect(h.db.select().from(orders).get()).toMatchObject({
+      status: 'closed',
+      anomaly: 'refunded',
+    })
+    expect(h.db.select().from(bookings).get()?.status).toBe('expired')
+    expect(res.json.bookingId).toBeTruthy()
+  })
+
+  it('ignores a payment callback for another app or merchant', async () => {
+    const h = setup()
+    const { GatewayError } = await import('./pay/gateway')
+    h.gateway.parsePaymentNotification = () => {
+      throw new GatewayError('payment for appid x mchid y', 'FOREIGN_NOTIFICATION', 400)
+    }
+    const res = await h.app.request('/api/pay/wechat/notify', { method: 'POST', body: '{}' })
+    expect(res.status).toBe(204)
   })
 
   it('acknowledges a verified callback for an order it never had', async () => {
@@ -1344,15 +1435,14 @@ describe('review round 2', () => {
     const res = await book(h, t, h.slot(coach.id).id, lesson.id)
     const order = await orderOf(h, res.json.orderId)
     const { applyPayment } = await import('./services/orders')
-    expect(() =>
-      applyPayment(h.deps, order.outTradeNo, {
-        state: 'paid',
-        transactionId: 't1',
-        paidAt: h.deps.now(),
-        amount: 0,
-      }),
-    ).toThrow()
-    expect(h.db.select().from(bookings).get()?.status).toBe('pending_payment')
+    applyPayment(h.deps, order.outTradeNo, {
+      state: 'paid',
+      transactionId: 't1',
+      paidAt: h.deps.now(),
+      amount: 0,
+    })
+    expect(h.db.select().from(bookings).get()?.status).toBe('expired')
+    expect(h.db.select().from(orders).get()?.anomaly).toBe('amount_mismatch')
   })
 
   it('retries a failed refund under a new refund number', async () => {

@@ -11,6 +11,7 @@ import {
   MAX_CAPACITY,
   offlineMethodLabels,
   offlineMethods,
+  packageTermsSchema,
   type RuleOverrides,
   ruleNames,
   ruleOverrides,
@@ -108,6 +109,7 @@ import {
   bookingWhere,
   countAll,
   flag,
+  openAnomaly,
   orderKindParam,
   orderWhere,
   pageParams,
@@ -2046,6 +2048,8 @@ export function adminRoutes(deps: Deps) {
         amount: fen,
         method: offlineMethod,
         note: z.string().trim().max(100).default(''),
+        /** What the dialog showed the package grants. */
+        expectedTerms: packageTermsSchema.optional(),
       }),
     )
     const listedPriceOnly = !can(c.get('roles'), 'manage')
@@ -2075,6 +2079,8 @@ export function adminRoutes(deps: Deps) {
         kind: orderKindParam.optional(),
         provider: providerParam.optional(),
         q: searchParam,
+        // 支付异常 not yet handled, as the overview counts them.
+        anomaly: flag,
         ...pageParams,
         before: z.coerce.number().int().positive().optional(),
       }),
@@ -2122,6 +2128,28 @@ export function adminRoutes(deps: Deps) {
     )
   })
 
+  // Staff sorted out a flagged payment (refunded it on the merchant platform, say).
+  app.post('/orders/:id/anomaly-handled', need('finance'), async (c) => {
+    const id = idParam(c)
+    const { note } = await parseBody(c, z.object({ note: z.string().trim().min(1).max(100) }))
+    const order = db.select().from(orders).where(eq(orders.id, id)).get()
+    if (!order) throw notFound('订单')
+    if (!order.anomaly) throw new ApiError(409, 'no_anomaly', '该订单没有支付异常')
+    // A repeat of a mark already made.
+    if (order.anomalyHandledAt) return c.body(null, 204)
+    db.update(orders)
+      .set({ anomalyHandledAt: deps.now(), anomalyNote: note })
+      .where(and(eq(orders.id, id), isNull(orders.anomalyHandledAt)))
+      .run()
+    log(c.get('staffId'), {
+      action: 'order.anomaly_handled',
+      summary: `支付异常已处理：订单 ${order.outTradeNo}，${note}`,
+      studentId: order.studentId,
+      target: { kind: 'order', id },
+    })
+    return c.body(null, 204)
+  })
+
   app.get('/refunds', need('finance'), (c) => {
     const q = parseQuery(
       c,
@@ -2134,6 +2162,8 @@ export function adminRoutes(deps: Deps) {
         to: instant.optional(),
         provider: providerParam.optional(),
         q: searchParam,
+        // 退款异常: WeChat Pay could not send the money back, as the overview counts them.
+        abnormal: flag,
         ...pageParams,
         before: z.coerce.number().int().positive().optional(),
       }),
@@ -2281,17 +2311,22 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/refunds/:id/retry', need('finance'), async (c) => {
     const id = idParam(c)
-    if (await retryRefund(deps, id)) {
+    const done = await retryRefund(deps, id)
+    if (done) {
       const r = refundContext(id)
+      // `updated`: WeChat Pay already had it as done or on its way, so nothing was sent again.
       log(c.get('staffId'), {
-        action: 'refund.retry',
-        summary: `重试${r.what}退款 ${yuan(r.amount)}`,
+        action: done === 'resent' ? 'refund.retry' : 'refund.synced',
+        summary:
+          done === 'resent'
+            ? `重试${r.what}退款 ${yuan(r.amount)}`
+            : `${r.what}退款 ${yuan(r.amount)} 状态已按微信支付更新`,
         amount: r.amount,
         studentId: r.studentId,
         target: { kind: 'refund', id },
       })
     }
-    return c.json(refundOutcome(id))
+    return c.json({ ...refundOutcome(id), resent: done === 'resent' })
   })
 
   // Invoices
@@ -2562,6 +2597,15 @@ export function adminRoutes(deps: Deps) {
       pendingPayments: count(eq(bookings.status, 'pending_payment')),
       refundRequests: money ? refundCount(eq(refunds.status, 'requested')) : null,
       failedRefunds: money ? refundCount(eq(refunds.status, 'failed')) : null,
+      // WeChat Pay could not send the money back to the card; staff handle it on the merchant
+      // platform.
+      abnormalRefunds: money
+        ? refundCount(and(eq(refunds.status, 'processing'), eq(refunds.abnormal, true)))
+        : null,
+      // Payments WeChat Pay reported that could not be applied, for staff to sort out.
+      orderAnomalies: money
+        ? (db.select({ n: sql<number>`count(*)` }).from(orders).where(openAnomaly).get()?.n ?? 0)
+        : null,
       // Refunds of front-desk payments, waiting for staff to hand the money back.
       offlineRefundsOwed: money
         ? refundCount(and(eq(refunds.status, 'pending'), eq(orders.provider, 'offline')))

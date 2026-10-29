@@ -147,6 +147,8 @@ export interface OrderFilters {
   kind?: 'class' | 'trial' | 'package'
   provider?: 'wechat' | 'offline'
   q?: string
+  /** Only payments flagged for staff and not yet marked handled. */
+  anomaly?: boolean
 }
 
 /** Orders that match, by when they were placed. */
@@ -158,9 +160,13 @@ export function orderWhere(q: OrderFilters): SQL | undefined {
     q.studentId ? eq(orders.studentId, q.studentId) : undefined,
     q.kind ? eq(orders.kind, q.kind) : undefined,
     q.provider ? eq(orders.provider, q.provider) : undefined,
+    q.anomaly ? openAnomaly : undefined,
     ofStudents(orders.studentId, q.q),
   )
 }
+
+/** A payment flagged for staff that no one has marked handled yet. */
+export const openAnomaly = and(isNotNull(orders.anomaly), isNull(orders.anomalyHandledAt))
 
 export interface RefundFilters {
   from?: Date
@@ -168,6 +174,8 @@ export interface RefundFilters {
   status?: (typeof refunds.$inferSelect)['status']
   provider?: 'wechat' | 'offline'
   q?: string
+  /** Only refunds WeChat Pay reported as ABNORMAL. */
+  abnormal?: boolean
 }
 
 /** Refunds that match, by when they were asked for, for a query that joins `orders`. */
@@ -177,6 +185,7 @@ export function refundWhere(q: RefundFilters): SQL | undefined {
     q.to ? lt(refunds.createdAt, q.to) : undefined,
     q.status ? eq(refunds.status, q.status) : undefined,
     q.provider ? eq(orders.provider, q.provider) : undefined,
+    q.abnormal ? eq(refunds.abnormal, true) : undefined,
     ofStudents(orders.studentId, q.q),
   )
 }

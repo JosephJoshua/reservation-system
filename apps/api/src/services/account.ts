@@ -77,6 +77,10 @@ const BLOCKERS = {
   lesson: ['还有未上的课程，请先取消', '该学员还有未上的课程，请先取消'],
   package: ['课时包还有剩余课时，请先用完或申请退款', '该学员的课时包还有剩余课时，请先用完或退款'],
   payment: ['有未完成的支付，请稍后再试', '该学员有未完成的支付，请稍后再试'],
+  anomaly: [
+    '有一笔付款异常待场馆处理，请联系场馆',
+    '该学员有付款异常待处理，请在订单页处理后再删除',
+  ],
   refund: ['有退款正在处理，请完成后再注销', '该学员有退款正在处理，请处理完再删除'],
   invoice: ['发票申请正在处理，请完成后再注销', '该学员的发票申请正在处理，请处理完再删除'],
 } as const
@@ -110,11 +114,18 @@ export function deletionBlockers(
     blockers.push(words('package'))
   }
   const orderIds = tx
-    .select({ id: orders.id, status: orders.status })
+    .select({
+      id: orders.id,
+      status: orders.status,
+      anomaly: orders.anomaly,
+      handledAt: orders.anomalyHandledAt,
+    })
     .from(orders)
     .where(eq(orders.studentId, studentId))
     .all()
   if (orderIds.some((o) => o.status === 'pending')) blockers.push(words('payment'))
+  // A payment WeChat Pay took that could not be applied: staff may still owe the money back.
+  if (orderIds.some((o) => o.anomaly && !o.handledAt)) blockers.push(words('anomaly'))
   const openRefund =
     orderIds.length > 0 &&
     tx

@@ -3,7 +3,7 @@ import { immediate, type Q } from '../db/client'
 import { orders, refunds } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError } from '../errors'
-import { GatewayError, type RefundState } from '../pay/gateway'
+import { GatewayError, type RefundState, UNKNOWN_OUTCOME } from '../pay/gateway'
 import { newOutRefundNo } from './ids'
 import { closeRefundedRequests } from './invoices'
 
@@ -59,7 +59,41 @@ export function createRefund(
   return row.id
 }
 
-/** Sends a pending refund to WeChat Pay. Network and server errors leave it pending for a retry. */
+// Shown to staff on a refund marked failed that went through after all, on top of other refunds
+// of the order that add up to more than was paid.
+const OVER_REFUNDED_NOTE = '该退款实际已成功，与其他退款合计超过实付金额，请核对'
+
+// Shown to staff on a refund WeChat Pay reports as ABNORMAL (the card the money goes back to was
+// cancelled or frozen); it settles once handled on the merchant platform.
+const ABNORMAL_NOTE = '退款异常：原路退回失败，请在微信支付商户平台处理'
+
+/** The row update for a refund state WeChat Pay reported. */
+function stateUpdate(result: RefundState): Partial<typeof refunds.$inferInsert> {
+  switch (result.status) {
+    case 'succeeded':
+      return {
+        status: 'succeeded',
+        providerRefundId: result.refundId,
+        failure: null,
+        abnormal: false,
+      }
+    case 'processing':
+      return {
+        status: 'processing',
+        ...(result.refundId ? { providerRefundId: result.refundId } : {}),
+        failure: result.abnormal ? ABNORMAL_NOTE : null,
+        abnormal: result.abnormal === true,
+      }
+    case 'failed':
+      return { status: 'failed', failure: result.reason, abnormal: false }
+  }
+}
+
+/**
+ * Sends a pending refund to WeChat Pay. A call whose outcome is unknown (network errors, rate
+ * limits, server errors, an answer that cannot be verified) leaves it pending for the sweeper,
+ * which asks WeChat Pay about the same refund number before sending it again.
+ */
 export async function submitRefund(deps: Deps, refundId: number): Promise<void> {
   const { db } = deps
   const row = db
@@ -69,62 +103,101 @@ export async function submitRefund(deps: Deps, refundId: number): Promise<void> 
     .where(eq(refunds.id, refundId))
     .get()
   if (row?.refund.status !== 'pending' || row.order.provider !== 'wechat') return
-  let update: Partial<typeof refunds.$inferInsert>
+  let result: RefundState
   try {
-    const result = await deps.gateway.refund({
+    result = await deps.gateway.refund({
       outTradeNo: row.order.outTradeNo,
       outRefundNo: row.refund.outRefundNo,
       amount: row.refund.amount,
       total: row.order.amount,
       reason: row.refund.reason,
     })
-    update =
-      result.status === 'failed'
-        ? { status: 'failed', failure: result.reason }
-        : { status: result.status, providerRefundId: result.refundId }
   } catch (e) {
-    const status = e instanceof GatewayError ? (e.status ?? 0) : 0
-    // Network errors, rate limits and server errors are worth another try; the rest need a person.
-    const retryable =
-      !(e instanceof GatewayError) || e.code === 'NETWORK' || status === 429 || status >= 500
     deps.log('refund submit failed', { refundId, error: (e as Error).message })
-    if (retryable) return
-    update = { status: 'failed', failure: (e as GatewayError).message.slice(0, 200) }
+    if (outcomeUnknown(e)) return
+    // WeChat Pay refused it outright, so no refund was made under this number.
+    result = { status: 'failed', reason: (e as GatewayError).message.slice(0, 200) }
   }
-  immediate(db, (tx) => {
-    const changed = tx
-      .update(refunds)
-      .set({ ...update, updatedAt: deps.now() })
-      .where(and(eq(refunds.id, refundId), eq(refunds.status, 'pending')))
-      .run()
-    if (changed.changes && update.status === 'succeeded') closeRefundedRequests(tx, row.order.id)
-  })
+  applyRefundState(deps, row.refund.outRefundNo, result, ['pending'])
 }
 
-/** Applies a refund result from a callback or query. */
-export function settleRefund(deps: Deps, outRefundNo: string, result: RefundState) {
-  if (result.status === 'processing') return
-  immediate(deps.db, (tx) => {
-    const settled = tx
-      .update(refunds)
-      .set(
-        result.status === 'failed'
-          ? { status: 'failed', failure: result.reason, updatedAt: deps.now() }
-          : { status: 'succeeded', providerRefundId: result.refundId, updatedAt: deps.now() },
-      )
-      .where(
-        and(
-          eq(refunds.outRefundNo, outRefundNo),
-          inArray(refunds.status, ['pending', 'processing']),
-        ),
-      )
-      .returning({ orderId: refunds.orderId })
+/** Whether a failed call to WeChat Pay may still have taken effect, or is worth another try. */
+function outcomeUnknown(e: unknown) {
+  if (!(e instanceof GatewayError)) return true
+  const status = e.status ?? 0
+  return UNKNOWN_OUTCOME.has(e.code) || status === 429 || status >= 500
+}
+
+/**
+ * Records what WeChat Pay says about a refund number, for a row in one of `from`. Returns
+ * whether a row changed.
+ */
+function applyRefundState(
+  deps: Deps,
+  outRefundNo: string,
+  result: RefundState,
+  from: (typeof refunds.$inferSelect)['status'][],
+) {
+  return immediate(deps.db, (tx) => {
+    const row = tx
+      .select({ refund: refunds, total: orders.amount })
+      .from(refunds)
+      .innerJoin(orders, eq(orders.id, refunds.orderId))
+      .where(and(eq(refunds.outRefundNo, outRefundNo), inArray(refunds.status, from)))
       .get()
-    if (settled && result.status === 'succeeded') closeRefundedRequests(tx, settled.orderId)
+    if (!row) return false
+    const update = stateUpdate(result)
+    // A refund marked failed that went through after all, while another refund of the same order
+    // was made meanwhile: both are real, so record it, but warn staff that the order has been
+    // refunded more than it was paid.
+    if (
+      row.refund.status === 'failed' &&
+      result.status !== 'failed' &&
+      refundedSoFar(tx, row.refund.orderId) + row.refund.amount > row.total
+    ) {
+      update.failure = OVER_REFUNDED_NOTE
+      deps.log('refund settled after a replacement, order over-refunded', {
+        refundId: row.refund.id,
+        orderId: row.refund.orderId,
+      })
+    }
+    tx.update(refunds)
+      .set({ ...update, updatedAt: deps.now() })
+      .where(eq(refunds.id, row.refund.id))
+      .run()
+    if (result.status === 'succeeded') closeRefundedRequests(tx, row.refund.orderId)
+    return true
   })
 }
 
-/** Retries stuck pending refunds and polls processing ones. Run by the sweeper. */
+/**
+ * Applies a refund result from a callback or query. A success also settles a row marked failed
+ * under the same number: WeChat Pay has the last word on whether the money went back.
+ */
+export function settleRefund(deps: Deps, outRefundNo: string, result: RefundState) {
+  applyRefundState(
+    deps,
+    outRefundNo,
+    result,
+    result.status === 'succeeded' ? ['pending', 'processing', 'failed'] : ['pending', 'processing'],
+  )
+}
+
+/** What WeChat Pay has under a refund number, or null when it never received it. */
+async function lookUpRefund(deps: Deps, outRefundNo: string): Promise<RefundState | null> {
+  try {
+    return await deps.gateway.queryRefund(outRefundNo)
+  } catch (e) {
+    if (e instanceof GatewayError && e.code === 'RESOURCE_NOT_EXISTS') return null
+    throw e
+  }
+}
+
+/**
+ * Settles stuck pending refunds and polls processing ones. Run by the sweeper. A pending refund
+ * may have reached WeChat Pay with the answer lost, so it is asked about first and sent (under
+ * the same number) only when WeChat Pay never got it.
+ */
 export async function sweepRefunds(deps: Deps) {
   const cutoff = new Date(deps.now().getTime() - 60_000)
   const rows = deps.db
@@ -142,8 +215,9 @@ export async function sweepRefunds(deps: Deps) {
     .all()
   for (const row of rows) {
     try {
-      if (row.status === 'pending') await submitRefund(deps, row.id)
-      else settleRefund(deps, row.outRefundNo, await deps.gateway.queryRefund(row.outRefundNo))
+      const state = await lookUpRefund(deps, row.outRefundNo)
+      if (state) settleRefund(deps, row.outRefundNo, state)
+      else if (row.status === 'pending') await submitRefund(deps, row.id)
     } catch (e) {
       deps.log('refund sweep failed', { refundId: row.id, error: (e as Error).message })
     }
@@ -151,30 +225,66 @@ export async function sweepRefunds(deps: Deps) {
 }
 
 /**
- * Puts a failed refund back in the queue and sends it. It gets a new refund number: WeChat Pay
- * answers a repeated number with the old, failed refund.
+ * Puts a failed refund back in the queue and sends it. WeChat Pay is asked about the old refund
+ * number first: a refund marked failed may have gone through after all, and sending a new number
+ * then would refund twice. A new number is used only when WeChat Pay closed the old one (it
+ * answers a repeated number with the old, closed refund); one it never received is sent again
+ * as it is.
  */
-export async function retryRefund(deps: Deps, refundId: number) {
+export async function retryRefund(
+  deps: Deps,
+  refundId: number,
+): Promise<'resent' | 'updated' | false> {
   const now = deps.now()
-  const changed = immediate(deps.db, (tx) =>
-    tx
-      .update(refunds)
-      .set({ status: 'pending', failure: null, outRefundNo: newOutRefundNo(now), updatedAt: now })
-      .where(and(eq(refunds.id, refundId), eq(refunds.status, 'failed')))
-      .run(),
-  )
-  if (changed.changes === 0) {
+  const row = deps.db
+    .select({ refund: refunds, provider: orders.provider })
+    .from(refunds)
+    .innerJoin(orders, eq(orders.id, refunds.orderId))
+    .where(eq(refunds.id, refundId))
+    .get()
+  if (row?.refund.status !== 'failed') {
     // A repeated retry finds the refund already on its way, which is what it asked for.
-    const row = deps.db
-      .select({ status: refunds.status })
-      .from(refunds)
-      .where(eq(refunds.id, refundId))
-      .get()
-    if (row && ['pending', 'processing', 'succeeded'].includes(row.status)) return false
+    if (row && ['pending', 'processing', 'succeeded'].includes(row.refund.status)) return false
     throw new ApiError(409, 'refund_not_failed', '只能重试失败的退款')
   }
+  const old = row.refund.outRefundNo
+  let outRefundNo = old
+  if (row.provider === 'wechat') {
+    let state: RefundState | null
+    try {
+      state = await lookUpRefund(deps, old)
+    } catch (e) {
+      deps.log('refund query failed', { refundId, error: (e as Error).message })
+      throw new ApiError(502, 'payment_unavailable', '微信支付暂时不可用，请稍后再试')
+    }
+    if (state && state.status !== 'failed') {
+      // On its way or done under the old number: record that instead of refunding again.
+      return applyRefundState(deps, old, state, ['failed']) ? 'updated' : false
+    }
+    if (state) outRefundNo = newOutRefundNo(now)
+  }
+  const changed = immediate(deps.db, (tx) => {
+    // Other refunds of the order made since it failed may leave too little to refund it again.
+    const total = tx
+      .select({ amount: orders.amount })
+      .from(orders)
+      .where(eq(orders.id, row.refund.orderId))
+      .get()?.amount
+    if (total === undefined || refundedSoFar(tx, row.refund.orderId) + row.refund.amount > total) {
+      throw new ApiError(409, 'refund_too_large', '退款金额超过可退金额')
+    }
+    return tx
+      .update(refunds)
+      .set({ status: 'pending', failure: null, outRefundNo, updatedAt: now })
+      .where(
+        and(eq(refunds.id, refundId), eq(refunds.status, 'failed'), eq(refunds.outRefundNo, old)),
+      )
+      .run()
+  })
+  // Another retry got there first.
+  if (changed.changes === 0) return false
   await submitRefund(deps, refundId)
-  return true
+  return 'resent'
 }
 
 /**

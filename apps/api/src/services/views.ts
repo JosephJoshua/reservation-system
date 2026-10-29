@@ -140,6 +140,7 @@ export function bookingViews(
       paidOffline: order?.provider === 'offline',
       packageName: b.packageId ? (pkgNames.get(b.packageId) ?? null) : null,
       orderId: order?.id ?? null,
+      paymentIssue: order?.anomaly ? (order.anomalyHandledAt ? 'handled' : 'open') : null,
       payBy: status === 'pending_payment' ? (order?.expiresAt?.toISOString() ?? null) : null,
       cancelDeadline: deadline.toISOString(),
       movedLate: deadline.getTime() !== cancelDeadline(b.startsAt, rules).getTime(),

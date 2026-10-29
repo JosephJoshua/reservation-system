@@ -57,7 +57,11 @@ function subtitle(b: BookingDto, now: number): string {
           ? '已过免费取消时间'
           : '你已取消本节课'
     case 'expired':
-      return '未在规定时间内支付'
+      return b.paymentIssue === 'open'
+        ? '付款异常，场馆会联系你处理'
+        : b.paymentIssue === 'handled'
+          ? '付款异常，场馆已处理'
+          : '未在规定时间内支付'
   }
 }
 

@@ -471,6 +471,7 @@ function useStudent(id: number, onChanged: () => void) {
         <OfflineSale
           studentId={s.id}
           products={products.data ?? []}
+          onProductsChanged={() => void products.reload()}
           onClose={() => setSelling(false)}
           onDone={() => {
             setSelling(false)
@@ -1223,11 +1224,14 @@ function priceNow(p: PackageProduct) {
 function OfflineSale({
   studentId,
   products,
+  onProductsChanged,
   onClose,
   onDone,
 }: {
   studentId: number
   products: PackageProduct[]
+  /** Another admin changed what a package grants: load the products again and stay open. */
+  onProductsChanged: () => void
   onClose: () => void
   onDone: () => void
 }) {
@@ -1256,11 +1260,21 @@ function OfflineSale({
             amount: fen,
             method,
             note,
+            // Refused if another admin changed what the package grants since this was loaded.
+            expectedTerms: product && {
+              lessonTypeId: product.lessonTypeId,
+              coachIds: product.coachIds,
+              lessonCount: product.lessonCount,
+              validityDays: product.validityDays,
+            },
           },
           { key },
         ),
       '已记录',
-      { onStale: onDone },
+      {
+        onStale: (e) => (e.code === 'package_changed' ? onProductsChanged() : onDone()),
+        stale: ['package_changed'],
+      },
     )
     if (ok) onDone()
   }

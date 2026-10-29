@@ -1,9 +1,13 @@
 import { orderKindLabels, orderTitle } from '@rs/shared'
-import { Select, Tag } from 'tdesign-react'
+import { useState } from 'react'
+import { Button, Checkbox, Dialog, Input, Select, Tag } from 'tdesign-react'
+import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
+import { Field } from '../Field'
 import { fmtDateTime, yuan } from '../format'
-import { offlineMethodLabel, orderStatusLabel, providerOptions } from '../labels'
+import { attempt, useSubmitting } from '../hooks'
+import { offlineMethodLabel, orderAnomalyLabel, orderStatusLabel, providerOptions } from '../labels'
 import {
   DateFilter,
   Filter,
@@ -25,7 +29,7 @@ const statusOptions = Object.entries(orderStatusLabel).map(([value, [label]]) =>
 /** Every order, or with `studentId` one student's, as on their 学员详情. */
 export function Orders({ studentId }: { studentId?: number } = {}) {
   const filters = useListFilters(
-    { from: '', to: '', q: '', status: '', kind: '', provider: '' },
+    { from: '', to: '', q: '', status: '', kind: '', provider: '', anomaly: '' },
     {
       path: studentId ? undefined : '#/orders',
       valid: {
@@ -34,18 +38,24 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
         status: oneOf(...statusOptions.map((o) => o.value)),
         kind: oneOf(...kindOptions.map((o) => o.value)),
         provider: oneOf(...providerOptions.map((o) => o.value)),
+        anomaly: oneOf('1'),
       },
     },
   )
   const f = filters.values
+  // The overview links here for payments that need a person.
+  const anomaly = f.anomaly === '1'
   const params = new URLSearchParams()
   if (studentId) params.set('studentId', String(studentId))
   setRange(params, f.from, f.to)
-  for (const key of ['q', 'status', 'kind', 'provider'] as const)
+  for (const key of ['q', 'status', 'kind', 'provider', 'anomaly'] as const)
     if (f[key]) params.set(key, f[key])
   const list = usePagedList<Order>(`/admin/orders?${params}`, filters)
-  const more = ['status', 'kind', 'provider'] as const
+  const { reload } = list
+  const more = ['status', 'kind', 'provider', 'anomaly'] as const
   const filtersSet = filters.changed([...more, 'from', 'q'])
+  const open = (o: Order) => o.anomaly !== null && o.anomalyHandledAt === null
+  const [handling, setHandling] = useState<Order | null>(null)
   return (
     <div className="paged-list">
       <FilterBar
@@ -92,13 +102,19 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
                 options={providerOptions}
               />
             </Filter>
+            <Filter label="">
+              <Checkbox checked={anomaly} onChange={(v) => filters.set({ anomaly: v ? '1' : '' })}>
+                支付异常待处理
+              </Checkbox>
+            </Filter>
           </>
         }
         set={filters.changed([...more])}
         onClear={() => filters.reset([...more])}
         actions={
-          // The export has no student filter, so it stays on the 订单 page.
-          !studentId && (
+          // The export has no student or 支付异常 filter, so it stays on the plain 订单 page.
+          !studentId &&
+          !anomaly && (
             <ExportButton
               kind="orders"
               range={f.from && f.to ? [f.from, f.to] : undefined}
@@ -123,7 +139,14 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
         loading={list.loading}
         data={list.rows}
         empty={
-          list.error ?? (filtersSet ? '没有符合条件的订单' : studentId ? '还没有订单' : '没有订单')
+          list.error ??
+          (anomaly && !filters.changed(['status', 'kind', 'provider', 'from', 'q'])
+            ? '没有待处理的支付异常'
+            : filtersSet
+              ? '没有符合条件的订单'
+              : studentId
+                ? '还没有订单'
+                : '没有订单')
         }
         columns={[
           {
@@ -168,6 +191,20 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
                     {label}
                   </Tag>
                   {row.refunded > 0 && <span className="muted"> 已退 {yuan(row.refunded)}</span>}
+                  {row.anomaly && (
+                    <div>
+                      <Tag theme={open(row) ? 'danger' : 'default'} variant="light">
+                        {open(row) ? '支付异常' : '异常已处理'}
+                      </Tag>
+                      <div className="muted">
+                        {orderAnomalyLabel[row.anomaly]}
+                        {row.anomaly === 'amount_mismatch' && row.anomalyAmount !== null
+                          ? `（实付 ${yuan(row.anomalyAmount)}）`
+                          : ''}
+                      </div>
+                      {row.anomalyNote && <div className="muted">处理：{row.anomalyNote}</div>}
+                    </div>
+                  )}
                 </span>
               )
             },
@@ -179,9 +216,81 @@ export function Orders({ studentId }: { studentId?: number } = {}) {
             width: 210,
             cell: ({ row }) => <span className="muted nowrap">{row.outTradeNo}</span>,
           },
+          ...(list.rows.some(open)
+            ? [
+                {
+                  colKey: 'actions',
+                  title: '操作',
+                  width: 120,
+                  cell: ({ row }: { row: Order }) =>
+                    open(row) && (
+                      <Button variant="text" theme="warning" onClick={() => setHandling(row)}>
+                        标为已处理
+                      </Button>
+                    ),
+                },
+              ]
+            : []),
         ]}
       />
       <Pager list={list} filters={filters} />
+      {handling && (
+        <AnomalyHandled
+          order={handling}
+          onClose={() => setHandling(null)}
+          onDone={() => {
+            setHandling(null)
+            void reload()
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** Staff say what they did about a flagged payment, which is kept and logged. */
+function AnomalyHandled({
+  order,
+  onClose,
+  onDone,
+}: {
+  order: Order
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [note, setNote] = useState('')
+  const submitting = useSubmitting()
+  const submit = async () => {
+    if (
+      await attempt(
+        () => api('POST', `/admin/orders/${order.id}/anomaly-handled`, { note: note.trim() }),
+        '已标记处理',
+        { onStale: onDone },
+      )
+    )
+      onDone()
+  }
+  return (
+    <Dialog
+      visible
+      header="标为已处理"
+      confirmBtn={{ content: '确认', disabled: !note.trim(), loading: submitting }}
+      onConfirm={submit}
+      onClose={onClose}
+    >
+      <div className="fields">
+        <p className="muted">
+          订单 {order.outTradeNo}。请先在微信支付商户平台核对这笔付款，需要时在商户平台退款。
+        </p>
+        <Field label="处理说明">
+          <Input
+            value={note}
+            maxlength={100}
+            placeholder="如：已在商户平台全额退款"
+            onChange={(v) => setNote(String(v))}
+          />
+        </Field>
+      </div>
+    </Dialog>
   )
 }

@@ -4,6 +4,7 @@ import {
   type Grip,
   type InvoiceTitle,
   LINK_KINDS,
+  type PackageTerms,
   type RuleOverrides,
   type StaffRole,
   type StudentLevel,
@@ -528,9 +529,20 @@ export const orders = sqliteTable(
     transactionId: text('transaction_id'),
     bookingId: integer('booking_id'),
     productId: integer('product_id'),
+    // A package order's terms as the student bought them; the package is made from these, not
+    // from the product as it is when the payment lands. Null on orders from before this was kept.
+    packageTerms: text('package_terms', { mode: 'json' }).$type<PackageTerms & { name: string }>(),
     expiresAt: instant('expires_at'),
     paidAt: instant('paid_at'),
     note: text('note').notNull().default(''),
+    // A payment WeChat Pay reported that could not be applied, for staff to sort out by hand:
+    // a paid amount other than the order's, or an order already refunded at WeChat Pay.
+    anomaly: text('anomaly', { enum: ['amount_mismatch', 'refunded'] }),
+    // What WeChat Pay actually charged, in fen, when that differs from `amount`.
+    anomalyAmount: integer('anomaly_amount'),
+    anomalyHandledAt: instant('anomaly_handled_at'),
+    // What staff did about it, entered when marking it handled.
+    anomalyNote: text('anomaly_note'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -565,6 +577,9 @@ export const refunds = sqliteTable(
     packageId: integer('package_id'),
     providerRefundId: text('provider_refund_id'),
     failure: text('failure'),
+    // WeChat Pay reported ABNORMAL: the money could not go back to the card, and staff must handle
+    // it on the merchant platform. The refund stays processing meanwhile.
+    abnormal: integer('abnormal', { mode: 'boolean' }).notNull().default(false),
     createdAt: createdAt(),
     updatedAt: instant('updated_at').notNull(),
   },
