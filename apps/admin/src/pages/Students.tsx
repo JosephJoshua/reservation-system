@@ -1008,19 +1008,23 @@ function StudentPage({ id }: { id: number }) {
   }
   // The tab the address names, also when it changes while the page is open, such as a link to
   // ?tab=packages from this student's own page.
+  // Counts those changes, so a tab this login can't open is put right each time it is named.
+  const [named, setNamed] = useState(0)
   useEffect(() => {
     const on = () => {
       if (!new RegExp(`^#/students/${id}(?=[?/]|$)`).test(window.location.hash)) return
       setTab(hashParam('tab'))
+      setNamed((n) => n + 1)
     }
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [id])
   // Takes a tab that fell back to 概况 out of the address too.
   const fellBack = picked !== null && picked !== tab
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `named` runs it again for each link
   useEffect(() => {
     if (fellBack) history.replaceState(history.state, '', `#/students/${id}`)
-  }, [fellBack, id])
+  }, [fellBack, id, named])
 
   const now = Date.now()
   const active = s?.packages.filter((p) => p.status === 'active') ?? []
