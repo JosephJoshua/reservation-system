@@ -200,11 +200,16 @@ export function applyPayment(
     const booking = tx.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
     if (!booking) return []
     let reason = '时段已被预约，自动退款'
-    // The venue cannot give the lesson any more (闭馆, 请假, the coach stopped): the hold ends
-    // and the payment goes back, as for a released slot.
-    const disruption = booking.status === 'pending_payment' ? disruptionOf(tx, booking) : null
+    // The venue cannot give the lesson any more (闭馆, 请假, the coach stopped): a hold ends, one
+    // already over is not revived, and the payment goes back, saying why.
+    const disruption =
+      booking.status === 'pending_payment' || booking.status === 'expired'
+        ? disruptionOf(tx, booking)
+        : null
     if (disruption) {
-      tx.update(bookings).set({ status: 'expired' }).where(eq(bookings.id, booking.id)).run()
+      if (booking.status === 'pending_payment') {
+        tx.update(bookings).set({ status: 'expired' }).where(eq(bookings.id, booking.id)).run()
+      }
       reason = `${DISRUPTION_TEXT[disruption]}，自动退款`
     } else if (
       booking.status === 'pending_payment' ||

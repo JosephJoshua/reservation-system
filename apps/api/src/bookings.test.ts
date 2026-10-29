@@ -10,6 +10,7 @@ import {
   refunds,
   scheduleExceptions,
 } from './db/schema'
+import { applyPayment } from './services/orders'
 import { sweep } from './sweeper'
 import { type Harness, setup } from './test/harness'
 
@@ -1825,5 +1826,33 @@ describe('lessons the venue cannot give', () => {
       .where(eq(refunds.bookingId, b?.id ?? 0))
       .get()
     expect(refund).toMatchObject({ amount: b?.price, reason: '这节课的时间场馆闭馆，自动退款' })
+  })
+
+  it('refunds a late payment for a lapsed hold the coach is now on leave for, saying why', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id, lessonDay, 10).id, lesson.id)
+    const order = h.db.select().from(orders).where(eq(orders.id, res.json.orderId)).get()
+    h.db.update(orders).set({ status: 'closed' }).run()
+    h.db.update(bookings).set({ status: 'expired' }).run()
+    await stopped(h, coach.id, 'off')
+    applyPayment(h.deps, order?.outTradeNo ?? '', {
+      state: 'paid',
+      transactionId: 't1',
+      paidAt: h.deps.now(),
+      amount: order?.amount ?? 0,
+    })
+    const b = h.db.select().from(bookings).where(eq(bookings.id, res.json.bookingId)).get()
+    expect(b?.status).toBe('expired')
+    const refund = h.db
+      .select()
+      .from(refunds)
+      .where(eq(refunds.bookingId, b?.id ?? 0))
+      .get()
+    expect(refund).toMatchObject({
+      amount: order?.amount,
+      reason: '教练这节课的时间请假，自动退款',
+    })
   })
 })

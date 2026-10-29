@@ -37,6 +37,8 @@ const STATUS: Record<BookingDto['status'], { title: string; icon: string; tone: 
 function subtitle(b: BookingDto, now: number): string {
   switch (b.status) {
     case 'pending_payment': {
+      // Payment is refused for a lesson the venue cannot give; only cancelling is left.
+      if (b.disruption) return `${DISRUPTION_TEXT[b.disruption]}，请取消后重新预约`
       const left = b.payBy ? Math.max(0, Date.parse(b.payBy) - now) : 0
       const mm = String(Math.floor(left / 60000)).padStart(2, '0')
       const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, '0')
