@@ -1006,6 +1006,16 @@ function StudentPage({ id }: { id: number }) {
       `#/students/${id}${t === 'overview' ? '' : `?tab=${t}`}`,
     )
   }
+  // The tab the address names, also when it changes while the page is open, such as a link to
+  // ?tab=packages from this student's own page.
+  useEffect(() => {
+    const on = () => {
+      if (!new RegExp(`^#/students/${id}(?=[?/]|$)`).test(window.location.hash)) return
+      setTab(hashParam('tab'))
+    }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [id])
   // Takes a tab that fell back to 概况 out of the address too.
   const fellBack = picked !== null && picked !== tab
   useEffect(() => {
