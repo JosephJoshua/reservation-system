@@ -254,6 +254,25 @@ describe('front desk 签到', () => {
     })
   })
 
+  it('drops the whole mark when the venue cancels mid-lesson', async () => {
+    const h = setup()
+    const { bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T02:05:00Z')
+    const admin = await h.admin()
+    const mark = { attendance: 'attended' }
+    const put = `/admin/bookings/${bookingId}/attendance`
+    expect((await h.call('PUT', put, mark, admin)).status).toBe(204)
+    const cancel = `/admin/bookings/${bookingId}/cancel`
+    expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(204)
+    expect(row(h, bookingId)).toMatchObject({
+      status: 'cancelled',
+      attendance: null,
+      attendanceAt: null,
+      attendanceBy: null,
+      attendanceStaffId: null,
+    })
+  })
+
   it('stops coach marks when the venue turns 教练点名 off', async () => {
     const h = setup()
     const { coachToken, bookingId } = await lesson(h)

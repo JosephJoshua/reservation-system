@@ -286,6 +286,10 @@ export function moveBooking(
             !!options.anyTime &&
             slot.lessonTypeId === null &&
             outsideHours(tx, slot.coachId, slot),
+          // A mark made for the old time says nothing about the new one.
+          ...(slot.startsAt.getTime() !== booking.startsAt.getTime()
+            ? { attendance: null, attendanceAt: null, attendanceBy: null, attendanceStaffId: null }
+            : {}),
           ...coachKnows,
         })
         .where(

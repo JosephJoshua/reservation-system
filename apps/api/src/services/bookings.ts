@@ -548,6 +548,8 @@ export async function cancelBooking(
         // A venue cancel mid-lesson drops a mark the coach already made.
         attendance: null,
         attendanceAt: null,
+        attendanceBy: null,
+        attendanceStaffId: null,
       })
       .where(and(eq(bookings.id, booking.id), eq(bookings.status, 'confirmed')))
       .run()
