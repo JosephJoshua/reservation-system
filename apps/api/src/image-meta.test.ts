@@ -130,4 +130,88 @@ describe('image metadata', () => {
     expect(out.readUInt32LE(4)).toBe(out.length - 8)
     expect(out[20]).toBe(0)
   })
+
+  it('keeps one image only: no APPn between scans, nothing after its end', () => {
+    const sos = (data: number[]) =>
+      Buffer.concat([seg(0xda, Buffer.from([1, 1, 0, 0, 0x3f, 0])), Buffer.from(data)])
+    // Coded data with a coded 0xFF (FF00) and a restart marker in it.
+    const scan1 = sos([0x12, 0xff, 0x00, 0x34, 0xff, 0xd0, 0x56])
+    const scan2 = sos([0x78, 0xff, 0x00, 0x9a])
+    const dht = seg(0xc4, Buffer.from([0x10, 1, 2, 3]))
+    const gps = seg(0xe1, exifWithGps())
+    const tail = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      gps,
+      Buffer.from('....ftypmp42 motion photo video', 'latin1'),
+    ])
+    const photo = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      jfif,
+      scan1,
+      gps,
+      seg(0xfe, Buffer.from('between scans', 'latin1')),
+      dht,
+      scan2,
+      Buffer.from([0xff, 0xd9]),
+      tail,
+    ])
+    const out = stripImageMetadata(photo, 'jpg')
+    expect(out).toEqual(
+      Buffer.concat([
+        Buffer.from([0xff, 0xd8]),
+        jfif,
+        scan1,
+        dht,
+        scan2,
+        Buffer.from([0xff, 0xd9]),
+      ]),
+    )
+  })
+
+  it('refuses a JPEG of thousands of tiny segments quickly', () => {
+    const b = Buffer.alloc(5 * 1024 * 1024)
+    b[0] = 0xff
+    b[1] = 0xd8
+    for (let i = 2; i + 3 < b.length; i += 4) {
+      b[i] = 0xff
+      b[i + 1] = 0xe0
+      b[i + 3] = 2
+    }
+    const started = performance.now()
+    expect(() => stripImageMetadata(b, 'jpg')).toThrow('图片无法识别')
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+
+  it('goes through a PNG of many tiny chunks without a copy per chunk', () => {
+    const b = Buffer.alloc(5 * 1024 * 1024)
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b)
+    for (let i = 8; i + 12 <= b.length; i += 12) b.write('IDAT', i + 4, 'latin1')
+    const started = performance.now()
+    expect(stripImageMetadata(b, 'png').length).toBe(b.length)
+    expect(performance.now() - started).toBeLessThan(1000)
+  })
+
+  it('cuts a PNG after IEND and a WebP after its RIFF size', () => {
+    const chunk = (kind: string, body: Buffer) => {
+      const len = Buffer.alloc(4)
+      len.writeUInt32BE(body.length)
+      return Buffer.concat([len, Buffer.from(kind, 'latin1'), body, Buffer.alloc(4)])
+    }
+    const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const png = Buffer.concat([
+      sig,
+      chunk('IHDR', Buffer.alloc(13)),
+      chunk('IEND', Buffer.alloc(0)),
+    ])
+    const extra = Buffer.from('GPS 31.23N appended', 'latin1')
+    expect(stripImageMetadata(Buffer.concat([png, extra]), 'png')).toEqual(png)
+    const vp8 = Buffer.concat([
+      Buffer.from('VP8 ', 'latin1'),
+      Buffer.from([4, 0, 0, 0, 9, 9, 9, 9]),
+    ])
+    const head = Buffer.from('RIFF\0\0\0\0WEBP', 'latin1')
+    head.writeUInt32LE(vp8.length + 4, 4)
+    const webp = Buffer.concat([head, vp8])
+    expect(stripImageMetadata(Buffer.concat([webp, extra]), 'webp')).toEqual(webp)
+  })
 })
