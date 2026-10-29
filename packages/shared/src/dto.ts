@@ -3,7 +3,7 @@ import type { Attendance, AttendanceBy } from './availability'
 import type { OrderInvoiceDto } from './invoices'
 import type { LinkKind, LinkTarget } from './links'
 import type { PriceTag } from './pricing'
-import type { BookingTerms } from './rules'
+import type { BookingTerms, Disruption } from './rules'
 import type { BookingRules } from './settings'
 
 export interface LessonTypeDto {
@@ -133,6 +133,11 @@ export interface BookingDto {
    * or move until it starts.
    */
   movedLate: boolean
+  /**
+   * Why the venue cannot give the lesson as booked (闭馆, the coach's 请假, an inactive coach):
+   * free to cancel until it starts.
+   */
+  disruption: Disruption | null
   canCancel: boolean
   /** The student can move it to another time now. */
   canMove: boolean

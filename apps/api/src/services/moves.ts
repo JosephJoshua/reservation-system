@@ -31,6 +31,7 @@ import {
 } from './bookings'
 import { priceFor } from './catalog'
 import { coachNowKnows } from './coach-notices'
+import { disruptionOf } from './disruption'
 import { moveSummaries } from './move-history'
 import { assertNotOff, openTimes, outsideHours, type SlotTarget, targetSlot } from './schedule'
 import { ruleBook } from './settings'
@@ -128,7 +129,12 @@ function checkStudentMove(
   const summary = moveSummaries(tx, [booking.id]).get(booking.id)
   const error = studentMoveError({
     status: booking.status,
-    deadline: freeCancelDeadline(booking.startsAt, rules, summary?.lastMove),
+    deadline: freeCancelDeadline(
+      booking.startsAt,
+      rules,
+      summary?.lastMove,
+      disruptionOf(tx, booking),
+    ),
     now,
     movesUsed: summary?.studentMoves ?? 0,
     rules,

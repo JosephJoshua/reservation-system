@@ -128,15 +128,57 @@ export function studentMoveError(input: {
 }
 
 /**
+ * Why the venue cannot give a lesson as booked: it falls in a 闭馆 (`closed`) or in its coach's
+ * 请假 (`off`), or its coach no longer teaches (`inactive`). Null when nothing stands in its way.
+ */
+export type Disruption = 'closed' | 'off' | 'inactive'
+
+/** What a student is told about each, in front of what follows from it. */
+export const DISRUPTION_TEXT: Record<Disruption, string> = {
+  closed: '这节课的时间场馆闭馆',
+  off: '教练这节课的时间请假',
+  inactive: '教练已停止授课',
+}
+
+/**
+ * What stands in the way of a lesson, the 闭馆 first. `offs` are 请假 and 闭馆 rows (coachId null
+ * for 闭馆); 加班 rows and other coaches' 请假 are ignored.
+ */
+export function lessonDisruption(
+  lesson: { coachId: number; startsAt: Date; endsAt: Date },
+  coachActive: boolean,
+  offs: readonly {
+    coachId: number | null
+    kind: 'off' | 'extra'
+    startsAt: Date
+    endsAt: Date
+  }[],
+): Disruption | null {
+  const hit = offs.filter(
+    (o) =>
+      o.kind === 'off' &&
+      (o.coachId === null || o.coachId === lesson.coachId) &&
+      o.startsAt < lesson.endsAt &&
+      o.endsAt > lesson.startsAt,
+  )
+  if (hit.some((o) => o.coachId === null)) return 'closed'
+  if (hit.length) return 'off'
+  return coachActive ? null : 'inactive'
+}
+
+/**
  * Last instant a student can cancel a lesson for free, or move it. When the venue or the coach
  * last moved it, and only after the usual deadline for its new time, the student never chose
- * that time, so they can cancel or move it for free until it starts.
+ * that time, so they can cancel or move it for free until it starts. The same holds while the
+ * venue cannot give the lesson as booked (`disruption`): the student is not to pay for that.
  */
 export function freeCancelDeadline(
   startsAt: Date,
   rules: Pick<BookingRules, 'cancelDeadlineHours'>,
   lastMove?: { by: 'student' | 'coach' | 'venue'; at: Date },
+  disruption?: Disruption | null,
 ): Date {
+  if (disruption) return startsAt
   const usual = cancelDeadline(startsAt, rules)
   return lastMove && lastMove.by !== 'student' && lastMove.at > usual ? startsAt : usual
 }

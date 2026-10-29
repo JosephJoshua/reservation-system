@@ -2,6 +2,7 @@ import {
   type BookingDto,
   COACH_CANCEL_PREFIX,
   cancellationOutcome,
+  DISRUPTION_TEXT,
   type HomeDto,
 } from '../../lib/shared'
 import {
@@ -210,10 +211,13 @@ Page({
       address: this.venue?.address ?? '',
       canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > serverNow(),
       cancelRule:
-        // Moved by the venue or coach after the usual deadline: free until it starts.
-        (b.movedLate
-          ? '课程时间已调整，开课前可免费取消。'
-          : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
+        // The venue cannot give it as booked, or moved it after the usual deadline: free until
+        // it starts.
+        (b.disruption
+          ? `${DISRUPTION_TEXT[b.disruption]}，开课前可免费取消。`
+          : b.movedLate
+            ? '课程时间已调整，开课前可免费取消。'
+            : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
         (b.canMove
           ? `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
           : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
