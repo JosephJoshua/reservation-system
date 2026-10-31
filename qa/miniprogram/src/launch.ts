@@ -38,16 +38,19 @@ export async function openMiniProgram(projectPath: string): Promise<MiniProgram>
     })
   }
   recompile(projectPath)
-  const miniProgram = await automator.connect({ wsEndpoint })
-  // Right after a compile the app may have no page yet, and the first call fails on its missing
-  // page meta, so retry for a few seconds.
+  // Right after a compile the automation server may not be listening yet, and the app may have no
+  // page, so the first calls fail on a refused connection or missing page meta. Retry for a while.
   for (let attempt = 1; ; attempt++) {
+    let miniProgram: MiniProgram | undefined
     try {
+      miniProgram = await automator.connect({ wsEndpoint })
       await miniProgram.callWxMethod('clearStorageSync')
       await miniProgram.reLaunch('/pages/booking/index')
       return miniProgram
     } catch (err) {
-      if (attempt >= 8) throw err
+      await miniProgram?.disconnect().catch(() => {})
+      if (attempt >= 10) throw err
+      console.log(`simulator not ready (${(err as Error).message}), retrying`)
       await new Promise((resolve) => setTimeout(resolve, 1500))
     }
   }
