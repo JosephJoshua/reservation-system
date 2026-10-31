@@ -35,6 +35,8 @@ export function setup(
   runMigrations(db)
   const gateway = new FakeGateway()
   const clock = { now: new Date(options.now ?? '2026-10-23T02:00:00Z') }
+  // created_at defaults to unixepoch(); follow the test clock, not the wall clock.
+  db.$client.function('unixepoch', () => Math.floor(clock.now.getTime() / 1000))
   const logs: { message: string; detail: unknown }[] = []
   const deps: Deps = {
     db,
