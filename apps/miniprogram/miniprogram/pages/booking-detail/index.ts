@@ -282,6 +282,8 @@ Page({
     this.setData({ busy: true })
     try {
       const result = await payOrder(b.orderId, b.price, null, () => !this.left)
+      // A paid 体验课 is no longer one to pay on the other pages.
+      if (b.lessonType.isTrial) getCatalog(true).catch(() => undefined)
       if (this.left) return
       await this.refresh()
       if (result === 'pending' && this.data.booking?.status === 'pending_payment') {

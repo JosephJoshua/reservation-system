@@ -369,6 +369,8 @@ Page({
           showError(e)
           return 'failed' as const
         })
+        // A paid 体验课 is no longer one to pay on the other pages.
+        if (this.data.isTrial) getCatalog(true).catch(() => undefined)
         // Paid but not confirmed yet: say so, so the booking's 待支付 does not invite paying again.
         if (result === 'pending') {
           this.finish(res.bookingId, PAY_PENDING, PAY_PENDING)
