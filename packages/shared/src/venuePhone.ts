@@ -83,7 +83,12 @@ export function dialablePhone(phone: string): string | null {
   const first = numbers(phone)?.[0]
   if (!first) return null
   const digits = first.replace(/\D/g, '')
-  if (!/^\(?\+/.test(first)) return digits
+  if (!/^\(?\+/.test(first)) {
+    // China's code written without the +, as 86 or 0086, is dialled as +86: as plain digits it
+    // would not connect. No mainland number of that length starts with 86.
+    const china = /^(?:00)?86(0?[1-9]\d{8,10})$/.exec(digits)?.[1]
+    return china ? `+86${china.replace(/^0/, '')}` : digits
+  }
   // The trunk 0 some write after the country code, as in +86 (0)10 6234 5678, is not dialled.
   return `+${digits.replace(/^860/, '86')}`
 }

@@ -89,6 +89,15 @@ describe('dialablePhone', () => {
     expect(dialablePhone('0755—12345678')).toBe('075512345678')
   })
 
+  it('dials China written as 86 or 0086 without the + as +86', () => {
+    expect(dialablePhone('86 13900000001')).toBe('+8613900000001')
+    expect(dialablePhone('0086 139 0000 0001')).toBe('+8613900000001')
+    expect(dialablePhone('86 10 6234 5678')).toBe('+861062345678')
+    expect(dialablePhone('86 (0)10 6234 5678')).toBe('+861062345678')
+    // A local number that happens to start with 86 is left alone.
+    expect(dialablePhone('8623 4567')).toBe('86234567')
+  })
+
   it('leaves out an extension after a hyphen that follows a full landline number', () => {
     expect(venuePhoneValid('0571-88888888-8023')).toBe(true)
     expect(dialablePhone('0571-88888888-8023')).toBe('057188888888')
@@ -107,7 +116,7 @@ describe('dialablePhone', () => {
     expect(dialablePhone('010 6234 5678')).toBe('01062345678')
     expect(dialablePhone('0755 2345 6789')).toBe('075523456789')
     // 00 starts an international number, not an area code.
-    expect(dialablePhone('0086 139 0000 0001')).toBe('008613900000001')
+    expect(dialablePhone('0086 139 0000 0001')).toBe('+8613900000001')
   })
 
   it('refuses digits after a mainland mobile instead of dialling them', () => {
