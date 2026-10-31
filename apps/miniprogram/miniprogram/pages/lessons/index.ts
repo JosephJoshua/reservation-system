@@ -47,8 +47,15 @@ Page({
 
   request: 0,
   timer: 0,
+  /** Re-renders the list when the next unpaid hold's payment time is up. */
+  lapseTimer: 0,
+  /** The bookings on screen, for that re-render. */
+  rows: [] as BookingDto[],
+  /** Off screen: a load that lands then sets no timer. */
+  hidden: false,
 
   onShow() {
+    this.hidden = false
     this.load()
     // A lesson opens for check-in 30 minutes before it starts and closes when it ends. Kept
     // quiet: offline, a toast every minute would only nag.
@@ -59,11 +66,15 @@ Page({
   },
 
   onHide() {
+    this.hidden = true
     clearInterval(this.timer)
+    clearTimeout(this.lapseTimer)
   },
 
   onUnload() {
+    this.hidden = true
     clearInterval(this.timer)
+    clearTimeout(this.lapseTimer)
   },
 
   onPullDownRefresh() {
@@ -80,14 +91,8 @@ Page({
     try {
       const rows = await api<BookingDto[]>('GET', `/bookings?scope=${this.data.scope}`)
       if (request !== this.request) return
-      // Nothing to check in to while the venue cannot give the lesson.
-      const open = rows.find((b) => b.canCheckIn && !b.disruption)
-      const now = new Date(serverNow())
-      this.setData({
-        state: 'ready',
-        lessons: rows.map((b) => view(b, now)),
-        checkIn: this.data.scope === 'upcoming' && open ? view(open, now) : null,
-      })
+      this.rows = rows
+      this.render()
     } catch (e) {
       if (request !== this.request) return
       // A failed refresh keeps what is on screen.
@@ -97,7 +102,36 @@ Page({
     }
   },
 
+  /**
+   * Shows `rows` as of now, and comes back when the next unpaid hold's payment time is up, so its
+   * 已失效 shows then rather than at the next refresh.
+   */
+  render() {
+    clearTimeout(this.lapseTimer)
+    const rows = this.rows
+    // Nothing to check in to while the venue cannot give the lesson.
+    const open = rows.find((b) => b.canCheckIn && !b.disruption)
+    const now = new Date(serverNow())
+    this.setData({
+      state: 'ready',
+      lessons: rows.map((b) => view(b, now)),
+      checkIn: this.data.scope === 'upcoming' && open ? view(open, now) : null,
+    })
+    const next = Math.min(
+      ...rows
+        .filter((b) => b.status === 'pending_payment' && b.payBy)
+        .map((b) => Date.parse(b.payBy ?? ''))
+        .filter((at) => at > now.getTime()),
+    )
+    // The list refreshes every minute anyway, which schedules this again.
+    if (!this.hidden && Number.isFinite(next) && next - now.getTime() < 3_600_000) {
+      this.lapseTimer = setTimeout(() => this.render(), next - now.getTime() + 200)
+    }
+  },
+
   onScope(e: WechatMiniprogram.CustomEvent<{ value: Scope }>) {
+    clearTimeout(this.lapseTimer)
+    this.rows = []
     this.setData({ scope: e.detail.value, lessons: [], checkIn: null })
     this.load()
   },
