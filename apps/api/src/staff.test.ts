@@ -565,6 +565,45 @@ describe('front-desk booking', () => {
     return { ...seeded, admin, student, slot }
   }
 
+  it('books a trial for a student whose own unpaid trial hold has lapsed, closing it first', async () => {
+    const h = setup()
+    const { coach, trial, admin, student } = await ready(h)
+    const held = await h.call(
+      'POST',
+      '/bookings',
+      { slotId: h.slot(coach.id, '2026-10-26', 10).id, lessonTypeId: trial.id },
+      student,
+    )
+    expect(held.json.status).toBe('pending_payment')
+    const target = { studentId: 1, slotId: h.slot(coach.id, '2026-10-26', 12).id }
+    const body = {
+      ...target,
+      lessonTypeId: trial.id,
+      payWith: 'offline',
+      amount: 5000,
+      method: 'cash',
+    }
+    // While it can still be paid, it is the student's trial.
+    expect((await h.call('POST', '/admin/bookings', body, admin)).json.error.code).toBe(
+      'trial_used',
+    )
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    const quote = await h.call(
+      'POST',
+      '/admin/bookings/quote',
+      { ...target, lessonTypeId: trial.id },
+      admin,
+    )
+    expect(quote.status).toBe(200)
+    const booked = await h.call('POST', '/admin/bookings', body, admin)
+    expect([booked.status, booked.json.error]).toEqual([201, undefined])
+    const old = h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get()
+    expect(old?.status).toBe('expired')
+    expect(h.db.select().from(orders).where(eq(orders.id, held.json.orderId)).get()?.status).toBe(
+      'closed',
+    )
+  })
+
   it('books from the student package and logs it', async () => {
     const h = setup()
     const { lesson, admin, student, slot } = await ready(h)
