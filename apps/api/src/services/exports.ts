@@ -6,6 +6,8 @@ import {
   invoiceTitleKindLabels,
   offlineMethodLabels,
   orderKindLabels,
+  REFUND_PAID_TWICE,
+  REFUND_SETTLE_WAYS,
   toCsv,
   venueDateKey,
   venueInstant,
@@ -595,8 +597,21 @@ function refundsTable(tx: Q, q: ExportQuery): Table {
       channel(o),
       o.provider === 'offline' && r.status === 'pending'
         ? '待线下退还'
-        : refundStatusText[r.status],
-      r.failure ?? '',
+        : r.settledNote !== null
+          ? '已另行退款'
+          : refundStatusText[r.status],
+      // A failed refund settled outside the system: how, and why WeChat Pay failed it, or the
+      // warning that WeChat Pay reported it done too.
+      r.settledNote !== null
+        ? [
+            r.settledHow && REFUND_SETTLE_WAYS[r.settledHow],
+            r.settledNote,
+            r.failure &&
+              (r.failure === REFUND_PAID_TWICE ? r.failure : `微信支付退款失败：${r.failure}`),
+          ]
+            .filter(Boolean)
+            .join('；')
+        : (r.failure ?? ''),
     ]),
   }
 }

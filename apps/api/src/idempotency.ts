@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { and, eq, gt, isNull, lt } from 'drizzle-orm'
-import type { MiddlewareHandler } from 'hono'
+import { and, eq, gt, gte, isNull, lt } from 'drizzle-orm'
+import type { Context, MiddlewareHandler } from 'hono'
 import { coaches, idempotencyKeys, sessions, staff, students } from './db/schema'
 import type { Deps } from './deps'
 import { ApiError } from './errors'
@@ -80,6 +80,56 @@ function liveSession(deps: Deps, token: string, now: Date) {
   return null
 }
 
+// Logins, coach binding, new staff logins and password changes: their answers hold a new session
+// token, which is otherwise kept only as a hash, or their bodies a password, which no repeat should
+// be compared against. Repeating a login is harmless; a repeated new login is refused as taken.
+const CREDENTIAL_PATHS =
+  /^\/api\/(?:admin\/login|auth\/student|coach\/login|coach\/bind|admin\/me\/password|admin\/staff|admin\/staff\/[^/]+\/password)\/?$/
+
+const PHOTO_UPLOAD = /^\/api\/coach\/lessons\/[^/]+\/photos\/?$/
+
+/**
+ * The key a request is kept under, for a signed-in caller's mutating request that carries an
+ * Idempotency-Key; null when it is not kept.
+ */
+function keyOf(deps: Deps, c: Context, now: Date) {
+  const key = c.req.header('Idempotency-Key')
+  const auth = c.req.header('Authorization')
+  // Only signed-in callers: a cached response must never reach anyone but its owner.
+  if (!key || !auth || c.req.method === 'GET' || CREDENTIAL_PATHS.test(c.req.path)) return null
+  if (key.length > 100) throw new ApiError(400, 'invalid_idempotency_key', '请求格式错误')
+  const signedIn = liveSession(deps, auth.replace(/^Bearer /, ''), now)
+  // The route's own auth answers this one.
+  if (!signedIn) return null
+  return {
+    id: sha256([signedIn.principal, c.req.method, c.req.path, key].join('\n')),
+    studentId: signedIn.studentId,
+  }
+}
+
+/**
+ * Whether a request is a repeat of one already kept, finished or still running. Checks a route
+ * makes before the body is read are skipped for a repeat, which gets the first answer instead.
+ */
+export function isKeptRepeat(deps: Deps, c: Context) {
+  const kept = keyOf(deps, c, deps.now())
+  return Boolean(
+    kept &&
+      deps.db
+        .select({ id: idempotencyKeys.id })
+        .from(idempotencyKeys)
+        .where(eq(idempotencyKeys.id, kept.id))
+        .get(),
+  )
+}
+
+/** Whether a student's account was erased at or after a time. */
+function erasedSince(deps: Deps, since: Date) {
+  return Boolean(
+    deps.db.select({ id: students.id }).from(students).where(gte(students.deletedAt, since)).get(),
+  )
+}
+
 /**
  * Makes a signed-in caller's mutating request safe to repeat when it carries an Idempotency-Key:
  * the first request runs, and a repeat with the same key and body to the same endpoint gets the
@@ -92,23 +142,17 @@ function liveSession(deps: Deps, token: string, now: Date) {
  */
 export function idempotency(deps: Deps): MiddlewareHandler {
   return async (c, next) => {
-    const key = c.req.header('Idempotency-Key')
-    const auth = c.req.header('Authorization')
-    // Only signed-in callers: a cached response must never reach anyone but its owner.
-    if (!key || !auth || c.req.method === 'GET') return next()
-    if (key.length > 100) throw new ApiError(400, 'invalid_idempotency_key', '请求格式错误')
     const { db } = deps
     const now = deps.now()
-    const signedIn = liveSession(deps, auth.replace(/^Bearer /, ''), now)
-    // The route's own auth answers this one.
-    if (!signedIn) return next()
-    const id = sha256([signedIn.principal, c.req.method, c.req.path, key].join('\n'))
+    const kept = keyOf(deps, c, now)
+    if (!kept) return next()
+    const { id, studentId } = kept
     const bodyHash = await bodyHashOf(c.req.raw)
 
     for (let wait = 0; ; wait++) {
       const claimed = db
         .insert(idempotencyKeys)
-        .values({ id, bodyHash, studentId: signedIn.studentId, createdAt: now })
+        .values({ id, bodyHash, studentId, createdAt: now })
         .onConflictDoNothing()
         .run()
       if (claimed.changes === 1) break
@@ -118,6 +162,15 @@ export function idempotency(deps: Deps): MiddlewareHandler {
         throw new ApiError(409, 'idempotency_key_reused', '内容已变更，请刷新后重新提交')
       }
       if (seen.status !== null) {
+        // Its answer was dropped when a student deleted their account (see eraseStudent).
+        if (seen.body === null && seen.status !== 204) {
+          // A photo the coach has not saved in feedback yet is in no list a reload shows, so the
+          // coach is told to add it again; the copy already uploaded is swept as unused.
+          if (PHOTO_UPLOAD.test(c.req.path)) {
+            throw new ApiError(409, 'in_progress', '照片未能添加，请重新选择')
+          }
+          throw new ApiError(409, 'in_progress', '已处理，请刷新后查看结果')
+        }
         return new Response(seen.body || null, {
           status: seen.status,
           headers: seen.contentType ? { 'Content-Type': seen.contentType } : {},
@@ -144,9 +197,18 @@ export function idempotency(deps: Deps): MiddlewareHandler {
       // again on top of work already done.
       try {
         if (ok) {
-          const body = await c.res.clone().text()
+          const text = await c.res.clone().text()
+          // A staff member's or coach's answer may show a student whose account was erased
+          // while this ran, after eraseStudent dropped the answers kept so far. Checked after the
+          // last await, so an erasure cannot land between the check and the write.
+          const drop = studentId === null && erasedSince(deps, now)
+          const body = drop ? null : text
           db.update(idempotencyKeys)
-            .set({ status: c.res.status, body, contentType: c.res.headers.get('Content-Type') })
+            .set({
+              status: c.res.status,
+              body,
+              contentType: drop ? null : c.res.headers.get('Content-Type'),
+            })
             .where(and(eq(idempotencyKeys.id, id), isNull(idempotencyKeys.status)))
             .run()
         } else {

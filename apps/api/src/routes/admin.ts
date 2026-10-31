@@ -14,6 +14,7 @@ import {
   offlineMethodLabels,
   offlineMethods,
   packageTermsSchema,
+  REFUND_SETTLE_WAYS,
   type RuleOverrides,
   ruleNames,
   ruleOverrides,
@@ -104,6 +105,7 @@ import {
   studentFeedback,
 } from '../services/feedback'
 import { bookForStudent, frontDeskQuote } from '../services/front-desk'
+import { stripImageMetadata } from '../services/image-meta'
 import {
   adminInvoice,
   adminInvoices,
@@ -138,13 +140,15 @@ import { nextSort, orderedLists, saveOrder } from '../services/order'
 import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
   approvePackageRefund,
+  deskRefundQuote,
   extendPackage,
   grantLessons,
+  refundDeskPackage,
   rejectPackageRefund,
   sellPackageOffline,
 } from '../services/packages'
 import { confirmMonth, unconfirmMonth } from '../services/pay-months'
-import { markOfflineRefundPaid, retryRefund } from '../services/refunds'
+import { markOfflineRefundPaid, retryRefund, settleFailedRefund } from '../services/refunds'
 import { monthlyReport } from '../services/reports'
 import { cleanRichText } from '../services/rich-text'
 import {
@@ -2092,6 +2096,33 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
+  // A package sold at the front desk, refunded there: the suggested amount for the dialog.
+  app.get('/packages/:id/desk-refund', need('finance'), (c) =>
+    c.json(deskRefundQuote(deps, idParam(c))),
+  )
+
+  // Refunds the unused lessons of a package sold at the front desk, handed back there at once.
+  app.post('/packages/:id/desk-refund', need('finance'), async (c) => {
+    const { amount } = await parseBody(c, z.object({ amount: fen.min(1) }))
+    const id = idParam(c)
+    // The amount was worked out from the package as staff saw it.
+    if (!c.req.header('If-Match')) throw new ApiError(428, 'version_required', '请刷新后再操作')
+    const done = refundDeskPackage(deps, id, amount, (current) =>
+      checkVersion(c, packageViews(db, [current], deps.now())[0]),
+    )
+    if (!done.repeat) {
+      const pkg = db.select().from(packages).where(eq(packages.id, id)).get()
+      log(c.get('staffId'), {
+        action: 'package.refund',
+        summary: `课时包「${pkg?.name}」前台退款 ${yuan(amount)}`,
+        amount,
+        studentId: pkg?.studentId,
+        target: { kind: 'package', id },
+      })
+    }
+    return c.json({ refundId: done.refundId })
+  })
+
   app.post('/packages/offline-sale', need('students'), async (c) => {
     const body = await parseBody(
       c,
@@ -2362,6 +2393,58 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
+  // A failed WeChat Pay refund staff settled outside the system, in cash or on the merchant
+  // platform.
+  app.post('/refunds/:id/settled', need('finance'), async (c) => {
+    const { how, note } = await parseBody(
+      c,
+      z.object({
+        how: z.enum(['platform', 'offline']),
+        note: z.string().trim().min(1, '请填写处理说明').max(100),
+      }),
+    )
+    const id = idParam(c)
+    const done = await settleFailedRefund(deps, id, how, note)
+    if (done === 'settled' || done === 'updated') {
+      const r = refundContext(id)
+      log(c.get('staffId'), {
+        action: done === 'settled' ? 'refund.settled' : 'refund.synced',
+        summary:
+          done === 'settled'
+            ? `${r.what}退款 ${yuan(r.amount)} 已另行退款（${REFUND_SETTLE_WAYS[how]}）：${note}`
+            : `${r.what}退款 ${yuan(r.amount)} 状态已按微信支付更新`,
+        amount: r.amount,
+        studentId: r.studentId,
+        target: { kind: 'refund', id },
+      })
+    }
+    const now = db
+      .select({
+        status: refunds.status,
+        failure: refunds.failure,
+        note: refunds.settledNote,
+        how: refunds.settledHow,
+      })
+      .from(refunds)
+      .where(eq(refunds.id, id))
+      .get()
+    // Settled only if the refund ends up settled with this note: a retry or WeChat Pay may have
+    // got there first, and then it is as they left it.
+    const settled = now?.status === 'succeeded' && now.note === note && now.how === how
+    return c.json({
+      status: now?.status,
+      failure: now?.failure ?? null,
+      settled,
+      message: settled
+        ? null
+        : now?.status === 'succeeded'
+          ? '微信支付已退款，无需另行退款'
+          : now?.status === 'pending' || now?.status === 'processing'
+            ? '退款已在微信支付处理中，无需另行退款'
+            : '退款状态已变更，请刷新后查看',
+    })
+  })
+
   app.post('/refunds/:id/retry', need('finance'), async (c) => {
     const id = idParam(c)
     const done = await retryRefund(deps, id)
@@ -2575,7 +2658,8 @@ export function adminRoutes(deps: Deps) {
     if (!ext) throw new ApiError(400, 'bad_type', '只支持 JPG、PNG、WebP 图片')
     const name = `${Date.now()}-${randomBytes(6).toString('hex')}.${ext}`
     mkdirSync(deps.uploadsDir, { recursive: true })
-    writeFileSync(join(deps.uploadsDir, name), data)
+    // Public images: no GPS position or camera details go with them.
+    writeFileSync(join(deps.uploadsDir, name), stripImageMetadata(data, ext))
     return c.json({ url: `/api/uploads/${name}` }, 201)
   })
 

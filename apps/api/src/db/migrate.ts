@@ -22,8 +22,53 @@ export const migrationsFolder = join(
   'drizzle',
 )
 
+/**
+ * Rows that would stop a pending migration from adding a unique index, as messages. Checked
+ * before migrating, so a database with them fails to start with a message that names them,
+ * rather than SQLite's bare constraint error, and is left as it was (the migrations run in one
+ * transaction). deploy/README.md says what to do then.
+ */
+export function migrationBlockers(db: Db): string[] {
+  const raw = db.$client
+  const hasTable = (name: string) =>
+    raw.prepare("select 1 from sqlite_master where type = 'table' and name = ?").get(name)
+  const hasIndex = (name: string) =>
+    raw.prepare("select 1 from sqlite_master where type = 'index' and name = ?").get(name)
+  const found: string[] = []
+  // 0028_data_backstops: one package per order.
+  if (hasTable('packages') && !hasIndex('packages_order')) {
+    const rows = raw
+      .prepare(
+        `select order_id as orderId, group_concat(id) as ids from packages
+         where order_id is not null group by order_id having count(*) > 1`,
+      )
+      .all() as { orderId: number; ids: string }[]
+    for (const r of rows) found.push(`order ${r.orderId} has several packages (ids ${r.ids})`)
+  }
+  // 0028_data_backstops: one pay line per lesson and month.
+  if (hasTable('coach_pay_entries') && !hasIndex('coach_pay_entries_lesson')) {
+    const rows = raw
+      .prepare(
+        `select month, unit, group_concat(id) as ids from coach_pay_entries
+         where kind = 'lesson' group by month, unit having count(*) > 1`,
+      )
+      .all() as { month: string; unit: string; ids: string }[]
+    for (const r of rows) {
+      found.push(`coach pay for ${r.month} lists lesson ${r.unit} several times (ids ${r.ids})`)
+    }
+  }
+  return found
+}
+
 export function runMigrations(db: Db) {
-  if (existsSync(migrationsFolder)) migrate(db, { migrationsFolder })
+  if (!existsSync(migrationsFolder)) return
+  const blockers = migrationBlockers(db)
+  if (blockers.length) {
+    throw new Error(
+      `The database cannot be migrated, nothing was changed: ${blockers.join('; ')}. See "Duplicate rows at startup" in deploy/README.md.`,
+    )
+  }
+  migrate(db, { migrationsFolder })
 }
 
 // Run as a script (pnpm db:migrate). Matched by file name, since in the bundled server this
