@@ -947,6 +947,13 @@ describe('the coach keeping their own 排班', () => {
       [at(SUN, '09:00'), at(SUN, '10:00')],
       // 11:00 to 11:30 is too short for any lesson the coach teaches, so nobody can book it.
     ])
+    // 排班 itself, past hours included, so 工作台 can tell a day that is over from one off it.
+    expect(
+      days.working.map((w: { startsAt: string; endsAt: string }) => [w.startsAt, w.endsAt]),
+    ).toEqual([
+      [at('2026-10-23', '08:00'), at('2026-10-23', '12:00')],
+      [at(SUN, '09:00'), at(SUN, '11:30')],
+    ])
     expect(days.lessons).toHaveLength(1)
     expect(days.off).toEqual([
       expect.objectContaining({
