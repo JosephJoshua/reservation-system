@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import automator from 'miniprogram-automator'
+import { closeMiniProgram, type MiniProgram, openMiniProgram } from './launch'
 import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
@@ -17,7 +17,6 @@ const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.me
 const outDir = fileURLToPath(new URL('../screenshots/coach', import.meta.url))
 mkdirSync(outDir, { recursive: true })
 
-type MiniProgram = Awaited<ReturnType<typeof automator.launch>>
 type Page = NonNullable<Awaited<ReturnType<MiniProgram['currentPage']>>>
 
 declare function getCurrentPages(): unknown[]
@@ -67,10 +66,7 @@ function moveIntoPast(bookingId: number) {
   db.close()
 }
 
-const miniProgram = await automator.launch({
-  projectPath,
-  ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
-})
+const miniProgram = await openMiniProgram(projectPath)
 
 const errors: string[] = []
 miniProgram.on('exception', (err: { message: string }) => errors.push(err.message))
@@ -465,6 +461,6 @@ try {
   try {
     if (qaTheme()) await resetTheme(miniProgram)
   } finally {
-    await miniProgram.close()
+    await closeMiniProgram(miniProgram)
   }
 }

@@ -174,7 +174,7 @@ students scan from 课程 → 扫码签到.
 | Variable | Meaning |
 | --- | --- |
 | `ADMIN_PASSWORD` | Password of the first admin login, `admin`, created when the database has no staff yet. Use a long random one. After that, staff logins are managed on the admin 员工 page and changing this variable has no effect; the image still refuses to start without it. |
-| `WECHAT_APPID` | Mini program AppID (`wxb8dc89b45d422bf1`). |
+| `WECHAT_APPID` | Mini program AppID (`wxdbd449e2acaada82`). |
 | `WECHAT_LINK_CHECK` | Optional. The check file for 扫普通链接二维码打开小程序, as `name.txt=content`; served at the domain root. |
 | `TENCENT_MAP_KEY` | Optional. A 腾讯位置服务 key (lbs.qq.com → 控制台 → 应用管理 → 我的应用 → 创建应用 → 添加 key, product WebServiceAPI and 地图组件, with the admin's domain under 域名白名单). It shows 在地图上选点 and a map preview under 设置 → 地图坐标. Without it admins paste a map share link or coordinates. |
 | `WECHAT_APP_SECRET` | AppSecret from 开发管理 → 开发设置. Enables real WeChat sign-in and subscription messages. Required on staging too: without it the API uses a development login that trusts any caller. |
