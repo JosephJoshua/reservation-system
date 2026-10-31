@@ -151,13 +151,17 @@ describe('dialablePhone', () => {
     expect(dialablePhone('+86 (0139) 0000 0001')).toBe('+8613900000001')
   })
 
-  it('leaves out an extension after a 400 or 800 number', () => {
+  it('leaves out an extension after a 400 or 800 number or a local one', () => {
     expect(dialablePhone('400-820-8820-3')).toBe('4008208820')
     expect(dialablePhone('400 820 8820 1')).toBe('4008208820')
     expect(dialablePhone('800-820-8820-12')).toBe('8008208820')
     expect(dialablePhone('400-820-8820')).toBe('4008208820')
     expect(dialablePhone('4008-123-456-8')).toBe('4008123456')
     expect(dialablePhone('4008 208 820 3')).toBe('4008208820')
+    expect(dialablePhone('62345678-802')).toBe('62345678')
+    expect(dialablePhone('6234 5678 8')).toBe('62345678')
+    expect(dialablePhone('623 4567-8')).toBe('6234567')
+    expect(venuePhoneValid('623456788')).toBe(false)
   })
 
   it('refuses a domestic number longer than any mainland number', () => {

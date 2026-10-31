@@ -102,7 +102,8 @@ const STALE = new Set([
  */
 export async function attempt(
   fn: () => Promise<unknown>,
-  success?: string,
+  /** Said once it worked, or worded from what the request answered. */
+  success?: string | ((result: unknown) => string),
   {
     onStale,
     onRefused,
@@ -123,9 +124,10 @@ export async function attempt(
   // The dialog the change was made in, if any, whose typing it saves.
   const from = lastPressed()
   try {
-    await fn()
+    const result = await fn()
     settleDialog(from)
-    if (success) void MessagePlugin.success(success)
+    const said = typeof success === 'function' ? success(result) : success
+    if (said) void MessagePlugin.success(said)
     return true
   } catch (e) {
     if (!(e instanceof RequestError && quiet.includes(e.code))) {

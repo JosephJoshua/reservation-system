@@ -774,10 +774,10 @@ describe('front-desk booking', () => {
       { studentId: 1, slotId: slot.id, lessonTypeId: lesson.id, payWith: 'package' },
       admin,
     )
-    for (let i = 0; i < 2; i++) {
-      const cancel = `/admin/bookings/${res.json.bookingId}/cancel`
-      expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(204)
-    }
+    const cancel = `/admin/bookings/${res.json.bookingId}/cancel`
+    const first = await h.call('POST', cancel, { reason: '停电' }, admin)
+    expect(first.json).toEqual({ refunded: null, offline: false, lessonReturned: true })
+    expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(200)
     expect(log(h).at(-1)?.summary).toBe(
       '10月25日 10:00 王教练 一对一私教，原因：停电，退回课时 1 节',
     )

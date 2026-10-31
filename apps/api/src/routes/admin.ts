@@ -1584,11 +1584,19 @@ export function adminRoutes(deps: Deps) {
     const booking = db.select().from(bookings).where(eq(bookings.id, id)).get()
     // A repeat cancelled nothing, and a payment that landed meanwhile may have expired the
     // booking instead.
-    if (!cancelled || booking?.status !== 'cancelled' || booking.cancelledBy !== 'venue') {
-      return c.body(null, 204)
+    const byVenue = booking?.status === 'cancelled' && booking.cancelledBy === 'venue'
+    const outcome = byVenue
+      ? cancelOutcome(db, id)
+      : { text: '', refunded: null, offline: false, lessonReturned: false }
+    // What became of the money, as it stands now: a payment may have landed after the dialog
+    // opened. A repeat says the same again.
+    const answer = {
+      refunded: outcome.refunded,
+      offline: outcome.offline,
+      lessonReturned: outcome.lessonReturned,
     }
+    if (!cancelled || !byVenue) return c.json(answer)
     const { what, studentId } = describeBooking(db, id, deps.now())
-    const outcome = cancelOutcome(db, id)
     log(c.get('staffId'), {
       action: 'booking.cancel',
       summary: `${what}，原因：${reason}${outcome.text}`,
@@ -1596,7 +1604,7 @@ export function adminRoutes(deps: Deps) {
       studentId,
       target: { kind: 'booking', id },
     })
-    return c.body(null, 204)
+    return c.json(answer)
   })
 
   // What the page showed as the lesson's coach and start, so a change made on an older view of it

@@ -1305,7 +1305,7 @@ describe('one lesson for 课程详情', () => {
     )
     expect(
       (await h.call('POST', `/admin/bookings/${second}/cancel`, { reason: '请假' }, admin)).status,
-    ).toBe(204)
+    ).toBe(200)
     const log = await h.call('GET', `/admin/actions?slotId=${slotId}`, undefined, admin)
     expect(log.json.map((e: { action: string }) => e.action)).toEqual([
       'booking.cancel',
