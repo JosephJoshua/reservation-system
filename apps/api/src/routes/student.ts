@@ -338,7 +338,7 @@ export function studentRoutes(deps: Deps) {
         trialEnabled: settings.payment.trialEnabled,
         trialAvailable:
           settings.payment.trialEnabled &&
-          trialsUsed(db, student.id) < settings.payment.trialLimitPerStudent,
+          trialsUsed(db, student.id, now) < settings.payment.trialLimitPerStudent,
         perClassEnabled: settings.payment.perClassEnabled,
         packagesEnabled: settings.payment.packagesEnabled,
       },
