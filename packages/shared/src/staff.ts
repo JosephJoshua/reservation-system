@@ -13,15 +13,22 @@ export const offlineMethods = Object.keys(offlineMethodLabels) as [
   ...OfflineMethod[],
 ]
 
-/** What the action log records, with the name the admin app shows for each. */
+/** What the action log records, with the name the admin app shows for each. coach.* are a coach's own. */
 export const staffActionLabels = {
   'booking.create': '代约',
   'booking.cancel': '场馆取消',
   'booking.move': '场馆改约',
   'booking.attendance': '修改签到',
+  'coach.cancel': '教练取消',
+  'coach.move': '教练改约',
+  'coach.hours': '教练修改排班',
+  'coach.leave_add': '教练请假/加班',
+  'coach.leave_remove': '教练删除请假/加班',
+  'coach.leave_end': '教练提前结束请假/加班',
   'schedule.hours': '修改排班',
   'schedule.add': '请假/加班',
   'schedule.remove': '删除请假/加班',
+  'schedule.end': '提前结束请假/加班',
   'session.create': '排小班课',
   'session.update': '修改小班课',
   'session.cancel': '取消小班课',
@@ -69,7 +76,9 @@ export interface ActionLogEntryDto {
   targetKind: string | null
   targetId: number | null
   createdAt: string
-  staff: { id: number; name: string }
+  /** Who did it: a staff member, or else the coach, from the mini program. */
+  staff: { id: number; name: string } | null
+  coach: { id: number; name: string } | null
   student: { id: number; name: string; phone: string } | null
 }
 

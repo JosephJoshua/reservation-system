@@ -194,6 +194,21 @@ describe('students moving a lesson', () => {
     )
     expect(byCoach.status).toBe(200)
     expect(byCoach.json).toMatchObject({ startsAt: back.startsAt.toISOString(), canMove: true })
+    // Logged as the coach's move, once.
+    await h.call('POST', `/coach/lessons/${id}/move`, { slotId: back.id }, coachToken)
+    const moves = h.db
+      .select()
+      .from(actionLog)
+      .all()
+      .filter((e) => e.action === 'coach.move')
+    expect(moves).toMatchObject([
+      {
+        staffId: null,
+        coachId: coach.id,
+        targetId: id,
+        summary: '10月24日 11:00 王教练 一对一私教 改到 10月24日 13:00',
+      },
+    ])
 
     h.clock.now = back.startsAt
     const started = await h.call(

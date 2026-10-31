@@ -11,16 +11,29 @@ export interface PayableLesson {
   attendance: 'attended' | 'no_show' | null
   cancelledBy: 'student' | 'venue' | null
   late: boolean
+  /** The venue called off the whole group session this is a seat in. */
+  sessionCancelled: boolean
+}
+
+/**
+ * A seat of a group session the venue called off counts as a venue cancel, whatever happened to
+ * it before: a seat a student late-cancelled earlier, or one still left live, was not taught.
+ */
+export function asCalledOff<T extends PayableLesson>(l: T): T {
+  return l.sessionCancelled
+    ? { ...l, status: 'cancelled', attendance: null, cancelledBy: 'venue', late: false }
+    : l
 }
 
 /**
  * Whether the coach is paid for a lesson. A lesson that ended is paid, unless the student did
  * not come and no-shows don't count; unmarked lessons are paid as taught. A student's late cancel
- * is paid only when the venue counts them, once the lesson time has passed. Venue cancels and other cancels are never paid.
+ * is paid only when the venue counts them, once the lesson time has passed. Venue cancels and other
+ * cancels are never paid, nor is any seat of a group session the venue called off.
  */
 export function countsForPay(l: PayableLesson, rules: PayRules, now: Date) {
   // Like taught lessons, a late cancel counts once its time has passed.
-  if (l.endsAt > now) return false
+  if (l.endsAt > now || l.sessionCancelled) return false
   if (l.status === 'confirmed') return l.attendance !== 'no_show' || rules.noShows
   if (l.status === 'cancelled') return l.cancelledBy === 'student' && l.late && rules.lateCancels
   return false

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { attendanceError, feedbackError } from './availability'
+import { cancelSource } from './coach'
 
 describe('attendanceError', () => {
   const booking = {
@@ -7,6 +8,7 @@ describe('attendanceError', () => {
     startsAt: new Date('2026-10-25T02:00:00Z'),
     endsAt: new Date('2026-10-25T03:00:00Z'),
     attendance: null,
+    attendanceBy: null,
   }
 
   it('waits for the lesson to start, except for front desk arrivals 30 minutes early', () => {
@@ -56,6 +58,18 @@ describe('attendanceError', () => {
     ).toBeNull()
   })
 
+  it('keeps the coach from changing or clearing a front desk mark', () => {
+    const during = new Date('2026-10-25T02:30:00Z')
+    const desk = { ...booking, attendance: 'no_show', attendanceBy: 'staff' } as const
+    expect(attendanceError(desk, during, 'coach', null)).toBe('staff_marked')
+    expect(attendanceError(desk, during, 'coach', 'attended')).toBe('staff_marked')
+    // The same mark again changes nothing.
+    expect(attendanceError(desk, during, 'coach', 'no_show')).toBeNull()
+    expect(attendanceError(desk, during, 'admin', null)).toBeNull()
+    expect(attendanceError({ ...desk, attendanceBy: 'coach' }, during, 'coach', null)).toBeNull()
+    expect(attendanceError({ ...desk, attendanceBy: 'student' }, during, 'coach', null)).toBeNull()
+  })
+
   it('only applies to confirmed bookings', () => {
     expect(
       attendanceError(
@@ -92,5 +106,24 @@ describe('feedbackError', () => {
     const late = { ...booking, attendanceAt: new Date('2026-11-04T03:00:00Z') }
     expect(feedbackError(late, new Date('2026-11-11T03:00:00Z'))).toBeNull()
     expect(feedbackError(late, new Date('2026-11-11T03:00:01Z'))).toBe('too_late')
+  })
+})
+
+describe('cancelSource', () => {
+  it('tells a coach cancel from a venue cancel by its reason', () => {
+    expect(cancelSource({ cancelledBy: 'venue', cancelReason: '教练取消：生病' })).toEqual({
+      by: 'coach',
+      reason: '生病',
+    })
+    expect(cancelSource({ cancelledBy: 'venue', cancelReason: '闭馆' })).toEqual({
+      by: 'venue',
+      reason: '闭馆',
+    })
+    // A student cannot pass as the coach by the reason.
+    expect(cancelSource({ cancelledBy: 'student', cancelReason: '教练取消：x' }).by).toBe('student')
+    expect(cancelSource({ cancelledBy: null, cancelReason: null })).toEqual({
+      by: null,
+      reason: '',
+    })
   })
 })

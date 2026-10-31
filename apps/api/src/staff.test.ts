@@ -13,6 +13,7 @@ import {
   refunds,
   sessions,
 } from './db/schema'
+import { venueMoment, venueSpan } from './services/action-log'
 import { hashToken } from './services/ids'
 import { updateStaff } from './services/staff'
 import { type Harness, setup } from './test/harness'
@@ -840,5 +841,18 @@ describe('front-desk booking', () => {
     ])
     expect(results.filter((r) => r.status === 201)).toHaveLength(1)
     expect(h.db.select().from(bookings).all()).toHaveLength(1)
+  })
+})
+
+describe('dates in log summaries', () => {
+  it('names the year only when it is not the current venue year', () => {
+    const now = new Date('2026-10-29T04:00:00Z')
+    expect(venueMoment(new Date('2026-01-01T03:00:00Z'), now)).toBe('1月1日 11:00')
+    expect(venueMoment(new Date('2030-01-01T03:00:00Z'), now)).toBe('2030年1月1日 11:00')
+    // 2026-12-31 20:00 UTC is already 2027 at the venue.
+    expect(venueMoment(new Date('2026-12-31T20:00:00Z'), now)).toBe('2027年1月1日 04:00')
+    expect(venueSpan(new Date('2030-01-01T01:00:00Z'), new Date('2030-01-01T02:00:00Z'), now)).toBe(
+      '2030年1月1日 09:00-10:00',
+    )
   })
 })

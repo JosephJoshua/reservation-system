@@ -1,7 +1,7 @@
 import { and, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm'
 import { bookings, coaches, orders, packages, refunds, slots } from '../db/schema'
 import type { Deps } from '../deps'
-import { onePerSession } from './coach-pay'
+import { asCalledOff, onePerSession } from './coach-pay'
 import { type CoachPay, monthPay, monthRange, type PayMonthStatus } from './pay-months'
 import { grantedLessons } from './views'
 
@@ -17,7 +17,7 @@ export interface MonthlyReport {
     attended: number
     noShow: number
     unmarked: number
-    /** Lessons the venue or the coach cancelled. */
+    /** Lessons the venue or the coach cancelled, and group sessions the venue called off. */
     venueCancelled: number
     /** Student cancels after the deadline. */
     lateCancelled: number
@@ -54,6 +54,7 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
       attendance: bookings.attendance,
       cancelledBy: bookings.cancelledBy,
       late: bookings.late,
+      sessionCancelled: sql<boolean>`${slots.cancelledAt} is not null`.mapWith(Boolean),
     })
     .from(bookings)
     .innerJoin(slots, eq(slots.id, bookings.slotId))
@@ -65,6 +66,8 @@ export function monthlyReport(deps: Deps, month: string): MonthlyReport {
       ),
     )
     .all()
+    // A session the venue called off counts as venue cancels, as it does for pay.
+    .map(asCalledOff)
   const coachRows = db
     .select({ id: coaches.id, name: coaches.name, active: coaches.active })
     .from(coaches)

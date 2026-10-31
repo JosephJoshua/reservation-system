@@ -188,7 +188,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
             actor: 'admin',
           })
           .run()
-        const { what } = describeBooking(tx, booking.id)
+        const { what } = describeBooking(tx, booking.id, now)
         logAction(tx, now, staffId, {
           action: 'booking.create',
           summary: `${what}，扣课时包「${pkg.name}」1 节`,
@@ -224,7 +224,7 @@ export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBook
           })
           .run()
       }
-      const { what } = describeBooking(tx, booking.id)
+      const { what } = describeBooking(tx, booking.id, now)
       logAction(tx, now, staffId, {
         action: 'booking.create',
         summary:

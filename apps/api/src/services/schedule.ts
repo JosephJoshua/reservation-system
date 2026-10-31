@@ -545,14 +545,15 @@ export function scheduleView(tx: Q, now: Date, coachId: number): ScheduleViewDto
 
 /**
  * Replaces a coach's weekly hours from a venue date on: rows that started earlier end there, and
- * any planned from that date or later are dropped. Booked lessons are never touched; the result
- * lists the ones now outside 排班.
+ * any planned from that date or later are dropped. Booked lessons are never touched; `conflicts`
+ * lists the ones now outside 排班. `changed` is false when the hours from that date on were
+ * already these, and nothing was written.
  */
 export function saveHours(
   deps: Deps,
   coachId: number,
   input: { from: string; hours: WeeklyHours[] },
-): ScheduleConflictDto[] {
+): { conflicts: ScheduleConflictDto[]; changed: boolean } {
   const now = deps.now()
   const today = venueDateKey(now)
   try {
@@ -568,6 +569,25 @@ export function saveHours(
   if (error) throw new ApiError(400, 'invalid_hours', error)
   return immediate(deps.db, (tx) => {
     assertCoach(tx, coachId)
+    // In force on `from` or planned later. Unchanged when they all run on with no end and hold
+    // exactly the new hours.
+    const current = tx
+      .select()
+      .from(coachHours)
+      .where(
+        and(
+          eq(coachHours.coachId, coachId),
+          or(isNull(coachHours.toDate), gt(coachHours.toDate, input.from)),
+        ),
+      )
+      .all()
+    const key = (h: WeeklyHours) => `${h.weekday}:${h.startMinute}:${h.endMinute}`
+    const same =
+      current.every((h) => h.fromDate <= input.from && h.toDate === null) &&
+      [...new Set(current.map(key))].sort().join() ===
+        [...new Set(input.hours.map(key))].sort().join() &&
+      current.length === input.hours.length
+    if (same) return { conflicts: outsideSchedule(tx, now, coachId), changed: false }
     tx.delete(coachHours)
       .where(and(eq(coachHours.coachId, coachId), gte(coachHours.fromDate, input.from)))
       .run()
@@ -585,11 +605,14 @@ export function saveHours(
         .values({ coachId, ...h, fromDate: input.from })
         .run()
     }
-    return outsideSchedule(tx, now, coachId)
+    return { conflicts: outsideSchedule(tx, now, coachId), changed: true }
   })
 }
 
-/** Adds a 请假 or 加班 for a coach, or a 闭馆 when coachId is null. */
+/**
+ * Adds a 请假 or 加班 for a coach, or a 闭馆 when coachId is null. `created` is false for a repeat,
+ * which adds nothing, so it is logged once.
+ */
 export function addException(
   deps: Deps,
   input: {
@@ -600,7 +623,7 @@ export function addException(
     note: string
   },
   byStaffId: number | null,
-): { id: number; conflicts: ScheduleConflictDto[] } {
+): { id: number; conflicts: ScheduleConflictDto[]; created: boolean } {
   const now = deps.now()
   if (input.coachId === null && input.kind !== 'off') {
     throw new ApiError(400, 'invalid_body', '闭馆只能是休息')
@@ -631,21 +654,29 @@ export function addException(
         .values({ ...input, byStaffId, createdAt: now })
         .returning({ id: scheduleExceptions.id })
         .get().id
-    return { id, conflicts: input.kind === 'off' ? leaveConflicts(tx, now, input.coachId) : [] }
+    return {
+      id,
+      conflicts: input.kind === 'off' ? leaveConflicts(tx, now, input.coachId) : [],
+      created: !same,
+    }
   })
 }
 
 /**
  * Removes a 请假, 加班 or 闭馆 that has not ended. One under way is cut short at now, so the part
  * already past stays on record. `coachId` limits it to that coach's own, or to 闭馆 when null.
- * Returns what was removed, or null when it was already gone, and for a 加班 the booked lessons
- * in it now outside 排班, which stay for the venue to move or cancel.
+ * Returns what was removed, with `shortenedTo` set to its new end when it was cut short rather than
+ * deleted, or null when it was already gone; and for a 加班 the booked lessons in it now outside
+ * 排班, which stay for the venue to move or cancel.
  */
 export function removeException(
   deps: Deps,
   id: number,
   coachId?: number | null,
-): { row: typeof scheduleExceptions.$inferSelect | null; conflicts: ScheduleConflictDto[] } {
+): {
+  row: (typeof scheduleExceptions.$inferSelect & { shortenedTo: Date | null }) | null
+  conflicts: ScheduleConflictDto[]
+} {
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const row = tx.select().from(scheduleExceptions).where(eq(scheduleExceptions.id, id)).get()
@@ -653,11 +684,15 @@ export function removeException(
       return { row: null, conflicts: [] }
     }
     if (row.endsAt <= now) throw new ApiError(409, 'ended', '已过去的不能删除')
+    let shortenedTo: Date | null = null
     if (row.startsAt < now) {
       // Cut to the 5-minute step, which keeps it a valid exception.
       const step = SCHEDULE_STEP * MINUTE
-      const end = new Date(Math.ceil(now.getTime() / step) * step)
-      tx.update(scheduleExceptions).set({ endsAt: end }).where(eq(scheduleExceptions.id, id)).run()
+      shortenedTo = new Date(Math.ceil(now.getTime() / step) * step)
+      tx.update(scheduleExceptions)
+        .set({ endsAt: shortenedTo })
+        .where(eq(scheduleExceptions.id, id))
+        .run()
     } else {
       tx.delete(scheduleExceptions).where(eq(scheduleExceptions.id, id)).run()
     }
@@ -670,7 +705,7 @@ export function removeException(
             ),
           )
         : []
-    return { row, conflicts }
+    return { row: { ...row, shortenedTo }, conflicts }
   })
 }
 
