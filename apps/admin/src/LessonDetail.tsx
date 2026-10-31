@@ -21,7 +21,7 @@ import {
   useIsPhone,
   useSubmitting,
 } from './hooks'
-import { bookingStatusLabel, callOffEffect } from './labels'
+import { bookingStatusLabel, callOffEffect, cancelConfirmLabel } from './labels'
 import { closeLesson, lessonChanged, showLesson } from './lessonLink'
 import { MoveDialog } from './MoveDialog'
 import { useCan } from './me'
@@ -353,7 +353,7 @@ function CallOffDialog({
       visible
       header="取消整节课"
       confirmBtn={{
-        content: '确认取消并退款',
+        content: cancelConfirmLabel(statuses),
         theme: 'danger',
         disabled: !reason.trim(),
         loading: submitting,

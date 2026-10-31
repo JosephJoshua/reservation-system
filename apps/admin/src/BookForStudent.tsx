@@ -1,7 +1,7 @@
 import type { PriceTag } from '@rs/shared'
 import { venueDateKey } from '@rs/shared'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Dialog, Input, InputNumber, Radio, Select } from 'tdesign-react'
+import { Button, Dialog, Input, InputNumber, MessagePlugin, Radio, Select } from 'tdesign-react'
 import { api, RequestError } from './api'
 import { NewStudentDialog } from './DeskStudent'
 import { Field } from './Field'
@@ -203,6 +203,8 @@ export function BookForStudent({
     if (!ready || !student || !pick || !lessonTypeId) return
     if (payWith === 'offline' && fen !== 0 && !method) {
       setMethodMissing(true)
+      // The field is below the times, out of sight on a phone.
+      void MessagePlugin.warning('请选择收款方式')
       return
     }
     const target = { studentId: student.id, lessonTypeId, ...pickBody(pick) }

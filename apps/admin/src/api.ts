@@ -149,7 +149,8 @@ async function request<T>(
     // Roles changed since the page loaded: reload them, so the menu drops what is no longer allowed.
     if (res.status === 403 && err?.code === 'forbidden')
       window.dispatchEvent(new Event(STAFF_CHANGED))
-    throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? '操作失败，请重试')
+    const fallback = method === 'GET' ? '加载失败，请重试' : '操作失败，请重试'
+    throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? fallback)
   }
   return { data: data as T, res }
 }
@@ -189,7 +190,7 @@ export async function fetchFile(
     // Roles changed since the page loaded: reload them, so the menu drops what is no longer allowed.
     if (res.status === 403 && err?.code === 'forbidden')
       window.dispatchEvent(new Event(STAFF_CHANGED))
-    throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? '操作失败，请重试')
+    throw new RequestError(res.status, err?.code ?? 'unknown', err?.message ?? '下载失败，请重试')
   }
   const disposition = res.headers.get('Content-Disposition') ?? ''
   const encoded = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1]

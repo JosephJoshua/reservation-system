@@ -74,6 +74,11 @@ export function callOffEffect(statuses: BookingStatus[]) {
   return `${paid} 位已付款学员会收到全额退款或退回课时，${unpaid} 位未付款学员的预约将关闭`
 }
 
+/** The confirm button for cancelling these bookings: it says 退款 only when someone has paid. */
+export function cancelConfirmLabel(statuses: BookingStatus[]) {
+  return statuses.some((s) => s !== 'pending_payment') ? '确认取消并退款' : '确认取消'
+}
+
 /** 支付方式 as the 订单 and 退款 filters offer it. */
 export const providerOptions = [
   { label: '微信支付', value: 'wechat' },
