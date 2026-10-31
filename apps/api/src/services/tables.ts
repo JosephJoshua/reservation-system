@@ -30,12 +30,15 @@ export function assertTableFree(tx: Q, slot: SlotSpan, except?: number) {
 
 /**
  * The slots among these that could not take one more student for want of a table. `except` is a
- * booking being moved, which gives up its place wherever it goes.
+ * booking being moved, which gives up its place wherever it goes. `freed` are slots where one
+ * seat counted now is given up by booking it: the student's own unpaid hold whose payment time is
+ * up, which booking again closes first.
  */
 export function slotsWithoutTable(
   tx: Q,
   candidates: readonly SlotSpan[],
   except?: number,
+  freed?: ReadonlySet<number>,
 ): Set<number> {
   const { tables } = getSettings(tx).booking
   const full = new Set<number>()
@@ -48,7 +51,7 @@ export function slotsWithoutTable(
     candidates.flatMap((s) => (s.lessonTypeId === null ? [] : [s.lessonTypeId])),
   )
   for (const s of candidates) {
-    const students = running.get(s.id)?.students ?? 0
+    const students = Math.max(0, (running.get(s.id)?.students ?? 0) - (freed?.has(s.id) ? 1 : 0))
     const need =
       s.lessonTypeId === null ? 1 : tablesFor(students + 1, perTable.get(s.lessonTypeId) ?? null)
     const others = [...running.values()].filter((r) => r.slotId !== s.id)
