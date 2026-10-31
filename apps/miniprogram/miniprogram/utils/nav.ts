@@ -54,8 +54,18 @@ let upcomingWanted = false
  * or check: on 已结束 it would not be there.
  */
 export function openUpcomingLessons(): void {
-  upcomingWanted = true
-  switchTabOnce('/pages/lessons/index')
+  const url = '/pages/lessons/index'
+  // Only for a switch that goes ahead, so a later tap on the tab itself keeps its scope.
+  const going = once(`tab:${url}`, (complete) =>
+    wx.switchTab({
+      url,
+      fail: () => {
+        upcomingWanted = false
+      },
+      complete,
+    }),
+  )
+  if (going) upcomingWanted = true
 }
 
 /** For 课程 on show: whether a page asked for 待上课, asked once. */

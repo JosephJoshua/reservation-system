@@ -166,8 +166,8 @@ Page({
       })
       this.loadSlots(seek)
     } catch (e) {
-      // A failed recheck of a 体验课 waiting for payment keeps saying so.
-      if (this.data.state === 'error' && this.data.trialPending) {
+      // A failed recheck of a 体验课 that was taken keeps saying so.
+      if (this.data.state === 'error' && this.data.usedUp) {
         showError(e)
         return
       }
