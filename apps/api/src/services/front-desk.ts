@@ -14,7 +14,7 @@ import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import { accountDeleted } from './account'
 import { describeBooking, logAction, yuan } from './action-log'
-import { checkBookable, closeLapsedTrialHolds, seatTaken, usablePackage } from './bookings'
+import { checkBookable, closeLapsedHolds, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
 import { listedPriceOnly } from './packages'
 import { outsideHours, type SlotTarget, targetSlot } from './schedule'
@@ -115,13 +115,14 @@ function packageMismatch(
 
 /**
  * What the booking would cost, for the front desk's confirm step. The student's lapsed unpaid
- * trial holds are closed first, as booking would, so the quote does not refuse the trial.
+ * holds in the way are closed first, as booking would, so the quote does not refuse the time or
+ * the trial.
  */
 export async function frontDeskQuote(
   deps: Deps,
   input: { studentId: number; target: SlotTarget; lessonTypeId: number; anyTime?: boolean },
 ) {
-  await closeLapsedTrialHolds(deps, input.studentId, input.lessonTypeId)
+  await closeLapsedHolds(deps, input.studentId, input.target, input.lessonTypeId)
   // Checked in a transaction that is rolled back, since a private time gets its row on the way.
   const { price, pkg, slot, lessonType } = dryRun(deps.db, (tx) => check(tx, deps.now(), input))
   return {
@@ -147,8 +148,8 @@ export async function frontDeskQuote(
  * payment the desk has taken. The same unique index as student bookings stops a double booking.
  */
 export async function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBookingInput) {
-  // The student's lapsed unpaid trial holds, which still count against the trial allowance.
-  await closeLapsedTrialHolds(deps, input.studentId, input.lessonTypeId)
+  // The student's lapsed unpaid holds in the way: of this time, and trials over the allowance.
+  await closeLapsedHolds(deps, input.studentId, input.target, input.lessonTypeId)
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const { slot, lessonType, price, seat, pkg } = check(tx, now, input)

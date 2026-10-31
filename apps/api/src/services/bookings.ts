@@ -352,10 +352,7 @@ export async function createBooking(
   // a couple of minutes later, would come back below as the booking already made, with an order
   // that can no longer be paid. It is closed first, so this books afresh. A payment that landed
   // meanwhile confirms it instead, and it comes back as made.
-  const lapsed = lapsedHoldOrder(deps, studentId, input.target)
-  if (lapsed !== null) await closeOrder(deps, lapsed)
-  // Likewise the student's unpaid 体验课 holds elsewhere whose payment time is up.
-  await closeLapsedTrialHolds(deps, studentId, input.lessonTypeId)
+  await closeLapsedHolds(deps, studentId, input.target, input.lessonTypeId)
   const now = deps.now()
   const created = immediate(deps.db, (tx) => {
     const settings = getSettings(tx)
@@ -564,15 +561,36 @@ function lapsedHoldOrder(deps: Deps, studentId: number, target: SlotTarget) {
 }
 
 /**
- * Before booking a trial: closes the student's unpaid trial holds whose payment time is up, which
- * still count against the trial allowance until the sweeper closes them. Closed at WeChat Pay
- * first, so no late payment can confirm one beside the new trial; one that was paid meanwhile is
- * confirmed instead and counts. The booking's own transaction still counts every live trial.
+ * Before booking for a student, in the app or at the desk: closes their unpaid holds whose
+ * payment time is up and which would stand in the way until the sweeper closes them a couple of
+ * minutes later. Their own hold of this time, which would otherwise come back as the booking
+ * already made (or as taken, at the desk); and, for a trial, their lapsed trial holds.
  */
-export async function closeLapsedTrialHolds(deps: Deps, studentId: number, lessonTypeId: number) {
-  for (const orderId of lapsedTrialOrders(deps, studentId, lessonTypeId)) {
-    await closeOrder(deps, orderId)
-  }
+export async function closeLapsedHolds(
+  deps: Deps,
+  studentId: number,
+  target: SlotTarget,
+  lessonTypeId: number,
+) {
+  const lapsed = lapsedHoldOrder(deps, studentId, target)
+  if (lapsed !== null) await closeOrder(deps, lapsed)
+  await closeLapsedTrialHolds(deps, studentId, lessonTypeId)
+}
+
+/**
+ * Before booking a trial: closes the student's unpaid trial holds whose payment time is up, which
+ * still count against the trial allowance until the sweeper closes them. Only when, counted, they
+ * use up the allowance: otherwise a late payment of one still fits, and WeChat Pay being down
+ * need not hold the booking up. Closed at WeChat Pay first, so no late payment can confirm one
+ * beside the new trial; one that was paid meanwhile is confirmed instead and counts. The
+ * booking's own transaction still counts every live trial.
+ */
+async function closeLapsedTrialHolds(deps: Deps, studentId: number, lessonTypeId: number) {
+  const orderIds = lapsedTrialOrders(deps, studentId, lessonTypeId)
+  if (!orderIds.length) return
+  const { trialLimitPerStudent } = getSettings(deps.db).payment
+  if (trialsUsed(deps.db, studentId) < trialLimitPerStudent) return
+  for (const orderId of orderIds) await closeOrder(deps, orderId)
 }
 
 /** The pending orders of the student's unpaid trial holds whose payment time is up, for a trial. */

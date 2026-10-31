@@ -510,6 +510,69 @@ describe('trial lessons', () => {
     ).toHaveLength(1)
   })
 
+  it('leaves a lapsed trial hold open while the allowance has room, so WeChat Pay being down does not matter', async () => {
+    const h = setup()
+    const { coach, trial } = h.seed()
+    h.settings((s) => {
+      s.payment.trialLimitPerStudent = 2
+    })
+    const t = await h.student('a')
+    const admin = await h.admin()
+    const studentId = (await h.call('GET', '/me', undefined, t)).json.id
+    const first = await book(h, t, h.slot(coach.id, '2026-10-26', 10).id, trial.id)
+    expect(first.json.status).toBe('pending_payment')
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    h.gateway.closeOrder = async () => {
+      throw new Error('down')
+    }
+    const target = {
+      studentId,
+      slotId: h.slot(coach.id, '2026-10-26', 14).id,
+      lessonTypeId: trial.id,
+    }
+    const quote = await h.call('POST', '/admin/bookings/quote', target, admin)
+    expect(quote.status).toBe(200)
+    const desk = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...target, payWith: 'offline', amount: quote.json.price.price, method: 'cash' },
+      admin,
+    )
+    expect(desk.status).toBe(201)
+    // The lapsed hold was not touched: paid late, it is the second trial the limit allows.
+    const old = h.db.select().from(bookings).where(eq(bookings.id, first.json.bookingId)).get()
+    expect(old?.status).toBe('pending_payment')
+    // With the allowance now used up, a third needs it closed, which WeChat Pay refuses.
+    const third = await book(h, t, h.slot(coach.id, '2026-10-26', 16).id, trial.id)
+    expect(third.json.error.code).toBe('payment_unavailable')
+  })
+
+  it('lets the desk book the time of a student’s own lapsed hold for them', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const admin = await h.admin()
+    const studentId = (await h.call('GET', '/me', undefined, t)).json.id
+    const slotId = h.slot(coach.id, '2026-10-26', 10).id
+    const first = await book(h, t, slotId, lesson.id)
+    expect(first.json.status).toBe('pending_payment')
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    const target = { studentId, slotId, lessonTypeId: lesson.id }
+    const quote = await h.call('POST', '/admin/bookings/quote', target, admin)
+    expect(quote.status).toBe(200)
+    const desk = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...target, payWith: 'offline', amount: quote.json.price.price, method: 'cash' },
+      admin,
+    )
+    expect(desk.status).toBe(201)
+    const old = h.db.select().from(bookings).where(eq(bookings.id, first.json.bookingId)).get()
+    expect(old?.status).toBe('expired')
+    const oldOrder = h.db.select().from(orders).where(eq(orders.id, first.json.orderId)).get()
+    expect(oldOrder?.status).toBe('closed')
+  })
+
   it('tells each student in the catalog whether they may still book a trial, or must pay one', async () => {
     const h = setup()
     const { coach, trial } = h.seed()
