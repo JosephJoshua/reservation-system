@@ -87,6 +87,9 @@ export function Schedule() {
     })}`,
   )
   const conflicts = useApi<ScheduleConflictDto[]>('/admin/schedule/conflicts')
+  // A fresh key for each keep once one went through: a later keep of the same lesson at the same
+  // time, after it left 排班 again, is new.
+  const keepKeys = useActionKeys()
   const [category, setCategory] = useState<string>('')
   const [search, setSearch] = useState('')
   const [booking, setBooking] = useState<
@@ -183,13 +186,15 @@ export function Schedule() {
             'POST',
             `/admin/bookings/${bookingId}/keep-outside`,
             { coachId: c.coachId, startsAt: c.startsAt },
-            { key: onceKey(action) },
+            { key: keepKeys.get(action) },
           ),
         '已保留',
         { key: action, stale: ['booking_changed', 'started', 'group_lesson'], onStale: reload },
       )
-    )
+    ) {
+      keepKeys.done(action)
       reload()
+    }
   }
 
   const tables = day?.tables ?? null

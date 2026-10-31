@@ -2047,6 +2047,26 @@ describe('keeping a lesson outside 排班', () => {
     expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.outsideAgreed).toBe(false)
   })
 
+  it('tells the desk a lesson still to pay cannot be kept yet', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '18:00' }])
+    const res = await book(h, student, coach.id, at(SUN, '10:00'), lesson.id, { pay: false })
+    const id = res.json.bookingId as number
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '13:00', to: '18:00' }])
+    const [c] = (await h.call('GET', '/admin/schedule/conflicts', undefined, admin)).json
+    expect(c).toMatchObject({ bookingId: id, startsAt: at(SUN, '10:00') })
+    const kept = await keepAt(h, admin, id, c.coachId, c.startsAt)
+    expect([kept.status, kept.json.error.code]).toEqual([409, 'not_confirmed'])
+    expect(kept.json.error.message).toBe('学员尚未付款，付款后才能标为已与教练确认')
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.outsideAgreed).toBe(false)
+    expect(await keptLog(h, admin)).toHaveLength(0)
+    // Once paid, it can be.
+    await h.fakePay(res.json.orderId)
+    expect((await keepAt(h, admin, id, c.coachId, c.startsAt)).status).toBe(204)
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.outsideAgreed).toBe(true)
+  })
+
   it('refuses a desk move made from a stale view of the lesson', async () => {
     const h = setup()
     const { coach, lesson, admin, student } = await venue(h)
