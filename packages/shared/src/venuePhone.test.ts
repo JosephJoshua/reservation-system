@@ -136,6 +136,21 @@ describe('dialablePhone', () => {
     expect(dialablePhone('0086 (010) 6234 5678-8')).toBe('+861062345678')
   })
 
+  it('refuses a China number with digits left over that it cannot read as an extension', () => {
+    for (const phone of [
+      '(0086) 755 1234 5678 8',
+      '(0086)755-12345678-8',
+      '(0086) (0755) 1234 5678-8',
+      '0086  755 1234 5678 8',
+      '0086.755.1234.5678.8',
+      '+86  10  6234  5678  8',
+      '+86 (00) 571 8888 8888 8',
+    ]) {
+      expect(dialablePhone(phone), phone).toBeNull()
+    }
+    expect(dialablePhone('+86 (0139) 0000 0001')).toBe('+8613900000001')
+  })
+
   it('takes 0086 with the trunk 0 after it, as +86 and 86', () => {
     expect(venuePhoneValid('0086 (0)755 1234 5678')).toBe(true)
     expect(dialablePhone('0086 (0)755 1234 5678')).toBe('+8675512345678')

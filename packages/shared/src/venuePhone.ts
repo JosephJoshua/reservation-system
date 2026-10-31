@@ -57,6 +57,13 @@ function digitsFit(number: string) {
       if (n.length === 10 && n.startsWith('1') && !(afterCode && n.startsWith('10'))) return false
     }
   }
+  // After China's code no number is longer than 11 digits, or 10 with Beijing's 10 or a 2x area
+  // code: more means an extension the patterns above did not split off, which would be dialled as
+  // part of the number.
+  const china = international
+    ? /^86/.test(digits) && counted
+    : /^(?:00)?86/.test(digits) && digits.replace(/^(?:00)?860?/, '')
+  if (china && china.length > (/^(?:10|2)/.test(china) ? 10 : 11)) return false
   return counted.length >= 5 && counted.length <= 15
 }
 
