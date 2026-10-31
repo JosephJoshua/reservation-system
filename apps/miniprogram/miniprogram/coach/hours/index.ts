@@ -7,10 +7,11 @@ import {
   type ScheduleViewDto,
   venueDateKey,
   venueInstant,
+  versionOf,
   type WeeklyHours,
   weeklyHoursError,
 } from '../../lib/shared'
-import { errorMessage, showError } from '../../utils/api'
+import { ApiError, errorMessage, showError } from '../../utils/api'
 import { dateText, time } from '../../utils/format'
 import { modalDangerColor } from '../../utils/theme'
 import { bindInstead, coachApi } from '../utils/coach-api'
@@ -143,6 +144,8 @@ Page({
   },
 
   periods: [] as HoursPeriod[],
+  // The hours as loaded, sent back with a save so one over a change by staff is refused.
+  hoursVersion: '',
   /** Weekdays changed since the hours were loaded, kept when 生效日期 moves. */
   touched: new Set<number>(),
   lessonMinutes: null as number | null,
@@ -158,6 +161,7 @@ Page({
       const now = Date.now()
       const today = venueDateKey(new Date(now))
       this.periods = view.periods
+      this.hoursVersion = view.hoursVersion
       this.lessonMinutes = view.lessonMinutes
       this.setData({
         state: 'ready',
@@ -180,6 +184,13 @@ Page({
         // Hours that only start later read as 不接课 today; open on the first week with hours.
         const next = view.periods.find((p) => p.hours.length)
         this.setFrom(!hoursOn(view.periods, today).length && next ? next.from : today)
+      } else {
+        // Hours changed elsewhere meanwhile: the days not edited here take the newer hours.
+        const kept = this.data.hours.filter((h) => this.touched.has(h.weekday))
+        const rest = hoursOn(view.periods, this.data.from).filter(
+          (h) => !this.touched.has(h.weekday),
+        )
+        this.setHours([...rest, ...kept])
       }
     } catch (e) {
       if (bindInstead(e, this)) return
@@ -321,10 +332,13 @@ Page({
     this.setData({ saving: true })
     try {
       const sent = this.data.hours
-      const res = await coachApi<{ conflicts: ScheduleConflictDto[] }>('PUT', '/hours', {
-        from: this.data.from,
-        hours: sent,
-      })
+      // Checked against the hours as loaded: staff may have changed them meanwhile.
+      const res = await coachApi<{ conflicts: ScheduleConflictDto[] }>(
+        'PUT',
+        '/hours',
+        { from: this.data.from, hours: sent },
+        { 'If-Match': versionOf(this.hoursVersion) },
+      )
       // Changes made while saving are still unsaved.
       this.setDirty(this.data.hours !== sent)
       if (!warnConflicts(res.conflicts, '不在新的排班里')) {
@@ -332,7 +346,10 @@ Page({
       }
       await this.load()
     } catch (e) {
-      showError(e)
+      if (e instanceof ApiError && e.code === 'edited_elsewhere') {
+        wx.showToast({ title: '排班刚被修改，已载入最新时间，请核对后再保存', icon: 'none' })
+        await this.load()
+      } else showError(e)
     } finally {
       this.setData({ saving: false })
     }

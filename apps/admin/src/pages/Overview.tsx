@@ -1,7 +1,7 @@
 import { UNMARKED_DAYS } from '@rs/shared'
 import { useEffect, useState } from 'react'
 import { Button, Card, Space, Tag } from 'tdesign-react'
-import { addDays, fmtTime, yuanGrouped } from '../format'
+import { addDays, fmtTime, yuan } from '../format'
 import { useApi } from '../hooks'
 import { useCan } from '../me'
 import { Delta } from '../StatDelta'
@@ -95,8 +95,14 @@ export function Overview() {
       data?.unmarked,
       `#/bookings?status=completed&unmarked=1&from=${data ? addDays(data.date, -UNMARKED_DAYS) : ''}`,
     ],
-    ['待上课预约', data?.upcomingBookings, '#/bookings?status=confirmed'],
-    ['待支付', data?.pendingPayments, '#/bookings?status=pending_payment'],
+    // Today and the next 13 days, the range the count covers.
+    [
+      '待上课预约',
+      data?.upcomingBookings,
+      `#/bookings?status=confirmed${data ? `&from=${data.date}&to=${addDays(data.date, 13)}` : ''}`,
+    ],
+    // Unpaid bookings only: a package order left unpaid holds nothing and simply lapses.
+    ['待支付预约', data?.pendingPayments, '#/bookings?status=pending_payment'],
     ...((money
       ? [
           ['待审核退款', data?.refundRequests, '#/refunds?status=requested'],
@@ -120,18 +126,18 @@ export function Overview() {
           <>
             <Card bordered>
               <div className="muted">今日收款</div>
-              <div className="stat">{data?.revenue ? yuanGrouped(data.revenue.today) : '-'}</div>
+              <div className="stat">{data?.revenue ? yuan(data.revenue.today) : '-'}</div>
               <div className="stat-sub">已扣除退款</div>
             </Card>
             <Card bordered>
               <div className="muted">本月收款</div>
-              <div className="stat">{data?.revenue ? yuanGrouped(data.revenue.month) : '-'}</div>
+              <div className="stat">{data?.revenue ? yuan(data.revenue.month) : '-'}</div>
               {data?.revenue && (
                 <Delta
                   now={data.revenue.month}
                   before={data.revenue.lastMonth}
                   label="比上月同期"
-                  format={yuanGrouped}
+                  format={yuan}
                 />
               )}
             </Card>

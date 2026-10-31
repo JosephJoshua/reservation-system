@@ -337,7 +337,12 @@ export function coachRoutes(deps: Deps) {
     assertCoachMayEdit(deps.db)
     const coachId = c.get('coachId')
     const from = body.from ?? venueDateKey(deps.now())
-    const { conflicts, changed } = saveHours(deps, coachId, { from, hours: body.hours })
+    const { conflicts, changed } = saveHours(
+      deps,
+      coachId,
+      { from, hours: body.hours },
+      (current) => checkVersion(c, current),
+    )
     // Saving the same hours again logs nothing.
     if (changed) {
       log(coachId, () => ({

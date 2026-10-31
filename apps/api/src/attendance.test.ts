@@ -312,5 +312,15 @@ describe('who may use the 签到 list', () => {
     const list = (await h.call('GET', '/admin/front-desk', undefined, desk)).json
     expect(list[0].markedBy).toEqual({ kind: 'staff', name: 'desk' })
     expect((await h.call('PUT', '/admin/settings', {}, desk)).status).toBe(403)
+    // The 签到码 dialog: what it prints and whether students can scan it, without the settings.
+    const code = await h.call('GET', '/admin/check-in-code', undefined, desk)
+    expect(code.json).toEqual({ venueName: expect.any(String), selfCheckIn: true })
+    h.settings((s) => {
+      s.attendance.selfCheckIn = false
+    })
+    expect((await h.call('GET', '/admin/check-in-code', undefined, desk)).json.selfCheckIn).toBe(
+      false,
+    )
+    expect((await h.call('GET', '/admin/check-in-code', undefined, money)).status).toBe(403)
   })
 })

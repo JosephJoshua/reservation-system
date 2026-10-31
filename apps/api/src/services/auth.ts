@@ -134,6 +134,14 @@ export function loginNameWaitMs(count: number) {
   return Math.min(60_000 * 2 ** (count - NAME_FREE_FAILURES), NAME_MAX_WAIT_MS)
 }
 
+/**
+ * A session of a deactivated staff login. Login itself answers a deactivated login like a wrong
+ * password, so it never tells anyone that a password was right.
+ */
+function accountDisabled() {
+  return new ApiError(401, 'account_disabled', '账号已停用，请联系管理员')
+}
+
 /** `client` identifies the caller, such as the address the reverse proxy saw. */
 export async function loginAdmin(deps: Deps, username: string, password: string, client: string) {
   const now = deps.now().getTime()
@@ -257,7 +265,9 @@ export function requireAdmin(deps: Deps): MiddlewareHandler<AdminVars> {
     const member = s?.staffId
       ? deps.db.select().from(staff).where(eq(staff.id, s.staffId)).get()
       : undefined
-    if (!member?.active) throw new ApiError(401, 'unauthorized', '请重新登录')
+    if (!member) throw new ApiError(401, 'unauthorized', '请重新登录')
+    // Said as such, so the admin app doesn't just ask for the password again.
+    if (!member.active) throw accountDisabled()
     c.set('staffId', member.id)
     // Read on every request, so a role change applies at once.
     c.set('roles', member.roles)

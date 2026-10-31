@@ -94,7 +94,7 @@ async function open(
   await first.getByPlaceholder('登录名').fill(username)
   await first.getByPlaceholder('密码').fill(password)
   await first.getByRole('button', { name: '登录' }).click()
-  await first.getByRole('button', { name: '退出登录' }).waitFor()
+  await first.getByRole('button', { name: /^账号/ }).waitFor()
   if (!options.record) {
     const close = () => login.close()
     unfinished.add(close)

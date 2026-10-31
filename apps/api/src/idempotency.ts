@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, eq, gt, isNull, lt } from 'drizzle-orm'
 import type { MiddlewareHandler } from 'hono'
-import { idempotencyKeys, sessions } from './db/schema'
+import { coaches, idempotencyKeys, sessions, staff, students } from './db/schema'
 import type { Deps } from './deps'
 import { ApiError } from './errors'
 import { hashToken } from './services/ids'
@@ -37,15 +37,47 @@ async function bodyHashOf(req: Request) {
 }
 
 /**
- * The unexpired session of a bearer token, with the student it belongs to, if any. The one place
+ * Who a bearer token's unexpired session acts for, as `staff:3`, `coach:2` or `student:7`, with
+ * the student, if any. Keys are kept per person, not per token, so a request sent again after
+ * logging in again is still a repeat. Null when the session's owner can no longer act (a
+ * deactivated login or coach, a deleted student): nothing is replayed to them. The one place
  * here that knows how sessions store their token.
  */
 function liveSession(deps: Deps, token: string, now: Date) {
-  return deps.db
-    .select({ studentId: sessions.studentId })
+  const s = deps.db
+    .select({
+      role: sessions.role,
+      studentId: sessions.studentId,
+      staffId: sessions.staffId,
+      coachId: sessions.coachId,
+      staffActive: staff.active,
+      coachActive: coaches.active,
+      coachOpenid: coaches.openid,
+      studentDeletedAt: students.deletedAt,
+      studentFound: students.id,
+    })
     .from(sessions)
+    .leftJoin(staff, eq(staff.id, sessions.staffId))
+    .leftJoin(coaches, eq(coaches.id, sessions.coachId))
+    .leftJoin(students, eq(students.id, sessions.studentId))
     .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, now)))
     .get()
+  if (!s) return null
+  if (s.role === 'admin' && s.staffId !== null && s.staffActive) {
+    return { principal: `staff:${s.staffId}`, studentId: null }
+  }
+  if (s.role === 'coach' && s.coachId !== null && s.coachActive && s.coachOpenid) {
+    return { principal: `coach:${s.coachId}`, studentId: null }
+  }
+  if (
+    s.role === 'student' &&
+    s.studentId !== null &&
+    s.studentFound !== null &&
+    !s.studentDeletedAt
+  ) {
+    return { principal: `student:${s.studentId}`, studentId: s.studentId }
+  }
+  return null
 }
 
 /**
@@ -70,7 +102,7 @@ export function idempotency(deps: Deps): MiddlewareHandler {
     const signedIn = liveSession(deps, auth.replace(/^Bearer /, ''), now)
     // The route's own auth answers this one.
     if (!signedIn) return next()
-    const id = sha256([auth, c.req.method, c.req.path, key].join('\n'))
+    const id = sha256([signedIn.principal, c.req.method, c.req.path, key].join('\n'))
     const bodyHash = await bodyHashOf(c.req.raw)
 
     for (let wait = 0; ; wait++) {

@@ -3,7 +3,6 @@ import {
   CHECK_IN_EARLY_MINUTES,
   CHECK_IN_PATH,
   type FrontDeskLessonDto,
-  type VenueSettings,
 } from '@rs/shared'
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Dialog, Input, Radio, Space, Tag } from 'tdesign-react'
@@ -94,12 +93,14 @@ function Actions({ row, onDone }: { row: FrontDeskLessonDto; onDone: () => void 
 }
 
 function CodeDialog({ onClose }: { onClose: () => void }) {
-  const settings = useApi<VenueSettings>('/admin/settings')
+  // Not /admin/settings, which is for 管理员 only.
+  const settings = useApi<{ venueName: string; selfCheckIn: boolean }>('/admin/check-in-code')
+  const canManage = useCan('manage')
   const svg = useMemo(() => renderSVG(codeUrl(), { border: 2 }), [])
   const print = () => {
     const w = window.open('', '_blank')
     if (!w) return
-    const name = settings.data?.venue.name ?? ''
+    const name = settings.data?.venueName ?? ''
     w.document.write(
       `<!doctype html><meta charset="utf-8"><title>签到码</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding-top:48px;color:#000;background:#fff}h1{font-size:40px;margin:0 0 8px}p{font-size:22px;margin:8px 0}.qr{width:120mm;margin:24px auto}.qr svg{width:100%;height:auto}</style><h1>扫码签到</h1><p>${name.replace(/[<>&]/g, '')}</p><div class="qr">${svg}</div><p>打开小程序，在“课程”页点“扫码签到”</p><p>课前 ${CHECK_IN_EARLY_MINUTES} 分钟起可签到</p>`,
     )
@@ -116,13 +117,17 @@ function CodeDialog({ onClose }: { onClose: () => void }) {
       cancelBtn="关闭"
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
-        {settings.data && !settings.data.attendance.selfCheckIn && (
+        {settings.data && !settings.data.selfCheckIn && (
           <Alert
             theme="warning"
             message={
-              <>
-                学员扫码签到已关闭，可以在<a href="#/settings?section=attendance">设置</a>中开启
-              </>
+              canManage ? (
+                <>
+                  学员扫码签到已关闭，可以在<a href="#/settings?section=attendance">设置</a>中开启
+                </>
+              ) : (
+                '学员扫码签到已关闭，需要时请联系管理员在设置中开启'
+              )
             }
           />
         )}

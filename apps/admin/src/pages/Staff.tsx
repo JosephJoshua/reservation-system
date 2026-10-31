@@ -1,6 +1,7 @@
 import { type StaffRole, staffRoleHelp, staffRoleLabels, staffRoles } from '@rs/shared'
 import { useState } from 'react'
 import { Button, Checkbox, Dialog, Input, Space, Tag } from 'tdesign-react'
+import { passwordHelp, passwordOk, passwordProblem } from '../AccountMenu'
 import { api } from '../api'
 import { DataTable } from '../DataTable'
 import { Field } from '../Field'
@@ -15,7 +16,6 @@ type Editing =
   | { kind: 'roles'; member: StaffMember }
   | { kind: 'reset'; member: StaffMember }
   | { kind: 'toggle'; member: StaffMember }
-  | { kind: 'own-password' }
 
 export function Staff() {
   const list = useApi<StaffMember[]>('/admin/staff')
@@ -35,9 +35,6 @@ export function Staff() {
           每位员工用自己的账号登录。角色决定了员工能看到和操作哪些内容，每项操作都会记下操作人。
         </span>
         <div className="toolbar-actions">
-          <Button variant="outline" onClick={() => setEditing({ kind: 'own-password' })}>
-            修改我的密码
-          </Button>
           <Button onClick={() => setEditing({ kind: 'create' })}>新增员工</Button>
         </div>
       </div>
@@ -153,15 +150,10 @@ export function Staff() {
       {editing?.kind === 'toggle' && (
         <Toggle member={editing.member} onClose={() => setEditing(null)} onDone={done} />
       )}
-      {editing?.kind === 'own-password' && (
-        <OwnPassword onClose={() => setEditing(null)} onDone={() => setEditing(null)} />
-      )}
     </div>
   )
 }
 
-const passwordHelp = '至少 8 位'
-const passwordOk = (p: string) => p.length >= 8 && p.length <= 100
 const usernameOk = (u: string) => /^[a-z0-9_.-]{3,20}$/i.test(u.trim())
 
 type DialogProps = { onClose: () => void; onDone: () => void }
@@ -209,10 +201,11 @@ function CreateStaff({ onClose, onDone }: DialogProps) {
             onChange={(v) => setUsername(String(v))}
           />
         </Field>
-        <Field label="初始密码" help={passwordHelp}>
+        <Field label="初始密码" help={passwordProblem(password) ?? passwordHelp}>
           <Input
             type="password"
             autocomplete="new-password"
+            status={passwordProblem(password) ? 'error' : 'default'}
             value={password}
             onChange={(v) => setPassword(String(v))}
           />
@@ -340,10 +333,14 @@ function ResetPassword({ member, onClose, onDone }: DialogProps & { member: Staf
       onConfirm={submit}
       onClose={onClose}
     >
-      <Field label="新密码" help={`${passwordHelp}。重置后，对方已登录的设备都会退出登录`}>
+      <Field
+        label="新密码"
+        help={passwordProblem(password) ?? `${passwordHelp}。重置后，对方已登录的设备都会退出登录`}
+      >
         <Input
           type="password"
           autocomplete="new-password"
+          status={passwordProblem(password) ? 'error' : 'default'}
           value={password}
           onChange={(v) => setPassword(String(v))}
         />
@@ -383,63 +380,6 @@ function Toggle({ member, onClose, onDone }: DialogProps & { member: StaffMember
           ? '停用后，对方会立即退出登录，也不能再登录。操作记录会保留。'
           : '启用后，对方可以用原密码登录。'}
       </p>
-    </Dialog>
-  )
-}
-
-function OwnPassword({ onClose, onDone }: DialogProps) {
-  const [current, setCurrent] = useState('')
-  const [password, setPassword] = useState('')
-  const [again, setAgain] = useState('')
-  const submitting = useSubmitting()
-  const mismatch = again !== '' && again !== password
-  const ready = current !== '' && passwordOk(password) && password === again
-  const submit = async () => {
-    if (!ready) return
-    if (
-      await attempt(
-        () => api('PUT', '/admin/me/password', { current, password }),
-        '已修改，其他设备需要重新登录',
-      )
-    )
-      onDone()
-  }
-  return (
-    <Dialog
-      visible
-      header="修改我的密码"
-      confirmBtn={{ content: '保存', disabled: !ready, loading: submitting }}
-      cancelBtn="返回"
-      onConfirm={submit}
-      onClose={onClose}
-    >
-      <div className="fields">
-        <Field label="当前密码">
-          <Input
-            type="password"
-            autocomplete="current-password"
-            value={current}
-            onChange={(v) => setCurrent(String(v))}
-          />
-        </Field>
-        <Field label="新密码" help={passwordHelp}>
-          <Input
-            type="password"
-            autocomplete="new-password"
-            value={password}
-            onChange={(v) => setPassword(String(v))}
-          />
-        </Field>
-        <Field label="再输一次" help={mismatch ? '两次输入不一致' : undefined}>
-          <Input
-            type="password"
-            autocomplete="new-password"
-            value={again}
-            status={mismatch ? 'error' : 'default'}
-            onChange={(v) => setAgain(String(v))}
-          />
-        </Field>
-      </div>
     </Dialog>
   )
 }

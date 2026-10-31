@@ -7,7 +7,7 @@ import {
   type WeeklyHours,
   weeklyHoursError,
 } from '@rs/shared'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -21,9 +21,9 @@ import {
   Tag,
   TimePicker,
 } from 'tdesign-react'
-import { api } from '../api'
+import { api, RequestError } from '../api'
 import { addDays, fmtDate, fmtDateTime, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, useApi, useIsPhone } from '../hooks'
+import { attempt, newKey, onceKey, useActionKeys, useApi, useIsPhone } from '../hooks'
 import type { Coach } from '../types'
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -103,14 +103,24 @@ export function CoachBindingDialog({ coach, onClose }: { coach: Coach; onClose: 
       : null,
   )
 
+  const keys = useActionKeys()
   const generate = () =>
     attempt(async () => {
-      setCode(await api('POST', `/admin/coaches/${coach.id}/bind-code`))
+      setCode(
+        await api('POST', `/admin/coaches/${coach.id}/bind-code`, undefined, {
+          key: keys.get('bind-code'),
+        }),
+      )
+      // 重新生成 later makes another code.
+      keys.done('bind-code')
     })
 
   const unbind = () =>
     attempt(async () => {
-      await api('DELETE', `/admin/coaches/${coach.id}/binding`)
+      await api('DELETE', `/admin/coaches/${coach.id}/binding`, undefined, {
+        key: keys.get('unbind'),
+      })
+      keys.done('unbind')
       setCurrent({ ...current, bound: false })
       setCode(null)
     }, '已解除绑定')
@@ -186,6 +196,10 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
   const [conflicts, setConflicts] = useState<{ list: ScheduleConflictDto[]; what: string } | null>(
     null,
   )
+  // One per save, so a retry after a lost response is not saved twice.
+  const [saveKey, setSaveKey] = useState(newKey)
+  // Set when a save was refused over a newer change: the hours reloaded fill the days not edited.
+  const merge = useRef(false)
 
   // Hours that only start later read as 不接课 today: open on the first week with hours.
   const [opened, setOpened] = useState(false)
@@ -203,6 +217,18 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
       setTouched(new Set())
     }
   }, [data, from, dirty])
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when newer hours arrive
+  useEffect(() => {
+    if (!data || !merge.current) return
+    merge.current = false
+    if (dirty) {
+      setHours([
+        ...hoursOn(data.periods, from).filter((h) => !touched.has(h.weekday)),
+        ...(hours ?? []).filter((h) => touched.has(h.weekday)),
+      ])
+    }
+  }, [data])
 
   /** Moves 生效日期, keeping the days edited and taking the rest as they stand then. */
   const changeFrom = (next: string) => {
@@ -239,10 +265,37 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
   const save = async () => {
     if (!hours || invalid) return
     let result: { conflicts: ScheduleConflictDto[] } | undefined
-    const ok = await attempt(async () => {
-      result = await api('PUT', `/admin/coaches/${coach.id}/hours`, { from, hours })
-    }, '已保存每周时间')
+    const ok = await attempt(
+      async () => {
+        // Checked against the hours as loaded: the coach may have changed them meanwhile.
+        result = await api<{ conflicts: ScheduleConflictDto[] }>(
+          'PUT',
+          `/admin/coaches/${coach.id}/hours`,
+          { from, hours },
+          { key: saveKey, ifMatch: data?.hoursVersion },
+        ).catch((e) => {
+          throw e instanceof RequestError && e.code === 'edited_elsewhere'
+            ? new RequestError(
+                e.status,
+                e.code,
+                '排班刚被其他人修改，已载入最新的时间，请核对后再保存',
+              )
+            : e
+        })
+      },
+      '已保存每周时间',
+      {
+        stale: ['edited_elsewhere'],
+        // Loads the newer hours, keeping the weekdays edited here.
+        onStale: async () => {
+          setSaveKey(newKey())
+          merge.current = true
+          await reload()
+        },
+      },
+    )
     if (ok && result) {
+      setSaveKey(newKey())
       setDirty(false)
       setConflicts({ list: result.conflicts, what: '不在新的排班里' })
       await reload()
@@ -253,7 +306,9 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
     let result: { conflicts: ScheduleConflictDto[] } | undefined
     const ok = await attempt(
       async () => {
-        result = await api('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`)
+        result = await api('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`, undefined, {
+          key: onceKey(`delete-exception-${e.id}`),
+        })
       },
       e.kind === 'off' ? '已取消请假' : '已取消加班',
     )
@@ -444,6 +499,8 @@ export function ExceptionForm({
   const [start, setStart] = useState('09:00')
   const [end, setEnd] = useState('12:00')
   const [note, setNote] = useState('')
+  // One per addition, so a retry after a lost response does not add it twice.
+  const [key, setKey] = useState(newKey)
   const whole = kind === 'off' && wholeDays
   // An end at or before the start on one date means past midnight.
   const timeError =
@@ -468,11 +525,12 @@ export function ExceptionForm({
     let result: { conflicts: ScheduleConflictDto[] } | undefined
     const ok = await attempt(
       async () => {
-        result = await api('POST', path, { ...(closure ? {} : { kind }), ...body, note })
+        result = await api('POST', path, { ...(closure ? {} : { kind }), ...body, note }, { key })
       },
       closure ? '已添加闭馆' : kind === 'off' ? '已添加请假' : '已添加加班',
     )
     if (ok && result) {
+      setKey(newKey())
       setNote('')
       await onAdded(result.conflicts, kind)
     }
@@ -567,7 +625,9 @@ export function Closures() {
   const { data, error, reload } = useApi<ScheduleExceptionDto[]>('/admin/closures')
   const [conflicts, setConflicts] = useState<ScheduleConflictDto[]>([])
   const remove = async (id: number) => {
-    if (await attempt(() => api('DELETE', `/admin/closures/${id}`), '已删除闭馆')) await reload()
+    const del = () =>
+      api('DELETE', `/admin/closures/${id}`, undefined, { key: onceKey(`delete-closure-${id}`) })
+    if (await attempt(del, '已删除闭馆')) await reload()
   }
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>

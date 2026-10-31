@@ -70,7 +70,7 @@ export function Products() {
               ? '请选择课程'
               : f.price <= 0
                 ? '请填写价格'
-                : null
+                : saleProblem(f)
         }
         draft={(form) => ({ kind: 'package', id: id === 'new' ? null : id, form })}
       >
@@ -93,6 +93,18 @@ export function Products() {
       canCreate={regular.length > 0}
     />
   )
+}
+
+/** What is wrong with a package's 限时价, checked before saving as the API does. */
+function saleProblem(f: {
+  salePrice: number | null
+  saleStartsAt: string | null
+  saleEndsAt: string | null
+}) {
+  if (f.salePrice === null) return null
+  if (!f.saleStartsAt || !f.saleEndsAt) return '限时价需要设置开始和结束时间'
+  if (Date.parse(f.saleStartsAt) >= Date.parse(f.saleEndsAt)) return '结束时间要晚于开始时间'
+  return null
 }
 
 function ProductList({
@@ -172,8 +184,8 @@ function ProductList({
                 now,
               )
               return (
-                <span>
-                  {yuan(p.price)}
+                <span className="price-cell">
+                  <span>{yuan(p.price)}</span>
                   {p.originalPrice !== null && (
                     <span className="strike">{yuan(p.originalPrice)}</span>
                   )}
@@ -317,7 +329,9 @@ function ProductEditor({
       <Field label="价格">
         <InputNumber
           theme="normal"
-          value={toYuan(f.price)}
+          // Empty on a new package, rather than 0 shown as an error before anything is typed.
+          value={f.price > 0 ? toYuan(f.price) : undefined}
+          placeholder="请输入"
           min={0.01}
           decimalPlaces={2}
           suffix="元"
@@ -360,6 +374,8 @@ function ProductEditor({
               />
               <DateRangePicker
                 enableTimePicker
+                status={f.saleStartsAt && f.saleEndsAt && saleProblem(f) ? 'error' : 'default'}
+                tips={f.saleStartsAt && f.saleEndsAt ? (saleProblem(f) ?? undefined) : undefined}
                 value={[isoToPicker(f.saleStartsAt), isoToPicker(f.saleEndsAt)]}
                 onChange={(v) =>
                   set({

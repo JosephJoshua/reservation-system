@@ -1,11 +1,17 @@
-import { addVenueDays, formatYuan, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/shared'
+import { addVenueDays, VENUE_TIME_ZONE, venueDateKey, venueInstant } from '@rs/shared'
 
-export const yuan = (fen: number) => `¥${formatYuan(fen)}`
+const whole = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 })
+const withCents = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})
 
-const grouped = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
-
-/** Yuan with thousands separators, for big figures such as report totals. */
-export const yuanGrouped = (fen: number) => `¥${grouped.format(fen / 100)}`
+/**
+ * Money shown anywhere in the admin: thousands separators, and two decimals unless whole, as
+ * ¥9,640, ¥9,640.10 and ¥13,000.10.
+ */
+export const yuan = (fen: number) =>
+  `¥${fen % 100 === 0 ? whole.format(fen / 100) : withCents.format(fen / 100)}`
 
 /** Yuan typed by the admin to fen. Returns null when it is not a valid amount. */
 export function toFen(yuanValue: number | string | undefined | null): number | null {
@@ -37,6 +43,11 @@ export const fmtDateTime = (iso: string | Date | null | undefined) =>
   iso ? dateTime.format(new Date(iso)) : '-'
 export const fmtTime = (iso: string | Date) => time.format(new Date(iso))
 export const fmtDate = (iso: string | Date) => venueDateKey(new Date(iso))
+/**
+ * The last venue day a period ending at `end` covers. An end is exclusive, so one at midnight
+ * belongs to the day before: a sale ending 11-08 00:00 runs to 11-07.
+ */
+export const fmtLastDay = (end: string | Date) => fmtDate(new Date(new Date(end).getTime() - 1))
 export const fmtWeekday = (iso: string | Date) => weekday.format(new Date(iso))
 
 /** "2026-10-25" + "14:30" at the venue to an ISO instant. */

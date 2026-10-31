@@ -54,16 +54,16 @@ export function Bookings() {
     // Each tab then puts its own filters in the address.
     showParams(t === 'feedback' ? { tab: 'feedback' } : {})
   }
+  // Without 课后点评 there is one list: no tab bar for it.
+  if (!canFeedback) return <BookingList active />
   return (
     <Tabs value={tab} onChange={(v) => pick(String(v))} className="detail-tabs">
       <Tabs.TabPanel value="bookings" label="预约" destroyOnHide={false}>
         <BookingList active={tab === 'bookings'} />
       </Tabs.TabPanel>
-      {canFeedback && (
-        <Tabs.TabPanel value="feedback" label="课后点评">
-          <Feedback active={tab === 'feedback'} />
-        </Tabs.TabPanel>
-      )}
+      <Tabs.TabPanel value="feedback" label="课后点评">
+        <Feedback active={tab === 'feedback'} />
+      </Tabs.TabPanel>
     </Tabs>
   )
 }
