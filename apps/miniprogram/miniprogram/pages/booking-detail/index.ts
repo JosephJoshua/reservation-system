@@ -119,6 +119,8 @@ Page({
   /** Set once the student has gone back from this page. */
   left: false,
   cancelChecking: false,
+  /** Bumped by every `show`, so a fetch that a newer answer overtook is dropped. */
+  shown: 0,
   timer: 0 as number,
   venue: null as HomeDto['venue'] | null,
 
@@ -148,14 +150,17 @@ Page({
   },
 
   async load() {
+    const shown = this.shown
     try {
       const [booking, home] = await Promise.all([
         api<BookingDto>('GET', `/bookings/${this.id}`),
         publicApi<HomeDto>('GET', '/home'),
       ])
       this.venue = home.venue
+      if (shown !== this.shown) return
       this.show(booking)
     } catch (e) {
+      if (shown !== this.shown) return
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
@@ -169,10 +174,14 @@ Page({
       await this.load()
       return this.data.state === 'ready'
     }
+    const shown = this.shown
     try {
-      this.show(await api<BookingDto>('GET', `/bookings/${this.id}`))
+      const booking = await api<BookingDto>('GET', `/bookings/${this.id}`)
+      // A newer answer is on screen already.
+      if (shown === this.shown) this.show(booking)
       return true
     } catch (e) {
+      if (shown !== this.shown) return true
       if (e instanceof ApiError && e.status === 404) {
         this.setData({ state: 'error', error: errorMessage(e) })
         return false
@@ -184,6 +193,7 @@ Page({
   },
 
   show(fetched: BookingDto) {
+    this.shown++
     const b = settled(fetched, serverNow())
     // An unpaid one too: it can no longer be paid, only cancelled.
     const status =
