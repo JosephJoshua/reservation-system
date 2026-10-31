@@ -196,6 +196,9 @@ export function usePagedList<T>(path: string | null, { page, size, setPage }: Li
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const seq = useRef(0)
+  // What the rows on screen were loaded for: the whole address, and the filter without paging.
+  const shownUrl = useRef<string | null>(null)
+  const shownPath = useRef<string | null>(null)
   const shown = useRef(0)
   shown.current = rows.length
 
@@ -216,6 +219,8 @@ export function usePagedList<T>(path: string | null, { page, size, setPage }: Li
           setPage(last)
           return
         }
+        shownUrl.current = url
+        shownPath.current = path
         setRows(res.rows)
         setTotal(res.total)
         setError(null)
@@ -224,20 +229,38 @@ export function usePagedList<T>(path: string | null, { page, size, setPage }: Li
         if (mine !== seq.current) return
         const message = e instanceof RequestError ? e.message : '加载失败'
         setError(message)
-        // With rows on screen the table's empty text never shows, so say it here.
-        if (shown.current) void MessagePlugin.error(message)
+        // Whether the rows on screen are what was asked for decides, not who asked: a reload
+        // that starts while another filter loads asks for that filter.
+        if (shownUrl.current === url) {
+          // The same rows again, as after a change: they stay, so the empty text never shows.
+          if (shown.current) void MessagePlugin.error(message)
+        } else {
+          // Another filter or page: its rows are not on screen, so the table's empty text says
+          // what went wrong. Another page of the same filter keeps the count, so the pager
+          // stays to go back.
+          setRows([])
+          shownUrl.current = null
+          if (shownPath.current !== path) {
+            setTotal(0)
+            shownPath.current = null
+          }
+        }
       } finally {
         if (mine === seq.current) setLoading(false)
       }
     },
-    [url, page, size, setPage],
+    [url, path, page, size, setPage],
   )
 
   useEffect(() => {
     void fetchPage(false)
   }, [fetchPage])
 
-  const reload = useCallback(() => fetchPage(true), [fetchPage])
+  // Always the list as filtered now, also for a handler that awaited a change made under an
+  // earlier filter.
+  const latest = useRef(fetchPage)
+  latest.current = fetchPage
+  const reload = useCallback(() => latest.current(true), [])
 
   return { rows, setRows, total, loading, loaded, error, reload }
 }

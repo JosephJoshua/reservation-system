@@ -30,6 +30,12 @@ export function dialog(page: Page) {
   return page.locator('.t-dialog:not(.crop-dialog):visible')
 }
 
+/** Picks 收款方式 in a 代约 or 前台售卖 dialog, which has none picked at first. */
+export async function pickMethod(page: Page, scope = dialog(page), label = '现金') {
+  await field(scope, '收款方式').locator('.t-select').click()
+  await page.locator('.t-select-option:visible', { hasText: label }).click()
+}
+
 /** A tab of a page, such as 教练类别 on 教练. */
 export function tab(page: Page, name: string) {
   return page.locator('.t-tabs__nav-item', { hasText: new RegExp(`^${name}$`) })

@@ -2162,18 +2162,20 @@ export function adminRoutes(deps: Deps) {
         studentId: z.number().int().positive(),
         productId: z.number().int().positive(),
         amount: fen,
-        method: offlineMethod,
+        method: offlineMethod.optional(),
         note: z.string().trim().max(100).default(''),
         /** What the dialog showed the package grants. */
         expectedTerms: packageTermsSchema.optional(),
       }),
     )
+    const { method } = body
+    if (!method) throw new ApiError(400, 'invalid_body', '请选择收款方式')
     const listedPriceOnly = !can(c.get('roles'), 'manage')
-    const packageId = sellPackageOffline(deps, { ...body, listedPriceOnly })
+    const packageId = sellPackageOffline(deps, { ...body, method, listedPriceOnly })
     const pkg = db.select().from(packages).where(eq(packages.id, packageId)).get()
     log(c.get('staffId'), {
       action: 'package.sell',
-      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabels[body.method]} ${yuan(body.amount)}`,
+      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabels[method]} ${yuan(body.amount)}`,
       amount: body.amount,
       studentId: body.studentId,
       target: { kind: 'package', id: packageId },
@@ -2433,7 +2435,7 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/refunds/:id/paid-back', need('finance'), (c) => {
     const id = idParam(c)
-    if (!markOfflineRefundPaid(deps, id)) return c.body(null, 204)
+    markOfflineRefundPaid(deps, id)
     const r = refundContext(id)
     log(c.get('staffId'), {
       action: 'refund.paid_back',
@@ -2517,7 +2519,21 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'refund', id },
       })
     }
-    return c.json({ ...refundOutcome(id), resent: done === 'resent' })
+    // Another tab settled it outside the system meanwhile, so it says so, as a settle does.
+    const settledElsewhere =
+      !done &&
+      db
+        .select({ id: refunds.id })
+        .from(refunds)
+        .where(
+          and(eq(refunds.id, id), eq(refunds.status, 'succeeded'), isNotNull(refunds.settledNote)),
+        )
+        .get() !== undefined
+    return c.json({
+      ...refundOutcome(id),
+      resent: done === 'resent',
+      message: settledElsewhere ? '该退款已标为另行退款' : null,
+    })
   })
 
   // Invoices

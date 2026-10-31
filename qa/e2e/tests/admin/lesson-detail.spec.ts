@@ -1,6 +1,15 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { ADMIN_PASSWORD, addExtraTimes, call, dialog, login, student, tab } from './helpers'
+import {
+  ADMIN_PASSWORD,
+  addExtraTimes,
+  call,
+  dialog,
+  login,
+  pickMethod,
+  student,
+  tab,
+} from './helpers'
 
 // 课程详情: one lesson opened over the lists or as a page, and 课后点评 as a tab of 预约.
 test.describe.configure({ mode: 'serial' })
@@ -195,6 +204,7 @@ test('代约加人 books a seat in the session', async ({ page }) => {
   await picker.click()
   await picker.pressSequentially(names[2] ?? '')
   await page.locator('.t-select-option', { hasText: names[2] }).click()
+  await pickMethod(page, book)
   await book.getByRole('button', { name: '确认代约' }).click()
   await expect(page.getByText('已代约')).toBeVisible()
   await expect(drawer(page)).toContainText('已报名 2/4 人')

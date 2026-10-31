@@ -1,6 +1,17 @@
 import { expect, test } from '@playwright/test'
 import type { CatalogDto, CreateBookingResponse, PackageDto, SlotDto } from '@rs/shared'
-import { call, dialog, editForm, field, login, saveEdit, student, tab, typeNumber } from './helpers'
+import {
+  call,
+  dialog,
+  editForm,
+  field,
+  login,
+  pickMethod,
+  saveEdit,
+  student,
+  tab,
+  typeNumber,
+} from './helpers'
 
 // One venue setup driven through the admin UI, then used by students through the API.
 test.describe.configure({ mode: 'serial' })
@@ -133,6 +144,7 @@ test('records a front-desk sale and approves a package refund', async ({ page, r
   await field(dialog(page), '课时包').locator('.t-select').click()
   await page.locator('.t-select-option', { hasText: productName }).click()
   await typeNumber(field(dialog(page), '实收金额').locator('input'), '2400')
+  await pickMethod(page)
   await dialog(page).getByRole('button', { name: '确认收款' }).click()
   const pkgRow = page.locator('.t-drawer').getByRole('row').filter({ hasText: productName })
   await expect(pkgRow).toContainText('10/10')

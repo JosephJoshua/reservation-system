@@ -9,6 +9,7 @@ import {
   field,
   listFilter,
   login,
+  pickMethod,
   student,
   useCrop,
 } from './helpers'
@@ -94,6 +95,7 @@ test('a double click on 确认收款 records one sale at the running sale price'
   await field(dialog(page), '课时包').locator('.t-select').click()
   await page.locator('.t-select-option', { hasText: productName }).click()
   await expect(field(dialog(page), '实收金额').locator('input')).toHaveValue('2500.00')
+  await pickMethod(page)
   const sales = await countRequests(page, '/offline-sale', () =>
     dialog(page).getByRole('button', { name: '确认收款' }).dblclick(),
   )
@@ -113,6 +115,7 @@ test('a retry after a lost sale response records the sale once', async ({ page, 
   await page.getByRole('button', { name: '前台售卖' }).click()
   await field(dialog(page), '课时包').locator('.t-select').click()
   await page.locator('.t-select-option', { hasText: productName }).click()
+  await pickMethod(page)
   // The first sale reaches the server, but its answer is lost on the way back.
   let sent = 0
   await page.route('**/api/admin/packages/offline-sale', async (route) => {

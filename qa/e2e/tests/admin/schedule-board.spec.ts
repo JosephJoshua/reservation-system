@@ -7,6 +7,7 @@ import {
   field,
   login,
   pickDate,
+  pickMethod,
   student,
 } from './helpers'
 
@@ -120,6 +121,7 @@ test('a time taken while the desk books it leaves the list', async ({ page, requ
   await pickDate(page, when.locator('.t-date-picker'), venueDate)
   await book.getByRole('button', { name: '11:00', exact: true }).click()
   await expect(book.getByText('线下收款（标价 ¥200）')).toBeVisible()
+  await pickMethod(page, book)
 
   await call(request, 'POST', '/bookings', other, { coachId, startsAt: at('11:00'), lessonTypeId })
   await book.getByRole('button', { name: '确认代约' }).dblclick()

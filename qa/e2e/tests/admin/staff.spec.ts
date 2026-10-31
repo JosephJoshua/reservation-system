@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test'
-import { ADMIN_PASSWORD, addExtraTimes, call, dialog, field, login, student } from './helpers'
+import {
+  ADMIN_PASSWORD,
+  addExtraTimes,
+  call,
+  dialog,
+  field,
+  login,
+  pickMethod,
+  student,
+} from './helpers'
 
 // Named staff logins, front-desk booking (代约) and the action log, driven through the admin app.
 test.describe.configure({ mode: 'serial' })
@@ -80,6 +89,7 @@ test('books a lesson for a student from the schedule', async ({ page }) => {
   await picker.pressSequentially(studentName)
   await page.locator('.t-select-option', { hasText: studentName }).click()
   await expect(book.getByText('线下收款（标价 ¥200）')).toBeVisible()
+  await pickMethod(page, book)
   await book.getByRole('button', { name: '确认代约' }).dblclick()
   await expect(page.getByText('已代约')).toBeVisible()
   await expect(page.locator('.board-block', { hasText: studentName })).toBeVisible()

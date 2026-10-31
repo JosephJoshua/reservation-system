@@ -1,6 +1,5 @@
 import type { AdminFeedbackDto } from '@rs/shared'
 import { venueInstant } from '@rs/shared'
-import { useRef } from 'react'
 import { Button, DateRangePicker, Select, Tag } from 'tdesign-react'
 import { api } from '../api'
 import { LessonTime } from '../bookingCells'
@@ -101,8 +100,7 @@ export function Feedback({
   }
   const list = usePagedList<AdminFeedbackDto>(`/admin/feedback?${params}`, filters)
   // The list as filtered now, also for a 撤销 pressed after the filter changed.
-  const reload = useRef(list.reload)
-  reload.current = list.reload
+  const { reload } = list
   useOnLessonChanged(list.reload)
   const more = ['coach', 'type', 'state'] as const
 
@@ -115,7 +113,7 @@ export function Feedback({
     const ok = await attempt(
       async () => {
         await api('PUT', `/admin/feedback/${row.id}/hidden`, { hidden })
-        await reload.current()
+        await reload()
       },
       undone ? '已撤销' : hidden ? undefined : '已恢复',
       { key: hideKey(row.id) },

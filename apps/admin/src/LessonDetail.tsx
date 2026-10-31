@@ -1,4 +1,4 @@
-import { staffActionLabels } from '@rs/shared'
+import { type BookingStatus, staffActionLabels } from '@rs/shared'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Card, Dialog, Drawer, Loading, Space, Tag, Textarea } from 'tdesign-react'
 import { api, RequestError } from './api'
@@ -21,7 +21,7 @@ import {
   useIsPhone,
   useSubmitting,
 } from './hooks'
-import { bookingStatusLabel } from './labels'
+import { bookingStatusLabel, callOffEffect } from './labels'
 import { closeLesson, lessonChanged, showLesson } from './lessonLink'
 import { MoveDialog } from './MoveDialog'
 import { useCan } from './me'
@@ -288,7 +288,7 @@ function LessonBody({
       {callingOff && (
         <CallOffDialog
           slot={s}
-          seats={live.length}
+          statuses={live.map((b) => b.status)}
           onClose={() => setCallingOff(false)}
           onDone={reload}
         />
@@ -307,15 +307,19 @@ function LessonBody({
   )
 }
 
-/** 取消整节: every student is refunded or gets the lesson back on their package. */
+/**
+ * 取消整节: every student who paid is refunded or gets the lesson back on their package, and a
+ * hold still to pay is closed.
+ */
 function CallOffDialog({
   slot,
-  seats,
+  statuses,
   onClose,
   onDone,
 }: {
   slot: LessonSlot
-  seats: number
+  /** The live bookings' statuses. */
+  statuses: BookingStatus[]
   onClose: () => void
   onDone: () => unknown
 }) {
@@ -329,7 +333,9 @@ function CallOffDialog({
     sent.current = true
     const ok = await attempt(
       () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
-      '已取消整节，学员会收到全额退款或退回的课时',
+      statuses.includes('pending_payment')
+        ? '已取消整节'
+        : '已取消整节，学员会收到全额退款或退回的课时',
       {
         onStale: () => {
           onClose()
@@ -356,7 +362,7 @@ function CallOffDialog({
       onConfirm={cancel}
       onClose={onClose}
     >
-      <p>{seats ? `取消后，${seats} 位学员都会收到全额退款或退回课时。` : '还没有学员报名。'}</p>
+      <p>{statuses.length ? `取消后，${callOffEffect(statuses)}。` : '还没有学员报名。'}</p>
       <Textarea
         placeholder="取消原因（学员可见）"
         value={reason}
