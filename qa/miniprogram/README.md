@@ -17,6 +17,12 @@ page following the system, then forced light and dark, saving them under `system
 `dark/`. Set `WECHAT_DEVTOOLS_CLI` if DevTools
 is not installed in the default location.
 
+Each script launches its own DevTools window by default. To reuse one simulator across runs, open
+an automation instance once (`cli auto --project <path to apps/miniprogram> --auto-port 9420`) and
+set `QA_WS_ENDPOINT=ws://127.0.0.1:9420`. The scripts then attach to it, clear its storage,
+relaunch the first page and leave it open when they finish. The build still runs before each
+script, and DevTools recompiles in place.
+
 ## Student flows
 
 Books, pays (through the fake gateway's 模拟支付 dialog), cancels, buys a package and loses a time
