@@ -546,6 +546,12 @@ await step(['v-book'], async () => {
   await typeDate(d, dayFromToday(3))
   await press(p, d.getByRole('button', { name: /^1[5-9]:[03]0$/ }).first())
   await pause(p, 1000)
+  // Paid at the desk: 收款方式 has none picked at first.
+  const method = d.locator('.field', { hasText: '收款方式' }).locator('.t-select')
+  if (await method.isVisible()) {
+    await press(p, method)
+    await press(p, p.locator('.t-select-option:visible').filter({ hasText: '现金' }).first())
+  }
   await press(p, d.getByRole('button', { name: '确认代约' }))
   await pause(p, 2500)
   await r.done()

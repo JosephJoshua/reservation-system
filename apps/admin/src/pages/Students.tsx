@@ -1340,7 +1340,9 @@ function OfflineSale({
   const [productId, setProductId] = useState<number | undefined>(onSale[0]?.id)
   const product = products.find((p) => p.id === productId)
   const [amount, setAmount] = useState<number | undefined>(toYuan(product && priceNow(product)))
-  const [method, setMethod] = useState<keyof typeof offlineMethodLabel>('alipay')
+  // Picked each time: a default would record cash taken as whatever it was.
+  const [method, setMethod] = useState<keyof typeof offlineMethodLabel | null>(null)
+  const [methodMissing, setMethodMissing] = useState(false)
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
@@ -1359,6 +1361,10 @@ function OfflineSale({
 
   const submit = async () => {
     if (!productId || fen === null) return
+    if (!method) {
+      setMethodMissing(true)
+      return
+    }
     const ok = await attempt(
       () =>
         api(
@@ -1440,9 +1446,11 @@ function OfflineSale({
             onChange={(v) => setAmount(v as number)}
           />
         </Field>
-        <Field label="收款方式">
+        <Field label="收款方式" help={methodMissing && !method ? '请选择收款方式' : undefined}>
           <Select
-            value={method}
+            value={method ?? undefined}
+            placeholder="请选择"
+            status={methodMissing && !method ? 'error' : 'default'}
             options={Object.entries(offlineMethodLabel).map(([value, label]) => ({ value, label }))}
             onChange={(v) => setMethod(v as keyof typeof offlineMethodLabel)}
           />

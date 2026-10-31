@@ -2162,18 +2162,20 @@ export function adminRoutes(deps: Deps) {
         studentId: z.number().int().positive(),
         productId: z.number().int().positive(),
         amount: fen,
-        method: offlineMethod,
+        method: offlineMethod.optional(),
         note: z.string().trim().max(100).default(''),
         /** What the dialog showed the package grants. */
         expectedTerms: packageTermsSchema.optional(),
       }),
     )
+    const { method } = body
+    if (!method) throw new ApiError(400, 'invalid_body', '请选择收款方式')
     const listedPriceOnly = !can(c.get('roles'), 'manage')
-    const packageId = sellPackageOffline(deps, { ...body, listedPriceOnly })
+    const packageId = sellPackageOffline(deps, { ...body, method, listedPriceOnly })
     const pkg = db.select().from(packages).where(eq(packages.id, packageId)).get()
     log(c.get('staffId'), {
       action: 'package.sell',
-      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabels[body.method]} ${yuan(body.amount)}`,
+      summary: `售出课时包「${pkg?.name}」，${offlineMethodLabels[method]} ${yuan(body.amount)}`,
       amount: body.amount,
       studentId: body.studentId,
       target: { kind: 'package', id: packageId },

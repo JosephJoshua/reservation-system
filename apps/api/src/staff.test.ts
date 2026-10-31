@@ -707,9 +707,15 @@ describe('front-desk booking', () => {
       [admin, 'other-tab'],
       [await h.admin('caiwu', 'finance-123'), 'paid-back-tap'],
     ] as const) {
-      const other = await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, token, {
-        'Idempotency-Key': key,
-      })
+      const other = await h.call(
+        'POST',
+        `/admin/refunds/${refund?.id}/paid-back`,
+        undefined,
+        token,
+        {
+          'Idempotency-Key': key,
+        },
+      )
       expect(other.status).toBe(409)
       expect(other.json.error).toEqual({
         code: 'refund_paid_back_elsewhere',
@@ -795,6 +801,20 @@ describe('front-desk booking', () => {
     )
     expect(res.json.error.message).toBe('请选择收款方式')
     expect(h.db.select().from(bookings).all()).toHaveLength(0)
+  })
+
+  it('needs a payment method to sell a package at the desk', async () => {
+    const h = setup()
+    const { lesson, admin } = await ready(h)
+    const res = await h.call(
+      'POST',
+      '/admin/packages/offline-sale',
+      { studentId: 1, productId: product(h, lesson.id).id, amount: 180000 },
+      admin,
+    )
+    expect(res.status).toBe(400)
+    expect(res.json.error.message).toBe('请选择收款方式')
+    expect(h.db.select().from(orders).all()).toHaveLength(0)
   })
 
   it('ignores the advance window but not a started slot', async () => {
