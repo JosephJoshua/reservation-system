@@ -21,7 +21,7 @@ import {
   trialBlock,
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
-import { backOr, isTop, navigateOnce } from '../../utils/nav'
+import { backOr, isTop, navigateOnce, openUpcomingLessons } from '../../utils/nav'
 import { PAY_PENDING, PAY_REFUNDED, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 
 type PayWith = 'package' | 'wechat'
@@ -474,7 +474,7 @@ Page({
           content: `${CHECK_LESSONS}，未成功可重新预约。`,
           showCancel: false,
         })
-        if (isTop(this)) wx.switchTab({ url: '/pages/lessons/index' })
+        if (isTop(this)) openUpcomingLessons()
         return
       }
       if (e instanceof ApiError && SLOT_GONE.includes(e.code)) {

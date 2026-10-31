@@ -9,7 +9,7 @@ import { assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
 import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { openLink, openVenue } from '../../utils/link'
-import { navigateOnce } from '../../utils/nav'
+import { navigateOnce, openUpcomingLessons } from '../../utils/nav'
 import { openOnce } from '../../utils/tap'
 
 Page({
@@ -150,7 +150,7 @@ Page({
     const row = this.data.lessonTypes[e.currentTarget.dataset.index as number]
     // One still to pay is paid from 课程; one used up cannot be opened.
     if (row?.blocked === TRIAL_PENDING) {
-      wx.switchTab({ url: '/pages/lessons/index' })
+      openUpcomingLessons()
       return
     }
     if (row?.blocked) {

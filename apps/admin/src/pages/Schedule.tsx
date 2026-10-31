@@ -1,4 +1,5 @@
 import {
+  type BookingStatus,
   CONFLICT_REASONS,
   clashes,
   type DayPlanDto,
@@ -41,7 +42,7 @@ import {
   useIsPhone,
   useSubmitting,
 } from '../hooks'
-import { bookingStatusLabel, callOffEffect } from '../labels'
+import { bookingStatusLabel, callOffEffect, cancelConfirmLabel } from '../labels'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
 import type { Coach, LessonType, Slot } from '../types'
@@ -861,7 +862,7 @@ function LessonDialog({
                 loading={submitting}
                 onClick={cancel}
               >
-                确认取消并退款
+                {cancelConfirmLabel([b.status as BookingStatus])}
               </Button>
               <Button variant="outline" onClick={() => setCancelling(false)}>
                 返回
@@ -1083,7 +1084,12 @@ function SessionDialog({
                 loading={submitting}
                 onClick={cancel}
               >
-                确认取消并退款
+                {cancelConfirmLabel(
+                  (cancelling === 'session'
+                    ? slot.bookings
+                    : slot.bookings.filter((b) => b.id === cancelling)
+                  ).map((b) => b.status as BookingStatus),
+                )}
               </Button>
               <Button variant="outline" onClick={() => setCancelling(null)}>
                 返回

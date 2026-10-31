@@ -1363,6 +1363,8 @@ function OfflineSale({
     if (!productId || fen === null) return
     if (!method) {
       setMethodMissing(true)
+      // The field may be out of sight on a phone.
+      void MessagePlugin.warning('请选择收款方式')
       return
     }
     const ok = await attempt(

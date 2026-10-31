@@ -4,6 +4,7 @@ import { type CheckInLessonDto, isCheckInCode } from '../../lib/shared'
 import { api, errorMessage } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { lessonTime } from '../../utils/format'
+import { openUpcomingLessons } from '../../utils/nav'
 
 Page({
   data: {
@@ -48,6 +49,6 @@ Page({
   },
 
   lessons() {
-    wx.switchTab({ url: '/pages/lessons/index' })
+    openUpcomingLessons()
   },
 })

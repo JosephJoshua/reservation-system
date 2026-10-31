@@ -2,7 +2,7 @@ import { type SlotDto, venueDateKey } from '../../lib/shared'
 import { api, assetUrl, errorMessage, serverNow, showError } from '../../utils/api'
 import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
-import { navigateOnce } from '../../utils/nav'
+import { navigateOnce, openUpcomingLessons } from '../../utils/nav'
 
 interface CoachOption {
   id: number
@@ -86,9 +86,9 @@ Page({
   },
 
   onShow() {
-    // A 体验课 waiting for payment may have been paid or lapsed meanwhile, maybe on another phone.
-    if (this.data.state === 'error' && this.data.trialPending) {
-      this.load('quiet')
+    // A 体验课 that was taken may have been paid, lapsed or freed meanwhile, maybe on another phone.
+    if (this.data.state === 'error' && this.data.usedUp) {
+      this.load('quiet', true)
       return
     }
     // Coming back from a booking that lost the race should show the slot as taken.
@@ -102,14 +102,28 @@ Page({
     else this.loadSlots(seek)
   },
 
-  /** `seek` is for the slots load that follows; the first load is 'quiet'. */
-  async load(seek?: Seek) {
+  /**
+   * `seek` is for the slots load that follows; the first load is 'quiet'. `fresh` skips the cached
+   * catalog, so a failed fetch throws.
+   */
+  async load(seek?: Seek, fresh = false) {
     try {
-      const catalog = await getCatalog()
+      let catalog = await getCatalog(fresh)
+      // A cached 体验课 block may be stale: the trial may have been freed or paid elsewhere.
+      const cached = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
+      if (!fresh && cached?.isTrial && trialBlock(catalog)) {
+        const stale = catalog
+        catalog = await getCatalog(true).catch(() => stale)
+      }
       this.catalogAt = catalogFetchedAt()
       const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
       if (!lessonType) {
-        this.setData({ state: 'error', error: '这门课程已下架' })
+        this.setData({
+          state: 'error',
+          error: '这门课程已下架',
+          usedUp: false,
+          trialPending: false,
+        })
         return
       }
       const blocked = lessonType.isTrial ? trialBlock(catalog) : ''
@@ -161,8 +175,8 @@ Page({
       })
       this.loadSlots(seek)
     } catch (e) {
-      // A failed recheck of a 体验课 waiting for payment keeps saying so.
-      if (this.data.state === 'error' && this.data.trialPending) {
+      // A failed recheck of a 体验课 that was taken keeps saying so.
+      if (this.data.state === 'error' && this.data.usedUp) {
         showError(e)
         return
       }
@@ -304,7 +318,7 @@ Page({
   },
 
   openLessons() {
-    wx.switchTab({ url: '/pages/lessons/index' })
+    openUpcomingLessons()
   },
 
   retry() {
