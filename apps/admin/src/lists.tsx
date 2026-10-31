@@ -224,8 +224,15 @@ export function usePagedList<T>(path: string | null, { page, size, setPage }: Li
         if (mine !== seq.current) return
         const message = e instanceof RequestError ? e.message : '加载失败'
         setError(message)
-        // With rows on screen the table's empty text never shows, so say it here.
-        if (shown.current) void MessagePlugin.error(message)
+        if (!quiet) {
+          // Another filter or page: the rows on screen are not what it asked for, so the
+          // table's empty text says what went wrong instead.
+          setRows([])
+          setTotal(0)
+        } else if (shown.current) {
+          // A reload after a change keeps the rows, so the empty text never shows: say it here.
+          void MessagePlugin.error(message)
+        }
       } finally {
         if (mine === seq.current) setLoading(false)
       }
