@@ -11,6 +11,13 @@ export async function getCatalog(fresh = false): Promise<CatalogDto> {
   return value
 }
 
+/** Why a 体验课 is shown but cannot be booked. */
+export const TRIAL_USED_UP = '体验课次数已用完'
+
+/** Whether the catalog says this student has no 体验课 left. Missing from an older API: no. */
+export const trialUsedUp = (catalog: CatalogDto): boolean =>
+  catalog.payment.trialAvailable === false
+
 /** When the shared catalog was fetched, so a page can tell it was refreshed meanwhile. */
 export function catalogFetchedAt(): number {
   return catalog?.at ?? 0

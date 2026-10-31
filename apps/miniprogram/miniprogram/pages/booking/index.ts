@@ -6,7 +6,7 @@ import {
   phoneToDial,
 } from '../../lib/shared'
 import { assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
-import { getCatalog } from '../../utils/data'
+import { catalogFetchedAt, getCatalog, TRIAL_USED_UP, trialUsedUp } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { openLink, openVenue } from '../../utils/link'
 import { navigateOnce } from '../../utils/nav'
@@ -28,6 +28,8 @@ Page({
       description: string
       duration: string
       isTrial: boolean
+      /** A 体验课 this student has used up: shown, but not opened. */
+      usedUp: boolean
       isGroup: boolean
       price: string
       original: string
@@ -37,8 +39,23 @@ Page({
     packageCount: 0,
   },
 
+  /** When the catalog this page shows was fetched. */
+  catalogAt: 0,
+
   onLoad() {
     this.load()
+  },
+
+  onShow() {
+    // Another page refreshed the catalog meanwhile, say after booking a 体验课.
+    if (this.data.state !== 'ready') return
+    getCatalog()
+      .then((catalog) => {
+        if (catalogFetchedAt() === this.catalogAt) return
+        this.catalogAt = catalogFetchedAt()
+        this.setData(this.catalogData(catalog))
+      })
+      .catch(() => undefined)
   },
 
   onPullDownRefresh() {
@@ -51,6 +68,7 @@ Page({
         publicApi<HomeDto>('GET', '/home'),
         getCatalog(fresh),
       ])
+      this.catalogAt = catalogFetchedAt()
       this.show(home, catalog)
     } catch (e) {
       // A failed refresh keeps what is on screen.
@@ -68,29 +86,13 @@ Page({
       // Missing from an API older than this page.
       noticeLink: home.noticeLink ?? NO_LINK,
       banners: home.banners.map((b) => ({ ...b, src: assetUrl(b.imageUrl) })),
-      lessonTypes: catalog.lessonTypes.map((t) => {
-        const { price, original } = priceText(t.fromPrice)
-        // 起 only when coaches charge different prices for it.
-        const prices = new Set(
-          catalog.coaches.flatMap((c) =>
-            c.lessons.filter((l) => l.lessonTypeId === t.id).map((l) => l.price.price),
-          ),
-        )
-        return {
-          id: t.id,
-          name: t.name,
-          description: t.description,
-          duration:
-            t.capacity > 1
-              ? `${t.durationMinutes}分钟 · 最多${t.capacity}人`
-              : `${t.durationMinutes}分钟`,
-          isTrial: t.isTrial,
-          isGroup: t.capacity > 1,
-          price,
-          original,
-          from: prices.size > 1,
-        }
-      }),
+      ...this.catalogData(catalog),
+    })
+  },
+
+  catalogData(catalog: CatalogDto) {
+    return {
+      lessonTypes: this.lessonRows(catalog),
       coaches: catalog.coaches.map((c) => ({
         id: c.id,
         name: c.name,
@@ -99,6 +101,34 @@ Page({
         avatar: c.avatarUrl ? assetUrl(c.avatarUrl) : '',
       })),
       packageCount: catalog.packageProducts.length,
+    }
+  },
+
+  lessonRows(catalog: CatalogDto) {
+    const usedUp = trialUsedUp(catalog)
+    return catalog.lessonTypes.map((t) => {
+      const { price, original } = priceText(t.fromPrice)
+      // 起 only when coaches charge different prices for it.
+      const prices = new Set(
+        catalog.coaches.flatMap((c) =>
+          c.lessons.filter((l) => l.lessonTypeId === t.id).map((l) => l.price.price),
+        ),
+      )
+      return {
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        duration:
+          t.capacity > 1
+            ? `${t.durationMinutes}分钟 · 最多${t.capacity}人`
+            : `${t.durationMinutes}分钟`,
+        isTrial: t.isTrial,
+        usedUp: t.isTrial && usedUp,
+        isGroup: t.capacity > 1,
+        price,
+        original,
+        from: prices.size > 1,
+      }
     })
   },
 
@@ -117,6 +147,11 @@ Page({
   },
 
   openLessonType(e: WechatMiniprogram.TouchEvent) {
+    const row = this.data.lessonTypes[e.currentTarget.dataset.index as number]
+    if (row?.usedUp) {
+      wx.showToast({ title: TRIAL_USED_UP, icon: 'none' })
+      return
+    }
     navigateOnce(`/pages/book/index?lessonTypeId=${e.currentTarget.dataset.id}`)
   },
 

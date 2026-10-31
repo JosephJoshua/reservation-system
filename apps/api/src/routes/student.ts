@@ -54,7 +54,7 @@ import {
 import { studentCheckIn } from '../services/attendance'
 import { type AuthVars, bearer, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
-import { coachViews, visibleTo } from '../services/catalog'
+import { coachViews, trialsUsed, visibleTo } from '../services/catalog'
 import { studentFeedback } from '../services/feedback'
 import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
 import { liveLink } from '../services/links'
@@ -336,6 +336,9 @@ export function studentRoutes(deps: Deps) {
       packageProducts: products,
       payment: {
         trialEnabled: settings.payment.trialEnabled,
+        trialAvailable:
+          settings.payment.trialEnabled &&
+          trialsUsed(db, student.id) < settings.payment.trialLimitPerStudent,
         perClassEnabled: settings.payment.perClassEnabled,
         packagesEnabled: settings.payment.packagesEnabled,
       },

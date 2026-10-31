@@ -17,6 +17,8 @@ import {
   getCatalog,
   getMe,
   needsAgreement,
+  TRIAL_USED_UP,
+  trialUsedUp,
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
@@ -206,6 +208,10 @@ Page({
         this.setData({ state: 'error', error: '这门课程暂时不能预约' })
         return
       }
+      if (lessonType.isTrial && trialUsedUp(catalog)) {
+        this.setData({ state: 'error', error: TRIAL_USED_UP })
+        return
+      }
       const { price, package: pkg, perClassEnabled } = quote
       this.terms = bookingTerms(lessonType.rules)
       this.setData({
@@ -348,6 +354,8 @@ Page({
         // And if the venue changed the cancel or move rules meanwhile.
         ...(this.terms ? { expectedTerms: this.terms } : {}),
       })
+      // The 体验课 just taken counts against the allowance the other pages show.
+      if (this.data.isTrial) getCatalog(true).catch(() => undefined)
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
@@ -397,6 +405,13 @@ Page({
         // Booked this session already, on other terms (unpaid at the old price, say): that
         // booking is where to pay or cancel it.
         this.finish(e.bookingId, e.message, e.message)
+        return
+      }
+      if (e instanceof ApiError && e.code === 'trial_used') {
+        // Taken meanwhile, on another phone or at the front desk: the pages stop offering it.
+        await getCatalog(true).catch(() => undefined)
+        await wx.showModal({ title: e.message, content: '可以预约其他课程', showCancel: false })
+        if (isTop(this)) backOr('/pages/booking/index')
         return
       }
       if (e instanceof ApiError && e.code === 'price_changed') {

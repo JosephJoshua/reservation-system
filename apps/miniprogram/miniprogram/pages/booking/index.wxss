@@ -54,6 +54,12 @@
   background-color: var(--td-bg-color-container-active);
 }
 
+/* A 体验课 the student has used up: still listed, in secondary text. */
+.lesson-used .lesson-name,
+.lesson-used .price {
+  color: var(--td-text-color-secondary);
+}
+
 .lesson-main {
   flex: 1;
   min-width: 0;

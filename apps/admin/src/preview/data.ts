@@ -231,7 +231,7 @@ export function studentCatalog(
     packageProducts,
     banners,
     categoryOf: categoryName,
-    payment: { trialEnabled, perClassEnabled: true, packagesEnabled },
+    payment: { trialEnabled, trialAvailable: trialEnabled, perClassEnabled: true, packagesEnabled },
     policies: { booking: '', agreement: '', privacy: '', version: '' },
   }
 }

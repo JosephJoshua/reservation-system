@@ -16,7 +16,7 @@ import {
 } from '../../utils/api'
 import { addLessonToCalendar } from '../../utils/calendar'
 import { scanToCheckIn } from '../../utils/check-in'
-import { cancelRuleText } from '../../utils/data'
+import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundBack, refundStatus, settled } from '../../utils/labels'
@@ -370,6 +370,8 @@ Page({
       const updated = await api<BookingDto>('POST', `/bookings/${b.id}/cancel`, {
         acceptLate: quote.late,
       })
+      // An early cancel gives the 体验课 back, which the other pages offer again.
+      if (updated.lessonType.isTrial) getCatalog(true).catch(() => undefined)
       this.show(updated)
     } catch (e) {
       showError(e)

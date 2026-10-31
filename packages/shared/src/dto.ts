@@ -53,7 +53,13 @@ export interface CatalogDto {
   lessonTypes: LessonTypeDto[]
   coaches: CoachDto[]
   packageProducts: PackageProductDto[]
-  payment: { trialEnabled: boolean; perClassEnabled: boolean; packagesEnabled: boolean }
+  payment: {
+    trialEnabled: boolean
+    /** Whether this student may still book a 体验课: off, or their allowance used up, is false. */
+    trialAvailable: boolean
+    perClassEnabled: boolean
+    packagesEnabled: boolean
+  }
   /** `agreement` falls back to the built-in text; `version` is what a consent agrees to. */
   policies: { booking: string; agreement: string; privacy: string; version: string }
 }

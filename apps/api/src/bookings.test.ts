@@ -461,6 +461,30 @@ describe('trial lessons', () => {
     expect((await book(h, t, s2.id, trial.id)).status).toBe(201)
   })
 
+  it('tells each student in the catalog whether they may still book a trial', async () => {
+    const h = setup()
+    const { coach, trial } = h.seed()
+    const [a, b] = [await h.student('a'), await h.student('b')]
+    const available = async (t: string) =>
+      (await h.call('GET', '/catalog', undefined, t)).json.payment.trialAvailable
+    expect([await available(a), await available(b)]).toEqual([true, true])
+    const first = await book(h, a, h.slot(coach.id, '2026-10-26', 10).id, trial.id)
+    expect(first.status).toBe(201)
+    // Held, even unpaid, it counts; the other student still has theirs.
+    expect([await available(a), await available(b)]).toEqual([false, true])
+    await h.call('POST', `/bookings/${first.json.bookingId}/cancel`, undefined, a)
+    expect(await available(a)).toBe(true)
+    h.settings((s) => {
+      s.payment.trialLimitPerStudent = 2
+    })
+    await pay(h, (await book(h, a, h.slot(coach.id, '2026-10-26', 12).id, trial.id)).json.orderId)
+    expect(await available(a)).toBe(true)
+    h.settings((s) => {
+      s.payment.trialEnabled = false
+    })
+    expect(await available(b)).toBe(false)
+  })
+
   it('is hidden and refused when trials are off', async () => {
     const h = setup()
     h.settings((s) => {
