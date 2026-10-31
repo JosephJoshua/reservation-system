@@ -21,7 +21,7 @@ import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
-import { PAY_PENDING, PAY_UNCLEAR, payOrder } from '../../utils/pay'
+import { PAY_PENDING, PAY_REFUNDED, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 import { previewPhotos } from '../../utils/photos'
 import { ask, openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
@@ -32,6 +32,14 @@ const STATUS: Record<BookingDto['status'], { title: string; icon: string; tone: 
   completed: { title: '已完成', icon: 'check-circle-filled', tone: 'muted' },
   cancelled: { title: '已取消', icon: 'close-circle-filled', tone: 'muted' },
   expired: { title: '已失效', icon: 'close-circle-filled', tone: 'muted' },
+}
+
+/** A booked lesson the venue cannot give as booked: not to be travelled to. */
+const DISRUPTED = { title: '课程有变', icon: 'error-circle-filled', tone: 'hint' }
+
+/** Whether the student is told to come for it: booked, and nothing in the way. */
+function onAsBooked(b: BookingDto): boolean {
+  return b.status === 'confirmed' && !b.disruption
 }
 
 function subtitle(b: BookingDto, now: number): string {
@@ -45,6 +53,16 @@ function subtitle(b: BookingDto, now: number): string {
       return left > 0 ? `请在 ${mm}:${ss} 内完成支付，超时将自动取消` : '支付已超时'
     }
     case 'confirmed':
+      // Paid or on a package, but the venue cannot give it: the student should not come. Once it
+      // has started it can no longer be cancelled here.
+      if (b.disruption) {
+        const next = !b.canCancel
+          ? '如有疑问请联系前台'
+          : b.canMove
+            ? '请取消或改约'
+            : '请取消后重新预约'
+        return `${DISRUPTION_TEXT[b.disruption]}，${next}`
+      }
       return '请按时到场上课'
     case 'completed':
       // Counted like an attended lesson: no refund and the package lesson is used.
@@ -59,12 +77,22 @@ function subtitle(b: BookingDto, now: number): string {
         : b.late
           ? '已过免费取消时间'
           : '你已取消本节课'
-    case 'expired':
-      return b.paymentIssue === 'open'
-        ? '付款异常，场馆会联系你处理'
-        : b.paymentIssue === 'handled'
-          ? '付款异常，场馆已处理'
-          : '未在规定时间内支付'
+    case 'expired': {
+      if (b.paymentIssue === 'open') return '付款异常，场馆会联系你处理'
+      if (b.paymentIssue === 'handled') return '付款异常，场馆已处理'
+      // Paid, but the lesson could not be confirmed (stopped by the venue, or the time was taken
+      // after the hold ran out): the server refunded it, and says why as recorded then.
+      if (b.refund) {
+        const back = b.paidOffline
+          ? '款项将到店退还'
+          : b.refund.status === 'succeeded'
+            ? '款项已原路退回'
+            : '款项将原路退回'
+        return `${b.expiredWhy || '这节课无法上课'}，${back}`
+      }
+      // Unpaid: what stands in the way of the lesson while it is still ahead.
+      return b.disruption ? `${DISRUPTION_TEXT[b.disruption]}，预约已失效` : '未在规定时间内支付'
+    }
   }
 }
 
@@ -170,7 +198,7 @@ Page({
 
   show(fetched: BookingDto) {
     const b = settled(fetched, serverNow())
-    const status = STATUS[b.status]
+    const status = b.status === 'confirmed' && b.disruption ? DISRUPTED : STATUS[b.status]
     this.setData({
       state: 'ready',
       booking: b,
@@ -203,15 +231,18 @@ Page({
               : INVOICE_STATE[b.invoice.state]
           : '',
       invoiceTappable: !!invoiceAction(b.invoice),
+      // Nothing to check in to while the venue cannot give the lesson.
       attendance: b.canCheckIn
-        ? '扫码签到'
+        ? b.disruption
+          ? ''
+          : '扫码签到'
         : b.attendance === 'attended'
           ? '已签到'
           : b.attendance === 'no_show'
             ? '缺席'
             : '',
       address: this.venue?.address ?? '',
-      canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > serverNow(),
+      canAddToCalendar: onAsBooked(b) && Date.parse(b.startsAt) > serverNow(),
       cancelRule:
         // The venue cannot give it as booked, or moved it after the usual deadline: free until
         // it starts.
@@ -267,6 +298,8 @@ Page({
         wx.showToast({ title: PAY_PENDING, icon: 'none', duration: 2500 })
       } else if (result === 'unclear') {
         wx.showToast({ title: PAY_UNCLEAR, icon: 'none', duration: 2500 })
+      } else if (result === 'refunded') {
+        wx.showToast({ title: PAY_REFUNDED, icon: 'none', duration: 2500 })
       }
     } catch (e) {
       if (this.left) return
@@ -357,7 +390,8 @@ Page({
   },
 
   async checkIn() {
-    if (!this.data.booking?.canCheckIn) return
+    const b = this.data.booking
+    if (!b?.canCheckIn || b.disruption) return
     if (await scanToCheckIn()) await this.refresh()
   },
 
@@ -377,7 +411,7 @@ Page({
 
   addToCalendar() {
     const b = this.data.booking
-    if (!b) return
+    if (!b || !onAsBooked(b)) return
     // The page may have stayed open until the lesson began.
     if (Date.parse(b.startsAt) <= serverNow()) {
       this.setData({ canAddToCalendar: false })

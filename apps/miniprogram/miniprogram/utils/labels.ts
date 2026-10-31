@@ -1,4 +1,4 @@
-import type { BookingStatus, PackageStatus, RefundStatus } from '../lib/shared'
+import type { BookingStatus, Disruption, PackageStatus, RefundStatus } from '../lib/shared'
 
 export const REFUND_STATUS: Record<RefundStatus, string> = {
   requested: '待审核',
@@ -21,6 +21,13 @@ export const BOOKING_STATUS: Record<BookingStatus, string> = {
   completed: '已完成',
   cancelled: '已取消',
   expired: '已失效',
+}
+
+/** A booked lesson's tag when the venue cannot give it as booked, short for 闭馆, 请假 and 停课. */
+export const DISRUPTION_TAG: Record<Disruption, string> = {
+  closed: '场馆闭馆',
+  off: '教练请假',
+  inactive: '教练停课',
 }
 
 export const PACKAGE_STATUS: Record<PackageStatus, string> = {

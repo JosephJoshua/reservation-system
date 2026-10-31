@@ -84,6 +84,28 @@ function exceptionView(e: ScheduleExceptionDto, now: number) {
   }
 }
 
+/** The planned changes and the 请假, 加班 and 闭馆 lists as they stand on `today` at `now`. */
+function upcoming(
+  periods: readonly HoursPeriod[],
+  offs: readonly ScheduleExceptionDto[],
+  today: string,
+  now: number,
+) {
+  return {
+    planned: periods
+      .filter((p) => p.from > today)
+      .map((p) => ({
+        from: p.from,
+        text: `${dateLabel(p.from)}起`,
+        summary: hoursSummary(p.hours),
+      })),
+    exceptions: offs
+      .filter((e) => Date.parse(e.endsAt) > now)
+      .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+      .map((e) => exceptionView(e, now)),
+  }
+}
+
 /** Tells the coach about booked lessons a change leaves outside their 排班 or in 请假. */
 function warnConflicts(conflicts: ScheduleConflictDto[], what: string) {
   if (!conflicts.length) return false
@@ -144,6 +166,8 @@ Page({
   },
 
   periods: [] as HoursPeriod[],
+  /** The 请假, 加班 and 闭馆 as loaded, shown again from them when the day moves. */
+  offs: [] as ScheduleExceptionDto[],
   // The hours as loaded, sent back with a save so one over a change by staff is refused.
   hoursVersion: '',
   /** Weekdays changed since the hours were loaded, kept when 生效日期 moves. */
@@ -169,11 +193,14 @@ Page({
     let { from } = this.data
     if (from < today) from = today
     const moved = from !== this.data.from
+    // The planned changes and the 请假 lists move on a day too: one planned for today is now in
+    // effect, and what has ended goes.
     this.setData({
       today,
       lastDay: venueDateKey(new Date(now + 365 * DAY)),
       from,
       fromText: from === today ? '今天' : dateLabel(from),
+      ...upcoming(this.periods, this.offs, today, now),
     })
     if (moved) {
       // As when 生效日期 is picked: the days not edited take the hours in effect from then.
@@ -191,22 +218,14 @@ Page({
       this.periods = view.periods
       this.hoursVersion = view.hoursVersion
       this.lessonMinutes = view.lessonMinutes
+      this.offs = [...view.exceptions, ...view.closures]
       this.setData({
         state: 'ready',
         editable: view.coachEdits,
         advanceDays: view.advanceDays,
         today,
         lastDay: venueDateKey(new Date(now + 365 * DAY)),
-        planned: view.periods
-          .filter((p) => p.from > today)
-          .map((p) => ({
-            from: p.from,
-            text: `${dateLabel(p.from)}起`,
-            summary: hoursSummary(p.hours),
-          })),
-        exceptions: [...view.exceptions, ...view.closures]
-          .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
-          .map((e) => exceptionView(e, now)),
+        ...upcoming(view.periods, this.offs, today, now),
       })
       if (!this.data.dirty) {
         // Hours that only start later read as 不接课 today; open on the first week with hours.

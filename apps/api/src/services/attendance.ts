@@ -7,17 +7,19 @@ import {
   attendanceError,
   CHECK_IN_EARLY_MINUTES,
   type CheckInLessonDto,
+  DISRUPTION_TEXT,
   type FrontDeskLessonDto,
   venueDateKey,
   venueInstant,
   venueParts,
 } from '@rs/shared'
-import { and, asc, eq, gt, gte, inArray, lt } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, lt } from 'drizzle-orm'
 import { immediate } from '../db/client'
 import { bookings, coaches, lessonTypes, slots, staff, students } from '../db/schema'
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { personColumns } from './account'
+import { disruptions } from './disruption'
 import { getSettings } from './settings'
 
 const messages: Record<AttendanceError, string> = {
@@ -50,15 +52,17 @@ export function studentCanCheckIn(b: Booking, now: Date, selfCheckIn: boolean) {
 
 /**
  * The coach or the front desk marks whether the student came; null clears the mark. A repeat
- * keeps who marked it first and when, which the feedback window counts from.
+ * keeps who marked it first and when, which the feedback window counts from, except that the
+ * front desk takes over a mark the student or coach made, so the coach can no longer change it.
+ * Returns whether anything was written.
  */
 export function setAttendance(
   deps: Deps,
   bookingId: number,
   attendance: Attendance | null,
   by: { coachId: number } | { staffId: number },
-) {
-  immediate(deps.db, (tx) => {
+): boolean {
+  return immediate(deps.db, (tx) => {
     const row = tx
       .select({ booking: bookings, coachId: slots.coachId })
       .from(bookings)
@@ -72,7 +76,15 @@ export function setAttendance(
     const now = deps.now()
     const error = attendanceError(row.booking, now, 'coachId' in by ? 'coach' : 'admin', attendance)
     if (error) throw new ApiError(409, error, messages[error])
-    if (row.booking.attendance === attendance) return
+    if (row.booking.attendance === attendance) {
+      if (!attendance || !('staffId' in by) || row.booking.attendanceBy === 'staff') return false
+      // Kept as marked and when, now the desk's.
+      tx.update(bookings)
+        .set({ attendanceBy: 'staff', attendanceStaffId: by.staffId })
+        .where(eq(bookings.id, bookingId))
+        .run()
+      return true
+    }
     tx.update(bookings)
       .set({
         attendance,
@@ -82,6 +94,7 @@ export function setAttendance(
       })
       .where(eq(bookings.id, bookingId))
       .run()
+    return true
   })
 }
 
@@ -117,6 +130,8 @@ export function studentCheckIn(deps: Deps, studentId: number): CheckInLessonDto[
           eq(bookings.studentId, studentId),
           eq(bookings.status, 'confirmed'),
           gt(bookings.endsAt, now),
+          // A called-off session's seat the sweeper has yet to cancel.
+          isNull(slots.cancelledAt),
         ),
       )
       .orderBy(asc(bookings.startsAt))
@@ -136,8 +151,18 @@ export function studentCheckIn(deps: Deps, studentId: number): CheckInLessonDto[
           : '没有待上的课程。如果是在前台预约的，请联系前台',
       )
     }
-    const done = open.filter((r) => r.booking.attendance !== 'no_show')
-    if (done.length === 0) throw new ApiError(409, 'marked', messages.marked)
+    const marked = open.filter((r) => r.booking.attendance !== 'no_show')
+    if (marked.length === 0) throw new ApiError(409, 'marked', messages.marked)
+    // A lesson the venue cannot give (闭馆, 请假, the coach stopped) is not checked in to.
+    const disrupted = disruptions(
+      tx,
+      marked.map((r) => r.booking),
+    )
+    const done = marked.filter((r) => !disrupted.has(r.booking.id))
+    const why = marked[0] ? disrupted.get(marked[0].booking.id) : undefined
+    if (done.length === 0 && why) {
+      throw new ApiError(409, 'lesson_unavailable', `${DISRUPTION_TEXT[why]}，无法签到`)
+    }
     for (const r of done) {
       if (r.booking.attendance === 'attended') continue
       tx.update(bookings)
@@ -176,6 +201,8 @@ export function frontDeskLessons(deps: Deps, date: string): FrontDeskLessonDto[]
     .where(
       and(
         eq(bookings.status, 'confirmed'),
+        // A called-off session's seat the sweeper has yet to cancel.
+        isNull(slots.cancelledAt),
         gte(bookings.startsAt, venueInstant(date, 0)),
         lt(bookings.startsAt, venueInstant(date, 24 * 60)),
       ),

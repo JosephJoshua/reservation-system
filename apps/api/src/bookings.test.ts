@@ -109,7 +109,12 @@ describe('pay per class', () => {
 
     expect((await pay(h, orderId)).status).toBe(204)
     const status = await h.call('GET', `/orders/${orderId}`, undefined, t)
-    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'confirmed', amount: 20000 })
+    expect(status.json).toMatchObject({
+      status: 'paid',
+      bookingStatus: 'confirmed',
+      amount: 20000,
+      refunded: false,
+    })
     // A repeated callback changes nothing.
     expect((await pay(h, orderId)).status).toBe(204)
     expect(h.db.select().from(refunds).all()).toHaveLength(0)
@@ -1720,6 +1725,8 @@ describe('instants out of range', () => {
   })
 })
 
+const CHECK_IN_CODE = 'https://yuyue.example.com/checkin'
+
 describe('lessons the venue cannot give', () => {
   // Sunday 18:00 at the venue; the lesson is Monday 10:00, already inside the 24-hour deadline.
   const lessonDay = '2026-10-26'
@@ -1826,6 +1833,129 @@ describe('lessons the venue cannot give', () => {
       .where(eq(refunds.bookingId, b?.id ?? 0))
       .get()
     expect(refund).toMatchObject({ amount: b?.price, reason: '这节课的时间场馆闭馆，自动退款' })
+    // The student is told the lesson cannot go ahead, not that they paid late.
+    const status = await h.call('GET', `/orders/${res.json.orderId}`, undefined, t)
+    expect(status.json).toMatchObject({ status: 'paid', bookingStatus: 'expired', refunded: true })
+    const view = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(view.json).toMatchObject({
+      status: 'expired',
+      expiredWhy: '这节课的时间场馆闭馆',
+      disruption: null,
+      refund: { amount: b?.price },
+      canCancel: false,
+      cancelDeadline: '2026-10-25T02:00:00.000Z',
+    })
+    // Said as recorded, whatever changes later.
+    h.db.delete(scheduleExceptions).run()
+    await stopped(h, coach.id, 'off')
+    const later = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(later.json).toMatchObject({ expiredWhy: '这节课的时间场馆闭馆', disruption: null })
+  })
+
+  it('says nothing is refunded for a paid lesson cancelled late with no refund', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    forfeit(h)
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id, lessonDay, 10).id, lesson.id)
+    await pay(h, res.json.orderId)
+    const c = await h.call(
+      'POST',
+      `/bookings/${res.json.bookingId}/cancel`,
+      { acceptLate: true },
+      t,
+    )
+    expect(c.status).toBe(200)
+    const status = await h.call('GET', `/orders/${res.json.orderId}`, undefined, t)
+    expect(status.json).toMatchObject({
+      status: 'paid',
+      bookingStatus: 'cancelled',
+      refunded: false,
+    })
+  })
+
+  it('says a late payment was refunded because the time was taken, not a later 请假', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    const [t, other] = [await h.student('a'), await h.student('b')]
+    const slotId = h.slot(coach.id, lessonDay, 10).id
+    const res = await book(h, t, slotId, lesson.id)
+    const order = h.db.select().from(orders).where(eq(orders.id, res.json.orderId)).get()
+    h.clock.now = new Date(h.clock.now.getTime() + 20 * 60_000)
+    await sweep(h.deps)
+    const taken = await book(h, other, slotId, lesson.id)
+    expect(taken.status).toBe(201)
+    applyPayment(h.deps, order?.outTradeNo ?? '', {
+      state: 'paid',
+      transactionId: 't1',
+      paidAt: h.deps.now(),
+      amount: order?.amount ?? 0,
+    })
+    await stopped(h, coach.id, 'off')
+    const view = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(view.json).toMatchObject({
+      status: 'expired',
+      expiredWhy: '时段已被预约',
+      disruption: null,
+      refund: { amount: order?.amount },
+    })
+  })
+
+  it('keeps a booked lesson in a 闭馆 flagged until it ends, and refuses checking in to it', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id, lessonDay, 10).id, lesson.id)
+    await pay(h, res.json.orderId)
+    await stopped(h, coach.id, 'closed')
+    const id = res.json.bookingId
+    // 09:45 venue time, open for check-in.
+    h.clock.now = new Date('2026-10-26T01:45:00Z')
+    const before = await h.call('GET', `/bookings/${id}`, undefined, t)
+    expect(before.json).toMatchObject({ disruption: 'closed', canCheckIn: false, canCancel: true })
+    const scan = await h.call('POST', '/check-in', { code: CHECK_IN_CODE }, t)
+    expect(scan.status).toBe(409)
+    expect(scan.json.error).toEqual({
+      code: 'lesson_unavailable',
+      message: '这节课的时间场馆闭馆，无法签到',
+    })
+    // Under way: still flagged, no longer cancellable, the deadline as it was at the start.
+    h.clock.now = new Date('2026-10-26T02:10:00Z')
+    const during = await h.call('GET', `/bookings/${id}`, undefined, t)
+    expect(during.json).toMatchObject({
+      status: 'confirmed',
+      disruption: 'closed',
+      canCancel: false,
+      canCheckIn: false,
+      cancelDeadline: '2026-10-25T02:00:00.000Z',
+    })
+    expect((await h.call('POST', '/check-in', { code: CHECK_IN_CODE }, t)).status).toBe(409)
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.attendance).toBeNull()
+    h.clock.now = new Date('2026-10-26T03:00:00Z')
+    const after = await h.call('GET', `/bookings/${id}`, undefined, t)
+    expect(after.json).toMatchObject({ status: 'completed', disruption: null })
+  })
+
+  it('says why a hold the coach went on leave for has lapsed', async () => {
+    const h = setup({ now: '2026-10-25T10:00:00Z' })
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    const res = await book(h, t, h.slot(coach.id, lessonDay, 10).id, lesson.id)
+    const other = await book(h, t, h.slot(coach.id, '2026-10-28', 10).id, lesson.id)
+    await stopped(h, coach.id, 'off')
+    const pending = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(pending.json).toMatchObject({ status: 'pending_payment', disruption: 'off' })
+    h.clock.now = new Date(h.clock.now.getTime() + 20 * 60_000)
+    await sweep(h.deps)
+    const lapsed = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(lapsed.json).toMatchObject({ status: 'expired', disruption: 'off', refund: null })
+    // A hold that just ran out, with nothing in the way, says nothing more.
+    const plain = await h.call('GET', `/bookings/${other.json.bookingId}`, undefined, t)
+    expect(plain.json).toMatchObject({ status: 'expired', disruption: null })
+    // Only while the lesson is ahead: nothing was recorded for an unpaid hold.
+    h.clock.now = new Date('2026-10-27T00:00:00Z')
+    const later = await h.call('GET', `/bookings/${res.json.bookingId}`, undefined, t)
+    expect(later.json).toMatchObject({ status: 'expired', disruption: null, expiredWhy: null })
   })
 
   it('refunds a late payment for a lapsed hold the coach is now on leave for, saying why', async () => {
