@@ -802,6 +802,31 @@ describe('moving seats', () => {
     const res = await h.call('POST', `/admin/bookings/${id}/move`, { slotId: to }, admin)
     expect(res.json.error).toMatchObject({ code: 'slot_taken', message: '该课已满员' })
   })
+
+  it('does not offer a full session for a move because the student’s own hold there lapsed', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const from = await session(h, admin, kids.id, coach.id, 10)
+    const to = await session(h, admin, kids.id, coach.id, 14)
+    h.db.update(slots).set({ capacity: 2 }).where(eq(slots.id, to)).run()
+    const [a, b] = await students(h, 'a', 'b')
+    const id = await seat(h, a, from, kids.id)
+    // a also holds the last place in the 14:00 session, unpaid, and its payment time is up.
+    expect((await book(h, a, to, kids.id)).json.status).toBe('pending_payment')
+    await seat(h, b, to, kids.id)
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    const listed = async (q: string) =>
+      (await h.call('GET', `/slots?date=2026-10-26${q}`, undefined, a)).json.find(
+        (s: { id: number }) => s.id === to,
+      )
+    // Booking again closes the hold first, so a new booking may take that place.
+    expect(await listed('')).toMatchObject({ available: true, seatsLeft: 1, mine: null })
+    // A move does not, so the session stays full for it, as the move itself says.
+    expect(await listed(`&moving=${id}`)).toMatchObject({ available: false, seatsLeft: 0 })
+    const move = await h.call('POST', `/bookings/${id}/move`, { slotId: to }, a)
+    expect(move.status).toBe(409)
+  })
 })
 
 describe('the coach and group sessions', () => {

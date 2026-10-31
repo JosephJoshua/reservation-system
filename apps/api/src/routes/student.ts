@@ -437,7 +437,7 @@ export function studentRoutes(deps: Deps) {
     )
     // The student's own seats in these sessions: booked already, so not offered again. A hold
     // whose payment time is up is not: booking again closes it and books afresh, so its seat is
-    // free for them as well.
+    // free for them as well. A move does not close it, so for a move it is still their seat.
     const ownRows = sessions.length
       ? db
           .select({
@@ -461,7 +461,7 @@ export function studentRoutes(deps: Deps) {
           .all()
       : []
     const lapsed = (b: (typeof ownRows)[number]) =>
-      b.status === 'pending_payment' && b.payBy !== null && b.payBy <= now
+      !moving && b.status === 'pending_payment' && b.payBy !== null && b.payBy <= now
     const lapsedSeats = new Set(ownRows.filter(lapsed).map((b) => b.slotId))
     const noTable = slotsWithoutTable(db, sessions, moving?.id, lapsedSeats)
     const mine = new Map(
