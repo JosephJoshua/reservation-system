@@ -5,7 +5,7 @@ import { Dialog, DialogPlugin, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from './api'
 import { fmtDateTime, yuan } from './format'
 import { attempt, onceKey, useSubmitting } from './hooks'
-import { bookingStatusLabel, disruptionLabel, refundLabel } from './labels'
+import { bookingStatusLabel, cancelConfirmLabel, disruptionLabel, refundLabel } from './labels'
 import { openLesson } from './lessonLink'
 import { useCan } from './me'
 import type { AdminBooking } from './types'
@@ -216,7 +216,7 @@ export function CancelBookingDialog({
       visible
       header="场馆取消预约"
       confirmBtn={{
-        content: '确认取消',
+        content: cancelConfirmLabel([booking.status]),
         theme: 'danger',
         disabled: !reason.trim(),
         loading: submitting,

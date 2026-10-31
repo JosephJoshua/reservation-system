@@ -79,6 +79,11 @@ export function cancelConfirmLabel(statuses: BookingStatus[]) {
   return statuses.some((s) => s !== 'pending_payment') ? '确认取消并退款' : '确认取消'
 }
 
+/** What a cancelled single booking tells the desk: a refund only when someone paid. */
+export function cancelDoneMessage(status: BookingStatus) {
+  return status === 'pending_payment' ? '已取消' : '已取消，学员会收到全额退款或退回的课时'
+}
+
 /** 支付方式 as the 订单 and 退款 filters offer it. */
 export const providerOptions = [
   { label: '微信支付', value: 'wechat' },

@@ -567,6 +567,8 @@ function CategoryEditor({
                     min={0}
                     decimalPlaces={2}
                     suffix="元"
+                    max={100_000}
+                    allowInputOverLimit={false}
                     onChange={(v) => setPrice(t.id, toFen(v as number) ?? p.price)}
                   />
                 ) : (
@@ -593,7 +595,14 @@ function CategoryEditor({
                 decimalPlaces={2}
                 placeholder="未设置"
                 suffix="元/节"
-                onChange={(v) => setRate(t.id, toFen(v as number))}
+                max={100_000}
+                allowInputOverLimit={false}
+                onChange={(v) => {
+                  // Left empty: unset. A negative one is not a rate, so the last one stays.
+                  const rate = toFen(v as number)
+                  if (rate !== null || v === undefined || v === null || v === '')
+                    setRate(t.id, rate)
+                }}
               />
             </Space>
           ))}
