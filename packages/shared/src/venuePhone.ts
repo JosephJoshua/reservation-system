@@ -23,12 +23,14 @@ const NOTE = /\s*\([^()]*[^\d\s()+.-][^()]*\)\s*$/
 // An extension at the end, as in 转 8 or #8, or in brackets, as in (8) or (转 8).
 const EXTENSION =
   /\s*(?:(?:转|分机|#|ext\.?|x)\s*\d{1,6}|\(\s*(?:(?:转|分机|ext\.?|x)\s*)?\d{1,6}\s*\))$/i
-// An extension after a hyphen or a space, as in 0571-88888888-802, 010 6234 5678 8 or
-// 400-820-8820-3: only after a 400/800 number or an area code and a full local number, so 010-6234-5678 stays one number. The area code may
+// An extension after a hyphen or a space, as in 0571-88888888-802, 010 6234 5678 8,
+// 400-820-8820-3 or 6234 5678-8: only after a 400/800 number, an area code and a full local
+// number, or an 8-digit local number (a 7-digit one only before a hyphen, as 755 1234 5678 is more
+// likely a number missing its 0), so 010-6234-5678 stays one number. The area code may
 // follow China's code (+86, 86 or 0086, with or without the trunk 0), as in +86 10-6234 5678-8;
 // never a mobile prefix, so a mobile with digits after it is still refused.
 const DASH_EXTENSION =
-  /^((?:(?:400|800)\d?[\s.-]?\d{3}[\s.-]?\d{3,4})|(?:[2-9]\d{2,3}[\s.-]?\d{4})|(?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?)?\(?0?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
+  /^((?:(?:400|800)\d?[\s.-]?\d{3,4}[\s.-]?\d{3,4})|(?!400|800)(?:[2-9]\d{3}[\s.-]?\d{4}|[2-9]\d{2}[\s.-]?\d{4}(?=\s*-))|(?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?)?\(?0?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
 // A mainland mobile with digits after it, as in 139-0000-0001-12: a typo more likely than an
 // extension, which a mobile seldom has, so refused rather than dialled with the extra digits.
 const MOBILE_AND_MORE = /^1[3-9]\d{9}\d/

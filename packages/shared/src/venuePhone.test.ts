@@ -162,6 +162,13 @@ describe('dialablePhone', () => {
     expect(dialablePhone('6234 5678 8')).toBe('62345678')
     expect(dialablePhone('623 4567-8')).toBe('6234567')
     expect(venuePhoneValid('623456788')).toBe(false)
+    expect(dialablePhone('400-8208-820')).toBe('4008208820')
+    expect(dialablePhone('400 8208 820')).toBe('4008208820')
+    expect(dialablePhone('400-6666-800')).toBe('4006666800')
+    expect(dialablePhone('400-8208-820-3')).toBe('4008208820')
+    for (const phone of ['755 1234 5678', '571 8888 8888', '852 2345 6789']) {
+      expect(venuePhoneValid(phone), phone).toBe(false)
+    }
   })
 
   it('refuses a domestic number longer than any mainland number', () => {
