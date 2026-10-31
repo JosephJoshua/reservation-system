@@ -57,6 +57,8 @@ export interface CatalogDto {
     trialEnabled: boolean
     /** Whether this student may still book a 体验课: off, or their allowance used up, is false. */
     trialAvailable: boolean
+    /** Not available only because of the student's unpaid 体验课 holds that can still be paid. */
+    trialPending: boolean
     perClassEnabled: boolean
     packagesEnabled: boolean
   }

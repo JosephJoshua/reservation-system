@@ -6,7 +6,7 @@ import {
   phoneToDial,
 } from '../../lib/shared'
 import { assetUrl, errorMessage, publicApi, showError } from '../../utils/api'
-import { catalogFetchedAt, getCatalog, TRIAL_USED_UP, trialUsedUp } from '../../utils/data'
+import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { openLink, openVenue } from '../../utils/link'
 import { navigateOnce } from '../../utils/nav'
@@ -28,8 +28,8 @@ Page({
       description: string
       duration: string
       isTrial: boolean
-      /** A 体验课 this student has used up: shown, but not opened. */
-      usedUp: boolean
+      /** Why this 体验课 cannot be booked now, shown in place of its length; '' when it can. */
+      blocked: string
       isGroup: boolean
       price: string
       original: string
@@ -105,7 +105,7 @@ Page({
   },
 
   lessonRows(catalog: CatalogDto) {
-    const usedUp = trialUsedUp(catalog)
+    const blocked = trialBlock(catalog)
     return catalog.lessonTypes.map((t) => {
       const { price, original } = priceText(t.fromPrice)
       // 起 only when coaches charge different prices for it.
@@ -123,7 +123,7 @@ Page({
             ? `${t.durationMinutes}分钟 · 最多${t.capacity}人`
             : `${t.durationMinutes}分钟`,
         isTrial: t.isTrial,
-        usedUp: t.isTrial && usedUp,
+        blocked: t.isTrial ? blocked : '',
         isGroup: t.capacity > 1,
         price,
         original,
@@ -148,8 +148,13 @@ Page({
 
   openLessonType(e: WechatMiniprogram.TouchEvent) {
     const row = this.data.lessonTypes[e.currentTarget.dataset.index as number]
-    if (row?.usedUp) {
-      wx.showToast({ title: TRIAL_USED_UP, icon: 'none' })
+    // One still to pay is paid from 课程; one used up cannot be opened.
+    if (row?.blocked === TRIAL_PENDING) {
+      wx.switchTab({ url: '/pages/lessons/index' })
+      return
+    }
+    if (row?.blocked) {
+      wx.showToast({ title: row.blocked, icon: 'none' })
       return
     }
     navigateOnce(`/pages/book/index?lessonTypeId=${e.currentTarget.dataset.id}`)

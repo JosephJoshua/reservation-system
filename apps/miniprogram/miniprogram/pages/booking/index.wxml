@@ -43,8 +43,8 @@
     <view
       wx:for="{{lessonTypes}}"
       wx:key="id"
-      class="lesson {{item.usedUp ? 'lesson-used' : ''}}"
-      hover-class="{{item.usedUp ? 'none' : 'lesson-hover'}}"
+      class="lesson {{item.blocked ? 'lesson-used' : ''}}"
+      hover-class="{{item.blocked ? 'none' : 'lesson-hover'}}"
       data-id="{{item.id}}"
       data-index="{{index}}"
       bind:tap="openLessonType"
@@ -52,11 +52,11 @@
       <view class="lesson-main">
         <view class="lesson-name">
           <text>{{item.name}}</text>
-          <view wx:if="{{item.isTrial}}" class="lesson-tag"><t-tag size="small" theme="{{item.usedUp ? 'default' : 'primary'}}" variant="light">体验</t-tag></view>
+          <view wx:if="{{item.isTrial}}" class="lesson-tag"><t-tag size="small" theme="{{item.blocked ? 'default' : 'primary'}}" variant="light">体验</t-tag></view>
           <view wx:if="{{item.isGroup}}" class="lesson-tag"><t-tag size="small" theme="primary" variant="light">小班</t-tag></view>
         </view>
         <view wx:if="{{item.description}}" class="lesson-desc">{{item.description}}</view>
-        <view class="lesson-meta">{{item.usedUp ? '体验课次数已用完' : item.duration}}</view>
+        <view class="lesson-meta">{{item.blocked || item.duration}}</view>
       </view>
       <view class="lesson-side">
         <view wx:if="{{item.price}}">

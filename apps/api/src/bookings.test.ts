@@ -510,28 +510,42 @@ describe('trial lessons', () => {
     ).toHaveLength(1)
   })
 
-  it('tells each student in the catalog whether they may still book a trial', async () => {
+  it('tells each student in the catalog whether they may still book a trial, or must pay one', async () => {
     const h = setup()
     const { coach, trial } = h.seed()
     const [a, b] = [await h.student('a'), await h.student('b')]
-    const available = async (t: string) =>
-      (await h.call('GET', '/catalog', undefined, t)).json.payment.trialAvailable
-    expect([await available(a), await available(b)]).toEqual([true, true])
+    const state = async (t: string) => {
+      const { trialAvailable, trialPending } = (await h.call('GET', '/catalog', undefined, t)).json
+        .payment
+      return [trialAvailable, trialPending]
+    }
+    expect([await state(a), await state(b)]).toEqual([
+      [true, false],
+      [true, false],
+    ])
     const first = await book(h, a, h.slot(coach.id, '2026-10-26', 10).id, trial.id)
     expect(first.status).toBe(201)
-    // Held, even unpaid, it counts; the other student still has theirs.
-    expect([await available(a), await available(b)]).toEqual([false, true])
+    // Held unpaid, it takes the trial, but it is one to pay rather than used up; the other
+    // student still has theirs.
+    expect([await state(a), await state(b)]).toEqual([
+      [false, true],
+      [true, false],
+    ])
     await h.call('POST', `/bookings/${first.json.bookingId}/cancel`, undefined, a)
-    expect(await available(a)).toBe(true)
+    expect(await state(a)).toEqual([true, false])
     h.settings((s) => {
       s.payment.trialLimitPerStudent = 2
     })
     await pay(h, (await book(h, a, h.slot(coach.id, '2026-10-26', 12).id, trial.id)).json.orderId)
-    expect(await available(a)).toBe(true)
+    expect(await state(a)).toEqual([true, false])
+    const second = await book(h, a, h.slot(coach.id, '2026-10-26', 14).id, trial.id)
+    expect(await state(a)).toEqual([false, true])
+    await pay(h, second.json.orderId)
+    expect(await state(a)).toEqual([false, false])
     h.settings((s) => {
       s.payment.trialEnabled = false
     })
-    expect(await available(b)).toBe(false)
+    expect(await state(b)).toEqual([false, false])
   })
 
   it('is hidden and refused when trials are off', async () => {

@@ -54,7 +54,7 @@ import {
 import { studentCheckIn } from '../services/attendance'
 import { type AuthVars, bearer, loginStudent, logout, requireStudent } from '../services/auth'
 import { cancelBooking, createBooking, LIVE, quoteBooking } from '../services/bookings'
-import { coachViews, trialsUsed, visibleTo } from '../services/catalog'
+import { coachViews, payableTrialHolds, trialsUsed, visibleTo } from '../services/catalog'
 import { studentFeedback } from '../services/feedback'
 import { invoicePdf, requestInvoice, studentInvoices } from '../services/invoices'
 import { liveLink } from '../services/links'
@@ -266,6 +266,15 @@ export function studentRoutes(deps: Deps) {
     const settings = getSettings(db)
     const types = bookableTypes(student)
     const coachDtos = coachViews(db, activeCoaches(), types, now)
+    // A trial still on offer to this student; when not, whether only unpaid holds that can still
+    // be paid take it up, so the mini program can say to pay rather than that it is used up.
+    const trial = (() => {
+      const { trialEnabled, trialLimitPerStudent: limit } = settings.payment
+      if (!trialEnabled) return { available: false, pending: false }
+      const used = trialsUsed(db, student.id, now)
+      if (used < limit) return { available: true, pending: false }
+      return { available: false, pending: used - payableTrialHolds(db, student.id, now) < limit }
+    })()
     // Active coach and lesson type pairs they teach.
     const teachingNow = new Set(
       db
@@ -336,9 +345,8 @@ export function studentRoutes(deps: Deps) {
       packageProducts: products,
       payment: {
         trialEnabled: settings.payment.trialEnabled,
-        trialAvailable:
-          settings.payment.trialEnabled &&
-          trialsUsed(db, student.id, now) < settings.payment.trialLimitPerStudent,
+        trialAvailable: trial.available,
+        trialPending: trial.pending,
         perClassEnabled: settings.payment.perClassEnabled,
         packagesEnabled: settings.payment.packagesEnabled,
       },

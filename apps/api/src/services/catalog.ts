@@ -117,3 +117,22 @@ export function trialsUsed(tx: Q, studentId: number, lapsedAt?: Date): number {
     .get()
   return row?.n ?? 0
 }
+
+/** The student's unpaid trial holds that can still be paid at `now`. */
+export function payableTrialHolds(tx: Q, studentId: number, now: Date): number {
+  const row = tx
+    .select({ n: sql<number>`count(distinct ${bookings.id})` })
+    .from(bookings)
+    .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
+    .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(lessonTypes.isTrial, true),
+        eq(bookings.status, 'pending_payment'),
+        or(isNull(orders.expiresAt), gt(orders.expiresAt, now)),
+      ),
+    )
+    .get()
+  return row?.n ?? 0
+}

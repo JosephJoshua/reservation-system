@@ -11,12 +11,18 @@ export async function getCatalog(fresh = false): Promise<CatalogDto> {
   return value
 }
 
-/** Why a 体验课 is shown but cannot be booked. */
+/** Why a 体验课 is shown but cannot be booked: used up, or taken by one still to pay. */
 export const TRIAL_USED_UP = '体验课次数已用完'
+export const TRIAL_PENDING = '你有体验课待支付'
 
-/** Whether the catalog says this student has no 体验课 left. Missing from an older API: no. */
-export const trialUsedUp = (catalog: CatalogDto): boolean =>
-  catalog.payment.trialAvailable === false
+/**
+ * Why this student cannot book a 体验课 now, or '' when they can. Missing from an older API: they
+ * can, and the booking says otherwise.
+ */
+export function trialBlock(catalog: CatalogDto): string {
+  if (catalog.payment.trialAvailable !== false) return ''
+  return catalog.payment.trialPending ? TRIAL_PENDING : TRIAL_USED_UP
+}
 
 /** When the shared catalog was fetched, so a page can tell it was refreshed meanwhile. */
 export function catalogFetchedAt(): number {

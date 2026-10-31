@@ -17,8 +17,8 @@ import {
   getCatalog,
   getMe,
   needsAgreement,
-  TRIAL_USED_UP,
-  trialUsedUp,
+  TRIAL_PENDING,
+  trialBlock,
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
@@ -208,8 +208,9 @@ Page({
         this.setData({ state: 'error', error: '这门课程暂时不能预约' })
         return
       }
-      if (lessonType.isTrial && trialUsedUp(catalog)) {
-        this.setData({ state: 'error', error: TRIAL_USED_UP })
+      const blocked = lessonType.isTrial ? trialBlock(catalog) : ''
+      if (blocked) {
+        this.setData({ state: 'error', error: blocked })
         return
       }
       const { price, package: pkg, perClassEnabled } = quote
@@ -409,8 +410,14 @@ Page({
       }
       if (e instanceof ApiError && e.code === 'trial_used') {
         // Taken meanwhile, on another phone or at the front desk: the pages stop offering it.
-        await getCatalog(true).catch(() => undefined)
-        await wx.showModal({ title: e.message, content: '可以预约其他课程', showCancel: false })
+        // A trial still to pay is said as such: it is paid from 课程.
+        const fresh = await getCatalog(true).catch(() => null)
+        const pending = fresh !== null && trialBlock(fresh) === TRIAL_PENDING
+        await wx.showModal({
+          title: pending ? TRIAL_PENDING : e.message,
+          content: pending ? '请在“课程”中支付或取消' : '可以预约其他课程',
+          showCancel: false,
+        })
         if (isTop(this)) backOr('/pages/booking/index')
         return
       }
