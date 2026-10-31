@@ -1,5 +1,5 @@
 import { type CoachDto, lessonPrice, type PriceTag } from '@rs/shared'
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import {
   bookings,
@@ -8,6 +8,7 @@ import {
   coaches,
   coachLessonTypes,
   lessonTypes,
+  orders,
 } from '../db/schema'
 
 export type LessonType = typeof lessonTypes.$inferSelect
@@ -88,20 +89,48 @@ export function visibleTo(lessonType: LessonType, student: { tester: boolean }) 
   return lessonType.active && (!lessonType.adminOnly || student.tester)
 }
 
-/** Trial lessons that count against a student's limit: live ones and late-cancelled ones. */
-export function trialsUsed(tx: Q, studentId: number): number {
+/**
+ * Trial lessons that count against a student's limit: live ones and late-cancelled ones. With
+ * `lapsedAt`, an unpaid hold whose payment time is up by then does not count: booking a trial
+ * closes such holds first (see createBooking), so only the catalog passes it.
+ */
+export function trialsUsed(tx: Q, studentId: number, lapsedAt?: Date): number {
   const row = tx
-    .select({ n: sql<number>`count(*)` })
+    .select({ n: sql<number>`count(distinct ${bookings.id})` })
     .from(bookings)
     .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
+    .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
     .where(
       and(
         eq(bookings.studentId, studentId),
         eq(lessonTypes.isTrial, true),
         or(
-          inArray(bookings.status, ['pending_payment', 'confirmed']),
+          eq(bookings.status, 'confirmed'),
+          and(
+            eq(bookings.status, 'pending_payment'),
+            lapsedAt ? or(isNull(orders.expiresAt), gt(orders.expiresAt, lapsedAt)) : undefined,
+          ),
           and(eq(bookings.status, 'cancelled'), eq(bookings.late, true)),
         ),
+      ),
+    )
+    .get()
+  return row?.n ?? 0
+}
+
+/** The student's unpaid trial holds that can still be paid at `now`. */
+export function payableTrialHolds(tx: Q, studentId: number, now: Date): number {
+  const row = tx
+    .select({ n: sql<number>`count(distinct ${bookings.id})` })
+    .from(bookings)
+    .innerJoin(lessonTypes, eq(lessonTypes.id, bookings.lessonTypeId))
+    .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
+    .where(
+      and(
+        eq(bookings.studentId, studentId),
+        eq(lessonTypes.isTrial, true),
+        eq(bookings.status, 'pending_payment'),
+        or(isNull(orders.expiresAt), gt(orders.expiresAt, now)),
       ),
     )
     .get()

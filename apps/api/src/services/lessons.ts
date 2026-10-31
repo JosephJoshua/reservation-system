@@ -223,6 +223,12 @@ export function coachSchedule(deps: Deps, coachId: number, from: string, to: str
   return {
     lessons: items,
     free: free.map((f) => ({ startsAt: f.startsAt.toISOString(), endsAt: f.endsAt.toISOString() })),
+    working: dates.flatMap((d) =>
+      (working?.get(d) ?? []).map((w) => ({
+        startsAt: w.startsAt.toISOString(),
+        endsAt: w.endsAt.toISOString(),
+      })),
+    ),
     off,
     coachEdits: settings.booking.coachEditsHours,
   }

@@ -1,6 +1,6 @@
 import type { CoachDetailDto } from '../../lib/shared'
 import { ApiError, api, assetUrl, errorMessage } from '../../utils/api'
-import { getCatalog } from '../../utils/data'
+import { getCatalog, trialBlock } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { navigateBackOnce, navigateOnce, switchTabOnce } from '../../utils/nav'
 import { richTextNodes } from '../../utils/rich-text'
@@ -61,7 +61,8 @@ Page({
           {
             id: type.id,
             name: type.name,
-            duration: `${type.durationMinutes}分钟`,
+            // A 体验课 they cannot book now stays in the price list, saying why.
+            duration: (type.isTrial && trialBlock(catalog)) || `${type.durationMinutes}分钟`,
             ...priceText(l.price),
           },
         ]
