@@ -976,6 +976,40 @@ describe('booking a private lesson by coach and time', () => {
     expect(h.db.select().from(slots).all()).toHaveLength(2)
   })
 
+  it('offers the student their own lapsed unpaid hold’s time again, and only that start', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    const other = await h.student('b')
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '13:00' }])
+    const held = await book(h, student, coach.id, at(SUN, '10:00'), lesson.id, { pay: false })
+    expect(held.json.status).toBe('pending_payment')
+    const moveFrom = await book(h, student, coach.id, at(SUN, '12:00'), lesson.id)
+    expect(moveFrom.status).toBe(201)
+    // While it can still be paid, the time is theirs and not offered.
+    expect(await times(h, student, SUN, lesson.id)).toEqual(['09:00', '11:00'])
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    // Its payment time is up, but the sweep has not closed it yet. Booking that start again
+    // closes it first, so it is offered to them; 10:30 still overlaps the hold, and others
+    // still wait for the sweep.
+    expect(await times(h, student, SUN, lesson.id)).toEqual(['09:00', '10:00', '11:00'])
+    expect(await times(h, other, SUN, lesson.id)).toEqual(['09:00', '11:00'])
+    // A move does not close it, so a move is not offered that time.
+    const moving = await h.call(
+      'GET',
+      `/slots?date=${SUN}&lessonTypeId=${lesson.id}&moving=${moveFrom.json.bookingId}`,
+      undefined,
+      student,
+    )
+    expect(
+      (moving.json as { id: number | null; startsAt: string }[])
+        .filter((s) => s.id === null)
+        .map((s) => hhmm(s.startsAt)),
+    ).not.toContain('10:00')
+    const again = await book(h, student, coach.id, at(SUN, '10:00'), lesson.id, { pay: false })
+    expect(again.status).toBe(201)
+    expect(again.json.bookingId).not.toBe(held.json.bookingId)
+  })
+
   it('refuses a time 排班 does not offer', async () => {
     const h = setup()
     const { coach, lesson, admin, student } = await venue(h)

@@ -27,7 +27,7 @@ import {
   venueDates,
   venueInstant,
 } from '@rs/shared'
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, or } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import {
@@ -496,13 +496,36 @@ export function studentRoutes(deps: Deps) {
     })
 
     if (lessonType && !isGroup(lessonType)) {
+      const dates = venueDates(venueInstant(from, 12 * 60), daysBetween(from, to) - 1)
+      const minutes = moving ? lengthOf(moving) / 60_000 : lessonType.durationMinutes
       const times = openTimes(db, {
         coachIds: activeCoaches,
-        dates: venueDates(venueInstant(from, 12 * 60), daysBetween(from, to) - 1),
-        minutes: moving ? lengthOf(moving) / 60_000 : lessonType.durationMinutes,
+        dates,
+        minutes,
         notBefore: now,
         except: moving?.id,
       })
+      // The student's own private hold whose payment time is up: booking that coach and start
+      // again closes it first, so that time is free for them. Only that very start is, since a
+      // booking at another time does not close it. A move does not close it either.
+      if (!moving) {
+        const listedAt = new Set(times.map((t) => `${t.coachId}@${t.startsAt.getTime()}`))
+        for (const hold of lapsedPrivateHolds(now, student.id, activeCoaches, from, to)) {
+          const key = `${hold.coachId}@${hold.startsAt.getTime()}`
+          if (listedAt.has(key)) continue
+          const freed = openTimes(db, {
+            coachIds: [hold.coachId],
+            dates: [venueDateKey(hold.startsAt)],
+            minutes,
+            notBefore: now,
+            except: hold.id,
+          }).find((t) => t.startsAt.getTime() === hold.startsAt.getTime())
+          if (freed) {
+            times.push(freed)
+            listedAt.add(key)
+          }
+        }
+      }
       for (const t of times) {
         if (!shown(t.startsAt, null)) continue
         out.push({
@@ -521,6 +544,35 @@ export function studentRoutes(deps: Deps) {
     return out.sort(
       (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt) || a.coachId - b.coachId,
     )
+  }
+
+  /** The student's unpaid private holds with these coaches on these dates whose payment time is up. */
+  function lapsedPrivateHolds(
+    now: Date,
+    studentId: number,
+    coachIds: readonly number[],
+    from: string,
+    to: string,
+  ) {
+    if (!coachIds.length) return []
+    return db
+      .select({ id: bookings.id, coachId: slots.coachId, startsAt: bookings.startsAt })
+      .from(bookings)
+      .innerJoin(slots, eq(slots.id, bookings.slotId))
+      .innerJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
+      .where(
+        and(
+          eq(bookings.studentId, studentId),
+          eq(bookings.status, 'pending_payment'),
+          isNull(slots.lessonTypeId),
+          inArray(slots.coachId, [...coachIds]),
+          gte(bookings.startsAt, venueInstant(from, 0)),
+          lt(bookings.startsAt, venueInstant(addVenueDays(to, 1), 0)),
+          isNotNull(orders.expiresAt),
+          lte(orders.expiresAt, now),
+        ),
+      )
+      .all()
   }
 
   const slotFilter = {
