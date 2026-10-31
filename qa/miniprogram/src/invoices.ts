@@ -5,7 +5,7 @@
 // screenshots/invoices/; run it once in light and once in dark mode.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import automator from 'miniprogram-automator'
+import { closeMiniProgram, type MiniProgram, openMiniProgram } from './launch'
 import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
@@ -17,7 +17,6 @@ const adminPassword = process.env.ADMIN_PASSWORD ?? 'admin'
 // QA_THEME=light or dark forces the 外观 setting for this run; unset follows the system.
 const forcedTheme = qaTheme()
 
-type MiniProgram = Awaited<ReturnType<typeof automator.launch>>
 type Page = NonNullable<Awaited<ReturnType<MiniProgram['currentPage']>>>
 
 // Runs inside the mini program, through evaluate.
@@ -46,10 +45,7 @@ async function call(method: string, path: string, body?: unknown, token?: string
   return json
 }
 
-const miniProgram = await automator.launch({
-  projectPath,
-  ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
-})
+const miniProgram = await openMiniProgram(projectPath)
 
 const errors: string[] = []
 miniProgram.on('exception', (err: { message: string }) => errors.push(err.message))
@@ -222,6 +218,6 @@ try {
   try {
     if (forcedTheme) await resetTheme(miniProgram)
   } finally {
-    await miniProgram.close()
+    await closeMiniProgram(miniProgram)
   }
 }
