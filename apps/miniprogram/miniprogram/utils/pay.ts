@@ -2,7 +2,20 @@ import type { OrderStatusDto, PaymentParamsDto } from '../lib/shared'
 import { ApiError, api } from './api'
 import { yuan } from './format'
 
-export type PayResult = 'paid' | 'cancelled' | 'pending'
+/**
+ * Paid; not paid (cancelled at the cashier); paid at the cashier but not confirmed yet; or paid at
+ * the cashier while the server has the order closed, which staff have to sort out.
+ */
+export type PayResult = 'paid' | 'cancelled' | 'pending' | 'unclear'
+
+/** Said when a payment went through at the cashier but the server has not confirmed it yet. */
+export const PAY_PENDING = '支付结果确认中，请稍后下拉刷新'
+
+/**
+ * Said when the cashier took the payment but the server has the order closed. The money may have
+ * been taken, so this never invites paying again.
+ */
+export const PAY_UNCLEAR = '支付结果确认中，如已扣款请联系场馆'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -91,5 +104,8 @@ export async function payOrder(
   // The server has the last word, even on a cancel.
   if (outcome === 'cancelled') return (await paidNow(orderId)) ? 'paid' : 'cancelled'
   const order = await waitForOrder(orderId)
+  // The cashier said paid, so a closed order is not "nothing paid": the payment may land on it
+  // later, or need a refund by staff.
+  if (order?.status === 'closed') return 'unclear'
   return order?.status === 'paid' ? 'paid' : 'pending'
 }

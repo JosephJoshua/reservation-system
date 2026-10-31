@@ -206,7 +206,7 @@ WeChat Pay variables go together: setting some but not all stops the API at star
 | `RCLONE_CONFIG_COS_ENDPOINT` | `cos.<region>.myqcloud.com`, the bucket's region. |
 | `RCLONE_CONFIG_COS_ACCESS_KEY_ID`, `..._SECRET_ACCESS_KEY` | SecretId and SecretKey of a CAM sub-user allowed only on this bucket. |
 | `BACKUP_AT` | Nightly run time, venue time, default `03:30`. |
-| `BACKUP_KEEP_DAYS` | Days to keep database copies and removed images, default 30. |
+| `BACKUP_KEEP_DAYS` | Days to keep database copies and removed images, default 30. The privacy policy tells students erased data stays in backups about 30 days: raising it needs the policy (`packages/shared/src/policies.ts`) changed too. |
 | `BACKUP_ALLOW_REMOVALS` | Leave unset. `rs.sh backup --allow-removals` sets it for one run, to mirror more than 300 removed images. |
 | `ALERT_WEBHOOK` | Optional WeCom group robot webhook that is told when a backup fails. Set the same one in `prod.env` to also hear when backups stop running. |
 | `RCLONE_CONFIG_COS_SERVER_SIDE_ENCRYPTION` | Optional, `AES256`: COS stores each new copy encrypted at rest (SSE-COS). Turning on 默认加密 (SSE-COS) for the bucket in the COS console does the same for every upload and is the simpler choice; either way, anyone with the bucket keys still reads the copies. |

@@ -1,5 +1,5 @@
 import { ApiError, api, showError } from '../../utils/api'
-import { agreePolicies, getMe } from '../../utils/data'
+import { agreementFor, agreePolicies, askToAgree, getMe, needsAgreement } from '../../utils/data'
 import { isTop } from '../../utils/nav'
 
 const clean = (code: string) =>
@@ -23,13 +23,27 @@ Page({
     const scene = options.scene ? clean(decodeURIComponent(options.scene)) : ''
     if (scene) this.setData({ code: scene })
     getMe()
-      .then((me) => this.setData({ showAgreement: !me.agreedPolicies, ready: true }))
+      .then(agreementFor)
+      .then((version) => {
+        this.policyVersion = version ?? ''
+        this.versionKnown = true
+        this.setData({ showAgreement: version !== null, ready: true })
+      })
       .catch((e) => {
-        // Asking again is harmless; the link itself still needs the network.
+        // Asking again is harmless; the link itself still needs the network. Without a version
+        // the server says policy_changed, which loads it and asks again.
         this.setData({ showAgreement: true, ready: true })
         showError(e)
       })
   },
+
+  /** The version of the policies the agreement row offers. */
+  policyVersion: '',
+  /**
+   * Whether the page knows which version the student was offered or had agreed to, so a refusal
+   * means the texts changed. Not when /me failed and the row was shown without one.
+   */
+  versionKnown: false,
 
   onCode(e: WechatMiniprogram.CustomEvent<{ value: string }>) {
     this.setData({ code: clean(e.detail.value) })
@@ -48,7 +62,7 @@ Page({
     this.setData({ linking: true })
     try {
       if (this.data.showAgreement) {
-        await agreePolicies()
+        await agreePolicies(this.policyVersion)
         this.setData({ showAgreement: false })
       }
       const code = this.data.code
@@ -71,6 +85,15 @@ Page({
         success: () => wx.showToast({ title: '已同步', icon: 'success' }),
       })
     } catch (e) {
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        const version = await askToAgree(this.versionKnown)
+        if (version !== null) {
+          this.policyVersion = version
+          this.versionKnown = true
+        }
+        return
+      }
       showError(e)
     } finally {
       this.setData({ linking: false })

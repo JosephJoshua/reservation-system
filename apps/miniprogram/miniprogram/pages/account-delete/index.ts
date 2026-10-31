@@ -21,7 +21,9 @@ Page({
   maybeDeleted: false,
 
   onShow() {
-    // Coming back after cancelling a lesson or asking for a refund should update the list.
+    // Coming back after cancelling a lesson or asking for a refund should update the list. Not
+    // while a 注销 is on its way: its own answer, or the reload after it, says what stands.
+    if (this.data.deleting) return
     this.load()
   },
 
@@ -29,9 +31,12 @@ Page({
   async load(): Promise<boolean> {
     try {
       const path = '/me/deletion'
-      const { blockers } = this.maybeDeleted
-        ? await apiOnce<AccountDeletionDto>('GET', path)
-        : await api<AccountDeletionDto>('GET', path)
+      // Never logging in again while a 注销 may be on its way or may have gone through, which
+      // would make a new account.
+      const { blockers } =
+        this.maybeDeleted || this.data.deleting
+          ? await apiOnce<AccountDeletionDto>('GET', path)
+          : await api<AccountDeletionDto>('GET', path)
       // Answered with this session: the account is still there.
       this.maybeDeleted = false
       this.setData({ state: 'ready', blockers })

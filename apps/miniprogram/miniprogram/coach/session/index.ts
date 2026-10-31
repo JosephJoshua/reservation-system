@@ -1,5 +1,5 @@
 import type { Attendance, CoachSessionDto } from '../../lib/shared'
-import { errorMessage, showError } from '../../utils/api'
+import { errorMessage, serverNow, showError } from '../../utils/api'
 import { lessonTime } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
@@ -59,7 +59,7 @@ Page({
   },
 
   show(s: CoachSessionDto) {
-    const now = Date.now()
+    const now = serverNow()
     const started = Date.parse(s.startsAt) <= now
     const students = s.students.map((st): StudentView => {
       const tag = lessonTag(st, s.startsAt, now)

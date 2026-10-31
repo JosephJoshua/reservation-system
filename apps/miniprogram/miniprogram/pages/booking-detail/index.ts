@@ -20,7 +20,7 @@ import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
-import { payOrder } from '../../utils/pay'
+import { PAY_PENDING, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 import { previewPhotos } from '../../utils/photos'
 import { ask, openOnce } from '../../utils/tap'
 import { modalDangerColor } from '../../utils/theme'
@@ -215,7 +215,10 @@ Page({
           ? '课程时间已调整，开课前可免费取消。'
           : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
         (b.canMove
-          ? `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
+          ? // Moving closes with free cancelling, which for such a lesson is when it starts.
+            Date.parse(b.cancelDeadline) >= Date.parse(b.startsAt)
+            ? `开课前还可以改约 ${b.movesLeft} 次。`
+            : `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
           : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
             ? '改约次数已用完。'
             : ''),
@@ -255,7 +258,9 @@ Page({
       if (this.left) return
       await this.refresh()
       if (result === 'pending' && this.data.booking?.status === 'pending_payment') {
-        wx.showToast({ title: '支付结果确认中，请稍后下拉刷新', icon: 'none', duration: 2500 })
+        wx.showToast({ title: PAY_PENDING, icon: 'none', duration: 2500 })
+      } else if (result === 'unclear') {
+        wx.showToast({ title: PAY_UNCLEAR, icon: 'none', duration: 2500 })
       }
     } catch (e) {
       if (this.left) return

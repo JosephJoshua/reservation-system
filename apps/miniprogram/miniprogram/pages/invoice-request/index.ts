@@ -8,7 +8,7 @@ import {
   type StudentInvoicesDto,
 } from '../../lib/shared'
 import { api, errorMessage, showError } from '../../utils/api'
-import { agreePolicies, getMe } from '../../utils/data'
+import { agreementFor, agreePolicies, askToAgree, getMe, needsAgreement } from '../../utils/data'
 import { yuan } from '../../utils/format'
 import { isTop } from '../../utils/nav'
 
@@ -34,6 +34,8 @@ Page({
   orderId: 0,
   picking: false,
   meName: '',
+  /** The version of the policies the agreement row offers. */
+  policyVersion: '',
   // What was typed for the other kind, so switching back and forth keeps it.
   typed: {} as Partial<Record<InvoiceTitleKind, { name: string; taxNumber: string }>>,
 
@@ -53,6 +55,8 @@ Page({
         this.setData({ state: 'error', error: '这笔订单暂时不能申请发票' })
         return
       }
+      const version = await agreementFor(me)
+      this.policyVersion = version ?? ''
       const kind = lastTitle?.kind ?? 'personal'
       this.meName = me.name
       this.setData({
@@ -65,7 +69,7 @@ Page({
         name: lastTitle?.name ?? me.name,
         taxNumber: lastTitle?.taxNumber ?? '',
         email: lastTitle?.email ?? '',
-        showAgreement: !me.agreedPolicies,
+        showAgreement: version !== null,
       })
     } catch (e) {
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -130,7 +134,7 @@ Page({
     this.setData({ saving: true })
     try {
       if (this.data.showAgreement) {
-        await agreePolicies()
+        await agreePolicies(this.policyVersion)
         this.setData({ showAgreement: false })
       }
       await api('POST', '/invoices', { orderId: this.orderId, ...title })
@@ -140,6 +144,11 @@ Page({
       else if (getCurrentPages().length > 1) wx.navigateBack({ success: done })
       else wx.redirectTo({ url: '/pages/invoices/index', success: done })
     } catch (e) {
+      if (needsAgreement(e)) {
+        this.setData({ showAgreement: true, agreed: false })
+        this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
+        return
+      }
       showError(e)
     } finally {
       this.setData({ saving: false })

@@ -20,10 +20,23 @@ const TIME_REFUSED = [
 ]
 
 /**
- * What happened: moved and going back; refused for good and going back; this time refused for
- * this lesson; the time went (taken, closed or too close now); or another error, already shown.
+ * What happened: moved and going back; refused for good and going back; not known whether it
+ * moved (the answer was lost, or the first send is still being handled) and going back to look;
+ * this time refused for this lesson; the time went (taken, closed or too close now); or another
+ * error, already shown.
  */
-export type MoveResult = 'moved' | 'fixed' | 'refused' | 'gone' | 'failed'
+export type MoveResult = 'moved' | 'fixed' | 'unknown' | 'refused' | 'gone' | 'failed'
+
+/** What a refused or lost move means for the page, from the error's status and code. */
+export function moveFailure(status: number, code: string): Exclude<MoveResult, 'moved'> {
+  // Lost after a resend, or a repeat of a send still being handled: the move may have gone
+  // through, so letting the student pick another time could move the lesson twice.
+  if (status === 0 || code === 'in_progress') return 'unknown'
+  if (LESSON_FIXED.includes(code)) return 'fixed'
+  if (TIME_REFUSED.includes(code)) return 'refused'
+  if (status === 409 || status === 404) return 'gone'
+  return 'failed'
+}
 
 /** Leaves the move page for the lesson's page: back to it, or onto it when nothing is beneath. */
 export function leaveMove(detail: string): void {
@@ -33,7 +46,8 @@ export function leaveMove(detail: string): void {
 
 /**
  * Sends the move and tells the page that opened the move page what became of the lesson:
- * 'moved' with the result, or 'stale' when it can no longer move and needs reloading.
+ * 'moved' with the result, or 'stale' when it can no longer move, or may have moved, and needs
+ * reloading.
  * `request` runs before anything is awaited, so it may ask for subscriptions first.
  */
 export async function submitMove(
@@ -50,21 +64,19 @@ export async function submitMove(
     setTimeout(() => isTop(page) && leaveMove(detail), 600)
     return 'moved'
   } catch (e) {
-    if (!(e instanceof ApiError)) {
+    const result = e instanceof ApiError ? moveFailure(e.status, e.code) : 'failed'
+    if (!(e instanceof ApiError) || result === 'failed') {
       showError(e)
       return 'failed'
     }
-    if (LESSON_FIXED.includes(e.code)) {
+    if (result === 'fixed' || result === 'unknown') {
+      // The lesson's page reloads and shows whether it moved.
       opener.emit?.('stale')
       await wx.showModal({ title: e.message, showCancel: false })
       if (isTop(page)) leaveMove(detail)
-      return 'fixed'
+      return result
     }
-    if (TIME_REFUSED.includes(e.code) || e.status === 409 || e.status === 404) {
-      wx.showToast({ title: e.message, icon: 'none', duration: 2500 })
-      return TIME_REFUSED.includes(e.code) ? 'refused' : 'gone'
-    }
-    showError(e)
-    return 'failed'
+    wx.showToast({ title: e.message, icon: 'none', duration: 2500 })
+    return result
   }
 }
