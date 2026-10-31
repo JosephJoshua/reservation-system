@@ -28,7 +28,7 @@ const EXTENSION =
 // follow China's code (+86, 86 or 0086, with or without the trunk 0), as in +86 10-6234 5678-8;
 // never a mobile prefix, so a mobile with digits after it is still refused.
 const DASH_EXTENSION =
-  /^((?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?|0)?\(?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
+  /^((?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?)?\(?0?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
 // A mainland mobile with digits after it, as in 139-0000-0001-12: a typo more likely than an
 // extension, which a mobile seldom has, so refused rather than dialled with the extra digits.
 const MOBILE_AND_MORE = /^1[3-9]\d{9}\d/

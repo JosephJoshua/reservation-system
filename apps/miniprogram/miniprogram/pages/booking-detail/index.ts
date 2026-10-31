@@ -119,8 +119,9 @@ Page({
   /** Set once the student has gone back from this page. */
   left: false,
   cancelChecking: false,
-  /** Bumped by every `show`, so a fetch that a newer answer overtook is dropped. */
-  shown: 0,
+  /** Server answers asked for so far, and the latest one shown: an older one landing late is dropped. */
+  asked: 0,
+  answered: 0,
   timer: 0 as number,
   venue: null as HomeDto['venue'] | null,
 
@@ -150,17 +151,18 @@ Page({
   },
 
   async load() {
-    const shown = this.shown
+    const asked = ++this.asked
     try {
       const [booking, home] = await Promise.all([
         api<BookingDto>('GET', `/bookings/${this.id}`),
         publicApi<HomeDto>('GET', '/home'),
       ])
       this.venue = home.venue
-      if (shown !== this.shown) return
+      if (asked < this.answered) return
+      this.answered = asked
       this.show(booking)
     } catch (e) {
-      if (shown !== this.shown) return
+      if (asked < this.answered) return
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
@@ -174,14 +176,16 @@ Page({
       await this.load()
       return this.data.state === 'ready'
     }
-    const shown = this.shown
+    const asked = ++this.asked
     try {
       const booking = await api<BookingDto>('GET', `/bookings/${this.id}`)
       // A newer answer is on screen already.
-      if (shown === this.shown) this.show(booking)
+      if (asked < this.answered) return true
+      this.answered = asked
+      this.show(booking)
       return true
     } catch (e) {
-      if (shown !== this.shown) return true
+      if (asked < this.answered) return true
       if (e instanceof ApiError && e.status === 404) {
         this.setData({ state: 'error', error: errorMessage(e) })
         return false
@@ -192,8 +196,14 @@ Page({
     }
   },
 
+  /** Shows the booking an action answered with, which is newer than any fetch still on its way. */
+  showAnswer(updated: BookingDto) {
+    this.asked++
+    this.answered = this.asked
+    this.show(updated)
+  },
+
   show(fetched: BookingDto) {
-    this.shown++
     const b = settled(fetched, serverNow())
     // An unpaid one too: it can no longer be paid, only cancelled.
     const status =
@@ -384,7 +394,7 @@ Page({
       })
       // An early cancel gives the 体验课 back, which the other pages offer again.
       if (updated.lessonType.isTrial) getCatalog(true).catch(() => undefined)
-      this.show(updated)
+      this.showAnswer(updated)
     } catch (e) {
       showError(e)
       await this.refresh()
@@ -407,7 +417,7 @@ Page({
     const b = this.data.booking
     if (!b?.canMove || this.data.busy) return
     navigateOnce(`/pages/move/index?id=${b.id}`, {
-      moved: (updated: BookingDto) => this.show(updated),
+      moved: (updated: BookingDto) => this.showAnswer(updated),
       // The move was refused because the lesson changed: show it as it is now.
       stale: () => this.refresh(),
     })
