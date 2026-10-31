@@ -47,6 +47,24 @@ export function switchTabOnce(url: string): void {
   once(`tab:${url}`, (complete) => wx.switchTab({ url, complete }))
 }
 
+let upcomingWanted = false
+
+/**
+ * Opens 课程 on 待上课, whatever list it was left on, for a lesson the student is sent to pay
+ * or check: on 已结束 it would not be there.
+ */
+export function openUpcomingLessons(): void {
+  upcomingWanted = true
+  switchTabOnce('/pages/lessons/index')
+}
+
+/** For 课程 on show: whether a page asked for 待上课, asked once. */
+export function takeUpcomingWanted(): boolean {
+  const wanted = upcomingWanted
+  upcomingWanted = false
+  return wanted
+}
+
 /**
  * Leaves a page after a save: back to the page beneath, or onto `fallback` when it was opened
  * with nothing beneath (a shared link, a notice, a relaunch), where going back does nothing.

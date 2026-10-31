@@ -3,7 +3,7 @@ import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { lessonTag } from '../../utils/labels'
-import { navigateOnce } from '../../utils/nav'
+import { navigateOnce, takeUpcomingWanted } from '../../utils/nav'
 
 type Scope = 'upcoming' | 'past'
 
@@ -56,6 +56,11 @@ Page({
 
   onShow() {
     this.hidden = false
+    if (takeUpcomingWanted() && this.data.scope !== 'upcoming') {
+      clearTimeout(this.lapseTimer)
+      this.rows = []
+      this.setData({ scope: 'upcoming', lessons: [], checkIn: null })
+    }
     this.load()
     // A lesson opens for check-in 30 minutes before it starts and closes when it ends. Kept
     // quiet: offline, a toast every minute would only nag.
