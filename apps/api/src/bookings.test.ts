@@ -1917,17 +1917,19 @@ describe('lessons the venue cannot give', () => {
     expect(scan.status).toBe(409)
     expect(scan.json.error).toEqual({
       code: 'lesson_unavailable',
-      message: '这节课的时间场馆闭馆，无法签到',
+      message: '这节课的时间场馆闭馆',
     })
-    // Under way: still flagged, no longer cancellable, the deadline as it was at the start.
+    expect(before.json.cancelDeadline).toBe('2026-10-26T02:00:00.000Z')
+    // Under way: still flagged, no longer cancellable, and free to cancel until it started.
     h.clock.now = new Date('2026-10-26T02:10:00Z')
     const during = await h.call('GET', `/bookings/${id}`, undefined, t)
     expect(during.json).toMatchObject({
       status: 'confirmed',
       disruption: 'closed',
       canCancel: false,
+      canMove: false,
       canCheckIn: false,
-      cancelDeadline: '2026-10-25T02:00:00.000Z',
+      cancelDeadline: '2026-10-26T02:00:00.000Z',
     })
     expect((await h.call('POST', '/check-in', { code: CHECK_IN_CODE }, t)).status).toBe(409)
     expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.attendance).toBeNull()

@@ -139,12 +139,13 @@ export function bookingViews(
     const rules = rulesBook.termsOf(b)
     const type = rulesBook.of(b.lessonTypeId)
     const disruption = disrupted.get(b.id) ?? null
-    // Free to cancel until the start; nothing to cancel for a lapsed hold.
+    // Free to cancel until the start, still shown as such once it has started; nothing to
+    // cancel for a lapsed hold.
     const deadline = freeCancelDeadline(
       b.startsAt,
       rules,
       moved?.lastMove,
-      status === 'expired' || b.startsAt <= now ? null : disruption,
+      status === 'expired' ? null : disruption,
     )
     const expiredWhy = status === 'expired' && refund ? autoRefundWhy(refund.reason) : null
     return {
