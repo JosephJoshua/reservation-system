@@ -166,7 +166,14 @@ describe('dialablePhone', () => {
     expect(dialablePhone('400 8208 820')).toBe('4008208820')
     expect(dialablePhone('400-6666-800')).toBe('4006666800')
     expect(dialablePhone('400-8208-820-3')).toBe('4008208820')
-    for (const phone of ['755 1234 5678', '571 8888 8888', '852 2345 6789']) {
+    for (const phone of [
+      '755 1234 5678',
+      '571 8888 8888',
+      '852 2345 6789',
+      '8001 2345 8',
+      '+86 400 6666 800 8',
+      '0086 400-8208-820-3',
+    ]) {
       expect(venuePhoneValid(phone), phone).toBe(false)
     }
   })

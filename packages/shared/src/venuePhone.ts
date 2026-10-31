@@ -59,13 +59,13 @@ function digitsFit(number: string) {
       if (n.length === 10 && n.startsWith('1') && !(afterCode && n.startsWith('10'))) return false
     }
   }
-  // After China's code no number is longer than 11 digits, or 10 with Beijing's 10 or a 2x area
-  // code: more means an extension the patterns above did not split off, which would be dialled as
+  // After China's code no number is longer than 11 digits, or 10 with Beijing's 10, a 2x area
+  // code or 400/800: more means an extension the patterns above did not split off, which would be dialled as
   // part of the number.
   const china = international
     ? /^86/.test(digits) && counted
     : /^(?:00)?86/.test(digits) && digits.replace(/^(?:00)?860?/, '')
-  if (china && china.length > (/^(?:10|2)/.test(china) ? 10 : 11)) return false
+  if (china && china.length > (/^(?:10|2|[48]00)/.test(china) ? 10 : 11)) return false
   // Within China too: 0 and an area code make 11 or 12 digits, 11 with Beijing's 010 or a 02x
   // code, a 400 or 800 number has 10, and a local number without its area code 7 or 8.
   if (!china && !international) {
@@ -79,6 +79,8 @@ function digitsFit(number: string) {
             ? 8
             : 0
     if (max && digits.length > max) return false
+    // A 400 or 800 number has exactly 10; anything between it and a local number is neither.
+    if (/^[48]00/.test(digits) && digits.length > 8 && digits.length < 10) return false
   }
   return counted.length >= 5 && counted.length <= 15
 }
