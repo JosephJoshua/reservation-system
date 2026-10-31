@@ -215,7 +215,7 @@ export function ReLogin({
       cancelBtn={{ content: otherLabel, disabled: busy }}
       onConfirm={submit}
       onCancel={() => onDone(false)}
-      className="relogin-dialog"
+      className="relogin-dialog own-close"
     >
       <form
         className="fields"

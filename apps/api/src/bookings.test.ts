@@ -734,6 +734,7 @@ describe('packages', () => {
     const admin = await h.admin()
     const [refund] = (await h.call('GET', '/admin/refunds?status=requested', undefined, admin)).json
     expect(refund.package.lessonsRemaining).toBe(9)
+    expect(refund.lessonsRefunded).toBe(null)
     const tooMuch = await h.call(
       'POST',
       `/admin/refunds/${refund.id}/approve`,
@@ -751,6 +752,9 @@ describe('packages', () => {
       lessonsRemaining: 0,
       refund: { amount: 150000, status: 'succeeded' },
     })
+    // The 退款 list says what the refund covered, not the none left after it.
+    const [done] = (await h.call('GET', '/admin/refunds', undefined, admin)).json
+    expect(done).toMatchObject({ package: { lessonsRemaining: 0 }, lessonsRefunded: 9 })
   })
 
   it('tells the admin when WeChat refuses an approved refund at once', async () => {

@@ -777,17 +777,22 @@ function PackagesCard({ student }: { student: Student }) {
                     </Button>
                   </>
                 ) : null}
-                {/* Sold at the front desk, so refunded there by staff. */}
-                {!s.deletedAt && canRefund && row.paidOffline && row.status === 'active' && (
-                  <Button
-                    size="small"
-                    variant="text"
-                    theme="danger"
-                    onClick={() => packageAction({ kind: 'refund', packageId: row.id })}
-                  >
-                    退款
-                  </Button>
-                )}
+                {/* Sold at the front desk, so refunded there by staff. Nothing to refund on
+                one sold for ¥0. */}
+                {!s.deletedAt &&
+                  canRefund &&
+                  row.paidOffline &&
+                  row.pricePaid > 0 &&
+                  row.status === 'active' && (
+                    <Button
+                      size="small"
+                      variant="text"
+                      theme="danger"
+                      onClick={() => packageAction({ kind: 'refund', packageId: row.id })}
+                    >
+                      退款
+                    </Button>
+                  )}
                 <Button
                   size="small"
                   variant="text"

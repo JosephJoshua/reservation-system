@@ -134,6 +134,74 @@ test('a retry after a lost sale response records the sale once', async ({ page, 
   expect(detail.packages).toHaveLength(2)
 })
 
+test('a dropdown choice counts as typed, and Esc or the backdrop ask before dropping it', async ({
+  page,
+}) => {
+  await login(page)
+  await page.goto(`./#/students?id=${studentId}`)
+  await page.getByRole('button', { name: '前台售卖' }).click()
+  const sale = page.locator('.t-dialog:visible', { hasText: '前台售卖课时包' })
+  const leave = page.locator('.t-dialog:visible', { hasText: '放弃未保存的修改' })
+  const close = page.locator('.t-dialog:visible', { hasText: '放弃填写的内容' })
+  // Untouched, Esc closes it at once.
+  await page.keyboard.press('Escape')
+  await expect(sale).toHaveCount(0)
+  await page.getByRole('button', { name: '前台售卖' }).click()
+  // Only a dropdown changes, which fires no input event.
+  await field(sale, '收款方式').locator('.t-select').click()
+  await page.locator('.t-select-option', { hasText: '转账' }).click()
+  await page.goBack()
+  await expect(leave).toBeVisible()
+  await leave.getByRole('button', { name: '继续编辑' }).click()
+  await expect(sale).toBeVisible()
+  // Esc with the dropdown open closes the dropdown alone.
+  await field(sale, '收款方式').locator('.t-select').click()
+  await expect(page.locator('.t-select-option:visible')).not.toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.t-select-option:visible')).toHaveCount(0)
+  await expect(close).toHaveCount(0)
+  await expect(sale).toBeVisible()
+  // Then Esc asks, and 继续填写 keeps the choice.
+  await sale.locator('input').first().focus()
+  await page.keyboard.press('Escape')
+  await expect(close).toBeVisible()
+  await close.getByRole('button', { name: '继续填写' }).click()
+  await expect(close).toHaveCount(0)
+  await expect(field(sale, '收款方式').locator('input')).toHaveValue('转账')
+  // A click on the backdrop asks too, and 放弃 closes it.
+  await page.mouse.click(10, 10)
+  await expect(close).toBeVisible()
+  // Once it has zoomed in: a click while it moves can land on its own backdrop, which keeps editing.
+  await expect(close).toHaveCSS('transform', 'none')
+  await close.getByRole('button', { name: '放弃', exact: true }).click()
+  await expect(sale).toHaveCount(0)
+  await expect(page).toHaveURL(new RegExp(`students\\?id=${studentId}`))
+})
+
+test('a package sold for ¥0 has no 退款', async ({ page, request }) => {
+  const products = await call<{ id: number; name: string }[]>(
+    request,
+    'GET',
+    '/admin/package-products',
+    admin,
+  )
+  const productId = products.find((p) => p.name === productName)?.id
+  await call(request, 'POST', '/admin/packages/offline-sale', admin, {
+    studentId,
+    productId,
+    amount: 0,
+    method: 'cash',
+  })
+  await login(page)
+  await page.goto(`./#/students?id=${studentId}`)
+  const rows = page.locator('.t-drawer tbody tr', { hasText: productName })
+  await expect(rows).toHaveCount(3)
+  await expect(rows.filter({ hasText: '¥0' }).getByRole('button', { name: '退款' })).toHaveCount(0)
+  await expect(
+    rows.filter({ hasText: '¥2,500' }).getByRole('button', { name: '退款' }),
+  ).toHaveCount(2)
+})
+
 test('back closes a student opened from the list', async ({ page }) => {
   await login(page)
   await page.goto('./#/students')

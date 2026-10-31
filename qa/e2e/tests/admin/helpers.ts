@@ -8,7 +8,7 @@ export async function login(page: Page, username = 'admin', password = ADMIN_PAS
   await page.getByPlaceholder('登录名').fill(username)
   await page.getByPlaceholder('密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
-  await expect(page.getByRole('button', { name: /^账号/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^账号：/ })).toBeVisible()
 }
 
 /** A labelled row in an admin form. */
