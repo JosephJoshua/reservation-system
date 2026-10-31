@@ -9,7 +9,7 @@ key=drillkey secret=drillsecret password=drill-password
 
 cleanup() {
   docker rm -f $p-app $p-s3 >/dev/null 2>&1 || true
-  docker volume rm $p-data $p-fresh >/dev/null 2>&1 || true
+  docker volume rm $p-data $p-fresh $p-crypt >/dev/null 2>&1 || true
   docker network rm $p >/dev/null 2>&1 || true
 }
 cleanup
@@ -42,6 +42,8 @@ backup() {
     -e RCLONE_CONFIG_COS_ENDPOINT=http://$p-s3:9000 \
     -e RCLONE_CONFIG_COS_ACCESS_KEY_ID=$key -e RCLONE_CONFIG_COS_SECRET_ACCESS_KEY=$secret \
     -e BACKUP_KEEP_DAYS=30 -e "BACKUP_AT=${BACKUP_AT:-03:30}" \
+    ${crypt:+-e "BACKUP_CRYPT_PASSWORD=$crypt"} ${sse:+-e "RCLONE_CONFIG_COS_SERVER_SIDE_ENCRYPTION=$sse"} \
+    ${plainread:+-e BACKUP_PLAIN=1} \
     rs-backup:drill "$@"
 }
 run_backup() { backup $p-data /app/api/backup/backup.sh; }
@@ -89,8 +91,10 @@ step "user manual is served"
 [ "$(status_of /help/gone.html)" = 404 ] || die "a missing manual page is not a 404"
 
 step "backup while the app runs"
+backup $p-data rm -f /data/backup-ok
 run_backup
 backup $p-data /app/api/backup/restore.sh list | grep -q 'app-.*\.db\.gz' || die "no backup listed"
+backup $p-data test -f /data/backup-ok || die "a backup did not leave its marker for the app"
 
 step "check the backup without touching the database"
 summary=$(backup $p-data /app/api/backup/restore.sh check latest)
@@ -124,6 +128,39 @@ start_app $p-fresh
 login
 [ "$(coach_names)" = "乙 甲 " ] || die "fresh restore gave coaches: $(coach_names)"
 curl -sf -o /dev/null "http://127.0.0.1:$port$image" || die "image missing on the new volume"
+stop_app
+
+step "encrypted backups: server-side and with a key of our own"
+crypt=drill-crypt-key sse=AES256
+out=$(backup $p-data sh -c '. /app/api/backup/common.sh && use_remote && rclone copyto /etc/hostname "$REMOTE/sse-probe" -vv --dump headers 2>&1')
+echo "$out" | grep -qi 'X-Amz-Server-Side-Encryption: AES256' || die "server-side encryption was not asked for"
+run_backup
+crypt='' sse=''
+# What lands in COS is rclone crypt, not gzip, and not readable without the key.
+raw=$(backup $p-data sh -c '. /app/api/backup/common.sh && rclone lsf "$REMOTE/crypt/db" | tail -n 1')
+case $raw in app-*.db.gz.bin) ;; *) die "no encrypted copy under crypt/db: $raw" ;; esac
+magic=$(backup $p-data sh -c ". /app/api/backup/common.sh && rclone cat \"\$REMOTE/crypt/db/$raw\" | head -c 6")
+[ "$magic" = RCLONE ] || die "the encrypted copy is not rclone crypt: $magic"
+crypt=drill-crypt-key
+summary=$(backup $p-data /app/api/backup/restore.sh check latest)
+echo "$summary" | grep -q '^coaches: 2$' || die "check of the encrypted copy said: $summary"
+crypt=wrong-key
+if backup $p-data /app/api/backup/restore.sh check latest >/dev/null 2>&1; then die "a wrong key read the copy"; fi
+crypt=drill-crypt-key plainread=1
+# The plain copies made before the key was set stay reachable with BACKUP_PLAIN (RS_BACKUP_PLAIN).
+plain=$(backup $p-data /app/api/backup/restore.sh list)
+echo "$plain" | grep -q 'app-.*\.db\.gz$' || die "plain copies not listed with BACKUP_PLAIN: $plain"
+if echo "$plain" | grep -q '\.bin$'; then die "BACKUP_PLAIN listed encrypted copies"; fi
+summary=$(backup $p-data /app/api/backup/restore.sh check latest)
+echo "$summary" | grep -q '^coaches: 2$' || die "check of a plain copy said: $summary"
+plainread=''
+docker volume create $p-crypt >/dev/null
+backup $p-crypt /app/api/backup/restore.sh restore latest
+crypt=''
+start_app $p-crypt
+login
+[ "$(coach_names)" = "乙 甲 " ] || die "encrypted restore gave coaches: $(coach_names)"
+curl -sf -o /dev/null "http://127.0.0.1:$port$image" || die "image missing after the encrypted restore"
 stop_app
 
 step "pruning keeps recent copies and drops old ones"

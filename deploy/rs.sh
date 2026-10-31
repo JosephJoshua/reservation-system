@@ -37,7 +37,6 @@ need_image() { docker image inspect "rs-app:$1" >/dev/null 2>&1 || die "no image
 # Caddy, unless the server already has a reverse proxy (PROXY=external in .env).
 proxy=caddy
 [ "$(get PROXY)" != external ] || proxy=
-prod_running() { [ -n "$(dc ps -q --status running app)" ]; }
 
 # compose.yml, the Caddyfile and this script follow the production release, so shipping a branch
 # to staging never changes how production runs. All copied first, then renamed: this script may
@@ -61,12 +60,27 @@ remember_previous() {
   if [ -n "$1" ] && [ "$1" != "$2" ]; then set_var APP_PREV_TAG "$1"; fi
 }
 
+# RS_BACKUP_PLAIN=1 makes backups, verify, restore and restore-images read the unencrypted copies
+# made before BACKUP_CRYPT_PASSWORD was set.
+plain=
+[ "${RS_BACKUP_PLAIN:-}" != 1 ] || plain=1
+
+# Refuses a release whose backup scripts predate BACKUP_CRYPT_PASSWORD while backup.env sets it:
+# it would back up unencrypted, stop touching backup-ok, and read only the old plain copies.
+need_crypt() {
+  [ -n "$(sed -n 's/^BACKUP_CRYPT_PASSWORD=//p' backup.env 2>/dev/null)" ] || return 0
+  docker image inspect "rs-backup:$1" >/dev/null 2>&1 || die "no image rs-backup:$1, build it first"
+  docker run --rm --entrypoint grep "rs-backup:$1" -q COSCRYPT /app/api/backup/common.sh ||
+    die "release $1 cannot encrypt backups, and backup.env sets BACKUP_CRYPT_PASSWORD. Use a newer release, or empty BACKUP_CRYPT_PASSWORD to back up unencrypted (see deploy/README.md)"
+}
+
 # Runs a backup script with the production release's image, or staging's before the first one.
 backup_tool() {
   tag=$(get APP_TAG)
   [ -n "$tag" ] || tag=$(get STAGING_TAG)
   [ -n "$tag" ] || die "no release built yet"
-  APP_TAG=$tag dc run --rm --no-deps backup "$@"
+  [ -n "$plain" ] || need_crypt "$tag"
+  APP_TAG=$tag dc run --rm --no-deps ${plain:+-e BACKUP_PLAIN=1} backup "$@"
 }
 
 cmd=${1:-}
@@ -98,9 +112,22 @@ case $cmd in
   prod)
     [ $# -eq 1 ] || usage
     need_image "$1"
-    # A fresh copy first: a release may migrate the database, and this is the way back.
-    if prod_running; then dc exec -T backup /app/api/backup/backup.sh; fi
     current=$(get APP_TAG)
+    # The new release runs the scheduled backups from now on, and the current one takes this one.
+    need_crypt "$1"
+    [ -z "$current" ] || need_crypt "$current"
+    [ -f compose.yml ] || install_config "$1" || die "installing $1's config failed"
+    # A fresh copy first: a release may migrate the database, and this is the way back. Taken in a
+    # container of its own, so a production that keeps crashing is backed up too. The release
+    # running now (or this one, before the first) copies it; there is nothing yet on a new server.
+    # RS_DEPLOY_WITHOUT_BACKUP=1 skips it, for an urgent fix while COS cannot be reached.
+    if [ "${RS_DEPLOY_WITHOUT_BACKUP:-}" = 1 ]; then
+      echo "deploying without a backup first" >&2
+    else
+      APP_TAG=${current:-$1} dc run --rm --no-deps backup sh -c \
+        'if [ -f "$DATABASE_PATH" ]; then exec /app/api/backup/backup.sh; fi; echo "no database yet, nothing to back up"' ||
+        die "backup before the deploy failed; production still runs ${current:-nothing yet}. Fix it, or deploy anyway with RS_DEPLOY_WITHOUT_BACKUP=1"
+    fi
     install_config "$1" || die "installing $1's config failed; production still runs $current"
     remember_previous "$current" "$1"
     set_var APP_TAG "$1"
@@ -137,10 +164,13 @@ case $cmd in
     tag=${2:-$current}
     [ -n "$tag" ] || die "no production release yet: rs.sh restore <backup> <tag>"
     need_image "$tag"
+    # Checked even for a plain copy: this release runs the scheduled backups afterwards.
+    need_crypt "$tag"
     # The scheduled backup must not copy the database while it is being swapped.
     dc stop app backup
     status=0
-    APP_TAG=$tag dc run --rm --no-deps backup /app/api/backup/restore.sh restore "$1" || status=$?
+    APP_TAG=$tag dc run --rm --no-deps ${plain:+-e BACKUP_PLAIN=1} backup /app/api/backup/restore.sh restore "$1" ||
+      status=$?
     if [ "$status" -eq 99 ]; then
       die "production is stopped. Look at /data with: cd $(pwd) && APP_TAG=$tag docker compose -f compose.yml run --rm --no-deps backup sh
 then run: $(pwd)/rs.sh restore $1 $tag"

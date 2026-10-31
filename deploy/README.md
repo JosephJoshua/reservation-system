@@ -185,6 +185,7 @@ students scan from 课程 → 扫码签到.
 | `WECHAT_PAY_MERCHANT_PRIVATE_KEY` | `apiclient_key.pem` from the certificate download: a path such as `/secrets/apiclient_key.pem`, or the PEM itself with `\n` for line breaks. |
 | `WECHAT_PAY_PUBLIC_KEY` | WeChat Pay public key (微信支付公钥), path or PEM. |
 | `WECHAT_PAY_PUBLIC_KEY_ID` | Its ID, starting with `PUB_KEY_ID_`. |
+| `ALERT_WEBHOOK` | Production only, optional: the same WeCom group robot webhook as in `backup.env`. The app then checks every hour that a backup succeeded in the last 36 hours and tells the group once a day while none has (see [Backups and restore](#backups-and-restore)). Leave it out of `staging.env`, which is not backed up. |
 | `WECHAT_MINIPROGRAM_STATE` | Which build a tapped message opens: `formal` (production), `trial` (staging), `developer`. |
 | `NODE_ENV` | Set by the image to `production`, which requires WeChat sign-in and WeChat Pay to be configured. Staging uses `staging` until the merchant account exists; it then uses a fake payment gateway, where a signed-in user can mark their own staging orders paid. |
 | `WECHAT_NOTICE_COACH_BOOKED`, `WECHAT_NOTICE_COACH_CANCELLED`, `WECHAT_NOTICE_COACH_MOVED` | Coach subscription messages: new, cancelled and moved (改约) lessons. A lesson moved to another coach reaches the old coach as cancelled and the new one as new. Each template is the template ID from 订阅消息 (pick one-time templates, 一次性订阅消息), then each field and what goes in it, such as `AbC123 thing1=student time2=time thing3=lesson`. A template left empty is not sent. |
@@ -207,7 +208,9 @@ WeChat Pay variables go together: setting some but not all stops the API at star
 | `BACKUP_AT` | Nightly run time, venue time, default `03:30`. |
 | `BACKUP_KEEP_DAYS` | Days to keep database copies and removed images, default 30. |
 | `BACKUP_ALLOW_REMOVALS` | Leave unset. `rs.sh backup --allow-removals` sets it for one run, to mirror more than 300 removed images. |
-| `ALERT_WEBHOOK` | Optional WeCom group robot webhook that is told when a backup fails. |
+| `ALERT_WEBHOOK` | Optional WeCom group robot webhook that is told when a backup fails. Set the same one in `prod.env` to also hear when backups stop running. |
+| `RCLONE_CONFIG_COS_SERVER_SIDE_ENCRYPTION` | Optional, `AES256`: COS stores each new copy encrypted at rest (SSE-COS). Turning on 默认加密 (SSE-COS) for the bucket in the COS console does the same for every upload and is the simpler choice; either way, anyone with the bucket keys still reads the copies. |
+| `BACKUP_CRYPT_PASSWORD` | Optional, recommended: encrypts the database copies and images with this key before they leave the server (rclone crypt), so the bucket keys alone cannot read them. Off when empty. See [Encrypted backups](#encrypted-backups): without the key, no copy can be restored. |
 
 After changing a settings file, apply it with `docker compose -f compose.yml up -d <service>` in
 `/srv/rs` (`app`, `app-staging` or `backup`).
@@ -270,6 +273,54 @@ again; nothing does it for you. After every restore:
 2. Delete them again: ask the developer to run the account deletion for those ids. Then run
    `rs.sh backup --allow-removals`, so the backup does not count their photos as lost.
 
+**Before every production deploy** (`prod`, `promote`, `rollback`) `rs.sh` backs up the database
+in a one-off backup container, also when the app is down or restarting, and stops the deploy if
+that backup fails. Only a server with no database yet skips it. For an urgent fix while COS cannot
+be reached, `RS_DEPLOY_WITHOUT_BACKUP=1 /srv/rs/rs.sh promote` deploys without it; take a copy
+with `rs.sh backup` as soon as COS works again.
+
+**When backups stop.** A failed backup alerts by itself. A backup that never runs (the backup
+container stopped, or a run that hangs) cannot, so each successful backup touches `backup-ok`
+next to the database, and with `ALERT_WEBHOOK` in `prod.env` the app checks it every hour: older
+than 36 hours, it logs `backup stale` and tells the group, once a day until a backup succeeds.
+Before the first backup it counts from the app's start. 36 hours leaves room for a run that
+takes hours longer than usual, such as the first encrypted one. A backup that uploads but cannot
+touch `backup-ok` alerts at once, so an app restart cannot hide it.
+
+### Encrypted backups
+
+By default copies sit in the bucket as plain gzip files, readable by anyone who gets the bucket's
+keys. Two optional layers, which can be used together:
+
+- **At rest in COS**: turn on 默认加密 (SSE-COS) for the bucket in the COS console, or set
+  `RCLONE_CONFIG_COS_SERVER_SIDE_ENCRYPTION=AES256` in `backup.env`. COS decrypts on download,
+  so nothing else changes, and it protects against lost disks at Tencent Cloud, not leaked keys.
+- **Before upload (recommended)**: set `BACKUP_CRYPT_PASSWORD` to a long random key, such as the
+  output of `openssl rand -base64 32`, then in `/srv/rs` run
+  `docker compose -f compose.yml up -d backup` (the running container keeps its old settings
+  until it is recreated), `rs.sh backup` and `rs.sh verify`. Copies then go
+  to `crypt/db/` and `crypt/uploads/` in the bucket, encrypted with rclone crypt; file names stay
+  readable. **Keep the key outside the server and outside COS**, such as in the venue's password
+  manager: a new server after losing the old one needs it to restore anything. `backups`,
+  `verify`, `restore` and `restore-images` read the encrypted copies while the key is set.
+
+Turning on `BACKUP_CRYPT_PASSWORD` starts a new set under `crypt/`: the first run uploads all
+images again, and the earlier plain copies in `db/`, `uploads/` and `uploads-removed/` are no
+longer listed or pruned. To reach those, put `RS_BACKUP_PLAIN=1` in front of `backups`,
+`verify`, `restore` or `restore-images`, such as
+`RS_BACKUP_PLAIN=1 /srv/rs/rs.sh restore app-<time>.db.gz`; `restore` still stops and restarts
+production and the backup schedule as usual. Once the encrypted copies cover `BACKUP_KEEP_DAYS`,
+delete the plain folders in the COS console. Do not change the key afterwards: images already in
+`crypt/uploads/` are not uploaded again, so they would stay readable only with the old key. If the
+key leaked, delete `crypt/` in the COS console, set the new key and run `rs.sh backup` and
+`rs.sh verify` straight away; the earlier encrypted copies are gone with it.
+
+Releases from before encrypted backups ignore `BACKUP_CRYPT_PASSWORD`: they would back up
+unencrypted, never touch `backup-ok` and read only the old plain copies. While the key is set,
+`rs.sh` refuses to deploy, roll back to or restore onto such a release, and to run `backups`,
+`verify` or `restore-images` with it unless `RS_BACKUP_PLAIN=1`. To go back to one anyway, empty
+`BACKUP_CRYPT_PASSWORD` first: backups are then plain again.
+
 **Moving to a new server**, or after losing the old one: do the first setup, ship a release, then
 `rs.sh restore latest <tag>` with the tag `ship.sh` printed. That restores the newest copy and
 starts production on it.
@@ -292,4 +343,7 @@ request.
   still recorded then.
 - **Backup failed**: `rs.sh logs backup`, then `rs.sh backup` to retry. Most failures are a
   wrong COS key or bucket name.
+- **No successful backup for 36 hours**: `rs.sh status` shows whether the `backup` container
+  runs; start it with `docker compose -f compose.yml up -d backup` in `/srv/rs`. Then
+  `rs.sh logs backup` for the last run, and `rs.sh backup` to make a copy now.
 - **Disk full**: `df -h`, then `rs.sh prune` and `docker system prune`.

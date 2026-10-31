@@ -140,7 +140,7 @@ describe('paged admin lists', () => {
           pricePaid: 100000,
           expiresAt: at('2027-01-01', 0),
           status: 'active',
-          orderId: 1,
+          orderId: 900 + i,
           createdAt: at('2026-08-01', 0),
         })
         .run()
