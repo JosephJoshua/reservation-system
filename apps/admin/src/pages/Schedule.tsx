@@ -41,7 +41,7 @@ import {
   useIsPhone,
   useSubmitting,
 } from '../hooks'
-import { bookingStatusLabel } from '../labels'
+import { bookingStatusLabel, callOffEffect } from '../labels'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
 import type { Coach, LessonType, Slot } from '../types'
@@ -941,7 +941,9 @@ function SessionDialog({
       cancelling === 'session'
         ? await attempt(
             () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
-            '已取消整节，学员会收到全额退款或退回的课时',
+            slot.bookings.some((b) => b.status === 'pending_payment')
+              ? '已取消整节'
+              : '已取消整节，学员会收到全额退款或退回的课时',
             { onStale: onChanged },
           )
         : await attempt(
@@ -1058,7 +1060,9 @@ function SessionDialog({
           <>
             <span>
               {cancelling === 'session'
-                ? `取消整节课后，${slot.bookings.length} 位学员都会收到全额退款或退回课时`
+                ? slot.bookings.length
+                  ? `取消整节课后，${callOffEffect(slot.bookings.map((b) => b.status))}`
+                  : '取消整节课，还没有学员报名'
                 : `取消 ${slot.bookings.find((b) => b.id === cancelling)?.student?.name || '该学员'} 的预约`}
             </span>
             <Textarea

@@ -62,6 +62,18 @@ export function refundLabel(status: RefundStatus, offline: boolean): [string, Th
   return offline && status === 'pending' ? ['待线下退还', 'warning'] : refundStatusLabel[status]
 }
 
+/**
+ * What 取消整节 does to the students booked, for its confirm: those who paid are refunded or get
+ * the lesson back, and those still to pay have their hold closed.
+ */
+export function callOffEffect(statuses: BookingStatus[]) {
+  const unpaid = statuses.filter((s) => s === 'pending_payment').length
+  const paid = statuses.length - unpaid
+  if (!unpaid) return `${paid} 位学员都会收到全额退款或退回课时`
+  if (!paid) return `${unpaid} 位学员尚未付款，其预约将关闭`
+  return `${paid} 位已付款学员会收到全额退款或退回课时，${unpaid} 位未付款学员的预约将关闭`
+}
+
 /** 支付方式 as the 订单 and 退款 filters offer it. */
 export const providerOptions = [
   { label: '微信支付', value: 'wechat' },
