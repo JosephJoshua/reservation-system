@@ -435,46 +435,52 @@ export function studentRoutes(deps: Deps) {
       db,
       sessions.map((r) => r.id),
     )
-    const noTable = slotsWithoutTable(db, sessions, moving?.id)
     // The student's own seats in these sessions: booked already, so not offered again. A hold
-    // whose payment time is up is not: booking again closes it and books afresh.
-    const mine = new Map(
-      sessions.length
-        ? db
-            .select({
-              slotId: bookings.slotId,
-              id: bookings.id,
-              status: bookings.status,
-              payBy: orders.expiresAt,
-            })
-            .from(bookings)
-            .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
-            .where(
-              and(
-                eq(bookings.studentId, student.id),
-                inArray(bookings.status, LIVE),
-                inArray(
-                  bookings.slotId,
-                  sessions.map((s) => s.id),
-                ),
+    // whose payment time is up is not: booking again closes it and books afresh, so its seat is
+    // free for them as well.
+    const ownRows = sessions.length
+      ? db
+          .select({
+            slotId: bookings.slotId,
+            id: bookings.id,
+            status: bookings.status,
+            payBy: orders.expiresAt,
+          })
+          .from(bookings)
+          .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
+          .where(
+            and(
+              eq(bookings.studentId, student.id),
+              inArray(bookings.status, LIVE),
+              inArray(
+                bookings.slotId,
+                sessions.map((s) => s.id),
               ),
-            )
-            .all()
-            .filter((b) => b.status !== 'pending_payment' || !b.payBy || b.payBy > now)
-            .map((b) => [
-              b.slotId,
-              {
-                bookingId: b.id,
-                status:
-                  b.status === 'pending_payment'
-                    ? ('pending_payment' as const)
-                    : ('confirmed' as const),
-              },
-            ])
-        : [],
+            ),
+          )
+          .all()
+      : []
+    const lapsed = (b: (typeof ownRows)[number]) =>
+      b.status === 'pending_payment' && b.payBy !== null && b.payBy <= now
+    const lapsedSeats = new Set(ownRows.filter(lapsed).map((b) => b.slotId))
+    const noTable = slotsWithoutTable(db, sessions, moving?.id, lapsedSeats)
+    const mine = new Map(
+      ownRows
+        .filter((b) => !lapsed(b))
+        .map((b) => [
+          b.slotId,
+          {
+            bookingId: b.id,
+            status:
+              b.status === 'pending_payment'
+                ? ('pending_payment' as const)
+                : ('confirmed' as const),
+          },
+        ]),
     )
     const out: SlotDto[] = sessions.map((s) => {
-      const seatsLeft = Math.max(0, s.capacity - (taken.get(s.id) ?? 0))
+      const held = (taken.get(s.id) ?? 0) - (lapsedSeats.has(s.id) ? 1 : 0)
+      const seatsLeft = Math.max(0, s.capacity - held)
       const own = mine.get(s.id) ?? null
       return {
         id: s.id,

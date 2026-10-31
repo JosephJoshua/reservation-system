@@ -248,6 +248,29 @@ export function heldAt(tx: Q, studentId: number, target: SlotTarget) {
 }
 
 /**
+ * How a request that does not say how to pay would pay if booked afresh: with a usable package
+ * when there is one (not for a trial), else by WeChat Pay. A booking paid with a package counts
+ * its own package as usable, since giving it up would hand that lesson back.
+ */
+function impliedPayWith(
+  tx: Q,
+  studentId: number,
+  own: { paidWith: 'order' | 'package' },
+  input: CreateBookingInput,
+): 'package' | 'wechat' {
+  if (own.paidWith === 'package') return 'package'
+  const lessonType = tx
+    .select({ id: lessonTypes.id, isTrial: lessonTypes.isTrial })
+    .from(lessonTypes)
+    .where(eq(lessonTypes.id, input.lessonTypeId))
+    .get()
+  if (!lessonType || lessonType.isTrial) return 'wechat'
+  return usablePackage(tx, studentId, lessonType.id, targetTime(tx, input.target))
+    ? 'package'
+    : 'wechat'
+}
+
+/**
  * Whether a request for a time the student already holds asks for the booking they have, under
  * the cancel and move rules it was booked with (`terms`).
  */
@@ -343,7 +366,11 @@ export async function createBooking(
     if (own && own.lessonTypeId === input.lessonTypeId) {
       // Asked on other terms (a package now, another price or other rules): not a repeat. Handing back the
       // hold would send the student to pay its old order, so they are pointed to it instead.
-      if (!asksForHeld(own, ruleBook(tx, settings).termsOf(own), input)) {
+      const asked = {
+        ...input,
+        payWith: input.payWith ?? impliedPayWith(tx, studentId, own, input),
+      }
+      if (!asksForHeld(own, ruleBook(tx, settings).termsOf(own), asked)) {
         throw new ApiError(
           409,
           'already_booked',

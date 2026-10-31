@@ -638,6 +638,35 @@ describe('booking seats', () => {
     ).toEqual([1, 2])
   })
 
+  it('offers the last seat back to the student whose own hold of it ran out', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const id = await session(h, admin, kids.id, coach.id, 10)
+    h.db.update(slots).set({ capacity: 2 }).where(eq(slots.id, id)).run()
+    const [a, b, c] = await students(h, 'a', 'b', 'c')
+    await seat(h, b, id, kids.id)
+    const held = await book(h, a, id, kids.id, 'wechat')
+    expect(held.json.status).toBe('pending_payment')
+    const listFor = async (t: string) =>
+      (await h.call('GET', `/slots?date=2026-10-26&lessonTypeId=${kids.id}`, undefined, t)).json
+    expect(await listFor(a)).toEqual([
+      expect.objectContaining({ id, seatsLeft: 0, available: false, mine: expect.anything() }),
+    ])
+    // Its payment time is up, before the sweeper closes it.
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    expect(await listFor(a)).toEqual([
+      expect.objectContaining({ id, seatsLeft: 1, available: true, mine: null }),
+    ])
+    // Everyone else still sees it taken until it is closed.
+    expect(await listFor(c)).toEqual([
+      expect.objectContaining({ id, seatsLeft: 0, available: false }),
+    ])
+    const again = await book(h, a, id, kids.id, 'wechat')
+    expect(again.status).toBe(201)
+    expect(again.json.bookingId).not.toBe(held.json.bookingId)
+  })
+
   it('books a seat at the front desk', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h)

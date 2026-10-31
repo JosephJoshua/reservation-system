@@ -1,4 +1,5 @@
 import type {
+  BookingDto,
   BookingStatus,
   Disruption,
   PackageStatus,
@@ -24,13 +25,15 @@ function stuck(refund: RefundState): boolean {
 }
 
 /**
- * A refund's status for the student. Money paid at the front desk is handed back there; one staff
- * paid back another way (线下另付) after WeChat Pay could not is 已退还, not 已退款 to where it came
- * from; one WeChat Pay could not pay back is 退款处理中 until staff sort it out.
+ * A refund's status for the student. Money paid at the front desk is handed back there (待到店退还,
+ * then 已到店退还); one staff paid back another way (线下另付) after WeChat Pay could not is 已退还,
+ * not 已退款 to where it came from; one WeChat Pay could not pay back is 退款处理中 until staff
+ * sort it out.
  */
 export function refundStatus(refund: RefundState, paidOffline: boolean): string {
   const text = REFUND_STATUS[refund.status]
   if (paidOffline && text === '退款中') return '待到店退还'
+  if (paidOffline && refund.status === 'succeeded') return '已到店退还'
   if (refund.status === 'succeeded' && refund.settledHow === 'offline') return '已退还'
   if (stuck(refund)) return '退款处理中'
   return text
@@ -69,4 +72,51 @@ export const PACKAGE_STATUS: Record<PackageStatus, string> = {
   used_up: '已用完',
   refund_requested: '退款审核中',
   refunded: '已退款',
+}
+
+/**
+ * A package's status tag. A refunded one says where its money stands, as its refund row does, so
+ * it reads 已退款 (or 已退还, 已到店退还) only once the money is back.
+ */
+export function packageTag(p: {
+  status: PackageStatus
+  refund: RefundState | null
+  paidOffline: boolean
+}): { text: string; settled: boolean } {
+  const refund = p.refund
+  if (p.status !== 'refunded' || !refund || refund.status === 'rejected') {
+    return { text: PACKAGE_STATUS[p.status], settled: true }
+  }
+  return {
+    text: refundStatus(refund, p.paidOffline),
+    settled: refund.status === 'succeeded',
+  }
+}
+
+/** The server sweeps unpaid holds a little after payBy; they read as expired from payBy on. */
+export function settled(b: BookingDto, now: number): BookingDto {
+  return b.status === 'pending_payment' && b.payBy && Date.parse(b.payBy) <= now
+    ? { ...b, status: 'expired', canCancel: false }
+    : b
+}
+
+/** A lesson's tag on the 课程 list, with the attendance once it is marked. */
+export function lessonTag(
+  booking: BookingDto,
+  now: number,
+): { status: string; tone: 'primary' | 'warning' | 'success' | 'danger' | 'default' } {
+  const b = settled(booking, now)
+  if (b.attendance === 'attended') {
+    return { status: b.status === 'confirmed' ? '已签到' : '已到课', tone: 'success' }
+  }
+  if (b.attendance === 'no_show') return { status: '缺席', tone: 'danger' }
+  // The venue cannot give it as booked: said on the list, so nobody travels to it.
+  if (b.disruption && (b.status === 'confirmed' || b.status === 'pending_payment')) {
+    return { status: DISRUPTION_TAG[b.disruption], tone: 'warning' }
+  }
+  return {
+    status: BOOKING_STATUS[b.status],
+    tone:
+      b.status === 'pending_payment' ? 'warning' : b.status === 'confirmed' ? 'primary' : 'default',
+  }
 }
