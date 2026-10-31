@@ -547,6 +547,49 @@ describe('trial lessons', () => {
     expect(third.json.error.code).toBe('payment_unavailable')
   })
 
+  it('says the trial is used up, not that WeChat Pay is down, when closing lapsed holds frees nothing', async () => {
+    const h = setup()
+    const { coach, trial } = h.seed()
+    h.settings((s) => {
+      s.payment.trialLimitPerStudent = 2
+    })
+    const t = await h.student('a')
+    const admin = await h.admin()
+    const studentId = (await h.call('GET', '/me', undefined, t)).json.id
+    const first = await book(h, t, h.slot(coach.id, '2026-10-26', 10).id, trial.id)
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    const target = {
+      studentId,
+      slotId: h.slot(coach.id, '2026-10-26', 14).id,
+      lessonTypeId: trial.id,
+    }
+    const quote = await h.call('POST', '/admin/bookings/quote', target, admin)
+    const desk = await h.call(
+      'POST',
+      '/admin/bookings',
+      { ...target, payWith: 'offline', amount: quote.json.price.price, method: 'cash' },
+      admin,
+    )
+    expect(desk.status).toBe(201)
+    h.gateway.closeOrder = async () => {
+      throw new Error('down')
+    }
+    // The desk trial alone uses up the lowered allowance.
+    h.settings((s) => {
+      s.payment.trialLimitPerStudent = 1
+    })
+    const third = await book(h, t, h.slot(coach.id, '2026-10-26', 16).id, trial.id)
+    expect(third.json.error.code).toBe('trial_used')
+    h.settings((s) => {
+      s.payment.trialLimitPerStudent = 2
+      s.payment.trialEnabled = false
+    })
+    const off = await book(h, t, h.slot(coach.id, '2026-10-26', 16).id, trial.id)
+    expect(off.json.error.code).toBe('trial_off')
+    const old = h.db.select().from(bookings).where(eq(bookings.id, first.json.bookingId)).get()
+    expect(old?.status).toBe('pending_payment')
+  })
+
   it('lets the desk book the time of a student’s own lapsed hold for them', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
