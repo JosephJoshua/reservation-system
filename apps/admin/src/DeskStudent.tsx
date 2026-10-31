@@ -44,7 +44,7 @@ function SamePhoneNote({
       <div className="field-text warning-text">
         该手机号已是学员
         {list.map((d) => (
-          <a key={d.id} href={`#/students?id=${d.id}`} onClick={onOpen}>
+          <a key={d.id} href={`#/students?id=${d.id}`} onClick={onOpen} data-discard>
             「{d.name || '未填写姓名'}」
           </a>
         ))}
@@ -108,6 +108,7 @@ export function NewStudentDialog({
     <Dialog
       visible
       header="前台建档"
+      cancelBtn="返回"
       confirmBtn={{
         content: confirmDuplicate ? '仍然新建' : '建档',
         disabled: !name.trim() || !validPhone || same.loading,
@@ -183,14 +184,14 @@ export function EditStudentDialog({
             ? new RequestError(
                 e.status,
                 e.code,
-                '学员刚刚修改了自己的信息，已载入最新内容，请核对后再保存',
+                '姓名或手机号刚被修改过，已载入最新内容，请核对后再保存',
               )
             : e
         }),
       '已保存',
       {
         stale: ['edited_elsewhere'],
-        // The student changed it meanwhile: shows theirs, to edit again on top of it.
+        // Changed meanwhile, by the student or another tab: shows it, to edit again on top of it.
         onStale: async (e) => {
           if (e.code !== 'edited_elsewhere') return onDone()
           const now = await api<Person>('GET', `/admin/students/${student.id}`).catch(() => null)

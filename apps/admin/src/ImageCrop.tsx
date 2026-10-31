@@ -192,6 +192,7 @@ function CropDialog({
       dialogClassName="crop-dialog"
       width={640}
       header="裁剪图片"
+      cancelBtn="返回"
       confirmBtn={{ content: '使用图片', disabled: !image || !area, loading: saving }}
       onConfirm={save}
       onClose={() => {

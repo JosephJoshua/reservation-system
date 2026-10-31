@@ -1,5 +1,5 @@
 import { Button, MessagePlugin, Switch, type SwitchProps } from 'tdesign-react'
-import { api } from './api'
+import { api, RequestError } from './api'
 import { attempt, newKey, useSubmitting } from './hooks'
 
 // Long enough to read the message and reach the button.
@@ -76,6 +76,11 @@ export async function toggle<T extends object>({
   const key = toggleKey(path)
   // A refusal because the record changed elsewhere loads the list again, so the next try works.
   const opts = { key, stale: ['edited_elsewhere'], onStale: reload }
+  const reloaded = (e: unknown) => {
+    throw e instanceof RequestError && e.code === 'edited_elsewhere'
+      ? new RequestError(e.status, e.code, '已被其他人修改，列表已刷新，请核对后再改')
+      : e
+  }
   let saved: T | undefined
   const ok = await attempt(
     async () => {
@@ -84,7 +89,7 @@ export async function toggle<T extends object>({
         path,
         { ...row, ...change },
         { ifMatch: version(row), key: newKey() },
-      )
+      ).catch(reloaded)
       await reload()
     },
     undefined,
@@ -95,7 +100,12 @@ export async function toggle<T extends object>({
   undoMessage(done, () =>
     attempt(
       async () => {
-        await api('PUT', path, { ...after, ...back }, { ifMatch: version(after), key: newKey() })
+        await api(
+          'PUT',
+          path,
+          { ...after, ...back },
+          { ifMatch: version(after), key: newKey() },
+        ).catch(reloaded)
         await reload()
       },
       '已撤销',
