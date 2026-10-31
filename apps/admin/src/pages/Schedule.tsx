@@ -42,7 +42,7 @@ import {
   useIsPhone,
   useSubmitting,
 } from '../hooks'
-import { bookingStatusLabel, callOffEffect, cancelConfirmLabel } from '../labels'
+import { bookingStatusLabel, callOffEffect, cancelConfirmLabel, cancelDoneMessage } from '../labels'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
 import type { Coach, LessonType, Slot } from '../types'
@@ -774,7 +774,7 @@ function LessonDialog({
             { reason },
             { key: onceKey(`cancel-booking-${b.id}`) },
           ),
-        '已取消，学员会收到全额退款或退回的课时',
+        cancelDoneMessage(b.status as BookingStatus),
         { onStale: onChanged },
       )
     )
@@ -960,7 +960,10 @@ function SessionDialog({
                 { reason },
                 { key: onceKey(`cancel-booking-${cancelling}`) },
               ),
-            '已取消，学员会收到全额退款或退回的课时',
+            cancelDoneMessage(
+              (slot.bookings.find((b) => b.id === cancelling)?.status ??
+                'confirmed') as BookingStatus,
+            ),
             { onStale: onChanged },
           )
     if (ok) onChanged()

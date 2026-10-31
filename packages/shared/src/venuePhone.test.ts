@@ -119,6 +119,45 @@ describe('dialablePhone', () => {
     expect(dialablePhone('0086 139 0000 0001')).toBe('+8613900000001')
   })
 
+  it('leaves out an extension after a landline written with China’s code', () => {
+    expect(dialablePhone('(+86) 0571-88888888-8023')).toBe('+8657188888888')
+    expect(dialablePhone('+86 10-62345678-8023')).toBe('+861062345678')
+    expect(dialablePhone('+86 10 6234 5678 8')).toBe('+861062345678')
+    expect(dialablePhone('+86 571 8888 8888 8023')).toBe('+8657188888888')
+    expect(dialablePhone('86 10 6234 5678-8')).toBe('+861062345678')
+    expect(dialablePhone('0086 (0)755 1234 5678-8')).toBe('+8675512345678')
+    expect(dialablePhone('+86 (0571) 8888 8888-8023')).toBe('+8657188888888')
+    expect(dialablePhone('+86(0571)88888888-8')).toBe('+8657188888888')
+    expect(dialablePhone('(+86) (0571) 8888 8888-8')).toBe('+8657188888888')
+    expect(dialablePhone('+86 (010) 6234 5678 8')).toBe('+861062345678')
+    expect(dialablePhone('86 (0571) 88888888-8')).toBe('+8657188888888')
+    expect(dialablePhone('0086 (0571) 8888 8888-8')).toBe('+8657188888888')
+    expect(dialablePhone('0086 (0571) 8888 8888 8023')).toBe('+8657188888888')
+    expect(dialablePhone('0086 (010) 6234 5678-8')).toBe('+861062345678')
+  })
+
+  it('refuses a China number with digits left over that it cannot read as an extension', () => {
+    for (const phone of [
+      '(0086) 755 1234 5678 8',
+      '(0086)755-12345678-8',
+      '(0086) (0755) 1234 5678-8',
+      '0086  755 1234 5678 8',
+      '0086.755.1234.5678.8',
+      '+86  10  6234  5678  8',
+      '+86 (00) 571 8888 8888 8',
+    ]) {
+      expect(dialablePhone(phone), phone).toBeNull()
+    }
+    expect(dialablePhone('+86 (0139) 0000 0001')).toBe('+8613900000001')
+  })
+
+  it('takes 0086 with the trunk 0 after it, as +86 and 86', () => {
+    expect(venuePhoneValid('0086 (0)755 1234 5678')).toBe(true)
+    expect(dialablePhone('0086 (0)755 1234 5678')).toBe('+8675512345678')
+    expect(dialablePhone('0086 0755 1234 5678')).toBe('+8675512345678')
+    expect(venuePhoneValid('0086 1390000000')).toBe(false)
+  })
+
   it('refuses digits after a mainland mobile instead of dialling them', () => {
     for (const phone of [
       '139-0000-0001-12',

@@ -33,6 +33,8 @@ Page({
   id: 0,
   /** One mark at a time, so a double tap or two quick taps act once. */
   marking: false,
+  /** When each booking's mark last changed here, by booking id. */
+  markedAt: {} as Record<number, number>,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -107,11 +109,21 @@ Page({
     const student = this.data.students[e.currentTarget.dataset.index as number]
     if (!student || this.marking || this.data.markingAll) return
     const picked = e.currentTarget.dataset.value as Attendance
+    // The second tap of a double tap can land just after the first mark shows; it would undo it.
+    // A deliberate undo comes later than this.
+    if (
+      student.attendance === picked &&
+      Date.now() - (this.markedAt[student.bookingId] ?? 0) < 400
+    ) {
+      return
+    }
     // Tapping the current mark again clears it.
     const attendance = student.attendance === picked ? null : picked
     this.marking = true
+    let marked = false
     try {
       await coachApi('PUT', `/lessons/${student.bookingId}/attendance`, { attendance })
+      marked = true
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
     } catch (err) {
       showError(err)
@@ -119,6 +131,7 @@ Page({
       this.marking = false
     }
     await this.load()
+    if (marked) this.markedAt[student.bookingId] = Date.now()
   },
 
   async markAll() {

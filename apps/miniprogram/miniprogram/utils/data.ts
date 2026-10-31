@@ -44,6 +44,11 @@ export function trialBlock(catalog: CatalogDto): string {
   return catalog.payment.trialPending ? TRIAL_PENDING : TRIAL_USED_UP
 }
 
+/** Drops the cached catalog, say after the session moved to another student record. */
+export function forgetCatalog(): void {
+  catalog = null
+}
+
 /** When the shared catalog was fetched, so a page can tell it was refreshed meanwhile. */
 export function catalogFetchedAt(): number {
   return catalog?.at ?? 0

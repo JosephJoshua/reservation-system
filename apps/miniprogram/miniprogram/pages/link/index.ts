@@ -1,5 +1,12 @@
 import { ApiError, api, showError } from '../../utils/api'
-import { agreementFor, agreePolicies, askToAgree, getMe, needsAgreement } from '../../utils/data'
+import {
+  agreementFor,
+  agreePolicies,
+  askToAgree,
+  forgetCatalog,
+  getMe,
+  needsAgreement,
+} from '../../utils/data'
 import { isTop } from '../../utils/nav'
 
 const clean = (code: string) =>
@@ -79,6 +86,8 @@ Page({
         if (!confirm) return
         await api('POST', '/me/link', { code, merge: true })
       }
+      // The session now belongs to the desk record, whose 体验课 and packages may differ.
+      forgetCatalog()
       if (!isTop(this)) return
       wx.switchTab({
         url: '/pages/profile/index',
