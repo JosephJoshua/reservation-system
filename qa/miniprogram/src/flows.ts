@@ -4,7 +4,7 @@
 // screen to screenshots/flows/.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import automator from 'miniprogram-automator'
+import { closeMiniProgram, type MiniProgram, openMiniProgram } from './launch'
 import { expectStudent, switchStudent } from './session'
 import { qaTheme, resetTheme, startTheme } from './theme'
 
@@ -13,7 +13,6 @@ const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.me
 const outDir = fileURLToPath(new URL('../screenshots/flows', import.meta.url))
 mkdirSync(outDir, { recursive: true })
 
-type MiniProgram = Awaited<ReturnType<typeof automator.launch>>
 type Page = NonNullable<Awaited<ReturnType<MiniProgram['currentPage']>>>
 
 // Runs inside the mini program, through evaluate.
@@ -38,10 +37,7 @@ async function call(method: string, path: string, body?: unknown, token?: string
   return { status: res.status, json: text ? JSON.parse(text) : null }
 }
 
-const miniProgram = await automator.launch({
-  projectPath,
-  ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
-})
+const miniProgram = await openMiniProgram(projectPath)
 
 const errors: string[] = []
 miniProgram.on('exception', (err: { message: string }) => errors.push(err.message))
@@ -386,6 +382,6 @@ try {
     // A forced theme would otherwise stay set for the next run.
     if (qaTheme()) await resetTheme(miniProgram)
   } finally {
-    await miniProgram.close()
+    await closeMiniProgram(miniProgram)
   }
 }
