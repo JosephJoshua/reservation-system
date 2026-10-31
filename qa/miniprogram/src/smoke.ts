@@ -2,7 +2,7 @@
 // forced light and forced dark through the setting's storage key, and saves a screenshot of each.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import automator from 'miniprogram-automator'
+import { closeMiniProgram, openMiniProgram } from './launch'
 import { resetTheme, setTheme } from './theme'
 
 const projectPath = fileURLToPath(new URL('../../../apps/miniprogram', import.meta.url))
@@ -15,10 +15,7 @@ const tabs = [
   { path: '/pages/profile/index', name: 'profile' },
 ]
 
-const miniProgram = await automator.launch({
-  projectPath,
-  ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
-})
+const miniProgram = await openMiniProgram(projectPath)
 
 const errors: string[] = []
 miniProgram.on('exception', (err: { message: string }) => errors.push(err.message))
@@ -52,6 +49,6 @@ try {
   try {
     await resetTheme(miniProgram)
   } finally {
-    await miniProgram.close()
+    await closeMiniProgram(miniProgram)
   }
 }
