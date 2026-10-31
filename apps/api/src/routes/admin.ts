@@ -2433,7 +2433,7 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/refunds/:id/paid-back', need('finance'), (c) => {
     const id = idParam(c)
-    if (!markOfflineRefundPaid(deps, id)) return c.body(null, 204)
+    markOfflineRefundPaid(deps, id)
     const r = refundContext(id)
     log(c.get('staffId'), {
       action: 'refund.paid_back',
@@ -2517,7 +2517,21 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'refund', id },
       })
     }
-    return c.json({ ...refundOutcome(id), resent: done === 'resent' })
+    // Another tab settled it outside the system meanwhile, so it says so, as a settle does.
+    const settledElsewhere =
+      !done &&
+      db
+        .select({ id: refunds.id })
+        .from(refunds)
+        .where(
+          and(eq(refunds.id, id), eq(refunds.status, 'succeeded'), isNotNull(refunds.settledNote)),
+        )
+        .get() !== undefined
+    return c.json({
+      ...refundOutcome(id),
+      resent: done === 'resent',
+      message: settledElsewhere ? '该退款已标为另行退款' : null,
+    })
   })
 
   // Invoices

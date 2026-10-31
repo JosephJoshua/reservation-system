@@ -6,6 +6,7 @@ import {
 } from '@rs/shared'
 import { useState } from 'react'
 import {
+  Alert,
   Button,
   Checkbox,
   Dialog,
@@ -54,11 +55,15 @@ interface RefundOutcome {
   failure: string | null
   /** Set by a retry: false when WeChat Pay already had the old refund done or on its way. */
   resent?: boolean
+  /** Set by a retry another tab settled outside the system meanwhile. */
+  message?: string | null
 }
 
 /** WeChat Pay can refuse a refund at once (balance too low, say), so say so instead of success. */
 function tellOutcome(outcome: RefundOutcome | undefined, success: string) {
-  if (outcome?.resent === false && outcome.status !== 'failed') {
+  if (outcome?.message) {
+    void MessagePlugin.info(outcome.message, 5000)
+  } else if (outcome?.resent === false && outcome.status !== 'failed') {
     void MessagePlugin.success('原退款已在微信支付处理，已更新状态，未重复退款')
   } else if (outcome?.status === 'failed') {
     void MessagePlugin.warning(
@@ -97,6 +102,9 @@ export function Refunds() {
   const [deciding, setDeciding] = useState<{ refund: Refund; approve: boolean } | null>(null)
   const [settling, setSettling] = useState<Refund | null>(null)
   const keys = useActionKeys()
+  // Someone else recorded it as handed back meanwhile: kept on screen, since cash may have gone
+  // out twice.
+  const [paidElsewhere, setPaidElsewhere] = useState<string | null>(null)
 
   const paidBack = async (r: Refund) => {
     if (
@@ -106,7 +114,16 @@ export function Refunds() {
             key: onceKey(`paid-back-${r.id}`),
           }),
         '已记录退还',
-        { onStale: reload, key: `paid-back-${r.id}` },
+        {
+          onStale: (e) => {
+            if (e.code === 'refund_paid_back_elsewhere') setPaidElsewhere(e.message)
+            return reload()
+          },
+          key: `paid-back-${r.id}`,
+          stale: ['refund_paid_back_elsewhere'],
+          // Shown in a dialog instead.
+          quiet: ['refund_paid_back_elsewhere'],
+        },
       )
     )
       await reload()
@@ -349,6 +366,17 @@ export function Refunds() {
         ]}
       />
       <Pager list={list} filters={filters} />
+      {paidElsewhere && (
+        <Dialog
+          visible
+          header="线下退还"
+          confirmBtn={null}
+          cancelBtn="关闭"
+          onClose={() => setPaidElsewhere(null)}
+        >
+          <Alert theme="error" message={paidElsewhere} />
+        </Dialog>
+      )}
       {settling && (
         <Settle
           refund={settling}

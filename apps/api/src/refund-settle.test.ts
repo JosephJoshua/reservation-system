@@ -449,6 +449,30 @@ describe('a failed WeChat Pay refund settled outside the system', () => {
     const actions = h.db.select({ action: actionLog.action }).from(actionLog).all()
     expect(actions.map((a) => a.action)).not.toContain('refund.settled')
   })
+  it('answers a retry from a stale page after another tab settled it', async () => {
+    const h = setup()
+    const { admin, refundId } = await failedRefund(h)
+    const settled = await h.call(
+      'POST',
+      `/admin/refunds/${refundId}/settled`,
+      { how: 'offline', note: '已现金退还' },
+      admin,
+    )
+    expect(settled.json).toMatchObject({ settled: true })
+    h.gateway.refundMode = 'succeeded'
+    const retry = await h.call('POST', `/admin/refunds/${refundId}/retry`, {}, admin, {
+      'Idempotency-Key': 'retry-stale',
+    })
+    expect(retry.status).toBe(200)
+    expect(retry.json).toMatchObject({
+      status: 'succeeded',
+      resent: false,
+      message: '该退款已标为另行退款',
+    })
+    expect(h.db.select().from(refunds).get()).toMatchObject({ settledNote: '已现金退还' })
+    const actions = h.db.select({ action: actionLog.action }).from(actionLog).all()
+    expect(actions.map((a) => a.action)).not.toContain('refund.retry')
+  })
 })
 
 /** A paid lesson the venue cancelled, whose WeChat Pay refund is stuck as 退款异常. */
