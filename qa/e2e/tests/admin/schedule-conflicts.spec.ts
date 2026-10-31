@@ -148,3 +148,64 @@ test("a session takes no more than its class's 上课人数", async ({ page, req
   await expect(dialog(page).locator('.t-button', { hasText: '保存' })).toHaveClass(/t-is-disabled/)
   await both(page, 'session-seats')
 })
+
+test('已与教练确认 from a stale list never moves the lesson back', async ({ page, request }) => {
+  const name = `学员丙${run}`
+  const lessonTypeId = (
+    await call<{ id: number }>(request, 'POST', '/admin/lesson-types', admin, {
+      name: `保留课${run}`,
+      durationMinutes: 60,
+      price: 20000,
+    })
+  ).id
+  await call(request, 'PUT', `/admin/coaches/${coachId}`, admin, {
+    name: coachName,
+    lessonTypeIds: [lessonTypeId],
+  })
+  const extra = await call<{ id: number }>(
+    request,
+    'POST',
+    `/admin/coaches/${coachId}/exceptions`,
+    admin,
+    { kind: 'extra', startsAt: at('18:00'), endsAt: at('19:00') },
+  )
+  await addExtraTimes(request, admin, coachId, [{ startsAt: at('20:00'), endsAt: at('21:00') }])
+  const token = await student(request, name)
+  await call(request, 'PUT', '/me', token, { name, phone: '13700137002' })
+  const booked = await call<{ orderId: number; bookingId: number }>(
+    request,
+    'POST',
+    '/bookings',
+    token,
+    { coachId, startsAt: at('18:00'), lessonTypeId },
+  )
+  await call(request, 'POST', `/dev/fake-pay/${booked.orderId}`, token)
+  await call(request, 'DELETE', `/admin/coaches/${coachId}/exceptions/${extra.id}`, admin)
+
+  await login(page)
+  await page.goto('./#/schedule')
+  const alert = page.locator('.board-alert')
+  await alert.getByRole('button', { name: '查看' }).click()
+  const row = alert.locator('div', { hasText: `${name} · 不在排班里` }).last()
+  await expect(row).toContainText('18:00')
+  // Another desk moves it into 排班 at 20:00 meanwhile.
+  await call(request, 'POST', `/admin/bookings/${booked.bookingId}/move`, admin, {
+    coachId,
+    startsAt: at('20:00'),
+  })
+  await row.getByRole('button', { name: '已与教练确认' }).click()
+  await page.locator('.t-popconfirm').getByRole('button', { name: '已确认' }).click()
+  await expect(
+    page.locator('.t-message', { hasText: '这节课已有变化，请刷新后再看' }),
+  ).toBeVisible()
+  // The list reloads: the lesson is in 排班 now, so it left the list.
+  await expect(alert.getByText(name)).toHaveCount(0)
+  await both(page, 'keep-stale')
+  const [lesson] = await call<{ startsAt: string }[]>(
+    request,
+    'GET',
+    `/admin/bookings?id=${booked.bookingId}`,
+    admin,
+  )
+  expect(Date.parse(lesson?.startsAt ?? '')).toBe(Date.parse(at('20:00')))
+})

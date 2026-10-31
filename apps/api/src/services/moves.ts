@@ -156,22 +156,40 @@ function checkStudentMove(
   if (coach) throw coach
 }
 
+/** A lesson's coach and start as a desk page showed them, so a change made on it is refused once
+ * someone else has moved the lesson. */
+export interface ShownTime {
+  coachId: number
+  startsAt: Date
+}
+
+const changedElsewhere = () => new ApiError(409, 'booking_changed', '这节课已有变化，请刷新后再看')
+
+function assertShown(row: NonNullable<ReturnType<typeof bookingRow>>, shown: ShownTime) {
+  if (
+    row.coachId !== shown.coachId ||
+    row.booking.startsAt.getTime() !== shown.startsAt.getTime()
+  ) {
+    throw changedElsewhere()
+  }
+}
+
 /**
  * Moves a confirmed lesson to another time of the same length and kind: a private lesson to a time
  * the coach's 排班 offers (or any free time, for the venue with `anyTime`), a group class seat to
  * another session of the same class. The old seat is freed and the new one taken
  * in one IMMEDIATE transaction, and the unique index on live seats refuses a seat someone else
  * took meanwhile. The payment or package lesson stays with the booking. Moving to
- * the time it already has is a no-op, so a repeated request does nothing more, except that the
- * venue with `anyTime` keeps a lesson now outside 排班 where it is, as agreed ('agreed').
+ * the time it already has is a no-op, so a repeated request does nothing more. With `from`, the
+ * time the mover saw, a lesson moved elsewhere meanwhile is refused instead of moved again.
  */
 export function moveBooking(
   deps: Deps,
   bookingId: number,
   target: SlotTarget,
   by: Mover,
-  options: { anyTime?: boolean } = {},
-): boolean | 'agreed' {
+  options: { anyTime?: boolean; from?: ShownTime } = {},
+): boolean {
   const now = deps.now()
   const student = typeof by === 'object' && 'studentId' in by ? by.studentId : null
   const coach = typeof by === 'object' && 'coachId' in by ? by.coachId : null
@@ -199,26 +217,11 @@ export function moveBooking(
         : row.inSession === null &&
           at.coachId === row.coachId &&
           at.startsAt.getTime() === booking.startsAt.getTime()
-    if (here && booking.status === 'confirmed') {
-      // The venue keeping a lesson where it is although 排班 no longer covers it: agreed with the
-      // coach, so it leaves the lessons to sort out.
-      if (
-        by === 'venue' &&
-        options.anyTime &&
-        row.inSession === null &&
-        booking.startsAt > now &&
-        !booking.outsideAgreed &&
-        outsideHours(tx, row.coachId, booking)
-      ) {
-        assertNotOff(tx, row.coachId, booking)
-        tx.update(bookings).set({ outsideAgreed: true }).where(eq(bookings.id, booking.id)).run()
-        return 'agreed'
-      }
-      return false
-    }
+    if (here && booking.status === 'confirmed') return false
     if (booking.status !== 'confirmed') {
       throw new ApiError(409, 'not_movable', '只有预约成功的课程可以改约')
     }
+    if (options.from) assertShown(row, options.from)
     if (booking.startsAt <= now) throw new ApiError(409, 'started', '课程已开始，无法改约')
     // The venue runs its group sessions; a coach cannot move a student out of one.
     if (coach !== null && row.inSession !== null) {
@@ -330,6 +333,41 @@ export function moveBooking(
       was: { coachId: row.coachId, startsAt: booking.startsAt, endsAt: booking.endsAt },
     })
     return true
+  })
+}
+
+/**
+ * Keeps a private lesson that 排班 no longer covers where it is, as the venue agreed with the
+ * coach, so it leaves the lessons to sort out. It never moves the lesson: one moved or cancelled
+ * since the desk saw it at `shown` is refused. True when it was marked now; false when there was
+ * nothing to do (already kept, or back inside 排班), so a repeat logs nothing.
+ */
+export function keepOutsideHours(deps: Deps, bookingId: number, shown: ShownTime): boolean {
+  const now = deps.now()
+  return immediate(deps.db, (tx) => {
+    const row = bookingRow(tx, bookingId)
+    if (!row) throw notFound('预约')
+    const { booking } = row
+    if (booking.status !== 'confirmed') throw changedElsewhere()
+    assertShown(row, shown)
+    if (row.inSession !== null) {
+      throw new ApiError(409, 'group_lesson', '小班课请改约或取消')
+    }
+    if (booking.startsAt <= now) throw new ApiError(409, 'started', '课程已开始')
+    if (booking.outsideAgreed || !outsideHours(tx, row.coachId, booking)) return false
+    assertNotOff(tx, row.coachId, booking)
+    const kept = tx
+      .update(bookings)
+      .set({ outsideAgreed: true })
+      .where(
+        and(
+          eq(bookings.id, booking.id),
+          eq(bookings.status, 'confirmed'),
+          eq(bookings.slotId, booking.slotId),
+        ),
+      )
+      .run()
+    return kept.changes === 1
   })
 }
 

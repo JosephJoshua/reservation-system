@@ -47,11 +47,18 @@ export function MoveDialog({
   const submit = async () => {
     if (!pick) return
     const ok = await attempt(
-      () => api('POST', `/admin/bookings/${booking.id}/move`, pickBody(pick), { key }),
+      () =>
+        api(
+          'POST',
+          `/admin/bookings/${booking.id}/move`,
+          // What the dialog shows as the lesson's time: one moved elsewhere meanwhile is refused.
+          { ...pickBody(pick), from: { coachId: booking.coach.id, startsAt: booking.startsAt } },
+          { key },
+        ),
       '已改约',
       {
-        // The lesson was cancelled or started meanwhile.
-        stale: ['not_movable', 'started'],
+        // The lesson was cancelled, started or moved meanwhile.
+        stale: ['not_movable', 'started', 'booking_changed'],
         onStale: onDone,
         // The time may have gone meanwhile: pick again from what is free now.
         onRefused: () => {
