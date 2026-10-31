@@ -1507,7 +1507,7 @@ export function adminRoutes(deps: Deps) {
 
   app.post('/bookings/quote', need('bookings'), async (c) => {
     const body = await parseBody(c, z.object(frontDeskTarget).refine(oneTarget, '请选择上课时间'))
-    return c.json(frontDeskQuote(deps, { ...body, target: toTarget(body) }))
+    return c.json(await frontDeskQuote(deps, { ...body, target: toTarget(body) }))
   })
 
   // 代约: the front desk books a lesson for a student.
@@ -1533,7 +1533,11 @@ export function adminRoutes(deps: Deps) {
     )
     const listedPriceOnly = !can(c.get('roles'), 'manage')
     return c.json(
-      bookForStudent(deps, c.get('staffId'), { ...body, target: toTarget(body), listedPriceOnly }),
+      await bookForStudent(deps, c.get('staffId'), {
+        ...body,
+        target: toTarget(body),
+        listedPriceOnly,
+      }),
       201,
     )
   })

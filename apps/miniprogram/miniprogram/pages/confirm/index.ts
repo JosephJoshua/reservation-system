@@ -17,6 +17,8 @@ import {
   getCatalog,
   getMe,
   needsAgreement,
+  TRIAL_PENDING,
+  trialBlock,
 } from '../../utils/data'
 import { lessonTime, yuan } from '../../utils/format'
 import { backOr, isTop, navigateOnce } from '../../utils/nav'
@@ -206,6 +208,11 @@ Page({
         this.setData({ state: 'error', error: '这门课程暂时不能预约' })
         return
       }
+      const blocked = lessonType.isTrial ? trialBlock(catalog) : ''
+      if (blocked) {
+        this.setData({ state: 'error', error: blocked })
+        return
+      }
       const { price, package: pkg, perClassEnabled } = quote
       this.terms = bookingTerms(lessonType.rules)
       this.setData({
@@ -348,6 +355,8 @@ Page({
         // And if the venue changed the cancel or move rules meanwhile.
         ...(this.terms ? { expectedTerms: this.terms } : {}),
       })
+      // The 体验课 just taken counts against the allowance the other pages show.
+      if (this.data.isTrial) getCatalog(true).catch(() => undefined)
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
@@ -360,6 +369,8 @@ Page({
           showError(e)
           return 'failed' as const
         })
+        // A paid 体验课 is no longer one to pay on the other pages.
+        if (this.data.isTrial) getCatalog(true).catch(() => undefined)
         // Paid but not confirmed yet: say so, so the booking's 待支付 does not invite paying again.
         if (result === 'pending') {
           this.finish(res.bookingId, PAY_PENDING, PAY_PENDING)
@@ -397,6 +408,19 @@ Page({
         // Booked this session already, on other terms (unpaid at the old price, say): that
         // booking is where to pay or cancel it.
         this.finish(e.bookingId, e.message, e.message)
+        return
+      }
+      if (e instanceof ApiError && e.code === 'trial_used') {
+        // Taken meanwhile, on another phone or at the front desk: the pages stop offering it.
+        // A trial still to pay is said as such: it is paid from 课程.
+        const fresh = await getCatalog(true).catch(() => null)
+        const pending = fresh !== null && trialBlock(fresh) === TRIAL_PENDING
+        await wx.showModal({
+          title: pending ? TRIAL_PENDING : e.message,
+          content: pending ? '请在“课程”中支付或取消' : '可以预约其他课程',
+          showCancel: false,
+        })
+        if (isTop(this)) backOr('/pages/booking/index')
         return
       }
       if (e instanceof ApiError && e.code === 'price_changed') {

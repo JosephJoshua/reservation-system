@@ -1,6 +1,6 @@
 import type { CoachDetailDto } from '../../lib/shared'
-import { ApiError, api, assetUrl, errorMessage } from '../../utils/api'
-import { getCatalog } from '../../utils/data'
+import { ApiError, api, assetUrl, errorMessage, showError } from '../../utils/api'
+import { getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { priceText } from '../../utils/format'
 import { navigateBackOnce, navigateOnce, switchTabOnce } from '../../utils/nav'
 import { richTextNodes } from '../../utils/rich-text'
@@ -38,9 +38,16 @@ Page({
 
   picking: false,
 
+  /** Whether a 体验课 row says it waits for payment, which may change while the page is hidden. */
+  trialPending: false,
+
   onLoad(query: Record<string, string | undefined>) {
     this.setData({ id: Number(query.id) })
     this.load()
+  },
+
+  onShow() {
+    if (this.data.state === 'ready' && this.trialPending) this.load()
   },
 
   onPullDownRefresh() {
@@ -54,6 +61,7 @@ Page({
         getCatalog(),
       ])
       wx.setNavigationBarTitle({ title: coach.name })
+      this.trialPending = trialBlock(catalog) === TRIAL_PENDING
       const lessons = coach.lessons.flatMap((l): LessonRow[] => {
         const type = catalog.lessonTypes.find((t) => t.id === l.lessonTypeId)
         if (!type) return []
@@ -61,7 +69,8 @@ Page({
           {
             id: type.id,
             name: type.name,
-            duration: `${type.durationMinutes}分钟`,
+            // A 体验课 they cannot book now stays in the price list, saying why.
+            duration: (type.isTrial && trialBlock(catalog)) || `${type.durationMinutes}分钟`,
             ...priceText(l.price),
           },
         ]
@@ -77,10 +86,16 @@ Page({
         profile: richTextNodes(coach.profile),
       })
     } catch (e) {
+      const missing = e instanceof ApiError && e.status === 404
+      // A failed refresh keeps what is on screen, unless the coach is gone.
+      if (this.data.state === 'ready' && !missing) {
+        showError(e)
+        return
+      }
       this.setData({
         state: 'error',
         error: errorMessage(e),
-        missing: e instanceof ApiError && e.status === 404,
+        missing,
       })
     }
   },

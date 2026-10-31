@@ -16,7 +16,7 @@ import {
 } from '../../utils/api'
 import { addLessonToCalendar } from '../../utils/calendar'
 import { scanToCheckIn } from '../../utils/check-in'
-import { cancelRuleText } from '../../utils/data'
+import { cancelRuleText, getCatalog } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundBack, refundStatus, settled } from '../../utils/labels'
@@ -282,6 +282,8 @@ Page({
     this.setData({ busy: true })
     try {
       const result = await payOrder(b.orderId, b.price, null, () => !this.left)
+      // A paid 体验课 is no longer one to pay on the other pages.
+      if (b.lessonType.isTrial) getCatalog(true).catch(() => undefined)
       if (this.left) return
       await this.refresh()
       if (result === 'pending' && this.data.booking?.status === 'pending_payment') {
@@ -370,6 +372,8 @@ Page({
       const updated = await api<BookingDto>('POST', `/bookings/${b.id}/cancel`, {
         acceptLate: quote.late,
       })
+      // An early cancel gives the 体验课 back, which the other pages offer again.
+      if (updated.lessonType.isTrial) getCatalog(true).catch(() => undefined)
       this.show(updated)
     } catch (e) {
       showError(e)

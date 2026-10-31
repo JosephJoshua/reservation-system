@@ -14,7 +14,7 @@ import type { Deps } from '../deps'
 import { ApiError, isUniqueViolation, notFound } from '../errors'
 import { accountDeleted } from './account'
 import { describeBooking, logAction, yuan } from './action-log'
-import { checkBookable, seatTaken, usablePackage } from './bookings'
+import { checkBookable, closeLapsedTrialHolds, seatTaken, usablePackage } from './bookings'
 import { newOutTradeNo } from './ids'
 import { listedPriceOnly } from './packages'
 import { outsideHours, type SlotTarget, targetSlot } from './schedule'
@@ -113,11 +113,15 @@ function packageMismatch(
   return null
 }
 
-/** What the booking would cost, for the front desk's confirm step. */
-export function frontDeskQuote(
+/**
+ * What the booking would cost, for the front desk's confirm step. The student's lapsed unpaid
+ * trial holds are closed first, as booking would, so the quote does not refuse the trial.
+ */
+export async function frontDeskQuote(
   deps: Deps,
   input: { studentId: number; target: SlotTarget; lessonTypeId: number; anyTime?: boolean },
 ) {
+  await closeLapsedTrialHolds(deps, input.studentId, input.lessonTypeId)
   // Checked in a transaction that is rolled back, since a private time gets its row on the way.
   const { price, pkg, slot, lessonType } = dryRun(deps.db, (tx) => check(tx, deps.now(), input))
   return {
@@ -142,7 +146,9 @@ export function frontDeskQuote(
  * entry. The booking is confirmed at once: paid from the student's package, or by an offline
  * payment the desk has taken. The same unique index as student bookings stops a double booking.
  */
-export function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBookingInput) {
+export async function bookForStudent(deps: Deps, staffId: number, input: FrontDeskBookingInput) {
+  // The student's lapsed unpaid trial holds, which still count against the trial allowance.
+  await closeLapsedTrialHolds(deps, input.studentId, input.lessonTypeId)
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const { slot, lessonType, price, seat, pkg } = check(tx, now, input)

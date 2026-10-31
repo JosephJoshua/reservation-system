@@ -198,6 +198,8 @@ describe('the coach schedule and lessons', () => {
         { startsAt: at('2026-10-26', '09:00'), endsAt: at('2026-10-26', '10:00') },
         { startsAt: at('2026-10-26', '11:00'), endsAt: at('2026-10-26', '12:00') },
       ],
+      // 排班 less the 请假, the lesson in it included.
+      working: [{ startsAt: at('2026-10-26', '09:00'), endsAt: at('2026-10-26', '12:00') }],
       off: [
         {
           id: expect.any(Number),

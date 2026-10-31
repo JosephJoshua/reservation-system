@@ -1,6 +1,6 @@
 import { type SlotDto, venueDateKey } from '../../lib/shared'
-import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
-import { catalogFetchedAt, getCatalog } from '../../utils/data'
+import { api, assetUrl, errorMessage, serverNow, showError } from '../../utils/api'
+import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 
@@ -41,6 +41,10 @@ Page({
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     emptyIcon: { name: 'time', size: '112rpx' },
+    /** A 体验课 the student cannot book now: nothing to reload. */
+    usedUp: false,
+    /** That 体验课 is taken by one still to pay, paid from 课程. */
+    trialPending: false,
     lessonTypeId: 0,
     lessonName: '',
     duration: 0,
@@ -82,6 +86,11 @@ Page({
   },
 
   onShow() {
+    // A 体验课 waiting for payment may have been paid or lapsed meanwhile, maybe on another phone.
+    if (this.data.state === 'error' && this.data.trialPending) {
+      this.load('quiet')
+      return
+    }
     // Coming back from a booking that lost the race should show the slot as taken.
     if (this.data.state !== 'ready') return
     const seek = this.pendingSeek
@@ -101,6 +110,17 @@ Page({
       const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
       if (!lessonType) {
         this.setData({ state: 'error', error: '这门课程已下架' })
+        return
+      }
+      const blocked = lessonType.isTrial ? trialBlock(catalog) : ''
+      if (blocked) {
+        wx.setNavigationBarTitle({ title: lessonType.name })
+        this.setData({
+          state: 'error',
+          error: blocked,
+          usedUp: true,
+          trialPending: blocked === TRIAL_PENDING,
+        })
         return
       }
       this.noticeMs = lessonType.rules.minNoticeMinutes * 60_000
@@ -127,6 +147,8 @@ Page({
           : 0
       this.setData({
         state: 'ready',
+        usedUp: false,
+        trialPending: false,
         lessonName: lessonType.name,
         duration: lessonType.durationMinutes,
         capacity: lessonType.capacity,
@@ -139,7 +161,12 @@ Page({
       })
       this.loadSlots(seek)
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed recheck of a 体验课 waiting for payment keeps saying so.
+      if (this.data.state === 'error' && this.data.trialPending) {
+        showError(e)
+        return
+      }
+      this.setData({ state: 'error', error: errorMessage(e), usedUp: false, trialPending: false })
     }
   },
 
@@ -274,6 +301,10 @@ Page({
       `endsAt=${encodeURIComponent(slot.endsAt)}`,
     ].join('&')
     navigateOnce(`/pages/confirm/index?${query}`)
+  },
+
+  openLessons() {
+    wx.switchTab({ url: '/pages/lessons/index' })
   },
 
   retry() {

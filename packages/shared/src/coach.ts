@@ -145,6 +145,8 @@ export interface CoachDaysDto {
   lessons: CoachSlotDto[]
   /** Working time ahead with no lesson in it, still open for private lessons. */
   free: { startsAt: string; endsAt: string }[]
+  /** 排班 on these dates, past and ahead: weekly hours and 加班, less 请假 and 闭馆. */
+  working: { startsAt: string; endsAt: string }[]
   /** 请假, and 闭馆 when `closure`; may run over several days. */
   off: { id: number; startsAt: string; endsAt: string; note: string; closure: boolean }[]
   /** Whether the coach may change their own 排班. */

@@ -183,7 +183,7 @@ try {
       { coachId: t.coachId, startsAt: t.startsAt, lessonTypeId: lesson.id, payWith: 'wechat' },
       who,
     )
-    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`, undefined, token)
+    if (res.orderId) await call('POST', `/dev/fake-pay/${res.orderId}`, undefined, who)
     return res.bookingId as number
   }
 

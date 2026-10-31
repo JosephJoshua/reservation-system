@@ -282,6 +282,11 @@ export async function download(path: string): Promise<string> {
   }
 }
 
+/** The saved session, or '' before the first login. */
+export function savedToken(): string {
+  return (wx.getStorageSync(TOKEN_KEY) as string) || ''
+}
+
 /** Forgets the session, so the next call logs in afresh. */
 export function clearSession(): void {
   wx.removeStorageSync(TOKEN_KEY)
