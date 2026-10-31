@@ -88,7 +88,7 @@ Page({
   onShow() {
     // A 体验课 that was taken may have been paid, lapsed or freed meanwhile, maybe on another phone.
     if (this.data.state === 'error' && this.data.usedUp) {
-      this.load('quiet')
+      this.load('quiet', true)
       return
     }
     // Coming back from a booking that lost the race should show the slot as taken.
@@ -102,10 +102,19 @@ Page({
     else this.loadSlots(seek)
   },
 
-  /** `seek` is for the slots load that follows; the first load is 'quiet'. */
-  async load(seek?: Seek) {
+  /**
+   * `seek` is for the slots load that follows; the first load is 'quiet'. `fresh` skips the cached
+   * catalog, so a failed fetch throws.
+   */
+  async load(seek?: Seek, fresh = false) {
     try {
-      const catalog = await getCatalog()
+      let catalog = await getCatalog(fresh)
+      // A cached 体验课 block may be stale: the trial may have been freed or paid elsewhere.
+      const cached = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
+      if (!fresh && cached?.isTrial && trialBlock(catalog)) {
+        const stale = catalog
+        catalog = await getCatalog(true).catch(() => stale)
+      }
       this.catalogAt = catalogFetchedAt()
       const lessonType = catalog.lessonTypes.find((t) => t.id === this.data.lessonTypeId)
       if (!lessonType) {
