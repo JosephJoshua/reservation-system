@@ -19,9 +19,9 @@ is not installed in the default location.
 
 Each script launches its own DevTools window by default. To reuse one simulator across runs, open
 an automation instance once (`cli auto --project <path to apps/miniprogram> --auto-port 9420`) and
-set `QA_WS_ENDPOINT=ws://127.0.0.1:9420`. The scripts then attach to it, clear its storage,
-relaunch the first page and leave it open when they finish. The build still runs before each
-script, and DevTools recompiles in place.
+set `QA_WS_ENDPOINT=ws://127.0.0.1:9420`. The scripts then recompile it in place (which also resets the
+simulator's file storage limit), attach to it, clear its storage, relaunch the first page and leave
+it open when they finish.
 
 ## Student flows
 
