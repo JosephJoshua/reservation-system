@@ -360,13 +360,15 @@ Page({
       if (res.status === 'pending_payment' && res.orderId) {
         // A failed or cancelled payment still lands on the booking, which can be paid from there.
         // So does backing out while it was booking: no cashier over the page they went back to.
+        // Why the cashier failed, said on the booking: a toast here would go with this page.
+        let failure = ''
         const result = await payOrder(
           res.orderId,
           this.data.price,
           res.payment,
           () => !this.left,
         ).catch((e) => {
-          showError(e)
+          failure = errorMessage(e)
           return 'failed' as const
         })
         // A paid 体验课 is no longer one to pay on the other pages.
@@ -386,7 +388,11 @@ Page({
           this.finish(res.bookingId, PAY_REFUNDED, PAY_REFUNDED)
           return
         }
-        this.finish(res.bookingId, '', result === 'paid' ? '预约成功' : '已预约，请尽快支付')
+        this.finish(
+          res.bookingId,
+          failure,
+          failure || (result === 'paid' ? '预约成功' : '已预约，请尽快支付'),
+        )
         return
       }
       this.finish(res.bookingId, res.existing ? '你已预约这节课' : '', '预约成功')

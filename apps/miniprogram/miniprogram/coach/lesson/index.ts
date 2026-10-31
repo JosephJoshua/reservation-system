@@ -125,7 +125,8 @@ Page({
   id: 0,
   cancelAsking: false,
   feedbackAsking: false,
-  markedAt: 0,
+  /** The last mark made here: which button and when. */
+  lastMark: null as { picked: Attendance; at: number } | null,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -185,9 +186,9 @@ Page({
     const lesson = this.data.lesson
     if (!lesson || this.data.marking) return
     const picked = e.currentTarget.dataset.value as Attendance
-    // The second tap of a double tap can land just after the first request returns; it would undo
-    // the mark the first one made. A deliberate undo comes later than this.
-    if (lesson.attendance === picked && Date.now() - this.markedAt < 400) return
+    // The second tap of a double tap can land just after the first request returns; it would
+    // reverse the mark or undo the first one made. A deliberate second tap comes later than this.
+    if (this.lastMark?.picked === picked && Date.now() - this.lastMark.at < 400) return
     // Tapping the current mark again clears it.
     const attendance = lesson.attendance === picked ? null : picked
     this.setData({ marking: true })
@@ -195,7 +196,7 @@ Page({
       this.show(
         await coachApi<CoachLessonDto>('PUT', `/lessons/${this.id}/attendance`, { attendance }),
       )
-      this.markedAt = Date.now()
+      this.lastMark = { picked, at: Date.now() }
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
     } catch (err) {
       // The front desk marked it meanwhile, marking was turned off or it is too late now: show the
