@@ -24,8 +24,11 @@ const NOTE = /\s*\([^()]*[^\d\s()+.-][^()]*\)\s*$/
 const EXTENSION =
   /\s*(?:(?:转|分机|#|ext\.?|x)\s*\d{1,6}|\(\s*(?:(?:转|分机|ext\.?|x)\s*)?\d{1,6}\s*\))$/i
 // An extension after a hyphen or a space, as in 0571-88888888-802 or 010 6234 5678 8: only after
-// an area code and a full local number, so 010-6234-5678 stays one number.
-const DASH_EXTENSION = /^(\(?0[1-9]\d{1,2}\)?[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
+// an area code and a full local number, so 010-6234-5678 stays one number. The area code may
+// follow China's code (+86, 86 or 0086, with or without the trunk 0), as in +86 10-6234 5678-8;
+// never a mobile prefix, so a mobile with digits after it is still refused.
+const DASH_EXTENSION =
+  /^((?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?|0)?\(?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
 // A mainland mobile with digits after it, as in 139-0000-0001-12: a typo more likely than an
 // extension, which a mobile seldom has, so refused rather than dialled with the extra digits.
 const MOBILE_AND_MORE = /^1[3-9]\d{9}\d/
@@ -39,11 +42,13 @@ const NUMBER = /^(?:\+|\(\+)?[\d\s().-]+$/
 function digitsFit(number: string) {
   const digits = number.replace(/\D/g, '')
   const international = /^\(?\+/.test(number)
-  const counted = international ? digits.replace(/^860?/, '') : digits
+  // China's code is not counted: +86, or 0086 without the +, and the trunk 0 after either.
+  const afterChina = international || digits.startsWith('0086')
+  const counted = digits.replace(international ? /^860?/ : /^00860?/, '')
   if (!international || digits.startsWith('86')) {
     // The number as dialled within China, and, when written after China's code (+86, or 86 or
     // 0086 without the +), as it reads after it.
-    const national: [string, boolean][] = [[counted, international]]
+    const national: [string, boolean][] = [[counted, afterChina]]
     const bare = /^(?:00)?86(0?1\d{9,})$/.exec(digits)
     if (!international && bare?.[1]) national.push([bare[1].replace(/^0/, ''), true])
     for (const [n, afterCode] of national) {
