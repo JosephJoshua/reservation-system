@@ -402,4 +402,61 @@ describe('table limit', () => {
     expect((await join(3)).status).toBe(201)
     expect((await join(4)).json.error?.code).toBe('tables_full')
   })
+
+  it('does not count a student’s own lapsed hold against the table they would book again', async () => {
+    const h = setup()
+    const v = venue(h, 2, 2)
+    const kids = h.db
+      .insert(lessonTypes)
+      .values({
+        name: '少儿小班课',
+        durationMinutes: 60,
+        price: 8000,
+        capacity: 6,
+        studentsPerTable: 2,
+      })
+      .returning()
+      .get()
+    h.db
+      .insert(coachLessonTypes)
+      .values({ coachId: v.coach(0), lessonTypeId: kids.id })
+      .run()
+    const admin = await h.admin()
+    const created = await h.call(
+      'POST',
+      '/admin/sessions',
+      {
+        lessonTypeId: kids.id,
+        capacity: 6,
+        sessions: [
+          {
+            coachId: v.coach(0),
+            startsAt: venueInstant('2026-10-25', 10 * 60).toISOString(),
+            endsAt: venueInstant('2026-10-25', 11 * 60).toISOString(),
+          },
+        ],
+      },
+      admin,
+    )
+    const sessionId = created.json.ids[0] as number
+    const [k1, k2, k3, adult] = await Promise.all(
+      ['k1', 'k2', 'k3', 'adult'].map((n) => h.student(n)),
+    )
+    await pay(h, await book(h, k1 ?? '', sessionId, kids.id))
+    // k2 holds the second place at the first table, unpaid; a private lesson takes the other.
+    const held = await book(h, k2 ?? '', sessionId, kids.id)
+    expect(held.json.status).toBe('pending_payment')
+    await pay(h, await book(h, adult ?? '', slotAt(h, v.coach(1), 10 * 60).id, v.lesson.id))
+    const sessionFor = async (t: string) =>
+      (
+        await h.call('GET', `/slots?date=2026-10-25&lessonTypeId=${kids.id}`, undefined, t)
+      ).json.find((s: { id: number }) => s.id === sessionId)
+    // k2's payment time is up, before the sweeper closes the hold.
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    expect(await sessionFor(k2 ?? '')).toMatchObject({ available: true, mine: null })
+    // A third kid would need the second table.
+    expect((await sessionFor(k3 ?? '')).available).toBe(false)
+    const again = await book(h, k2 ?? '', sessionId, kids.id)
+    expect(again.status).toBe(201)
+  })
 })

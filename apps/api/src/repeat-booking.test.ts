@@ -195,6 +195,77 @@ describe('booking a session the student already holds', () => {
     expect(withPackage.json.error.code).toBe('already_booked')
   })
 
+  it('judges a repeat that does not say how to pay by how a new booking would pay', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '五节',
+        lessonTypeId: lesson.id,
+        lessonCount: 5,
+        price: 90000,
+        validityDays: 30,
+      })
+      .returning()
+      .get()
+    const slot = h.slot(coach.id, '2026-10-25', 10)
+    const t = await h.student('a')
+    const body = { slotId: slot.id, lessonTypeId: lesson.id }
+    const first = await h.call('POST', '/bookings', body, t)
+    expect(first.json.status).toBe('pending_payment')
+    // No package yet: asked the same, it is the hold.
+    expect((await h.call('POST', '/bookings', body, t)).json).toMatchObject({
+      bookingId: first.json.bookingId,
+      existing: true,
+    })
+    const buy = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await h.fakePay(buy.json.orderId)
+    const pkg = h.db.select().from(packages).get()
+    expect(pkg).toBeDefined()
+    // Now a new booking would use the package, so the WeChat hold is not what is asked for.
+    for (const asked of [body, { ...body, expectedPackageId: pkg?.id }]) {
+      const again = await h.call('POST', '/bookings', asked, t)
+      expect(again.status).toBe(409)
+      expect(again.json.error).toMatchObject({
+        code: 'already_booked',
+        bookingId: first.json.bookingId,
+      })
+    }
+    // Saying WeChat Pay still gets the hold back.
+    expect(
+      (await h.call('POST', '/bookings', { ...body, payWith: 'wechat' }, t)).json,
+    ).toMatchObject({ bookingId: first.json.bookingId, existing: true })
+  })
+
+  it('returns a lesson booked with the last lesson of a package, asked again the same', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const slot = h.slot(coach.id, '2026-10-25', 10)
+    const t = await h.student('a')
+    const product = h.db
+      .insert(packageProducts)
+      .values({
+        name: '一节',
+        lessonTypeId: lesson.id,
+        lessonCount: 1,
+        price: 18000,
+        validityDays: 30,
+      })
+      .returning()
+      .get()
+    const buy = await h.call('POST', '/packages/purchase', { productId: product.id }, t)
+    await h.fakePay(buy.json.orderId)
+    const body = { slotId: slot.id, lessonTypeId: lesson.id }
+    const first = await h.call('POST', '/bookings', body, t)
+    expect(first.json.status).toBe('confirmed')
+    // The package has no lesson left, but this booking holds it: still a repeat.
+    expect((await h.call('POST', '/bookings', body, t)).json).toMatchObject({
+      bookingId: first.json.bookingId,
+      existing: true,
+    })
+  })
+
   it('points a repeat of a private lesson on other terms to the hold', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()

@@ -3,7 +3,7 @@ import { api, errorMessage, refreshAfter, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
-import { PACKAGE_STATUS, refundStatus } from '../../utils/labels'
+import { packageTag, refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { ask } from '../../utils/tap'
 
@@ -27,6 +27,7 @@ interface PackageView {
 }
 
 function view(p: PackageDto): PackageView {
+  const tag = packageTag(p)
   return {
     id: p.id,
     name: p.name,
@@ -39,13 +40,14 @@ function view(p: PackageDto): PackageView {
     ),
     // Valid through the day before the instant it expires, as admin shows it.
     expires: `${fullDate(new Date(new Date(p.expiresAt).getTime() - 1))}${p.status === 'expired' ? '已过期' : '到期'}`,
-    // Paid back 线下另付, as its refund row says, rather than to where it came from.
-    status:
-      p.status === 'refunded' && p.refund && refundStatus(p.refund, p.paidOffline) === '已退还'
-        ? '已退还'
-        : PACKAGE_STATUS[p.status],
+    // A refunded one says where its money stands, as its refund row does.
+    status: tag.text,
     tone:
-      p.status === 'active' ? 'primary' : p.status === 'refund_requested' ? 'warning' : 'default',
+      p.status === 'active'
+        ? 'primary'
+        : p.status === 'refund_requested' || !tag.settled
+          ? 'warning'
+          : 'default',
     active: p.status === 'active',
     refund: p.refund
       ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund, p.paidOffline)}`
