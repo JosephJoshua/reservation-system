@@ -23,12 +23,12 @@ const NOTE = /\s*\([^()]*[^\d\s()+.-][^()]*\)\s*$/
 // An extension at the end, as in 转 8 or #8, or in brackets, as in (8) or (转 8).
 const EXTENSION =
   /\s*(?:(?:转|分机|#|ext\.?|x)\s*\d{1,6}|\(\s*(?:(?:转|分机|ext\.?|x)\s*)?\d{1,6}\s*\))$/i
-// An extension after a hyphen or a space, as in 0571-88888888-802 or 010 6234 5678 8: only after
-// an area code and a full local number, so 010-6234-5678 stays one number. The area code may
+// An extension after a hyphen or a space, as in 0571-88888888-802, 010 6234 5678 8 or
+// 400-820-8820-3: only after a 400/800 number or an area code and a full local number, so 010-6234-5678 stays one number. The area code may
 // follow China's code (+86, 86 or 0086, with or without the trunk 0), as in +86 10-6234 5678-8;
 // never a mobile prefix, so a mobile with digits after it is still refused.
 const DASH_EXTENSION =
-  /^((?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?)?\(?0?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
+  /^((?:(?:400|800)[\s.-]?\d{3}[\s.-]?\d{4})|(?:\(?0[1-9]\d{1,2}\)?|(?:\(?\+86\)?|(?:00)?86)[\s.-]?(?:\(0\)\s?)?\(?0?(?:10|2\d|[3-9]\d{2})\)?)[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
 // A mainland mobile with digits after it, as in 139-0000-0001-12: a typo more likely than an
 // extension, which a mobile seldom has, so refused rather than dialled with the extra digits.
 const MOBILE_AND_MORE = /^1[3-9]\d{9}\d/
@@ -64,6 +64,18 @@ function digitsFit(number: string) {
     ? /^86/.test(digits) && counted
     : /^(?:00)?86/.test(digits) && digits.replace(/^(?:00)?860?/, '')
   if (china && china.length > (/^(?:10|2)/.test(china) ? 10 : 11)) return false
+  // Within China too: 0 and an area code make 11 or 12 digits, 11 with Beijing's 010 or a 02x
+  // code, and a 400 or 800 number has 10.
+  if (!china && !international) {
+    const max = /^0(?:10|2)/.test(digits)
+      ? 11
+      : /^0[1-9]/.test(digits)
+        ? 12
+        : /^[48]00/.test(digits)
+          ? 10
+          : 0
+    if (max && digits.length > max) return false
+  }
   return counted.length >= 5 && counted.length <= 15
 }
 
