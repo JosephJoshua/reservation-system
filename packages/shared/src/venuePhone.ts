@@ -40,8 +40,18 @@ function digitsFit(number: string) {
   const digits = number.replace(/\D/g, '')
   const international = /^\(?\+/.test(number)
   const counted = international ? digits.replace(/^860?/, '') : digits
-  const mainland = !international || digits.startsWith('86')
-  if (mainland && MOBILE_AND_MORE.test(counted)) return false
+  if (!international || digits.startsWith('86')) {
+    // The number as dialled within China, and, when written after China's code (+86, or 86 or
+    // 0086 without the +), as it reads after it.
+    const national: [string, boolean][] = [[counted, international]]
+    const bare = /^(?:00)?86(0?1\d{9,})$/.exec(digits)
+    if (!international && bare?.[1]) national.push([bare[1].replace(/^0/, ''), true])
+    for (const [n, afterCode] of national) {
+      if (MOBILE_AND_MORE.test(n)) return false
+      // A mobile missing a digit. After the country code, Beijing's landlines read 10 xxxx xxxx.
+      if (n.length === 10 && n.startsWith('1') && !(afterCode && n.startsWith('10'))) return false
+    }
+  }
   return counted.length >= 5 && counted.length <= 15
 }
 

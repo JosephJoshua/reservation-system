@@ -10,6 +10,7 @@ import {
   field,
   login,
   pickDate,
+  pickMethod,
   saveEdit,
   student,
   typeNumber,
@@ -182,6 +183,7 @@ test('shows the roster, books at the desk, resizes and cancels a seat', async ({
   await picker.pressSequentially(`学员丙${run}`)
   await page.locator('.t-select-option', { hasText: `学员丙${run}` }).click()
   await expect(book.getByText('线下收款（标价 ¥120）')).toBeVisible()
+  await pickMethod(page, book)
   await book.getByRole('button', { name: '确认代约' }).dblclick()
   await expect(page.getByText('已代约')).toBeVisible()
   await expect(block(page, '3/4')).toBeVisible()

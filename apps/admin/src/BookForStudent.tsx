@@ -121,7 +121,9 @@ export function BookForStudent({
   const [amount, setAmount] = useState<number | undefined>()
   // Only 管理员 may charge other than the listed price.
   const canPrice = useCan('manage')
-  const [method, setMethod] = useState<Method>('alipay')
+  // Picked each time: a default would record cash taken as whatever it was.
+  const [method, setMethod] = useState<Method | null>(null)
+  const [methodMissing, setMethodMissing] = useState(false)
   const [note, setNote] = useState('')
   const submitting = useSubmitting()
   // A retry after a lost response gets the booking already made.
@@ -199,12 +201,16 @@ export function BookForStudent({
 
   const submit = async () => {
     if (!ready || !student || !pick || !lessonTypeId) return
+    if (payWith === 'offline' && fen !== 0 && !method) {
+      setMethodMissing(true)
+      return
+    }
     const target = { studentId: student.id, lessonTypeId, ...pickBody(pick) }
     const body =
       payWith === 'package'
         ? // The package shown: another one picked meanwhile is refused, not used unseen.
           { ...target, payWith, expectedPackageId: quote.package?.id }
-        : { ...target, payWith, amount: fen, method, note }
+        : { ...target, payWith, amount: fen, method: fen === 0 ? undefined : method, note }
     const booked = await attempt(
       () => api('POST', '/admin/bookings', body, { key: requestKey }),
       '已代约',
@@ -332,9 +338,14 @@ export function BookForStudent({
                   />
                 </Field>
                 {fen !== 0 && (
-                  <Field label="收款方式">
+                  <Field
+                    label="收款方式"
+                    help={methodMissing && !method ? '请选择收款方式' : undefined}
+                  >
                     <Select
-                      value={method}
+                      value={method ?? undefined}
+                      placeholder="请选择"
+                      status={methodMissing && !method ? 'error' : 'default'}
                       options={Object.entries(offlineMethodLabel).map(([value, label]) => ({
                         value,
                         label,

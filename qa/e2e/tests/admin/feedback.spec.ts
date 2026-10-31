@@ -151,7 +151,9 @@ test('lists the feedback and hides it from the student', async ({ page, request 
 
 test('logs hiding and showing once each', async ({ page }) => {
   await login(page)
-  await page.goto('./#/actions')
+  // Only 点评 entries: other specs' entries, such as 25 students added at the desk, would push
+  // them off the first page.
+  await page.goto(`./#/actions?group=${encodeURIComponent('点评')}`)
   const rows = page.getByRole('row').filter({ hasText: coachName })
   await expect(rows.filter({ hasText: '隐藏点评' })).toHaveCount(1)
   await expect(rows.filter({ hasText: '恢复点评' })).toHaveCount(1)

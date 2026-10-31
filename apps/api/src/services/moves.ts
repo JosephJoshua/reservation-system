@@ -348,6 +348,12 @@ export function keepOutsideHours(deps: Deps, bookingId: number, shown: ShownTime
     const row = bookingRow(tx, bookingId)
     if (!row) throw notFound('预约')
     const { booking } = row
+    // Still to pay, it may yet lapse: kept only once the student has paid. One shown at another
+    // time or coach was moved since, which tells the desk that first.
+    if (booking.status === 'pending_payment') {
+      assertShown(row, shown)
+      throw new ApiError(409, 'not_confirmed', '学员尚未付款，付款后才能标为已与教练确认')
+    }
     if (booking.status !== 'confirmed') throw changedElsewhere()
     assertShown(row, shown)
     if (row.inSession !== null) {

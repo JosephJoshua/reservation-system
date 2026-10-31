@@ -522,8 +522,9 @@ function recordUndoneAfterSettle(deps: Deps, outRefundNo: string, result: Refund
 }
 
 /**
- * Staff handed an offline refund back at the front desk. Returns false for a repeat of a
- * hand-back already recorded.
+ * Staff handed an offline refund back at the front desk. One already recorded as handed back is
+ * refused: a genuine retry of the same tap is answered by its Idempotency-Key, so another tap
+ * means someone else handed it back too, and the money may have gone out twice.
  */
 export function markOfflineRefundPaid(deps: Deps, refundId: number) {
   const now = deps.now()
@@ -535,7 +536,13 @@ export function markOfflineRefundPaid(deps: Deps, refundId: number) {
       .where(eq(refunds.id, refundId))
       .get()
     if (!row) throw notFound('退款')
-    if (row.provider === 'offline' && row.status === 'succeeded') return false
+    if (row.provider === 'offline' && row.status === 'succeeded') {
+      throw new ApiError(
+        409,
+        'refund_paid_back_elsewhere',
+        '该退款已由其他人登记退还，请核对是否重复退还',
+      )
+    }
     // Sent back through WeChat Pay, so not handed back at the desk.
     if (row.provider !== 'offline') {
       throw new ApiError(
@@ -554,6 +561,5 @@ export function markOfflineRefundPaid(deps: Deps, refundId: number) {
       .where(eq(refunds.id, refundId))
       .run()
     closeRefundedRequests(tx, row.orderId)
-    return true
   })
 }

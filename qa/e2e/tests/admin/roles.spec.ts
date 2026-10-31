@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { ADMIN_PASSWORD, call, dialog, field, login, student } from './helpers'
+import { ADMIN_PASSWORD, call, dialog, field, login, pickMethod, student } from './helpers'
 
 // Staff roles: what 前台 and 财务 see, and a role change by 管理员 reaching an open session.
 test.describe.configure({ mode: 'serial' })
@@ -56,6 +56,7 @@ test('前台 sells a package at the listed price only', async ({ page }) => {
   await expect(amount.locator('input')).toHaveValue('1800.00')
   await expect(amount.locator('input')).toBeDisabled()
   await expect(amount).toContainText('按标价收款，改价请联系管理员')
+  await pickMethod(page)
   await page.screenshot({ path: 'test-results/roles-desk-sale.png' })
   await dialog(page).getByRole('button', { name: '确认收款' }).click()
   await expect(page.getByRole('row', { name: new RegExp(productName) })).toBeVisible()

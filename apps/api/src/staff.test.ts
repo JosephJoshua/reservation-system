@@ -335,8 +335,9 @@ describe('action log', () => {
       expect(approved.json).toEqual({ status: 'pending', failure: null })
     }
     expect(h.db.select().from(refunds).get()?.status).toBe('pending')
-    await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
-    await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
+    const tap = { 'Idempotency-Key': 'paid-back-tap' }
+    await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin, tap)
+    await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin, tap)
     expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
     expect(
       log(h)
@@ -667,7 +668,14 @@ describe('front-desk booking', () => {
     await h.call('POST', `/bookings/${res.json.bookingId}/cancel`, {}, student)
     const refund = h.db.select().from(refunds).get()
     expect(refund).toMatchObject({ amount: 20000, status: 'pending' })
-    const paid = await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
+    const tap = { 'Idempotency-Key': 'paid-back-tap' }
+    const paid = await h.call(
+      'POST',
+      `/admin/refunds/${refund?.id}/paid-back`,
+      undefined,
+      admin,
+      tap,
+    )
     expect(paid.status).toBe(204)
     expect(h.db.select().from(refunds).get()?.status).toBe('succeeded')
     expect(log(h).at(-1)).toMatchObject({
@@ -676,11 +684,45 @@ describe('front-desk booking', () => {
       amount: 20000,
       studentId: 1,
     })
-    // A repeated tap is answered like the first and logged once.
+    // A repeat of the same tap is answered like the first and logged once.
     const entries = log(h).length
-    const again = await h.call('POST', `/admin/refunds/${refund?.id}/paid-back`, undefined, admin)
+    const again = await h.call(
+      'POST',
+      `/admin/refunds/${refund?.id}/paid-back`,
+      undefined,
+      admin,
+      tap,
+    )
     expect(again.status).toBe(204)
     expect(log(h)).toHaveLength(entries)
+    // Another tab's tap, or another staff member's, may mean the money went out twice.
+    await h.call(
+      'POST',
+      '/admin/staff',
+      { name: '财务', username: 'caiwu', password: 'finance-123', roles: ['finance'] },
+      admin,
+    )
+    const logged = log(h).length
+    for (const [token, key] of [
+      [admin, 'other-tab'],
+      [await h.admin('caiwu', 'finance-123'), 'paid-back-tap'],
+    ] as const) {
+      const other = await h.call(
+        'POST',
+        `/admin/refunds/${refund?.id}/paid-back`,
+        undefined,
+        token,
+        {
+          'Idempotency-Key': key,
+        },
+      )
+      expect(other.status).toBe(409)
+      expect(other.json.error).toEqual({
+        code: 'refund_paid_back_elsewhere',
+        message: '该退款已由其他人登记退还，请核对是否重复退还',
+      })
+    }
+    expect(log(h)).toHaveLength(logged)
   })
 
   it('says a venue cancel returned the package lesson', async () => {
@@ -759,6 +801,20 @@ describe('front-desk booking', () => {
     )
     expect(res.json.error.message).toBe('请选择收款方式')
     expect(h.db.select().from(bookings).all()).toHaveLength(0)
+  })
+
+  it('needs a payment method to sell a package at the desk', async () => {
+    const h = setup()
+    const { lesson, admin } = await ready(h)
+    const res = await h.call(
+      'POST',
+      '/admin/packages/offline-sale',
+      { studentId: 1, productId: product(h, lesson.id).id, amount: 180000 },
+      admin,
+    )
+    expect(res.status).toBe(400)
+    expect(res.json.error.message).toBe('请选择收款方式')
+    expect(h.db.select().from(orders).all()).toHaveLength(0)
   })
 
   it('ignores the advance window but not a started slot', async () => {
