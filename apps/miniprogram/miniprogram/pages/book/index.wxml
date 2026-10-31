@@ -6,7 +6,8 @@
 <view wx:elif="{{state === 'error'}}" class="centered">
   <view>
     <t-empty icon="{{errorIcon}}" description="{{error}}" />
-    <view class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
+    <view wx:if="{{trialPending}}" class="retry"><t-button theme="light" bind:tap="openLessons">去课程中支付</t-button></view>
+    <view wx:elif="{{!usedUp}}" class="retry"><t-button theme="light" bind:tap="retry">重新加载</t-button></view>
   </view>
 </view>
 

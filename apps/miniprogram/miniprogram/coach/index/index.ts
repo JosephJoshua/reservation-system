@@ -266,13 +266,23 @@ Page({
       0,
     )
     const hours = Math.round((freeMinutes / 60) * 10) / 10
-    const past = date < venueDateKey(new Date(now))
+    const today = venueDateKey(new Date(now))
+    // Missing from an API older than this page: read as a day with no 排班.
+    const working = (schedule.working ?? []).filter(onDay)
+    const dayEmpty =
+      date < today
+        ? '这天没有课程'
+        : !working.length
+          ? '这天不在排班里'
+          : working.every((w) => Date.parse(w.endsAt) <= now)
+            ? '今天的排班已结束'
+            : '这天没有可约的空闲时间'
     this.setData({
       rows,
       summary: [lessonCount ? `${lessonCount} 节课` : '没有课程', hours ? `空闲 ${hours} 小时` : '']
         .filter(Boolean)
         .join(' · '),
-      dayEmpty: past ? '这天没有课程' : '这天不在排班里',
+      dayEmpty,
       footnote: edits
         ? '点空闲时间可请假，点请假可取消；已预约的课程点开可签到、写备注或取消，小班课点开可按名单签到。'
         : '已预约的课程点开可签到、写备注或取消。排班由场馆设置，需要请假请联系前台。',

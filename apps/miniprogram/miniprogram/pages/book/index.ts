@@ -1,6 +1,6 @@
 import { type SlotDto, venueDateKey } from '../../lib/shared'
 import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
-import { catalogFetchedAt, getCatalog } from '../../utils/data'
+import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 
@@ -41,6 +41,10 @@ Page({
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     emptyIcon: { name: 'time', size: '112rpx' },
+    /** A 体验课 the student cannot book now: nothing to reload. */
+    usedUp: false,
+    /** That 体验课 is taken by one still to pay, paid from 课程. */
+    trialPending: false,
     lessonTypeId: 0,
     lessonName: '',
     duration: 0,
@@ -103,6 +107,17 @@ Page({
         this.setData({ state: 'error', error: '这门课程已下架' })
         return
       }
+      const blocked = lessonType.isTrial ? trialBlock(catalog) : ''
+      if (blocked) {
+        wx.setNavigationBarTitle({ title: lessonType.name })
+        this.setData({
+          state: 'error',
+          error: blocked,
+          usedUp: true,
+          trialPending: blocked === TRIAL_PENDING,
+        })
+        return
+      }
       this.noticeMs = lessonType.rules.minNoticeMinutes * 60_000
       wx.setNavigationBarTitle({ title: lessonType.name })
       const coaches = catalog.coaches.flatMap((c): CoachOption[] => {
@@ -127,6 +142,8 @@ Page({
           : 0
       this.setData({
         state: 'ready',
+        usedUp: false,
+        trialPending: false,
         lessonName: lessonType.name,
         duration: lessonType.durationMinutes,
         capacity: lessonType.capacity,
@@ -274,6 +291,10 @@ Page({
       `endsAt=${encodeURIComponent(slot.endsAt)}`,
     ].join('&')
     navigateOnce(`/pages/confirm/index?${query}`)
+  },
+
+  openLessons() {
+    wx.switchTab({ url: '/pages/lessons/index' })
   },
 
   retry() {
