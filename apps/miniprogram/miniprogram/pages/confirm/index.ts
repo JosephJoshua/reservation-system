@@ -24,6 +24,9 @@ import { PAY_PENDING, PAY_REFUNDED, PAY_UNCLEAR, payOrder } from '../../utils/pa
 
 type PayWith = 'package' | 'wechat'
 
+/** When the booking's result is not known yet: the lessons list shows it if it was made. */
+const CHECK_LESSONS = '请在“课程”中查看是否已预约成功'
+
 /**
  * Booking errors that mean this time cannot be booked any more, so the student should pick another:
  * taken, closed, deleted, too close, or its coach or lesson no longer offered.
@@ -377,8 +380,14 @@ Page({
       }
       this.finish(res.bookingId, res.existing ? '你已预约这节课' : '', '预约成功')
     } catch (e) {
-      // Gone back while it was booking: nothing here to reload or ask about.
-      if (this.left) return
+      const unknown =
+        e instanceof ApiError && (e.code === 'in_progress' || e.code === RESULT_UNKNOWN)
+      // Gone back while it was booking: nothing here to reload or ask about, but a booking that
+      // may have been made is worth a word, over wherever they are now.
+      if (this.left) {
+        if (unknown) wx.showToast({ title: CHECK_LESSONS, icon: 'none', duration: 3000 })
+        return
+      }
       if (needsAgreement(e)) {
         this.setData({ showAgreement: true, agreed: false })
         this.policyVersion = (await askToAgree(true)) ?? this.policyVersion
@@ -434,11 +443,11 @@ Page({
         }
         return
       }
-      if (e instanceof ApiError && (e.code === 'in_progress' || e.code === RESULT_UNKNOWN)) {
+      if (unknown) {
         // The booking may have been made: the lessons list shows it if so.
         await wx.showModal({
           title: '预约结果确认中',
-          content: '请在“课程”中查看是否已预约成功，未成功可重新预约。',
+          content: `${CHECK_LESSONS}，未成功可重新预约。`,
           showCancel: false,
         })
         if (isTop(this)) wx.switchTab({ url: '/pages/lessons/index' })

@@ -10,7 +10,7 @@ import {
   isGroup,
   sameTerms,
 } from '@rs/shared'
-import { and, asc, eq, gt, inArray, isNull, lt, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { immediate, type Q } from '../db/client'
 import {
   bookings,
@@ -478,10 +478,18 @@ export async function createBooking(
         throw new ApiError(409, 'package_required', '请先购买课时包')
       }
       if (price.price > 0) {
+        // A hold whose payment time is up no longer counts: the sweeper closes it shortly.
         const holds = tx
-          .select({ n: sql<number>`count(*)` })
+          .select({ n: sql<number>`count(distinct ${bookings.id})` })
           .from(bookings)
-          .where(and(eq(bookings.studentId, studentId), eq(bookings.status, 'pending_payment')))
+          .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
+          .where(
+            and(
+              eq(bookings.studentId, studentId),
+              eq(bookings.status, 'pending_payment'),
+              or(isNull(orders.expiresAt), gt(orders.expiresAt, now)),
+            ),
+          )
           .get()
         if ((holds?.n ?? 0) >= MAX_UNPAID_HOLDS) {
           throw new ApiError(409, 'too_many_unpaid', '你有未支付的预约，请先支付或取消')

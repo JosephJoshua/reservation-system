@@ -5,12 +5,14 @@ import { venueInstant, versionOf } from '@rs/shared'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 import {
+  bookingMoves,
   bookings,
   coaches,
   coachLessonTypes,
   lessonTypes,
   scheduleExceptions,
   slots,
+  studentNotices,
 } from './db/schema'
 import { settleOutsideAgreed } from './services/schedule'
 import { type Harness, setup } from './test/harness'
@@ -1974,6 +1976,15 @@ describe('lessons placed by the venue before the flag was kept', () => {
 })
 
 describe('keeping a lesson outside 排班', () => {
+  const keepAt = (h: Harness, admin: string, id: number, coachId: number, startsAt: string) =>
+    h.call('POST', `/admin/bookings/${id}/keep-outside`, { coachId, startsAt }, admin)
+  const keptLog = async (h: Harness, admin: string) => {
+    const log = (await h.call('GET', '/admin/actions', undefined, admin)).json
+    return ((log.items ?? log) as { summary: string }[]).filter((e) =>
+      e.summary.includes('已与教练确认在排班外上课'),
+    )
+  }
+
   it('lets the desk confirm it with the coach where it is, once and logged', async () => {
     const h = setup()
     const { coach, lesson, admin, student } = await venue(h)
@@ -1987,23 +1998,75 @@ describe('keeping a lesson outside 排班', () => {
         (c: { bookingId: number }) => c.bookingId,
       )
     expect(await listed()).toEqual([a, b])
-    const keep = (id: number, startsAt: string, anyTime: boolean) =>
-      h.call('POST', `/admin/bookings/${id}/move`, { coachId: coach.id, startsAt, anyTime }, admin)
-    // A plain move to the same time changes nothing.
-    expect((await keep(a, at(SUN, '11:00'), false)).status).toBe(204)
+    // A move to the time it has, even outside 排班, changes nothing.
+    const same = { coachId: coach.id, startsAt: at(SUN, '11:00'), anyTime: true }
+    expect((await h.call('POST', `/admin/bookings/${a}/move`, same, admin)).status).toBe(204)
     expect(await listed()).toEqual([a, b])
-    expect((await keep(a, at(SUN, '11:00'), true)).status).toBe(204)
+    const notices = h.db.select().from(studentNotices).all().length
+    expect((await keepAt(h, admin, a, coach.id, at(SUN, '11:00'))).status).toBe(204)
     expect(await listed()).toEqual([b])
-    expect((await keep(a, at(SUN, '11:00'), true)).status).toBe(204)
-    const log = (await h.call('GET', '/admin/actions', undefined, admin)).json
-    const entries = (log.items ?? log) as { summary: string }[]
-    expect(entries.filter((e) => e.summary.includes('已与教练确认在排班外上课'))).toHaveLength(1)
-    expect(
-      h.db.select().from(bookings).where(eq(bookings.id, a)).get()?.startsAt.toISOString(),
-    ).toBe(at(SUN, '11:00'))
+    expect((await keepAt(h, admin, a, coach.id, at(SUN, '11:00'))).status).toBe(204)
+    expect(await keptLog(h, admin)).toHaveLength(1)
+    const kept = h.db.select().from(bookings).where(eq(bookings.id, a)).get()
+    expect([kept?.startsAt.toISOString(), kept?.outsideAgreed]).toEqual([at(SUN, '11:00'), true])
+    // Kept in place: no move recorded and no 改约 message for the student.
+    expect(h.db.select().from(bookingMoves).all()).toHaveLength(0)
+    expect(h.db.select().from(studentNotices).all()).toHaveLength(notices)
     // Not over the coach's 请假.
     await exception(h, admin, coach.id, 'off', at(SUN, '12:00'), at(SUN, '13:00'))
-    const off = await keep(b, at(SUN, '12:00'), true)
+    const off = await keepAt(h, admin, b, coach.id, at(SUN, '12:00'))
     expect([off.status, off.json.error.code]).toEqual([409, 'coach_off'])
+  })
+
+  it('never moves a lesson back that another desk moved since the list was loaded', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '18:00' }])
+    const id = (await book(h, student, coach.id, at(SUN, '10:00'), lesson.id)).json.bookingId
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '13:00', to: '18:00' }])
+    const [c] = (await h.call('GET', '/admin/schedule/conflicts', undefined, admin)).json
+    expect(c).toMatchObject({ bookingId: id, coachId: coach.id, startsAt: at(SUN, '10:00') })
+    // Another desk moves it into 排班 at 14:00.
+    const move = { coachId: coach.id, startsAt: at(SUN, '14:00') }
+    expect((await h.call('POST', `/admin/bookings/${id}/move`, move, admin)).status).toBe(204)
+    const notices = h.db.select().from(studentNotices).all().length
+    // The first desk, from the old list, confirms 10:00 with the coach.
+    const stale = await keepAt(h, admin, id, c.coachId, c.startsAt)
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'booking_changed'])
+    const now = h.db.select().from(bookings).where(eq(bookings.id, id)).get()
+    expect([now?.startsAt.toISOString(), now?.outsideAgreed]).toEqual([at(SUN, '14:00'), false])
+    expect(h.db.select().from(bookingMoves).all()).toHaveLength(1)
+    expect(h.db.select().from(studentNotices).all()).toHaveLength(notices)
+    expect(await keptLog(h, admin)).toHaveLength(0)
+    // A coach other than the one shown is refused the same way.
+    const other = await keepAt(h, admin, id, coach.id + 99, at(SUN, '14:00'))
+    expect(other.json.error?.code).toBe('booking_changed')
+    // Back inside 排班 at the time shown: nothing to keep, and nothing logged.
+    expect((await keepAt(h, admin, id, coach.id, at(SUN, '14:00'))).status).toBe(204)
+    expect(await keptLog(h, admin)).toHaveLength(0)
+    expect(h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.outsideAgreed).toBe(false)
+  })
+
+  it('refuses a desk move made from a stale view of the lesson', async () => {
+    const h = setup()
+    const { coach, lesson, admin, student } = await venue(h)
+    await hoursPut(h, admin, coach.id, [{ weekday: 0, from: '09:00', to: '18:00' }])
+    const id = (await book(h, student, coach.id, at(SUN, '10:00'), lesson.id)).json.bookingId
+    const shown = { coachId: coach.id, startsAt: at(SUN, '10:00') }
+    const moveTo = (time: string) =>
+      h.call(
+        'POST',
+        `/admin/bookings/${id}/move`,
+        { coachId: coach.id, startsAt: at(SUN, time), from: shown },
+        admin,
+      )
+    expect((await moveTo('14:00')).status).toBe(204)
+    // The same request again is the move that already happened.
+    expect((await moveTo('14:00')).status).toBe(204)
+    const stale = await moveTo('15:00')
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'booking_changed'])
+    expect(
+      h.db.select().from(bookings).where(eq(bookings.id, id)).get()?.startsAt.toISOString(),
+    ).toBe(at(SUN, '14:00'))
   })
 })

@@ -1477,6 +1477,30 @@ describe('review round 2', () => {
     expect(fourth.json.error.code).toBe('too_many_unpaid')
   })
 
+  it('does not count unpaid holds whose payment time is up before the sweeper closes them', async () => {
+    const h = setup()
+    const { coach, lesson } = h.seed()
+    const t = await h.student('a')
+    for (const hour of [9, 10, 11]) {
+      expect((await book(h, t, h.slot(coach.id, '2026-10-25', hour).id, lesson.id)).status).toBe(
+        201,
+      )
+    }
+    const fourth = h.slot(coach.id, '2026-10-25', 12).id
+    expect((await book(h, t, fourth, lesson.id)).json.error.code).toBe('too_many_unpaid')
+    // The payment time is up; the sweeper has not run yet.
+    h.clock.now = new Date(h.clock.now.getTime() + 60 * 60_000)
+    expect(
+      h.db
+        .select()
+        .from(bookings)
+        .all()
+        .map((b) => b.status),
+    ).toEqual(['pending_payment', 'pending_payment', 'pending_payment'])
+    const again = await book(h, t, fourth, lesson.id)
+    expect([again.status, again.json.status]).toEqual([201, 'pending_payment'])
+  })
+
   it('refuses a student cancel once the lesson started, even if the payment only lands then', async () => {
     const h = setup()
     const { coach, lesson } = h.seed()
