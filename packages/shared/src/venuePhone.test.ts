@@ -156,6 +156,8 @@ describe('dialablePhone', () => {
     expect(dialablePhone('400 820 8820 1')).toBe('4008208820')
     expect(dialablePhone('800-820-8820-12')).toBe('8008208820')
     expect(dialablePhone('400-820-8820')).toBe('4008208820')
+    expect(dialablePhone('4008-123-456-8')).toBe('4008123456')
+    expect(dialablePhone('4008 208 820 3')).toBe('4008208820')
   })
 
   it('refuses a domestic number longer than any mainland number', () => {
