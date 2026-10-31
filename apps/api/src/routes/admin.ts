@@ -2249,6 +2249,8 @@ export function adminRoutes(deps: Deps) {
         q: searchParam,
         // 退款异常: WeChat Pay could not send the money back, as the overview counts them.
         abnormal: flag,
+        // 待核对: settled outside the system, then reported otherwise by WeChat Pay.
+        check: flag,
         ...pageParams,
         before: z.coerce.number().int().positive().optional(),
       }),
@@ -2423,6 +2425,7 @@ export function adminRoutes(deps: Deps) {
       .select({
         status: refunds.status,
         failure: refunds.failure,
+        abnormal: refunds.abnormal,
         note: refunds.settledNote,
         how: refunds.settledHow,
       })
@@ -2439,8 +2442,10 @@ export function adminRoutes(deps: Deps) {
       message: settled
         ? null
         : now?.status === 'succeeded'
-          ? '微信支付已退款，无需另行退款'
-          : now?.status === 'pending' || now?.status === 'processing'
+          ? now.note !== null
+            ? '该退款已标为另行退款'
+            : '微信支付已退款，无需另行退款'
+          : now?.status === 'pending' || (now?.status === 'processing' && !now.abnormal)
             ? '退款已在微信支付处理中，无需另行退款'
             : '退款状态已变更，请刷新后查看',
     })
