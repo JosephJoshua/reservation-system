@@ -1,13 +1,33 @@
 import type { CatalogDto, LateCancelRule, MeDto } from '../lib/shared'
-import { ApiError, api, publicApi } from './api'
+import { ApiError, api, publicApi, savedToken } from './api'
 
-let catalog: { value: CatalogDto; at: number } | null = null
+let catalog: { value: CatalogDto; at: number; token: string } | null = null
 
-/** The catalog changes rarely, so pages share one copy for a minute. */
+/**
+ * How long pages share one copy of the catalog. A 体验课 waiting for payment can be paid or lapse
+ * at any time, maybe on another phone, so a catalog saying so is fetched again on the next show.
+ */
+const catalogMaxAge = (value: CatalogDto) => (value.payment.trialPending ? 3_000 : 60_000)
+
+/**
+ * The catalog changes rarely, so pages share one copy for a while. It holds the student's own
+ * 体验课 state, so a copy is never shown to another account after a switch or 注销.
+ */
 export async function getCatalog(fresh = false): Promise<CatalogDto> {
-  if (!fresh && catalog && Date.now() - catalog.at < 60_000) return catalog.value
+  if (
+    !fresh &&
+    catalog &&
+    catalog.token === savedToken() &&
+    Date.now() - catalog.at < catalogMaxAge(catalog.value)
+  ) {
+    return catalog.value
+  }
+  const before = savedToken()
   const value = await api<CatalogDto>('GET', '/catalog')
-  catalog = { value, at: Date.now() }
+  // The session the call used: the saved one, or the one its login saved. One that changed
+  // meanwhile may belong to another account, so the answer is not kept for it.
+  const token = savedToken()
+  if (!before || before === token) catalog = { value, at: Date.now(), token }
   return value
 }
 

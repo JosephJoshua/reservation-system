@@ -1,5 +1,5 @@
 import { type SlotDto, venueDateKey } from '../../lib/shared'
-import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
+import { api, assetUrl, errorMessage, serverNow, showError } from '../../utils/api'
 import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
@@ -86,6 +86,11 @@ Page({
   },
 
   onShow() {
+    // A 体验课 waiting for payment may have been paid or lapsed meanwhile, maybe on another phone.
+    if (this.data.state === 'error' && this.data.trialPending) {
+      this.load('quiet')
+      return
+    }
     // Coming back from a booking that lost the race should show the slot as taken.
     if (this.data.state !== 'ready') return
     const seek = this.pendingSeek
@@ -156,7 +161,12 @@ Page({
       })
       this.loadSlots(seek)
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed recheck of a 体验课 waiting for payment keeps saying so.
+      if (this.data.state === 'error' && this.data.trialPending) {
+        showError(e)
+        return
+      }
+      this.setData({ state: 'error', error: errorMessage(e), usedUp: false, trialPending: false })
     }
   },
 
