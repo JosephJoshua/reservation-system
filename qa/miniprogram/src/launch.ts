@@ -21,6 +21,7 @@ function recompile(projectPath: string) {
   const port = new URL(wsEndpoint as string).port
   execFileSync(cliPath, ['auto', '--project', projectPath, '--auto-port', port], {
     stdio: 'ignore',
+    timeout: 120_000,
   })
 }
 
@@ -38,9 +39,18 @@ export async function openMiniProgram(projectPath: string): Promise<MiniProgram>
   }
   recompile(projectPath)
   const miniProgram = await automator.connect({ wsEndpoint })
-  await miniProgram.callWxMethod('clearStorageSync')
-  await miniProgram.reLaunch('/pages/booking/index')
-  return miniProgram
+  // Right after a compile the app may have no page yet, and the first call fails on its missing
+  // page meta, so retry for a few seconds.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await miniProgram.callWxMethod('clearStorageSync')
+      await miniProgram.reLaunch('/pages/booking/index')
+      return miniProgram
+    } catch (err) {
+      if (attempt >= 8) throw err
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    }
+  }
 }
 
 /** Ends a run, leaving an attached simulator open for the next one. */
