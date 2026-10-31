@@ -52,7 +52,7 @@
       <view class="lesson-main">
         <view class="lesson-name">
           <text>{{item.name}}</text>
-          <view wx:if="{{item.isTrial}}" class="lesson-tag"><t-tag size="small" theme="{{item.usedUp ? 'default' : 'primary'}}" variant="light">{{item.usedUp ? '已用完' : '体验'}}</t-tag></view>
+          <view wx:if="{{item.isTrial}}" class="lesson-tag"><t-tag size="small" theme="{{item.usedUp ? 'default' : 'primary'}}" variant="light">体验</t-tag></view>
           <view wx:if="{{item.isGroup}}" class="lesson-tag"><t-tag size="small" theme="primary" variant="light">小班</t-tag></view>
         </view>
         <view wx:if="{{item.description}}" class="lesson-desc">{{item.description}}</view>
