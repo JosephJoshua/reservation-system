@@ -383,4 +383,6 @@ export interface FrontDeskLessonDto {
   markedBy: { kind: AttendanceBy; name: string | null } | null
   canArrive: boolean
   canMarkAbsent: boolean
+  /** Why the venue could not give the lesson as booked (闭馆, 请假, the coach stopped), if so. */
+  disruption: Disruption | null
 }

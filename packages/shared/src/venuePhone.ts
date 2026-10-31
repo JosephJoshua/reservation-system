@@ -23,19 +23,25 @@ const NOTE = /\s*\([^()]*[^\d\s()+.-][^()]*\)\s*$/
 // An extension at the end, as in 转 8 or #8, or in brackets, as in (8) or (转 8).
 const EXTENSION =
   /\s*(?:(?:转|分机|#|ext\.?|x)\s*\d{1,6}|\(\s*(?:(?:转|分机|ext\.?|x)\s*)?\d{1,6}\s*\))$/i
-// An extension after a hyphen, as in 0571-88888888-802: only after an area code and a full local
-// number, so 010-6234-5678 stays one number.
-const DASH_EXTENSION = /^(\(?0\d{2,3}\)?[\s.-]?\d{3,4}[\s.-]?\d{4})\s*-\s*\d{1,6}$/
+// An extension after a hyphen or a space, as in 0571-88888888-802 or 010 6234 5678 8: only after
+// an area code and a full local number, so 010-6234-5678 stays one number.
+const DASH_EXTENSION = /^(\(?0[1-9]\d{1,2}\)?[\s.-]?\d{3,4}[\s.-]?\d{4})(?:\s*-\s*|\s+)\d{1,6}$/
+// A mainland mobile with digits after it, as in 139-0000-0001-12: a typo more likely than an
+// extension, which a mobile seldom has, so refused rather than dialled with the extra digits.
+const MOBILE_AND_MORE = /^1[3-9]\d{9}\d/
 const NUMBER = /^(?:\+|\(\+)?[\d\s().-]+$/
 
 /**
  * Whether `number`, without its extension, has as many digits as a phone number can: 5 for a
- * short service number, up to 15 as E.164 allows. China's +86, and the trunk 0 some write after
+ * short service number, up to 15 as E.164 allows, and 11 for a mainland mobile. China's +86, and the trunk 0 some write after
  * it, are not counted.
  */
 function digitsFit(number: string) {
   const digits = number.replace(/\D/g, '')
-  const counted = /^\(?\+/.test(number) ? digits.replace(/^860?/, '') : digits
+  const international = /^\(?\+/.test(number)
+  const counted = international ? digits.replace(/^860?/, '') : digits
+  const mainland = !international || digits.startsWith('86')
+  if (mainland && MOBILE_AND_MORE.test(counted)) return false
   return counted.length >= 5 && counted.length <= 15
 }
 

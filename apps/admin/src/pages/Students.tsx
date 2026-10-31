@@ -18,6 +18,7 @@ import {
 } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
 import {
+  Alert,
   Button,
   Card,
   Dialog,
@@ -1005,11 +1006,30 @@ function StudentPage({ id }: { id: number }) {
       `#/students/${id}${t === 'overview' ? '' : `?tab=${t}`}`,
     )
   }
+  // The tab the address names, also when it changes while the page is open, such as a link to
+  // ?tab=packages from this student's own page.
+  // Counts those changes, so a tab this login can't open is put right each time it is named.
+  const [named, setNamed] = useState(0)
+  useEffect(() => {
+    const on = () => {
+      if (!new RegExp(`^#/students/${id}(?=[?/]|$)`).test(window.location.hash)) return
+      setTab(hashParam('tab'))
+      setNamed((n) => n + 1)
+    }
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [id])
   // Takes a tab that fell back to 概况 out of the address too.
   const fellBack = picked !== null && picked !== tab
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `named` runs it again for each link
   useEffect(() => {
-    if (fellBack) history.replaceState(history.state, '', `#/students/${id}`)
-  }, [fellBack, id])
+    if (!fellBack) return
+    // Only the tab: the rest, such as a lesson open over the page, stays.
+    const params = new URLSearchParams(window.location.hash.split('?')[1] ?? '')
+    params.delete('tab')
+    const rest = params.toString()
+    history.replaceState(history.state, '', `#/students/${id}${rest ? `?${rest}` : ''}`)
+  }, [fellBack, id, named])
 
   const now = Date.now()
   const active = s?.packages.filter((p) => p.status === 'active') ?? []
@@ -1519,12 +1539,18 @@ function DeskRefund({
     pkg ? `/admin/packages/${pkg.id}/desk-refund` : null,
   )
   const [amount, setAmount] = useState<number | undefined>()
+  // Someone else refunded it meanwhile: kept in the dialog, since cash may have gone out twice.
+  const [refunded, setRefunded] = useState<string | null>(null)
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
   const q = quote.data
   useEffect(() => {
     if (q) setAmount(toYuan(q.suggested))
   }, [q])
+  // The confirm button that had focus is gone: 关闭 takes it, so Esc still closes the dialog.
+  useEffect(() => {
+    if (refunded) document.querySelector<HTMLElement>('.desk-refund .t-dialog__cancel')?.focus()
+  }, [refunded])
   const fen = toFen(amount)
   const valid = !!q && fen !== null && fen >= 1 && fen <= q.max
 
@@ -1543,7 +1569,15 @@ function DeskRefund({
             },
           ),
         '已退款',
-        { onStale: onDone },
+        {
+          stale: ['package_refunded_elsewhere', 'edited_elsewhere'],
+          // Shown in the dialog instead.
+          quiet: ['package_refunded_elsewhere'],
+          onStale: (e) => {
+            if (e.code === 'package_refunded_elsewhere') setRefunded(e.message)
+            else onDone()
+          },
+        },
       )
     )
       onDone()
@@ -1552,18 +1586,20 @@ function DeskRefund({
   return (
     <Dialog
       visible
+      className="desk-refund"
       header="前台退款"
-      confirmBtn={{
-        content: '确认已退还',
-        theme: 'danger',
-        disabled: !valid,
-        loading: submitting,
-      }}
-      cancelBtn="返回"
+      confirmBtn={
+        refunded
+          ? null
+          : { content: '确认已退还', theme: 'danger', disabled: !valid, loading: submitting }
+      }
+      cancelBtn={refunded ? '关闭' : '返回'}
       onConfirm={submit}
-      onClose={onClose}
+      onClose={refunded ? onDone : onClose}
     >
-      {quote.loading ? (
+      {refunded ? (
+        <Alert theme="error" message={refunded} />
+      ) : quote.loading ? (
         <Loading size="small" />
       ) : quote.error || !q || !pkg ? (
         <p className="muted">{quote.error ?? '课时包不存在'}</p>

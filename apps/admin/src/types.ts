@@ -2,6 +2,7 @@ import type {
   Attendance,
   BookingDto,
   BookingStatus,
+  Disruption,
   FeedbackItemDto,
   LinkKind,
   PackageDto,
@@ -111,6 +112,8 @@ export type LessonSlot = Omit<Slot, 'booking' | 'bookings'> & {
   lessonType: { id: number; name: string } | null
   /** A private lesson moved to another time: where it is now. */
   movedTo: { slotId: number; startsAt: string } | null
+  /** Why the venue could not give the lesson as booked (闭馆, 请假, the coach stopped), if so. */
+  disruption: Disruption | null
 }
 
 export interface SlotBooking {
@@ -126,6 +129,11 @@ export type AdminBooking = BookingDto & {
   coachNote: string
   /** Set when the front desk booked it for the student. */
   bookedBy: { id: number; name: string } | null
+  /**
+   * Why the venue could not give the lesson as booked, for staff marking 签到: unlike
+   * `disruption`, still set once the lesson ended.
+   */
+  lessonDisruption: Disruption | null
 }
 
 export interface StudentDetail extends Person {

@@ -19,7 +19,7 @@ import { bookings, coaches, lessonTypes, slots, staff, students } from '../db/sc
 import type { Deps } from '../deps'
 import { ApiError, notFound } from '../errors'
 import { personColumns } from './account'
-import { disruptions } from './disruption'
+import { attendanceDisruptions, disruptions } from './disruption'
 import { getSettings } from './settings'
 
 const messages: Record<AttendanceError, string> = {
@@ -225,6 +225,12 @@ export function frontDeskLessons(deps: Deps, date: string): FrontDeskLessonDto[]
           .map((s) => [s.id, s.name])
       : [],
   )
+  // A lesson the student was told the venue cannot give, which the desk is asked about before 签到.
+  const disrupted = attendanceDisruptions(
+    db,
+    rows.map((r) => r.booking),
+    now,
+  )
   return rows.map(({ booking: b, ...r }) => ({
     bookingId: b.id,
     slotId: b.slotId,
@@ -245,5 +251,6 @@ export function frontDeskLessons(deps: Deps, date: string): FrontDeskLessonDto[]
         : null,
     canArrive: attendanceError(b, now, 'admin', 'attended') === null,
     canMarkAbsent: attendanceError(b, now, 'admin', 'no_show') === null,
+    disruption: disrupted.get(b.id) ?? null,
   }))
 }
