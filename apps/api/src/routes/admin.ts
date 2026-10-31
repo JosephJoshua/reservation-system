@@ -5,6 +5,7 @@ import {
   addVenueDays,
   can,
   groupSettingsError,
+  instantString,
   isGroup,
   LINK_TARGET_MESSAGE,
   linkShape,
@@ -18,6 +19,7 @@ import {
   ruleOverrides,
   ruleShortLabels,
   ruleText,
+  SCHEDULE_STEP,
   type StaffRole,
   staffActions,
   staffRoleLabels,
@@ -181,7 +183,7 @@ import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { exceptionBody, weeklyHoursBody } from './coach'
 import { dateKey, monthKey, oneTarget, targetFields, toTarget } from './target'
 
-const instant = z.iso.datetime({ offset: true }).transform((s) => new Date(s))
+const instant = instantString.transform((s) => new Date(s))
 const id = z.coerce.number().int().positive().optional()
 // A query parameter that only some kinds of a request take; the others refuse it.
 const only = <T extends z.ZodType>(allowed: boolean, schema: T) =>
@@ -263,7 +265,12 @@ const lessonTypeBody = z
   .object({
     name: z.string().trim().min(1).max(30),
     description: z.string().trim().max(500).default(''),
-    durationMinutes: z.number().int().min(15).max(480),
+    durationMinutes: z
+      .number()
+      .int()
+      .min(15)
+      .max(480)
+      .refine((m) => m % SCHEDULE_STEP === 0, `时长需为 ${SCHEDULE_STEP} 分钟的整数倍`),
     price: fen,
     isTrial: z.boolean().default(false),
     adminOnly: z.boolean().default(false),

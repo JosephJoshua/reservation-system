@@ -2,6 +2,7 @@ import {
   type BookingDto,
   COACH_CANCEL_PREFIX,
   cancellationOutcome,
+  DISRUPTION_TEXT,
   type HomeDto,
 } from '../../lib/shared'
 import {
@@ -36,6 +37,8 @@ const STATUS: Record<BookingDto['status'], { title: string; icon: string; tone: 
 function subtitle(b: BookingDto, now: number): string {
   switch (b.status) {
     case 'pending_payment': {
+      // Payment is refused for a lesson the venue cannot give; only cancelling is left.
+      if (b.disruption) return `${DISRUPTION_TEXT[b.disruption]}，请取消后重新预约`
       const left = b.payBy ? Math.max(0, Date.parse(b.payBy) - now) : 0
       const mm = String(Math.floor(left / 60000)).padStart(2, '0')
       const ss = String(Math.floor((left % 60000) / 1000)).padStart(2, '0')
@@ -210,10 +213,13 @@ Page({
       address: this.venue?.address ?? '',
       canAddToCalendar: b.status === 'confirmed' && Date.parse(b.startsAt) > serverNow(),
       cancelRule:
-        // Moved by the venue or coach after the usual deadline: free until it starts.
-        (b.movedLate
-          ? '课程时间已调整，开课前可免费取消。'
-          : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
+        // The venue cannot give it as booked, or moved it after the usual deadline: free until
+        // it starts.
+        (b.disruption
+          ? `${DISRUPTION_TEXT[b.disruption]}，开课前可免费取消。`
+          : b.movedLate
+            ? '课程时间已调整，开课前可免费取消。'
+            : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
         (b.canMove
           ? // Moving closes with free cancelling, which for such a lesson is when it starts.
             Date.parse(b.cancelDeadline) >= Date.parse(b.startsAt)

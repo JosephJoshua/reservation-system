@@ -6,6 +6,7 @@ import {
   cancellationOutcome,
   endsSameVenueDay,
   freeCancelDeadline,
+  lessonDisruption,
   peakOverlap,
   rulesFor,
   samePackageTerms,
@@ -176,6 +177,52 @@ describe('freeCancelDeadline', () => {
       deadline: startsAt,
     })
     expect(outcome).toEqual({ late: false, refund: 20000, returnLesson: false })
+  })
+
+  it('is the start while the venue cannot give the lesson', () => {
+    for (const d of ['closed', 'off', 'inactive'] as const) {
+      expect(freeCancelDeadline(startsAt, rules, undefined, d)).toEqual(startsAt)
+    }
+    expect(freeCancelDeadline(startsAt, rules, undefined, null)).toEqual(usual)
+  })
+})
+
+describe('lessonDisruption', () => {
+  const lesson = {
+    coachId: 1,
+    startsAt: at('2026-10-26T02:00:00Z'),
+    endsAt: at('2026-10-26T03:00:00Z'),
+  }
+  const row = (
+    coachId: number | null,
+    from: string,
+    to: string,
+    kind: 'off' | 'extra' = 'off',
+  ) => ({
+    coachId,
+    kind,
+    startsAt: at(from),
+    endsAt: at(to),
+  })
+
+  it('names a 闭馆 first, then the coach’s 请假, then an inactive coach', () => {
+    const closure = row(null, '2026-10-26T02:30:00Z', '2026-10-26T04:00:00Z')
+    const leave = row(1, '2026-10-26T00:00:00Z', '2026-10-26T02:01:00Z')
+    expect(lessonDisruption(lesson, false, [leave, closure])).toBe('closed')
+    expect(lessonDisruption(lesson, false, [leave])).toBe('off')
+    expect(lessonDisruption(lesson, false, [])).toBe('inactive')
+    expect(lessonDisruption(lesson, true, [])).toBeNull()
+  })
+
+  it('ignores 加班, other coaches’ 请假 and rows that only touch the lesson', () => {
+    expect(
+      lessonDisruption(lesson, true, [
+        row(1, '2026-10-26T02:00:00Z', '2026-10-26T03:00:00Z', 'extra'),
+        row(2, '2026-10-26T02:00:00Z', '2026-10-26T03:00:00Z'),
+        row(null, '2026-10-26T01:00:00Z', '2026-10-26T02:00:00Z'),
+        row(1, '2026-10-26T03:00:00Z', '2026-10-26T04:00:00Z'),
+      ]),
+    ).toBeNull()
   })
 })
 

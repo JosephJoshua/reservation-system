@@ -20,6 +20,7 @@ import {
   slots,
 } from '../db/schema'
 import { studentCanCheckIn } from './attendance'
+import { disruptions } from './disruption'
 import { visibleFeedback, withVisibleFeedback } from './feedback'
 import { orderInvoices } from './invoices'
 import { movedFromIso, moveSummaries } from './move-history'
@@ -115,6 +116,13 @@ export function bookingViews(
   const refundByBooking = latestRefunds(tx, 'bookingId', ids)
   const invoiceByOrder = orderInvoices(tx, [...orderByBooking.values()])
   const moves = moveSummaries(tx, ids)
+  // Only lessons still ahead can be cancelled, so only those need checking.
+  const disrupted = disruptions(
+    tx,
+    rows.filter(
+      (b) => (b.status === 'confirmed' || b.status === 'pending_payment') && b.startsAt > now,
+    ),
+  )
   const feedback = withFeedback ? visibleFeedback(tx, ids) : null
   const hasFeedback = feedback ? new Set(feedback.keys()) : withVisibleFeedback(tx, ids)
   return rows.map((b) => {
@@ -125,7 +133,8 @@ export function bookingViews(
     const movesUsed = moved?.studentMoves ?? 0
     const rules = rulesBook.termsOf(b)
     const type = rulesBook.of(b.lessonTypeId)
-    const deadline = freeCancelDeadline(b.startsAt, rules, moved?.lastMove)
+    const disruption = disrupted.get(b.id) ?? null
+    const deadline = freeCancelDeadline(b.startsAt, rules, moved?.lastMove, disruption)
     return {
       id: b.id,
       slotId: b.slotId,
@@ -143,7 +152,10 @@ export function bookingViews(
       paymentIssue: order?.anomaly ? (order.anomalyHandledAt ? 'handled' : 'open') : null,
       payBy: status === 'pending_payment' ? (order?.expiresAt?.toISOString() ?? null) : null,
       cancelDeadline: deadline.toISOString(),
-      movedLate: deadline.getTime() !== cancelDeadline(b.startsAt, rules).getTime(),
+      movedLate:
+        freeCancelDeadline(b.startsAt, rules, moved?.lastMove).getTime() !==
+        cancelDeadline(b.startsAt, rules).getTime(),
+      disruption,
       canCancel: (status === 'confirmed' || status === 'pending_payment') && b.startsAt > now,
       canMove: studentMoveError({ status: b.status, deadline, now, movesUsed, rules }) === null,
       movesLeft: Math.max(0, rules.studentMoves - movesUsed),

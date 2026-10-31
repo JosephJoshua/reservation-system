@@ -203,6 +203,26 @@ describe('scheduling sessions', () => {
     expect(await times()).toEqual([expect.objectContaining({ id: null, available: true })])
   })
 
+  it('refuses a session off the 5-minute marks', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    for (const [startsAt, endsAt] of [
+      ['2026-10-26T01:02:30.500Z', '2026-10-26T02:02:30.500Z'],
+      ['2026-10-26T01:03:00.000Z', '2026-10-26T02:03:00.000Z'],
+    ]) {
+      const res = await h.call(
+        'POST',
+        '/admin/sessions',
+        { lessonTypeId: kids.id, capacity: 4, sessions: [{ coachId: coach.id, startsAt, endsAt }] },
+        admin,
+      )
+      expect(res.status).toBe(400)
+      expect(res.json.error).toEqual({ code: 'invalid_time', message: '时间需为 5 分钟的整数倍' })
+    }
+    expect(h.db.select().from(slots).all()).toEqual([])
+  })
+
   it('refuses a session in 请假 or 闭馆, outside weekly hours is fine', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h)

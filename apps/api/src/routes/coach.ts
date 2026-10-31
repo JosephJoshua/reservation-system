@@ -1,5 +1,11 @@
 // The coach mode of the mini program. PUT and DELETE only, since wx.request cannot send PATCH.
-import { COACH_CANCEL_PREFIX, venueDateKey, venueDates, venueInstant } from '@rs/shared'
+import {
+  COACH_CANCEL_PREFIX,
+  instantString,
+  venueDateKey,
+  venueDates,
+  venueInstant,
+} from '@rs/shared'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -73,8 +79,8 @@ export const weeklyHoursBody = z.object({
 
 export const exceptionBody = z.object({
   kind: z.enum(['off', 'extra']),
-  startsAt: z.iso.datetime({ offset: true }).transform((s) => new Date(s)),
-  endsAt: z.iso.datetime({ offset: true }).transform((s) => new Date(s)),
+  startsAt: instantString.transform((s) => new Date(s)),
+  endsAt: instantString.transform((s) => new Date(s)),
   note: z.string().trim().max(40).default(''),
 })
 
