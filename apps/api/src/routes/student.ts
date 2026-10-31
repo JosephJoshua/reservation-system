@@ -353,7 +353,7 @@ export function studentRoutes(deps: Deps) {
    */
   function studentSlots(
     now: Date,
-    student: { tester: boolean },
+    student: { id: number; tester: boolean },
     from: string,
     to: string,
     q: { coachId?: number; lessonTypeId?: number },
@@ -436,17 +436,56 @@ export function studentRoutes(deps: Deps) {
       sessions.map((r) => r.id),
     )
     const noTable = slotsWithoutTable(db, sessions, moving?.id)
+    // The student's own seats in these sessions: booked already, so not offered again. A hold
+    // whose payment time is up is not: booking again closes it and books afresh.
+    const mine = new Map(
+      sessions.length
+        ? db
+            .select({
+              slotId: bookings.slotId,
+              id: bookings.id,
+              status: bookings.status,
+              payBy: orders.expiresAt,
+            })
+            .from(bookings)
+            .leftJoin(orders, and(eq(orders.bookingId, bookings.id), eq(orders.status, 'pending')))
+            .where(
+              and(
+                eq(bookings.studentId, student.id),
+                inArray(bookings.status, LIVE),
+                inArray(
+                  bookings.slotId,
+                  sessions.map((s) => s.id),
+                ),
+              ),
+            )
+            .all()
+            .filter((b) => b.status !== 'pending_payment' || !b.payBy || b.payBy > now)
+            .map((b) => [
+              b.slotId,
+              {
+                bookingId: b.id,
+                status:
+                  b.status === 'pending_payment'
+                    ? ('pending_payment' as const)
+                    : ('confirmed' as const),
+              },
+            ])
+        : [],
+    )
     const out: SlotDto[] = sessions.map((s) => {
       const seatsLeft = Math.max(0, s.capacity - (taken.get(s.id) ?? 0))
+      const own = mine.get(s.id) ?? null
       return {
         id: s.id,
         coachId: s.coachId,
         startsAt: s.startsAt.toISOString(),
         endsAt: s.endsAt.toISOString(),
-        available: seatsLeft > 0 && !noTable.has(s.id) && open(s.startsAt, s.lessonTypeId),
+        available: !own && seatsLeft > 0 && !noTable.has(s.id) && open(s.startsAt, s.lessonTypeId),
         lessonTypeId: s.lessonTypeId,
         capacity: s.capacity,
         seatsLeft,
+        mine: own,
       }
     })
 
@@ -469,6 +508,7 @@ export function studentRoutes(deps: Deps) {
           lessonTypeId: null,
           capacity: 1,
           seatsLeft: t.tableFull ? 0 : 1,
+          mine: null,
         })
       }
     }

@@ -47,6 +47,15 @@
   color: var(--td-text-color-secondary);
 }
 
+/* The student's own seat in a group session: opens that booking. */
+.slot-mine {
+  border-color: var(--td-brand-color);
+}
+
+.slot-mine .slot-sub {
+  color: var(--td-text-color-brand);
+}
+
 .slot-full {
   background-color: var(--td-bg-color-secondarycontainer);
 }

@@ -42,6 +42,8 @@ interface SlotView {
   refused: boolean
   /** Seats left in a group session; null for a private slot. */
   seatsLeft: number | null
+  /** The student's own other booking in this session: 待支付 or 已报名. */
+  mine: string
 }
 
 Page({
@@ -180,6 +182,8 @@ Page({
             closed: !s.available && Date.parse(s.startsAt) - now < notice,
             refused: this.refused.has(key),
             seatsLeft: sessionOf === null ? null : s.seatsLeft,
+            mine:
+              s.mine && !current ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
           }
         })
       this.setData({ slotsState: 'ready', slots })

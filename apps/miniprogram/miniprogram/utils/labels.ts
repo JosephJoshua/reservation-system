@@ -1,4 +1,10 @@
-import type { BookingStatus, Disruption, PackageStatus, RefundStatus } from '../lib/shared'
+import type {
+  BookingStatus,
+  Disruption,
+  PackageStatus,
+  RefundDto,
+  RefundStatus,
+} from '../lib/shared'
 
 export const REFUND_STATUS: Record<RefundStatus, string> = {
   requested: '待审核',
@@ -10,9 +16,36 @@ export const REFUND_STATUS: Record<RefundStatus, string> = {
   rejected: '未通过',
 }
 
-/** A refund's status for the student. Money paid at the front desk is handed back there. */
-export function refundStatus(status: RefundStatus, paidOffline: boolean): string {
-  return paidOffline && REFUND_STATUS[status] === '退款中' ? '待到店退还' : REFUND_STATUS[status]
+type RefundState = Pick<RefundDto, 'status' | 'settledHow' | 'abnormal'>
+
+/** WeChat Pay could not pay it back (failed, or 退款异常): the venue retries it or pays another way. */
+function stuck(refund: RefundState): boolean {
+  return refund.status === 'failed' || (refund.status === 'processing' && refund.abnormal)
+}
+
+/**
+ * A refund's status for the student. Money paid at the front desk is handed back there; one staff
+ * paid back another way (线下另付) after WeChat Pay could not is 已退还, not 已退款 to where it came
+ * from; one WeChat Pay could not pay back is 退款处理中 until staff sort it out.
+ */
+export function refundStatus(refund: RefundState, paidOffline: boolean): string {
+  const text = REFUND_STATUS[refund.status]
+  if (paidOffline && text === '退款中') return '待到店退还'
+  if (refund.status === 'succeeded' && refund.settledHow === 'offline') return '已退还'
+  if (stuck(refund)) return '退款处理中'
+  return text
+}
+
+/**
+ * Where the money of a refund stands, said after why it was refunded, in words that hold for how
+ * it is paid back: at the front desk, by WeChat Pay, or by staff another way (线下另付).
+ */
+export function refundBack(refund: RefundState, paidOffline: boolean): string {
+  if (paidOffline) return refund.status === 'succeeded' ? '款项已到店退还' : '款项将到店退还'
+  if (refund.status === 'succeeded') {
+    return refund.settledHow === 'offline' ? '款项已退还' : '款项已原路退回'
+  }
+  return stuck(refund) ? '退款处理中' : '款项将原路退回'
 }
 
 export const BOOKING_STATUS: Record<BookingStatus, string> = {

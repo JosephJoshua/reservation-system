@@ -19,7 +19,7 @@ import { scanToCheckIn } from '../../utils/check-in'
 import { cancelRuleText } from '../../utils/data'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
-import { refundStatus } from '../../utils/labels'
+import { refundBack, refundStatus } from '../../utils/labels'
 import { navigateOnce } from '../../utils/nav'
 import { PAY_PENDING, PAY_REFUNDED, PAY_UNCLEAR, payOrder } from '../../utils/pay'
 import { previewPhotos } from '../../utils/photos'
@@ -82,14 +82,8 @@ function subtitle(b: BookingDto, now: number): string {
       if (b.paymentIssue === 'handled') return '付款异常，场馆已处理'
       // Paid, but the lesson could not be confirmed (stopped by the venue, or the time was taken
       // after the hold ran out): the server refunded it, and says why as recorded then.
-      if (b.refund) {
-        const back = b.paidOffline
-          ? '款项将到店退还'
-          : b.refund.status === 'succeeded'
-            ? '款项已原路退回'
-            : '款项将原路退回'
-        return `${b.expiredWhy || '这节课无法上课'}，${back}`
-      }
+      if (b.refund)
+        return `${b.expiredWhy || '这节课无法上课'}，${refundBack(b.refund, b.paidOffline)}`
       // Unpaid: what stands in the way of the lesson while it is still ahead.
       return b.disruption ? `${DISRUPTION_TEXT[b.disruption]}，预约已失效` : '未在规定时间内支付'
     }
@@ -198,7 +192,11 @@ Page({
 
   show(fetched: BookingDto) {
     const b = settled(fetched, serverNow())
-    const status = b.status === 'confirmed' && b.disruption ? DISRUPTED : STATUS[b.status]
+    // An unpaid one too: it can no longer be paid, only cancelled.
+    const status =
+      (b.status === 'confirmed' || b.status === 'pending_payment') && b.disruption
+        ? DISRUPTED
+        : STATUS[b.status]
     this.setData({
       state: 'ready',
       booking: b,
@@ -215,9 +213,7 @@ Page({
             ? `${b.paidOffline ? '前台付款' : '微信支付'} · ${yuan(b.price)}`
             : '免费',
       deadline: `${dateTime(b.cancelDeadline)}${Date.parse(b.cancelDeadline) <= serverNow() ? '（已过）' : ''}`,
-      refund: b.refund
-        ? `${yuan(b.refund.amount)} · ${refundStatus(b.refund.status, b.paidOffline)}`
-        : '',
+      refund: b.refund ? `${yuan(b.refund.amount)} · ${refundStatus(b.refund, b.paidOffline)}` : '',
       // A refunded lesson has nothing to invoice, and the 退款 row already says so.
       invoice:
         b.invoice &&
@@ -277,7 +273,8 @@ Page({
       const b = this.data.booking
       if (b?.status !== 'pending_payment') return this.stopTimer()
       if (b.payBy && Date.parse(b.payBy) <= serverNow()) return this.show(b)
-      this.setData({ statusText: subtitle(b, serverNow()) })
+      // No countdown for one that can no longer be paid; it still shows as lapsed at payBy.
+      if (!b.disruption) this.setData({ statusText: subtitle(b, serverNow()) })
     }, 1000) as unknown as number
   },
 

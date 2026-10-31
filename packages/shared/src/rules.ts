@@ -135,8 +135,8 @@ export type Disruption = 'closed' | 'off' | 'inactive'
 
 /** What a student is told about each, in front of what follows from it. */
 export const DISRUPTION_TEXT: Record<Disruption, string> = {
-  closed: '这节课的时间场馆闭馆',
-  off: '教练这节课的时间请假',
+  closed: '场馆在这节课的时间闭馆',
+  off: '教练在这节课的时间请假',
   inactive: '教练已停止授课',
 }
 

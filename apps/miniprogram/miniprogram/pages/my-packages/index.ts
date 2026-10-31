@@ -39,12 +39,16 @@ function view(p: PackageDto): PackageView {
     ),
     // Valid through the day before the instant it expires, as admin shows it.
     expires: `${fullDate(new Date(new Date(p.expiresAt).getTime() - 1))}${p.status === 'expired' ? '已过期' : '到期'}`,
-    status: PACKAGE_STATUS[p.status],
+    // Paid back 线下另付, as its refund row says, rather than to where it came from.
+    status:
+      p.status === 'refunded' && p.refund && refundStatus(p.refund, p.paidOffline) === '已退还'
+        ? '已退还'
+        : PACKAGE_STATUS[p.status],
     tone:
       p.status === 'active' ? 'primary' : p.status === 'refund_requested' ? 'warning' : 'default',
     active: p.status === 'active',
     refund: p.refund
-      ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund.status, p.paidOffline)}`
+      ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund, p.paidOffline)}`
       : '',
     paidOffline: p.paidOffline,
     // Free packages (gifts) have nothing to refund.
