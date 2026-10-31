@@ -170,17 +170,23 @@ export function Schedule() {
     })
   }
 
-  /** Keeps a lesson that 排班 no longer covers where it is, agreed with the coach. */
-  const keepOutside = async (c: ScheduleConflictDto) => {
+  /**
+   * Keeps a lesson that 排班 no longer covers where it is, agreed with the coach. Sends the time
+   * the list showed: a lesson moved or cancelled since is refused, and the list reloads.
+   */
+  const keepOutside = async (c: ScheduleConflictDto, bookingId: number) => {
+    const action = `keep-booking-${bookingId}-${c.coachId}-${c.startsAt}`
     if (
       await attempt(
         () =>
-          api('POST', `/admin/bookings/${c.bookingId}/move`, {
-            coachId: c.coachId,
-            startsAt: c.startsAt,
-            anyTime: true,
-          }),
+          api(
+            'POST',
+            `/admin/bookings/${bookingId}/keep-outside`,
+            { coachId: c.coachId, startsAt: c.startsAt },
+            { key: onceKey(action) },
+          ),
         '已保留',
+        { key: action, stale: ['booking_changed', 'started', 'group_lesson'], onStale: reload },
       )
     )
       reload()
@@ -271,7 +277,7 @@ export function Schedule() {
                         content="确认教练会在这个时间上课？课程保留，不再提示。"
                         confirmBtn="已确认"
                         cancelBtn="返回"
-                        onConfirm={() => keepOutside(c)}
+                        onConfirm={() => c.bookingId !== null && keepOutside(c, c.bookingId)}
                       >
                         <Button variant="text" theme="primary">
                           已与教练确认

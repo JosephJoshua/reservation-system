@@ -138,7 +138,7 @@ import {
   titleKindParam,
 } from '../services/lists'
 import { resolveMapLink } from '../services/map-links'
-import { moveBooking } from '../services/moves'
+import { keepOutsideHours, moveBooking } from '../services/moves'
 import { nextSort, orderedLists, saveOrder } from '../services/order'
 import { EXPIRING_SOON_MS } from '../services/package-notices'
 import {
@@ -1595,25 +1595,29 @@ export function adminRoutes(deps: Deps) {
     return c.body(null, 204)
   })
 
+  // What the page showed as the lesson's coach and start, so a change made on an older view of it
+  // is refused rather than undoing someone else's move.
+  const shownTime = z.object({ coachId: z.number().int().positive(), startsAt: instant })
+
   app.post('/bookings/:id/move', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
       z
-        .object({ ...targetFields, anyTime: z.boolean().default(false) })
+        .object({
+          ...targetFields,
+          anyTime: z.boolean().default(false),
+          from: shownTime.optional(),
+        })
         .refine(oneTarget, '请选择上课时间'),
     )
     const id = idParam(c)
     const before = describeBooking(db, id, deps.now())
     // A repeat of a move that already happened logs nothing.
-    const moved = moveBooking(deps, id, toTarget(body), 'venue', { anyTime: body.anyTime })
-    if (moved === 'agreed') {
-      log(c.get('staffId'), {
-        action: 'booking.move',
-        summary: `${before.what}：已与教练确认在排班外上课`,
-        studentId: before.studentId,
-        target: { kind: 'booking', id },
-      })
-    } else if (moved) {
+    const moved = moveBooking(deps, id, toTarget(body), 'venue', {
+      anyTime: body.anyTime,
+      from: body.from,
+    })
+    if (moved) {
       const to = db
         .select({ startsAt: slots.startsAt, coach: coaches.name })
         .from(bookings)
@@ -1625,6 +1629,23 @@ export function adminRoutes(deps: Deps) {
         action: 'booking.move',
         summary: `${before.what} 改到 ${to ? `${venueMoment(to.startsAt, deps.now())} ${to.coach}` : ''}`,
         studentId: before.studentId,
+        target: { kind: 'booking', id },
+      })
+    }
+    return c.body(null, 204)
+  })
+
+  // 已与教练确认: keeps a lesson that 排班 no longer covers where it is. It never moves it.
+  app.post('/bookings/:id/keep-outside', need('bookings'), async (c) => {
+    const shown = await parseBody(c, shownTime)
+    const id = idParam(c)
+    // A repeat, or a lesson already back inside 排班, logs nothing.
+    if (keepOutsideHours(deps, id, shown)) {
+      const { what, studentId } = describeBooking(db, id, deps.now())
+      log(c.get('staffId'), {
+        action: 'booking.move',
+        summary: `${what}：已与教练确认在排班外上课`,
+        studentId,
         target: { kind: 'booking', id },
       })
     }
