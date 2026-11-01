@@ -119,6 +119,8 @@ Page({
   lateRule: null as { hours: number; rule: LateCancelRule } | null,
   /** The late notes the student has been shown up front: on opening, or in the modal. */
   lateWarned: { wechat: '', package: '' },
+  /** Set while that modal is up, so a second tap does not book behind it. */
+  lateAsking: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -372,7 +374,7 @@ Page({
   // the linked page instead of this one.
 
   async submit() {
-    if (this.data.submitting || !this.bookable()) return
+    if (this.data.submitting || this.lateAsking || !this.bookable()) return
     const problem = this.problem()
     if (problem) {
       wx.showToast({ title: problem, icon: 'none' })
@@ -381,11 +383,15 @@ Page({
     // Became late while the page was open: shown before anything is booked, and the next tap books.
     const late = this.unwarnedLate()
     if (late) {
+      this.lateAsking = true
       wx.showModal({
         title: '请留意取消规则',
         content: late,
         showCancel: false,
         confirmText: '知道了',
+        complete: () => {
+          this.lateAsking = false
+        },
       })
       return
     }
