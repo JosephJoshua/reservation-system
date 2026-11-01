@@ -17,6 +17,7 @@ const KINDS: InvoiceTitleKind[] = ['personal', 'company']
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
+    canRetry: true,
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     item: '',
@@ -60,7 +61,8 @@ Page({
           refunded: '这笔订单已全额退款，不能开票',
         }
         const error = (order && why[order.state]) || '这笔订单不能申请发票'
-        this.setData({ state: 'error', error })
+        // Nothing to reload for: the order's state is the answer.
+        this.setData({ state: 'error', error, canRetry: false })
         return
       }
       const version = await agreementFor(me)
@@ -80,7 +82,7 @@ Page({
         showAgreement: version !== null,
       })
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      this.setData({ state: 'error', error: errorMessage(e), canRetry: true })
     }
   },
 

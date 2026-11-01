@@ -76,7 +76,6 @@ Page({
     lessonTypeId: 0,
     coachId: 0,
     startsAt: '',
-    /** Booked inside the free-cancel window: what a cancel would then lose. */
     /** The late-booking warning for each way of paying, as `payWith` picks it. */
     lateNotes: { wechat: '', package: '' },
     lessonName: '',

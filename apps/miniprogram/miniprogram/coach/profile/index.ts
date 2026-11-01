@@ -210,13 +210,20 @@ Page({
     this.refresh()
   },
 
+  /** A toast shown once for a double tap. */
+  warn(title: string) {
+    if (Date.now() - this.warnedAt < 1500) return
+    this.warnedAt = Date.now()
+    wx.showToast({ title, icon: 'none' })
+  },
+
   addTag() {
     const typed = this.data.typing.trim()
     if (!typed) return
     const tags = cleanTags([...this.data.tags, typed])
     const error = tagsError(tags)
     if (error) {
-      wx.showToast({ title: error, icon: 'none' })
+      this.warn(error)
       return
     }
     this.setData({ tags, typing: '' })
@@ -240,16 +247,10 @@ Page({
     const form = this.form()
     const error = tagsError(form.tags)
     if (error) {
-      // Shown once for a double tap.
-      if (Date.now() - this.warnedAt < 1500) return
-      this.warnedAt = Date.now()
       // Most often the tag still being typed: say so, as it is not in the list yet.
       const typed = this.data.typing.trim()
       const inBox = typed && tagsError([typed])
-      wx.showToast({
-        title: inBox ? `输入框里的标签超过 ${PROFILE_TAG_LENGTH} 个字` : error,
-        icon: 'none',
-      })
+      this.warn(inBox ? `输入框里的标签超过 ${PROFILE_TAG_LENGTH} 个字` : error)
       return
     }
     this.busy = true
