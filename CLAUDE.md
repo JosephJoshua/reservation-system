@@ -31,6 +31,8 @@ pnpm test         # vitest + theme check
 pnpm build
 pnpm e2e          # starts servers itself
 pnpm --filter @rs/api db:generate   # after schema changes
+pnpm --filter @rs/api db:seed         # small demo venue in an empty database
+pnpm --filter @rs/api db:seed:venue   # busy venue with months of history, for demos
 ```
 
 ## Rules
