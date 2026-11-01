@@ -1,7 +1,7 @@
 import type { BookingRules, RuleName, RuleOverrides } from '@rs/shared'
 import { ruleLabels, ruleLimits, ruleNames, ruleText } from '@rs/shared'
 import type { ReactNode } from 'react'
-import { Button, InputNumber, Radio, Tag } from 'tdesign-react'
+import { Button, Radio, Tag } from 'tdesign-react'
 import { Field } from './Field'
 import { typedNumber } from './format'
 import { NumberBox } from './NumberBox'

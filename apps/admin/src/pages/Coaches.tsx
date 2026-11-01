@@ -5,7 +5,6 @@ import {
   Checkbox,
   Dialog,
   Input,
-  InputNumber,
   Popconfirm,
   Select,
   Space,
@@ -594,6 +593,7 @@ function CategoryEditor({
                 min={0}
                 decimalPlaces={2}
                 placeholder="未设置"
+                allowEmpty
                 suffix="元/节"
                 max={100_000}
                 onChange={(v) => {

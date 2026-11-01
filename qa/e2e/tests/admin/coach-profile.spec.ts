@@ -214,6 +214,13 @@ test('saves a new category once on a double click', async ({ page }) => {
   await page.getByRole('button', { name: '新建类别' }).click()
   const name = `双击${run.slice(-4)}`
   await field(dialog(page), '名称').locator('input').fill(name)
+  // 课时费 left empty is unset, so clearing one keeps it empty.
+  const rate = field(dialog(page), '课时费').locator('input').first()
+  await typeNumber(rate, '80')
+  await rate.press('ControlOrMeta+a')
+  await rate.press('Backspace')
+  await field(dialog(page), '名称').locator('.field-label').click()
+  await expect(rate).toHaveValue('')
   await dialog(page).getByRole('button', { name: '保存' }).dblclick()
   await expect(page.locator('.t-message')).toContainText('已保存')
   await expect(categoryRows(page).filter({ hasText: name })).toHaveCount(1)
