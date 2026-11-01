@@ -13,7 +13,7 @@ import { confirmDisruptedArrival, DisruptionTag, LessonTime } from '../bookingCe
 import { DataTable } from '../DataTable'
 import { NewStudentDialog } from '../DeskStudent'
 import { fmtTime } from '../format'
-import { attempt, useApi } from '../hooks'
+import { attempt, useApi, useToday } from '../hooks'
 import { useOnLessonChanged } from '../lessonLink'
 import { useCan } from '../me'
 import { StudentCell } from '../StudentCell'
@@ -155,6 +155,8 @@ function CodeDialog({ onClose }: { onClose: () => void }) {
 export function CheckIn() {
   const { data, error, loading, reload } = useApi<FrontDeskLessonDto[]>('/admin/front-desk')
   useOnLessonChanged(reload)
+  // Left open past midnight: the new day's lessons.
+  useToday(() => void reload())
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [showCode, setShowCode] = useState(false)

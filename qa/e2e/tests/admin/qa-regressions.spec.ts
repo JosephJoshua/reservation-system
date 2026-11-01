@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import type { CatalogDto, CreateBookingResponse, SlotDto } from '@rs/shared'
+import { addVenueDays, venueDateKey, venueInstant } from '@rs/shared'
 import {
   ADMIN_PASSWORD,
   call,
@@ -467,4 +468,18 @@ test('a 闭馆 left open turns to 提前结束 at its start and leaves the list 
   await page.clock.runFor(endsAt - startsAt)
   await expect(row).toHaveCount(0)
   await call(request, 'DELETE', `/admin/closures/${closure.id}`, admin)
+})
+
+test('日程 left open past midnight moves on to the new day', async ({ page }) => {
+  const today = venueDateKey(new Date())
+  const tomorrow = addVenueDays(today, 1)
+  await page.clock.install({ time: venueInstant(tomorrow, 0).getTime() - 15_000 })
+  await login(page)
+  await page.goto('./#/schedule')
+  const heading = page.locator('.board-date')
+  await expect(heading).toContainText(`${today.slice(5)}`)
+  await expect(heading).toContainText('今天')
+  await page.clock.runFor(30_000)
+  await expect(heading).toContainText(`${tomorrow.slice(5)}`)
+  await expect(heading).toContainText('今天')
 })

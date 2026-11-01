@@ -40,6 +40,7 @@ import {
   useIsPhone,
   useNow,
   useSubmitting,
+  useToday,
   warn,
 } from '../hooks'
 import {
@@ -87,6 +88,8 @@ export function Schedule() {
   const coaches = useApi<Coach[]>('/admin/coaches')
   const types = useApi<LessonType[]>('/admin/lesson-types')
   const [date, setDate] = useState(today)
+  // Left open past midnight: a board on 今天 moves on to the new day.
+  const todayKey = useToday((from, to) => setDate((d) => (d === from ? to : d)))
   const plan = useApi<DayPlanDto>(`/admin/schedule/day?date=${date}`)
   const slots = useApi<Slot[]>(
     `/admin/slots?${new URLSearchParams({
@@ -224,8 +227,8 @@ export function Schedule() {
           <Button variant="outline" onClick={() => setDate(addDays(date, 1))}>
             后一天
           </Button>
-          {date !== today() && (
-            <Button variant="text" onClick={() => setDate(today())}>
+          {date !== todayKey && (
+            <Button variant="text" onClick={() => setDate(todayKey)}>
               今天
             </Button>
           )}
@@ -304,7 +307,7 @@ export function Schedule() {
 
       <h3 className="board-date">
         {date.slice(5)} 周{WEEKDAYS[(venueInstant(date, 12 * 60).getUTCDay() + 6) % 7]}
-        {date === today() && <span className="muted"> 今天</span>}
+        {date === todayKey && <span className="muted"> 今天</span>}
       </h3>
 
       {plan.error || slots.error ? (

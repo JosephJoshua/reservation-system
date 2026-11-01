@@ -1,3 +1,4 @@
+import { venueDateKey } from '@rs/shared'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { MessagePlugin } from 'tdesign-react'
 import { api, RequestError } from './api'
@@ -237,4 +238,23 @@ export function useNow(stepMs = 30_000): number {
     return () => window.clearInterval(timer)
   }, [stepMs])
   return now
+}
+
+/**
+ * The venue date, which moves on at midnight while the page is open; `onChange` runs then with
+ * the day before and the new one.
+ */
+export function useToday(onChange?: (from: string, to: string) => void): string {
+  const now = useNow(10_000)
+  const day = venueDateKey(new Date(now))
+  const last = useRef(day)
+  const changed = useRef(onChange)
+  changed.current = onChange
+  useEffect(() => {
+    if (last.current === day) return
+    const from = last.current
+    last.current = day
+    changed.current?.(from, day)
+  }, [day])
+  return day
 }
