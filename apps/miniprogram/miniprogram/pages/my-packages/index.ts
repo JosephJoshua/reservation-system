@@ -29,6 +29,11 @@ interface PackageView {
   invoiceLink: string
 }
 
+/** As of `now`: one in use whose time is up shows as expired before the server says so. */
+function asOf(p: PackageDto, now: number): PackageDto {
+  return p.status === 'active' && Date.parse(p.expiresAt) <= now ? { ...p, status: 'expired' } : p
+}
+
 function view(p: PackageDto): PackageView {
   const tag = packageTag(p)
   return {
@@ -134,14 +139,18 @@ Page({
       this.raw = packages
       this.setData({
         state: 'ready',
-        packages: packages.map(view),
+        packages: packages.map((p) => view(asOf(p, serverNow()))),
         packagesEnabled: catalog.payment.packagesEnabled,
       })
       this.scheduleEdge(packages)
     } catch (e) {
-      // A failed refresh keeps what is on screen.
-      if (this.data.state === 'ready') showError(e)
-      else this.setData({ state: 'error', error: errorMessage(e) })
+      // A failed refresh keeps what is on screen, and looks again at the next expiry.
+      if (this.data.state === 'ready') {
+        const now = serverNow()
+        this.setData({ packages: this.raw.map((p) => view(asOf(p, now))) })
+        this.scheduleEdge(this.raw)
+        showError(e)
+      } else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

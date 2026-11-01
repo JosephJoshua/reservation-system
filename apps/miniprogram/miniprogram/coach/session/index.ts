@@ -107,8 +107,12 @@ Page({
     } catch (e) {
       if (seq !== this.loads) return
       if (bindInstead(e, this)) return
-      if (this.data.state === 'ready') showError(e)
-      else this.setData({ state: 'error', error: errorMessage(e) })
+      const shown = this.data.session
+      // Still redrawn for the time now, as an edge may have passed while it was hidden.
+      if (this.data.state === 'ready' && shown) {
+        if (!this.hidden) this.show(shown)
+        showError(e)
+      } else this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 

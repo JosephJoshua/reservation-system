@@ -136,17 +136,21 @@ Page({
         return c ? [{ id, name: c.name, avatar: c.avatarUrl ? assetUrl(c.avatarUrl) : '' }] : []
       })
       const days = bookableDays(booking.window.advanceDays, serverNow())
-      // Open on the lesson's own day, where nearby times are the likely pick.
-      const date = days.some((d) => d.key === venueDateKey(new Date(booking.startsAt)))
-        ? venueDateKey(new Date(booking.startsAt))
-        : (days[0]?.key ?? '')
+      // Open on the lesson's own day, where nearby times are the likely pick; a reload (at
+      // midnight) keeps the day and coach shown while they are still there.
+      const own = venueDateKey(new Date(booking.startsAt))
+      const shown = this.data.date
+      const date =
+        [shown, own].find((k) => k && days.some((d) => d.key === k)) ?? days[0]?.key ?? ''
+      const shownCoach = this.data.coachId
       this.setData({
         state: 'ready',
         current: `${lessonTime(booking.startsAt, booking.endsAt)} · ${booking.coach.name}`,
         coaches,
-        coachId: coaches.some((c) => c.id === booking.coach.id)
-          ? booking.coach.id
-          : (coaches[0]?.id ?? 0),
+        coachId:
+          [shownCoach, booking.coach.id].find((id) => id && coaches.some((c) => c.id === id)) ??
+          coaches[0]?.id ??
+          0,
         days,
         date,
         dayAnchor: dayAnchor(days, date),
