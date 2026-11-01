@@ -363,9 +363,13 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
     >
       {error && <Alert theme="error" message={error} />}
       {data && (
+        // Keyed, so a block coming or going does not rebuild the ones after it, such as the
+        // half-filled 请假 form.
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-          {conflicts && <ConflictList conflicts={conflicts.list} what={conflicts.what} />}
-          <div>
+          {conflicts && (
+            <ConflictList key="conflicts" conflicts={conflicts.list} what={conflicts.what} />
+          )}
+          <div key="hours">
             <div className="subhead">每周时间</div>
             <div className="week-hours">
               {WEEK_ORDER.map((d) => {
@@ -440,7 +444,7 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
           </div>
 
           {planned.length > 0 && (
-            <div>
+            <div key="planned">
               <div className="subhead">已安排的调整</div>
               {planned.map((p) => (
                 <div key={p.from}>
@@ -451,7 +455,7 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
             </div>
           )}
 
-          <div>
+          <div key="exceptions">
             <div className="subhead">请假和加班</div>
             {offs.length === 0 ? (
               <div className="muted">没有请假和加班</div>

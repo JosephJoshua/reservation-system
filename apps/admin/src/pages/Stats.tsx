@@ -10,7 +10,7 @@ import { Button, Card, DateRangePicker, Radio } from 'tdesign-react'
 import { ColumnChart, Heatmap, LineChart, MeterList, type Series } from '../charts'
 import { DataTable } from '../DataTable'
 import { addDays, fmtDate, today, yuan } from '../format'
-import { useApi, warn } from '../hooks'
+import { useApi, useToday, warn } from '../hooks'
 import { Pager, useListFilters, usePagedList } from '../lists'
 import { Delta } from '../StatDelta'
 import { StudentCell } from '../StudentCell'
@@ -174,6 +174,12 @@ export function Stats() {
   const current = data?.from === range[0] && data.to <= range[1]
   const r = current || loading ? data : null
   const b = current && before?.from === prev[0] ? before : null
+
+  // Left open past midnight: a 近N天 range moves on with the day.
+  useToday(() => {
+    const p = presets.find((x) => x.key === preset)
+    if (p) setRange(p.range())
+  })
 
   const pick = (key: string) => {
     const p = presets.find((x) => x.key === key)

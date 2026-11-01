@@ -115,10 +115,18 @@ Page({
       serverNow(),
     )
     if (wait === null) return
-    this.edgeTimer = setTimeout(() => {
-      this.edgeTimer = 0
-      if (!this.hidden && this.data.state === 'ready' && !this.data.busy) void this.load()
-    }, wait) as unknown as number
+    this.edgeTimer = setTimeout(() => this.onEdge(), wait) as unknown as number
+  },
+
+  /** At an expiry; while a refund request is on its way, it looks again shortly. */
+  onEdge() {
+    this.edgeTimer = 0
+    if (this.hidden || this.data.state !== 'ready') return
+    if (this.data.busy) {
+      this.edgeTimer = setTimeout(() => this.onEdge(), 1000) as unknown as number
+      return
+    }
+    void this.load()
   },
 
   clearEdge() {

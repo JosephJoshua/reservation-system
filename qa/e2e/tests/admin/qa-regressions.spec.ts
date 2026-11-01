@@ -523,3 +523,55 @@ test('排班 left open past midnight moves 生效日期 on to the new day', asyn
   await page.clock.runFor(30_000)
   await expect(from).toHaveValue(tomorrow)
 })
+
+test('经营分析 left open past midnight moves 近30天 on with the day', async ({ page }) => {
+  const today = venueDateKey(new Date())
+  const tomorrow = addVenueDays(today, 1)
+  await page.clock.install({ time: venueInstant(tomorrow, 0).getTime() - 15_000 })
+  await login(page)
+  await page.goto('./#/reports')
+  const range = page.locator('.t-range-input input')
+  await expect(range.nth(1)).toHaveValue(today)
+  await page.clock.runFor(30_000)
+  await expect(range.nth(1)).toHaveValue(tomorrow)
+  await expect(range.first()).toHaveValue(addVenueDays(tomorrow, -29))
+})
+
+test('排班 keeps a half-filled 请假 when 已安排的调整 goes at midnight', async ({
+  page,
+  request,
+}) => {
+  const admin = (
+    await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
+      password: ADMIN_PASSWORD,
+    })
+  ).token
+  const name = `保留${run}`
+  const coach = await call<{ id: number }>(request, 'POST', '/admin/coaches', admin, {
+    name,
+    lessonTypeIds: [],
+  })
+  const today = venueDateKey(new Date())
+  const tomorrow = addVenueDays(today, 1)
+  // Hours from tomorrow: a planned change until midnight, then the hours in use.
+  await call(request, 'PUT', `/admin/coaches/${coach.id}/hours`, admin, {
+    from: tomorrow,
+    hours: [{ weekday: 1, startMinute: 9 * 60, endMinute: 12 * 60 }],
+  })
+  await page.clock.install({ time: venueInstant(tomorrow, 0).getTime() - 15_000 })
+  await login(page)
+  await page.goto('./#/coaches')
+  await page
+    .getByRole('row')
+    .filter({ hasText: name })
+    .getByRole('button', { name: '排班' })
+    .click()
+  const dlg = page.locator('.t-dialog').filter({ hasText: '生效日期' })
+  await expect(dlg.getByText('已安排的调整', { exact: true })).toBeVisible()
+  const note = dlg.getByPlaceholder('备注（选填）')
+  await note.fill(`外出${run}`)
+  await page.clock.runFor(30_000)
+  await expect(dlg.getByText('已安排的调整', { exact: true })).toHaveCount(0)
+  await expect(note).toHaveValue(`外出${run}`)
+})
