@@ -174,8 +174,12 @@ Page({
         }
       })
       const yesterday = days[PAST_DAYS - 1]?.key ?? today
+      // Moving on at midnight: the counts loaded before stay until the schedule loads again.
+      const counts = new Map(this.data.days.map((d) => [d.key, d.lessons]))
+      if (quiet) for (const d of days) d.lessons = counts.get(d.key) ?? 0
       this.setData({ days, date: today, dayAnchor: `day-${yesterday}` })
-      if (!(await this.loadSchedule(quiet)) && quiet) {
+      const loaded = await this.loadSchedule(quiet)
+      if (quiet && loaded === false) {
         // The schedule loaded before still covers the new day: show it and try again.
         this.showDay()
         this.retryLater()
@@ -206,10 +210,10 @@ Page({
   },
 
   /**
-   * Loads the schedule, saying whether it did; `quiet` (the edge timer's reload) keeps the day
-   * shown on a failure.
+   * Loads the schedule, saying whether it did (null when a newer load took over); `quiet` (the
+   * edge timer's reload) keeps the day shown on a failure.
    */
-  async loadSchedule(quiet?: boolean): Promise<boolean> {
+  async loadSchedule(quiet?: boolean): Promise<boolean | null> {
     const { days } = this.data
     const first = days[0]?.key
     const last = days[days.length - 1]?.key
@@ -217,7 +221,7 @@ Page({
     const request = ++this.request
     try {
       const schedule = await coachApi<CoachDaysDto>('GET', `/schedule?from=${first}&to=${last}`)
-      if (request !== this.request) return false
+      if (request !== this.request) return null
       this.schedule = schedule
       const counts = new Map<string, number>()
       for (const s of schedule.lessons) {
@@ -233,7 +237,7 @@ Page({
       this.showDay()
       return true
     } catch (e) {
-      if (request !== this.request) return false
+      if (request !== this.request) return null
       if (quiet && this.data.state === 'ready') return false
       if (this.data.state === 'ready') this.setData({ slotsState: 'error', error: errorMessage(e) })
       else throw e
