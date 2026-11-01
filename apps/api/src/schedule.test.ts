@@ -449,6 +449,8 @@ describe('请假, 加班 and 闭馆', () => {
     const span = { startsAt: at(SUN, '10:00'), endsAt: at(SUN, '12:00') }
     const again = await h.call('POST', '/admin/closures', { ...span, note: '比赛' }, admin)
     expect([again.status, again.json.id]).toEqual([201, closed.json.id])
+    const bare = await h.call('POST', '/admin/closures', { ...span, note: '' }, admin)
+    expect([bare.status, bare.json.id]).toEqual([201, closed.json.id])
     const other = await h.call('POST', '/admin/closures', { ...span, note: '停电' }, admin)
     expect(other.status).toBe(409)
     expect(other.json.error).toMatchObject({
