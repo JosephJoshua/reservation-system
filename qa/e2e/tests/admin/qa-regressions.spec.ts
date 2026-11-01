@@ -437,3 +437,34 @@ test('on a phone the menu is a drawer, lists fit the screen and dialog actions s
     })
     .toEqual([true, true])
 })
+
+test('a 闭馆 left open turns to 提前结束 at its start and leaves the list at its end', async ({
+  page,
+  request,
+}) => {
+  const admin = (
+    await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
+      password: ADMIN_PASSWORD,
+    })
+  ).token
+  // Days ahead, so the server still lists it while the page's clock runs on.
+  const step = 5 * 60_000
+  const startsAt = Math.ceil((Date.now() + 9 * 86_400_000) / step) * step
+  const endsAt = startsAt + 30 * 60_000
+  const closure = await call<{ id: number }>(request, 'POST', '/admin/closures', admin, {
+    startsAt: new Date(startsAt).toISOString(),
+    endsAt: new Date(endsAt).toISOString(),
+    note: `时钟${run}`,
+  })
+  await page.clock.install({ time: startsAt - 20_000 })
+  await login(page)
+  await page.goto('./#/settings?section=closures')
+  const row = page.locator('.exception-row').filter({ hasText: `时钟${run}` })
+  await expect(row.getByRole('button', { name: '删除' })).toBeVisible()
+  await page.clock.runFor(30_000)
+  await expect(row.getByRole('button', { name: '提前结束' })).toBeVisible()
+  await page.clock.runFor(endsAt - startsAt)
+  await expect(row).toHaveCount(0)
+  await call(request, 'DELETE', `/admin/closures/${closure.id}`, admin)
+})
