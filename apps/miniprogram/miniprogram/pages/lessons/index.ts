@@ -108,8 +108,8 @@ Page({
   },
 
   /**
-   * Shows `rows` as of now, and comes back when the next unpaid hold's payment time is up, so its
-   * 已失效 shows then rather than at the next refresh.
+   * Shows `rows` as of now, and comes back when the next unpaid hold's payment time is up or a
+   * lesson starts or ends, so its tag changes then rather than at the next refresh.
    */
   render() {
     clearTimeout(this.lapseTimer)
@@ -122,10 +122,16 @@ Page({
       lessons: rows.map((b) => view(b, now)),
       checkIn: this.data.scope === 'upcoming' && open ? view(open, now) : null,
     })
+    // Tags change when a hold's payment time is up and when a booked lesson starts or ends.
     const next = Math.min(
       ...rows
-        .filter((b) => b.status === 'pending_payment' && b.payBy)
-        .map((b) => Date.parse(b.payBy ?? ''))
+        .flatMap((b) =>
+          b.status === 'pending_payment' && b.payBy
+            ? [Date.parse(b.payBy)]
+            : b.status === 'confirmed'
+              ? [Date.parse(b.startsAt), Date.parse(b.endsAt)]
+              : [],
+        )
         .filter((at) => at > now.getTime()),
     )
     // The list refreshes every minute anyway, which schedules this again.

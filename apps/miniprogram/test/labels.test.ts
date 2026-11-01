@@ -156,3 +156,21 @@ describe('settled', () => {
     })
   })
 })
+
+describe('lesson tag over time', () => {
+  const lesson = {
+    status: 'confirmed',
+    startsAt: '2026-10-29T02:00:00Z',
+    endsAt: '2026-10-29T03:00:00Z',
+    attendance: null,
+    disruption: null,
+  } as BookingDto
+  it('says 进行中 while a booked lesson is on, and 已完成 once it ends', () => {
+    const tag = (iso: string) => lessonTag(lesson, Date.parse(iso)).status
+    expect([
+      tag('2026-10-29T01:59:00Z'),
+      tag('2026-10-29T02:00:00Z'),
+      tag('2026-10-29T03:00:00Z'),
+    ]).toEqual(['已预约', '进行中', '已完成'])
+  })
+})

@@ -98,6 +98,8 @@ function subtitle(b: BookingDto, now: number): string {
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
+    /** False once the booking is gone (404): reloading cannot bring it back. */
+    canRetry: true,
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     booking: null as BookingDto | null,
@@ -176,7 +178,11 @@ Page({
       this.show(booking)
     } catch (e) {
       if (asked < this.answered) return
-      this.setData({ state: 'error', error: errorMessage(e) })
+      this.setData({
+        state: 'error',
+        error: errorMessage(e),
+        canRetry: !(e instanceof ApiError && e.status === 404),
+      })
     }
   },
 
@@ -203,7 +209,11 @@ Page({
         // Gone: nothing on screen is to come back at a timer.
         this.stopTimer()
         this.clearEdge()
-        this.setData({ state: 'error', error: errorMessage(e) })
+        this.setData({
+          state: 'error',
+          error: errorMessage(e),
+          canRetry: !(e instanceof ApiError && e.status === 404),
+        })
         return false
       }
       if (loud) showError(e)

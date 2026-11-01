@@ -129,6 +129,10 @@ export function lessonTag(
   if (b.disruption && (b.status === 'confirmed' || b.status === 'pending_payment')) {
     return { status: DISRUPTION_TAG[b.disruption], tone: 'warning' }
   }
+  // On now, as 预约详情 says.
+  if (b.status === 'confirmed' && Date.parse(b.startsAt) <= now) {
+    return { status: '进行中', tone: 'primary' }
+  }
   return {
     status: BOOKING_STATUS[b.status],
     tone:
