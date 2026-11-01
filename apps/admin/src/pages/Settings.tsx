@@ -187,6 +187,11 @@ export function Settings() {
     const body = structuredClone(s)
     body.venue.latitude = lat ? Number(lat) : null
     body.venue.longitude = lng ? Number(lng) : null
+    // As leaving the box would, for a save straight from typing (Ctrl+S).
+    body.booking.bufferMinutes = Math.min(
+      Math.max(Math.round(body.booking.bufferMinutes / 5) * 5, 0),
+      60,
+    )
     if (phoneWrong) {
       void MessagePlugin.warning(VENUE_PHONE_MESSAGE)
       nav.scrollTo('venue')

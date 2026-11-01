@@ -80,6 +80,7 @@ export function overlayShown(except?: string) {
 const STALE = new Set([
   'not_found',
   'not_cancellable',
+  'session_cancelled',
   'ended',
   'refund_not_requested',
   'refund_not_failed',

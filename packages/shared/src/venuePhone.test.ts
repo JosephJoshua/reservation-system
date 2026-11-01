@@ -150,6 +150,10 @@ describe('dialablePhone', () => {
     }
     expect(dialablePhone('+86 (0139) 0000 0001')).toBe('+8613900000001')
     expect(dialablePhone('95105 888')).toBe('95105888')
+    // Six-digit service lines, however they are spaced.
+    for (const phone of ['118 114', '116-114', '962 288', '96 2288', '9558 81']) {
+      expect(venuePhoneValid(phone), phone).toBe(true)
+    }
   })
 
   it('leaves out an extension after a 400 or 800 number or a local one', () => {
@@ -178,7 +182,6 @@ describe('dialablePhone', () => {
       '(95588) 1',
       '(95588)-1',
       '955 88-1',
-      '9558 81',
       '10086 1',
       '+86 400 6666 800 8',
       '0086 400-8208-820-3',
