@@ -149,7 +149,7 @@ Page({
           this.render()
           void this.load(true)
         },
-        next - now.getTime() + 200,
+        next - now.getTime() + 1000,
       )
     }
   },
