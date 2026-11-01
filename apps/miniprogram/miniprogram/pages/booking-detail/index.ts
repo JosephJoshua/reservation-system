@@ -141,7 +141,7 @@ Page({
     // Back from the background or another page: the lesson may have been paid, cancelled or
     // moved meanwhile, here or on another phone.
     if (this.data.state === 'ready' && !this.data.busy) this.refresh()
-    else if (this.data.booking) {
+    else if (this.data.state === 'ready' && this.data.booking) {
       // Its timers were stopped while hidden.
       if (this.data.booking.status === 'pending_payment') this.startTimer()
       this.scheduleEdge(this.data.booking)
@@ -200,12 +200,15 @@ Page({
     } catch (e) {
       if (asked < this.answered) return true
       if (e instanceof ApiError && e.status === 404) {
+        // Gone: nothing on screen is to come back at a timer.
+        this.stopTimer()
+        this.clearEdge()
         this.setData({ state: 'error', error: errorMessage(e) })
         return false
       }
       if (loud) showError(e)
       // What is on screen, brought up to the time now, with its timers running again.
-      if (this.data.booking) this.show(this.data.booking)
+      if (this.data.state === 'ready' && this.data.booking) this.show(this.data.booking)
       return false
     }
   },
@@ -314,7 +317,7 @@ Page({
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
       const shown = this.data.booking
-      if (!shown || this.left) return
+      if (!shown || this.left || this.data.state !== 'ready') return
       this.show(shown)
       if (!this.data.busy) void this.refresh()
     }, wait) as unknown as number
@@ -328,6 +331,7 @@ Page({
   startTimer() {
     this.stopTimer()
     this.timer = setInterval(() => {
+      if (this.data.state !== 'ready') return this.stopTimer()
       const b = this.data.booking
       if (b?.status !== 'pending_payment') return this.stopTimer()
       if (b.payBy && Date.parse(b.payBy) <= serverNow()) return this.show(b)

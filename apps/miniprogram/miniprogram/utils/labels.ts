@@ -104,7 +104,13 @@ export function settled(b: BookingDto, now: number): BookingDto {
   }
   if (b.status === 'confirmed' && Date.parse(b.startsAt) <= now) {
     const ended = Date.parse(b.endsAt) <= now
-    return { ...b, status: ended ? 'completed' : 'confirmed', canCancel: false, canMove: false }
+    return {
+      ...b,
+      status: ended ? 'completed' : 'confirmed',
+      canCancel: false,
+      canMove: false,
+      canCheckIn: ended ? false : b.canCheckIn,
+    }
   }
   return b
 }
