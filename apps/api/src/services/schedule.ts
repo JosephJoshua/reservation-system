@@ -686,7 +686,15 @@ export function addException(
         .get().id
     return {
       id,
-      conflicts: input.kind === 'off' ? leaveConflicts(tx, now, input.coachId) : [],
+      // The lessons this 请假 or 闭馆 falls on, not those of others already there.
+      conflicts:
+        input.kind === 'off'
+          ? leaveConflicts(tx, now, input.coachId).filter(
+              (l) =>
+                Date.parse(l.startsAt) < input.endsAt.getTime() &&
+                Date.parse(l.endsAt) > input.startsAt.getTime(),
+            )
+          : [],
       created: !same,
     }
   })

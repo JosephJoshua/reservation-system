@@ -946,12 +946,15 @@ describe('packages', () => {
     const { coach, lesson, t } = await withPackage(h)
     const used = await book(h, t, h.slot(coach.id, '2026-10-23', 14).id, lesson.id)
     expect(used.status).toBe(201)
-    const pkgId = (await h.call('GET', '/packages', undefined, t)).json[0].id
-    // An upcoming booking on the package blocks the request.
+    const listed = (await h.call('GET', '/packages', undefined, t)).json[0]
+    const pkgId = listed.id
+    // An upcoming booking on the package blocks the request, which the list says beforehand.
+    expect(listed.inUse).toBe(true)
     expect(
       (await h.call('POST', `/packages/${pkgId}/refund-request`, undefined, t)).json.error.code,
     ).toBe('package_in_use')
     h.clock.now = new Date('2026-10-23T08:00:00Z') // after the lesson
+    expect((await h.call('GET', '/packages', undefined, t)).json[0].inUse).toBe(false)
     const req = await h.call('POST', `/packages/${pkgId}/refund-request`, undefined, t)
     expect(req.json).toMatchObject({
       status: 'refund_requested',

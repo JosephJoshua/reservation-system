@@ -208,8 +208,9 @@ export function coachRoutes(deps: Deps) {
       }),
     )
     const coachId = c.get('coachId')
-    setAttendance(deps, idParam(c), attendance, { coachId }, unmarkedOnly)
-    return c.json(coachLesson(deps, idParam(c), coachId))
+    const changed = setAttendance(deps, idParam(c), attendance, { coachId }, unmarkedOnly)
+    // Whether this mark changed it, so 全部记为到课 counts only the lessons it marked.
+    return c.json({ ...coachLesson(deps, idParam(c), coachId), changed })
   })
 
   app.put('/lessons/:id/note', async (c) => {

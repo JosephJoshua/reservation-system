@@ -350,7 +350,7 @@ describe('front desk 签到', () => {
       h.call('PUT', `/coach/lessons/${bookingId}/attendance`, body, coachToken)
     await put({ attendance: 'no_show' })
     const all = await put({ attendance: 'attended', unmarkedOnly: true })
-    expect([all.status, all.json.attendance]).toEqual([200, 'no_show'])
+    expect([all.status, all.json.attendance, all.json.changed]).toEqual([200, 'no_show', false])
     expect(row(h, bookingId)?.attendance).toBe('no_show')
     // A desk mark is kept too, without the refusal a coach change gets.
     const admin = await h.admin()
@@ -364,8 +364,24 @@ describe('front desk 签到', () => {
     expect(row(h, bookingId)).toMatchObject({ attendance: 'attended', attendanceBy: 'staff' })
     // An unmarked one is marked.
     await h.call('PUT', `/admin/bookings/${bookingId}/attendance`, { attendance: null }, admin)
-    await put({ attendance: 'attended', unmarkedOnly: true })
+    expect((await put({ attendance: 'attended', unmarkedOnly: true })).json.changed).toBe(true)
     expect(row(h, bookingId)).toMatchObject({ attendance: 'attended', attendanceBy: 'coach' })
+  })
+
+  it('moves a lesson in progress the student missed out of their upcoming list', async () => {
+    const h = setup()
+    const { coachToken, student, bookingId } = await lesson(h)
+    h.clock.now = new Date('2026-10-26T02:05:00Z')
+    const ids = async (scope: string) =>
+      (await h.call('GET', `/bookings?scope=${scope}`, undefined, student)).json.map(
+        (b: { id: number }) => b.id,
+      )
+    expect(await ids('upcoming')).toEqual([bookingId])
+    const put = `/coach/lessons/${bookingId}/attendance`
+    await h.call('PUT', put, { attendance: 'no_show' }, coachToken)
+    expect([await ids('upcoming'), await ids('past')]).toEqual([[], [bookingId]])
+    await h.call('PUT', put, { attendance: null }, coachToken)
+    expect([await ids('upcoming'), await ids('past')]).toEqual([[bookingId], []])
   })
 
   it('drops the whole mark when the venue cancels mid-lesson', async () => {

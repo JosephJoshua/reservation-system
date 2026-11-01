@@ -61,6 +61,8 @@ Page({
   },
 
   id: 0,
+  /** When save last refused the tags, so a double tap shows that once. */
+  warnedAt: 0,
   /** Held from the first tap, before page data can show it, so a double tap saves once. */
   busy: false,
   picking: false,
@@ -238,7 +240,16 @@ Page({
     const form = this.form()
     const error = tagsError(form.tags)
     if (error) {
-      wx.showToast({ title: error, icon: 'none' })
+      // Shown once for a double tap.
+      if (Date.now() - this.warnedAt < 1500) return
+      this.warnedAt = Date.now()
+      // Most often the tag still being typed: say so, as it is not in the list yet.
+      const typed = this.data.typing.trim()
+      const inBox = typed && tagsError([typed])
+      wx.showToast({
+        title: inBox ? `输入框里的标签超过 ${PROFILE_TAG_LENGTH} 个字` : error,
+        icon: 'none',
+      })
       return
     }
     this.busy = true

@@ -446,6 +446,15 @@ describe('请假, 加班 and 闭馆', () => {
       expect.objectContaining({ bookingId: booked.json.bookingId, coachName: '李教练' }),
     ])
     expect(await times(h, student, SUN, lesson.id)).toEqual(['09:00', '09:00'])
+    // A 请假 elsewhere lists only the lessons it falls on, not those already in 闭馆.
+    const leave = await exception(h, admin, coach.id, 'off', at(SUN, '16:00'), at(SUN, '17:00'))
+    expect([leave.status, leave.json.conflicts]).toEqual([201, []])
+    await h.call(
+      'DELETE',
+      `/admin/coaches/${coach.id}/exceptions/${leave.json.id}`,
+      undefined,
+      admin,
+    )
     const closures = (await h.call('GET', '/admin/closures', undefined, admin)).json
     expect(closures).toEqual([
       expect.objectContaining({ coachId: null, kind: 'off', note: '比赛', byStaff: '管理员' }),

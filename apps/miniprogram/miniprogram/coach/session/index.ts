@@ -150,14 +150,12 @@ Page({
       try {
         // The list may be old (a mark made on the student's page, or by the desk): a lesson
         // marked meanwhile keeps its mark.
-        const lesson = await coachApi<CoachLessonDto>(
+        const lesson = await coachApi<CoachLessonDto & { changed?: boolean }>(
           'PUT',
           `/lessons/${st.bookingId}/attendance`,
           { attendance: 'attended', unmarkedOnly: true },
         )
-        if (lesson.attendance === 'attended' && lesson.attendanceBy === 'coach') {
-          done.push(st.bookingId)
-        }
+        if (lesson.changed) done.push(st.bookingId)
       } catch (err) {
         failed = failed ?? err
       }

@@ -687,10 +687,16 @@ export function studentRoutes(deps: Deps) {
               eq(bookings.studentId, studentId),
               inArray(bookings.status, LIVE),
               gte(bookings.endsAt, now),
+              // A lesson in progress the student was marked absent from is over for them.
+              or(isNull(bookings.attendance), ne(bookings.attendance, 'no_show')),
             )
           : and(
               eq(bookings.studentId, studentId),
-              or(lt(bookings.endsAt, now), inArray(bookings.status, ['cancelled', 'expired'])),
+              or(
+                lt(bookings.endsAt, now),
+                inArray(bookings.status, ['cancelled', 'expired']),
+                eq(bookings.attendance, 'no_show'),
+              ),
             ),
       )
       .orderBy(q.scope === 'upcoming' ? asc(bookings.startsAt) : desc(bookings.startsAt))

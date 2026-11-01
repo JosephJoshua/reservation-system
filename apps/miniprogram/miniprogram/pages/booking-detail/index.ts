@@ -110,7 +110,7 @@ Page({
     attendance: '',
     address: '',
     canAddToCalendar: false,
-    cancelRule: '',
+    cancelRule: [] as string[],
     feedback: null as { title: string; text: string; photos: string[] } | null,
     busy: false,
   },
@@ -252,22 +252,24 @@ Page({
             : '',
       address: this.venue?.address ?? '',
       canAddToCalendar: onAsBooked(b) && Date.parse(b.startsAt) > serverNow(),
-      cancelRule:
+      // One line per rule, so a short last sentence never wraps on its own.
+      cancelRule: [
         // The venue cannot give it as booked, or moved it after the usual deadline: free until
         // it starts.
-        (b.disruption
+        b.disruption
           ? `${DISRUPTION_TEXT[b.disruption]}，开课前可免费取消。`
           : b.movedLate
             ? '课程时间已调整，开课前可免费取消。'
-            : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel)) +
-        (b.canMove
+            : cancelRuleText(b.terms.cancelDeadlineHours, b.terms.lateCancel),
+        b.canMove
           ? // Moving closes with free cancelling, which for such a lesson is when it starts.
             Date.parse(b.cancelDeadline) >= Date.parse(b.startsAt)
             ? `开课前还可以改约 ${b.movesLeft} 次。`
             : `在免费取消截止前，还可以改约 ${b.movesLeft} 次。`
           : b.status === 'confirmed' && b.movedFrom && b.movesLeft === 0
             ? '改约次数已用完。'
-            : ''),
+            : '',
+      ].filter(Boolean),
       feedback: b.feedback
         ? {
             title: `${b.coach.name}的课后点评`,

@@ -33,7 +33,7 @@
     <t-progress percentage="{{item.percent}}" label="{{false}}" stroke-width="8rpx" color="{{item.active ? 'var(--rs-progress-color)' : 'var(--td-text-color-disabled)'}}" />
     <view class="pkg-foot">
       <view class="grow">
-        <view class="pkg-meta">{{item.expires}}</view>
+        <view wx:if="{{item.expires}}" class="pkg-meta">{{item.expires}}</view>
         <view wx:if="{{item.refund}}" class="pkg-meta">{{item.refund}}</view>
         <view wx:if="{{item.invoice}}" class="pkg-meta">{{item.invoice}}</view>
       </view>

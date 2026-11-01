@@ -285,6 +285,8 @@ export interface PackageDto {
   pricePaid: number
   /** Bought at the front desk, so any refund is handed back there. */
   paidOffline: boolean
+  /** A lesson booked with it is still to come, so it can't be refunded until that is cancelled. */
+  inUse: boolean
   refund: RefundDto | null
   /** Invoicing of the purchase; null when nothing was paid. */
   invoice: OrderInvoiceDto | null
