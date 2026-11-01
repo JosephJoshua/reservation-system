@@ -59,11 +59,12 @@
   <block wx:if="{{needName || needPhone}}">
     <view class="section-title">联系方式（仅场馆可见）</view>
     <t-cell-group theme="card">
-      <t-input wx:if="{{needName}}" label="姓名" placeholder="上课学员姓名" maxlength="{{20}}" value="{{name}}" bind:change="onName" />
-      <t-input wx:if="{{needPhone}}" label="手机号" placeholder="用于课程变动通知" type="number" maxlength="{{11}}" value="{{phone}}" bind:change="onPhone" />
+      <t-input wx:if="{{needName}}" style="--td-input-label-min-width: 3em" label="姓名" placeholder="上课学员姓名" maxlength="{{20}}" value="{{name}}" bind:change="onName" />
+      <t-input wx:if="{{needPhone}}" style="--td-input-label-min-width: 3em" label="手机号" placeholder="用于课程变动通知" type="number" maxlength="{{11}}" value="{{phone}}" bind:change="onPhone" />
     </t-cell-group>
   </block>
 
+  <view wx:if="{{lateNote}}" class="late-note">{{lateNote}}</view>
   <view class="footnote">
     <view wx:if="{{groupNote}}">{{groupNote}}</view>
     <view>{{cancelRule}}</view>

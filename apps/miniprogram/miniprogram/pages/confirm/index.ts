@@ -7,7 +7,15 @@ import {
   minCheckHours,
   type StudentDto,
 } from '../../lib/shared'
-import { ApiError, api, assetUrl, errorMessage, RESULT_UNKNOWN, showError } from '../../utils/api'
+import {
+  ApiError,
+  api,
+  assetUrl,
+  errorMessage,
+  RESULT_UNKNOWN,
+  serverNow,
+  showError,
+} from '../../utils/api'
 import {
   agreementFor,
   agreePolicies,
@@ -16,6 +24,7 @@ import {
   cancelRuleText,
   getCatalog,
   getMe,
+  lateBookingText,
   needsAgreement,
   TRIAL_PENDING,
   trialBlock,
@@ -58,6 +67,8 @@ Page({
     lessonTypeId: 0,
     coachId: 0,
     startsAt: '',
+    /** Booked inside the free-cancel window: what a cancel would then lose. */
+    lateNote: '',
     lessonName: '',
     isTrial: false,
     when: '',
@@ -240,6 +251,12 @@ Page({
         cancelRule: cancelRuleText(
           lessonType.rules.cancelDeadlineHours,
           lessonType.rules.lateCancel,
+        ),
+        lateNote: lateBookingText(
+          this.data.startsAt,
+          lessonType.rules.cancelDeadlineHours,
+          lessonType.rules.lateCancel,
+          serverNow(),
         ),
         needName: !me.name,
         needPhone: !me.phone,
@@ -508,12 +525,20 @@ Page({
    * switch, which would otherwise swallow it.
    */
   finish(bookingId: number, toast: string, away: string) {
+    // Once: the booking opens, and its toast shows, a single time however the page got here.
+    if (this.finished) return
     const url = `/pages/booking-detail/index?id=${bookingId}`
+    let said = false
     const say = (title: string) => {
-      if (title) wx.showToast({ title, icon: 'none', duration: 2500 })
+      if (said || !title) return
+      said = true
+      wx.showToast({ title, icon: 'none', duration: 2500 })
     }
-    if (isTop(this)) wx.redirectTo({ url, success: () => say(toast) })
-    else if (this.left) {
+    if (isTop(this)) {
+      this.finished = true
+      wx.redirectTo({ url, success: () => say(toast) })
+    } else if (this.left) {
+      this.finished = true
       wx.navigateTo({ url, complete: () => say(toast || away) })
     }
   },
@@ -521,6 +546,9 @@ Page({
   onUnload() {
     this.left = true
   },
+
+  /** Set once the booking has been opened, so it is not opened again. */
+  finished: false,
 
   retry() {
     this.setData({ state: 'loading' })
