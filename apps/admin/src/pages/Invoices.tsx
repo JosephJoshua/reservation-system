@@ -340,6 +340,8 @@ function Upload({
     if (!file) return
     const form = new FormData()
     form.append('file', file)
+    // Only a replacement may swap an issued PDF; a first issue another admin beat is refused.
+    if (replacing) form.append('replace', '1')
     if (
       await attempt(
         () => api('POST', `/admin/invoices/${invoice.id}/issue`, form, { key: `${key}-${picks}` }),

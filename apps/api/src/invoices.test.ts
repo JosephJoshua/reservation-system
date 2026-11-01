@@ -39,9 +39,11 @@ async function upload(
   token: string,
   bytes: Uint8Array = PDF,
   key?: string,
+  replace = false,
 ) {
   const form = new FormData()
   form.append('file', new File([bytes], 'invoice.pdf', { type: 'application/pdf' }))
+  if (replace) form.append('replace', '1')
   const res = await h.app.request(`/api/admin/invoices/${id}/issue`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, ...(key ? { 'Idempotency-Key': key } : {}) },
@@ -251,7 +253,11 @@ describe('invoice queue', () => {
     const id = (await h.call('POST', '/invoices', { orderId, ...person }, t)).json.id
     await upload(h, id, admin)
     const first = h.db.select().from(invoices).get()?.pdfFile
-    await upload(h, id, admin, new TextEncoder().encode('%PDF-1.7\n% fixed\n'))
+    // From a page still showing 开票中: someone else issued it, so theirs is kept.
+    const stale = await upload(h, id, admin, new TextEncoder().encode('%PDF-1.7\n% b\n'))
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'invoice_handled'])
+    expect(h.db.select().from(invoices).get()?.pdfFile).toBe(first)
+    await upload(h, id, admin, new TextEncoder().encode('%PDF-1.7\n% fixed\n'), undefined, true)
     const second = h.db.select().from(invoices).get()?.pdfFile
     expect(second).not.toBe(first)
     expect(readdirSync(invoicesDir(h.deps))).toEqual([second])
