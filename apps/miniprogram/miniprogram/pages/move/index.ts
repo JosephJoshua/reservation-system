@@ -241,21 +241,30 @@ Page({
       serverNow(),
     )
     if (wait === null) return
-    this.edgeTimer = setTimeout(() => {
-      this.edgeTimer = 0
-      if (this.hidden || this.data.state !== 'ready' || this.data.submitting) return
-      if (Date.parse(booking.cancelDeadline) < serverNow()) {
-        this.getOpenerEventChannel().emit?.('stale')
-        this.setData({ state: 'error', fixed: true, error: whyFixed(booking) })
-        return
-      }
-      if (this.data.slotsState !== 'ready') return
+    this.edgeTimer = setTimeout(() => this.onEdge(booking), wait) as unknown as number
+  },
+
+  /** At an edge; while a move is being sent or the times are loading, it looks again shortly. */
+  onEdge(booking: BookingDto) {
+    this.edgeTimer = 0
+    if (this.hidden || this.data.state !== 'ready') return
+    if (this.data.submitting || this.data.slotsState === 'loading') {
+      this.edgeTimer = setTimeout(() => this.onEdge(booking), 1000) as unknown as number
+      return
+    }
+    if (Date.parse(booking.cancelDeadline) < serverNow()) {
+      this.getOpenerEventChannel().emit?.('stale')
+      this.setData({ state: 'error', fixed: true, error: whyFixed(booking) })
+      return
+    }
+    if (this.data.slotsState === 'ready') {
       const slots: SlotView[] = this.slotViews(booking)
       const picked = this.data.picked
       const still = picked && slots.find((s) => s.key === picked.key)?.available
       this.setData({ slots, ...(picked && !still ? { picked: null } : {}) })
-      this.scheduleEdge()
-    }, wait) as unknown as number
+    }
+    // On a slots error too, so the lesson's own deadline still shows.
+    this.scheduleEdge()
   },
 
   clearEdge() {

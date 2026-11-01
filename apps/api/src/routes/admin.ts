@@ -1631,9 +1631,6 @@ export function adminRoutes(deps: Deps) {
     return c.json(answer)
   })
 
-  // What the page showed as the lesson's coach and start, so a change made on an older view of it
-  // is refused rather than undoing someone else's move.
-
   app.post('/bookings/:id/move', need('bookings'), async (c) => {
     const body = await parseBody(
       c,
