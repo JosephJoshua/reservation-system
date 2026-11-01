@@ -153,7 +153,9 @@ Page({
           .length,
       }))
       const own = venueDateKey(new Date(lesson.startsAt))
-      const date = days.some((d) => d.key === own) ? own : first
+      // A reload (after a refused move, or at midnight) stays on the day the coach was looking at.
+      const shown = this.data.state === 'ready' ? this.data.date : ''
+      const date = [shown, own].find((k) => k && days.some((d) => d.key === k)) ?? first
       this.setData({
         state: 'ready',
         current: lessonTime(lesson.startsAt, lesson.endsAt),
