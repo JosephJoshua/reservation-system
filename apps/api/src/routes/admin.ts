@@ -943,13 +943,15 @@ export function adminRoutes(deps: Deps) {
     if (!Number.isInteger(exceptionId) || exceptionId <= 0) throw notFound('请假/加班')
     const removed = removeException(deps, exceptionId, idParam(c))
     logRemoved(c.get('staffId'), removed)
-    // Removing a 加班 leaves its lessons outside 排班, for the desk to move or cancel.
-    return c.json({ conflicts: removed.conflicts })
+    // Removing a 加班 leaves its lessons outside 排班, for the desk to move or cancel. `endedAt`
+    // says one under way was cut short there rather than deleted.
+    return c.json({ conflicts: removed.conflicts, endedAt: removed.row?.shortenedTo ?? null })
   })
 
   app.delete('/closures/:id', need('manage'), (c) => {
-    logRemoved(c.get('staffId'), removeException(deps, idParam(c), null))
-    return c.body(null, 204)
+    const removed = removeException(deps, idParam(c), null)
+    logRemoved(c.get('staffId'), removed)
+    return c.json({ endedAt: removed.row?.shortenedTo ?? null })
   })
 
   // Lessons and sessions yet to start that the desk has to move or cancel.

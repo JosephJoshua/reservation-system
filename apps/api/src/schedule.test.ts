@@ -499,9 +499,8 @@ describe('请假, 加班 and 闭馆', () => {
       admin,
     )
     expect(h.db.select().from(scheduleExceptions).all()).toHaveLength(1)
-    expect(
-      (await h.call('DELETE', `/admin/closures/${closed.json.id}`, undefined, admin)).status,
-    ).toBe(204)
+    const removed = await h.call('DELETE', `/admin/closures/${closed.json.id}`, undefined, admin)
+    expect([removed.status, removed.json]).toEqual([200, { endedAt: null }])
     expect(h.db.select().from(scheduleExceptions).all()).toHaveLength(0)
   })
 
@@ -629,7 +628,7 @@ describe('请假, 加班 and 闭馆', () => {
     const leave = await exception(h, admin, coach.id, 'off', at(SUN, '09:00'), at(SUN, '12:00'))
     h.clock.now = new Date(Date.parse(at(SUN, '10:02')))
     const later = await h.admin()
-    await h.call(
+    const cut = await h.call(
       'DELETE',
       `/admin/coaches/${coach.id}/exceptions/${leave.json.id}`,
       undefined,
@@ -637,6 +636,7 @@ describe('请假, 加班 and 闭馆', () => {
     )
     const row = h.db.select().from(scheduleExceptions).get()
     expect(row?.endsAt.toISOString()).toBe(at(SUN, '10:05'))
+    expect(cut.json.endedAt).toBe(at(SUN, '10:05'))
     // A second tab doing the same changes and logs nothing more.
     const again = await h.call(
       'DELETE',
@@ -644,7 +644,7 @@ describe('请假, 加班 and 闭馆', () => {
       undefined,
       later,
     )
-    expect(again.status).toBe(200)
+    expect([again.status, again.json.endedAt]).toEqual([200, null])
     h.clock.now = new Date(Date.parse(at(SUN, '10:05')))
     const ended = await h.call(
       'DELETE',

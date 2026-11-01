@@ -23,7 +23,7 @@ import {
 } from 'tdesign-react'
 import { api, RequestError } from '../api'
 import { addDays, fmtDate, fmtDateTime, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, newKey, onceKey, useActionKeys, useApi, useIsPhone } from '../hooks'
+import { attempt, newKey, onceKey, useActionKeys, useApi, useIsPhone, useNow } from '../hooks'
 import { useCan } from '../me'
 import { useLeaveGuard } from '../SaveBar'
 import type { Coach } from '../types'
@@ -185,6 +185,7 @@ export function CoachBindingDialog({ coach, onClose }: { coach: Coach; onClose: 
  */
 export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose: () => void }) {
   const { data, error, reload } = useApi<ScheduleViewDto>(`/admin/coaches/${coach.id}/hours`)
+  const now = useNow(10_000)
   const [from, setFrom] = useState(today)
   const [hours, setHours] = useState<WeeklyHours[] | null>(null)
   const [dirty, setDirty] = useState(false)
@@ -307,14 +308,16 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
   }
 
   const remove = async (e: ScheduleExceptionDto) => {
-    let result: { conflicts: ScheduleConflictDto[] } | undefined
+    let result: { conflicts: ScheduleConflictDto[]; endedAt: string | null } | undefined
+    const what = e.kind === 'off' ? '请假' : '加班'
     const ok = await attempt(
       async () => {
         result = await api('DELETE', `/admin/coaches/${coach.id}/exceptions/${e.id}`, undefined, {
           key: onceKey(`delete-exception-${e.id}`),
         })
       },
-      e.kind === 'off' ? '已取消请假' : '已取消加班',
+      // One under way, perhaps only since the page was opened, is cut short rather than deleted.
+      () => (result?.endedAt ? `已提前结束${what}` : `已取消${what}`),
     )
     if (ok) {
       // Lessons booked in a 加班 stay, now outside 排班.
@@ -457,16 +460,23 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
                         <Popconfirm
                           theme="warning"
                           content={
-                            e.kind === 'off'
-                              ? '取消后这段时间重新开放预约'
-                              : '取消后这段时间不再开放预约，已约的课不受影响'
+                            Date.parse(e.startsAt) <= now
+                              ? e.kind === 'off'
+                                ? '提前结束后，从现在起重新开放预约'
+                                : '提前结束后，之后的时间不再开放预约，已约的课不受影响'
+                              : e.kind === 'off'
+                                ? '取消后这段时间重新开放预约'
+                                : '取消后这段时间不再开放预约，已约的课不受影响'
                           }
-                          confirmBtn={{ content: '取消', theme: 'danger' }}
+                          confirmBtn={{
+                            content: Date.parse(e.startsAt) <= now ? '提前结束' : '取消',
+                            theme: 'danger',
+                          }}
                           cancelBtn="保留"
                           onConfirm={() => remove(e)}
                         >
                           <Button variant="text" theme="danger" size="small">
-                            {Date.parse(e.startsAt) <= Date.now() ? '提前结束' : '取消'}
+                            {Date.parse(e.startsAt) <= now ? '提前结束' : '取消'}
                           </Button>
                         </Popconfirm>
                       )}
@@ -634,10 +644,16 @@ export function ExceptionForm({
 export function Closures() {
   const { data, error, reload } = useApi<ScheduleExceptionDto[]>('/admin/closures')
   const [conflicts, setConflicts] = useState<ScheduleConflictDto[]>([])
+  const now = useNow(10_000)
   const remove = async (id: number) => {
     const del = () =>
-      api('DELETE', `/admin/closures/${id}`, undefined, { key: onceKey(`delete-closure-${id}`) })
-    if (await attempt(del, '已删除闭馆')) await reload()
+      api<{ endedAt: string | null }>('DELETE', `/admin/closures/${id}`, undefined, {
+        key: onceKey(`delete-closure-${id}`),
+      })
+    // One under way, perhaps only since the page was opened, is cut short rather than deleted.
+    const said = (r: unknown) =>
+      (r as { endedAt?: string | null } | undefined)?.endedAt ? '已提前结束闭馆' : '已删除闭馆'
+    if (await attempt(del, said)) await reload()
   }
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -654,13 +670,20 @@ export function Closures() {
               <span className="muted">{[e.note, e.byStaff].filter(Boolean).join(' · ')}</span>
               <Popconfirm
                 theme="warning"
-                content="删除后这段时间按各教练排班开放预约"
-                confirmBtn={{ content: '删除', theme: 'danger' }}
+                content={
+                  Date.parse(e.startsAt) <= now
+                    ? '提前结束后，从现在起按各教练排班开放预约'
+                    : '删除后这段时间按各教练排班开放预约'
+                }
+                confirmBtn={{
+                  content: Date.parse(e.startsAt) <= now ? '提前结束' : '删除',
+                  theme: 'danger',
+                }}
                 cancelBtn="保留"
                 onConfirm={() => remove(e.id)}
               >
                 <Button variant="text" theme="danger" size="small">
-                  {Date.parse(e.startsAt) <= Date.now() ? '提前结束' : '删除'}
+                  {Date.parse(e.startsAt) <= now ? '提前结束' : '删除'}
                 </Button>
               </Popconfirm>
             </div>

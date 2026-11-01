@@ -215,3 +215,16 @@ export function useIsPhone() {
     () => window.matchMedia(phoneQuery).matches,
   )
 }
+
+/**
+ * The time now, taken again every `stepMs`, for a page whose wording changes as time passes,
+ * such as a 闭馆 that starts while it is open.
+ */
+export function useNow(stepMs = 30_000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), stepMs)
+    return () => window.clearInterval(timer)
+  }, [stepMs])
+  return now
+}
