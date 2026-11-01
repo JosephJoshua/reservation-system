@@ -106,15 +106,18 @@ export function confirmDisruptedArrival(disruption: Disruption): Promise<boolean
 export function AttendanceCell({
   row,
   canMark,
+  now,
   onChanged,
 }: {
   row: AdminBooking
   canMark: boolean
+  /** The parent's ticking clock, so 签到 shows once the lesson starts with the page left open. */
+  now: number
   onChanged: () => unknown
 }) {
   // What stood in the way of the lesson, asked about before 到课.
   const disruption = row.lessonDisruption
-  const started = Date.parse(row.startsAt) <= Date.now()
+  const started = Date.parse(row.startsAt) <= now
   const markable = started && (row.status === 'confirmed' || row.status === 'completed')
   const mark = async (attendance: string | null) => {
     if (attendance === 'attended' && disruption && !(await confirmDisruptedArrival(disruption))) {

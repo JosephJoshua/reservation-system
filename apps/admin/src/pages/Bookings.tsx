@@ -13,7 +13,7 @@ import {
 import { DataTable } from '../DataTable'
 import { ExportButton } from '../ExportButton'
 import { addDays, fmtDateTime, fmtTime, today } from '../format'
-import { hashParam, useApi } from '../hooks'
+import { hashParam, useApi, useNow } from '../hooks'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import {
   Filter,
@@ -143,6 +143,8 @@ function BookingList({ active }: { active: boolean }) {
   const f = filters.values
   const range: [string, string] = f.from <= f.to ? [f.from, f.to] : [f.to, f.from]
   const canBook = useCan('bookings')
+  // 改约 goes once a lesson starts, with the page left open.
+  const now = useNow(10_000)
   const canMark = useCan('attendance')
   const money = useCan('finance')
   const coaches = useApi<Coach[]>('/admin/coaches')
@@ -351,7 +353,9 @@ function BookingList({ active }: { active: boolean }) {
           {
             colKey: 'attendance',
             title: '签到',
-            cell: ({ row }) => <AttendanceCell row={row} canMark={canMark} onChanged={reload} />,
+            cell: ({ row }) => (
+              <AttendanceCell row={row} canMark={canMark} now={now} onChanged={reload} />
+            ),
           },
           ...(canBook
             ? [
@@ -360,7 +364,7 @@ function BookingList({ active }: { active: boolean }) {
                   title: '操作',
                   width: 150,
                   cell: ({ row }: { row: AdminBooking }) => {
-                    const upcoming = Date.parse(row.startsAt) > Date.now()
+                    const upcoming = Date.parse(row.startsAt) > now
                     return (
                       <Space size={0}>
                         {row.status === 'confirmed' && upcoming && (

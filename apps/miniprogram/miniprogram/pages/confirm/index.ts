@@ -121,6 +121,8 @@ Page({
   lateWarned: { wechat: '', package: '' },
   /** Set while that modal is up, so a second tap does not book behind it. */
   lateAsking: false,
+  /** The lesson type's notice: from then before the start, the time can no longer be booked. */
+  noticeMs: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -142,8 +144,33 @@ Page({
       return
     }
     // Back from buying a package (or from the coach or a policy page): the package to use and
-    // the price may have changed meanwhile.
-    if (this.data.state === 'ready' && !this.data.submitting) this.requote()
+    // the price may have changed meanwhile, and the time may have come too close to book.
+    if (this.data.state === 'ready' && !this.data.submitting && !this.tooSoon()) this.requote()
+  },
+
+  /**
+   * Whether the time has come inside the lesson type's notice while the page was open; if so,
+   * says so once and goes back to pick another, before anything (subscriptions, consent, the
+   * name and phone) is asked or saved.
+   */
+  tooSoon(): boolean {
+    const startsAt = Date.parse(this.data.startsAt)
+    if (Number.isNaN(startsAt) || startsAt - this.noticeMs >= serverNow()) return false
+    if (this.lateAsking) return true
+    this.lateAsking = true
+    wx.showModal({
+      title: '离上课时间太近，无法预约',
+      content: '请选择其他时间',
+      showCancel: false,
+      complete: () => {
+        this.lateAsking = false
+        if (isTop(this)) {
+          const { lessonTypeId, coachId } = this.data
+          backOr(`/pages/book/index?lessonTypeId=${lessonTypeId}&coachId=${coachId}`)
+        }
+      },
+    })
+    return true
   },
 
   /** Works the late note out again for the time now. */
@@ -271,6 +298,7 @@ Page({
       }
       const { price, package: pkg, perClassEnabled } = quote
       this.terms = bookingTerms(lessonType.rules)
+      this.noticeMs = lessonType.rules.minNoticeMinutes * 60_000
       this.lateRule = {
         hours: lessonType.rules.cancelDeadlineHours,
         rule: lessonType.rules.lateCancel,
@@ -375,6 +403,7 @@ Page({
 
   async submit() {
     if (this.data.submitting || this.lateAsking || !this.bookable()) return
+    if (this.tooSoon()) return
     const problem = this.problem()
     if (problem) {
       wx.showToast({ title: problem, icon: 'none' })

@@ -12,6 +12,7 @@ import {
   weeklyHoursError,
 } from '../../lib/shared'
 import { ApiError, errorMessage, serverNow, showError } from '../../utils/api'
+import { edgeWait } from '../../utils/edge'
 import { dateText, time } from '../../utils/format'
 import { modalDangerColor } from '../../utils/theme'
 import { bindInstead, coachApi } from '../utils/coach-api'
@@ -80,6 +81,7 @@ function exceptionView(e: ScheduleExceptionDto, now: number) {
     // Kept whole when the line wraps, so 周五 never splits.
     parts: spanText(e.startsAt, e.endsAt).split(' '),
     note: [e.note, e.byStaff ? `${e.byStaff}添加` : ''].filter(Boolean).join(' · '),
+    startsAt: e.startsAt,
     underway: Date.parse(e.startsAt) <= now,
   }
 }
@@ -174,12 +176,61 @@ Page({
   touched: new Set<number>(),
   lessonMinutes: null as number | null,
   removing: false,
+  edgeTimer: 0 as number,
+  /** Behind another page or gone: no edge timer then, onShow sets one again. */
+  hidden: false,
 
   onLoad() {
     this.load()
   },
 
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  /**
+   * Redraws the 请假, 加班 and 闭馆 list as one starts (取消 becomes 提前结束) or ends (it goes).
+   */
+  scheduleEdge() {
+    this.clearEdge()
+    if (this.hidden) return
+    const offs: ScheduleExceptionDto[] = this.offs
+    const wait = edgeWait(
+      offs.flatMap((e) => [Date.parse(e.startsAt), Date.parse(e.endsAt)]),
+      serverNow(),
+    )
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      if (this.hidden || this.data.state !== 'ready') return
+      const now = serverNow()
+      this.setData({
+        exceptions: upcoming(this.periods, this.offs, venueDateKey(new Date(now)), now).exceptions,
+      })
+      this.scheduleEdge()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
+  },
+
   onShow() {
+    this.hidden = false
+    if (this.data.state === 'ready') {
+      const now = serverNow()
+      this.setData({
+        exceptions: upcoming(this.periods, this.offs, venueDateKey(new Date(now)), now).exceptions,
+      })
+      this.scheduleEdge()
+    }
     // Left open past midnight: today, the 生效日期 and the date pickers' range have moved.
     const now = serverNow()
     const today = venueDateKey(new Date(now))
@@ -227,6 +278,7 @@ Page({
         lastDay: venueDateKey(new Date(now + 365 * DAY)),
         ...upcoming(view.periods, this.offs, today, now),
       })
+      this.scheduleEdge()
       if (!this.data.dirty) {
         // Hours that only start later read as 不接课 today; open on the first week with hours.
         const next = view.periods.find((p) => p.hours.length)
@@ -548,12 +600,19 @@ Page({
       this.removing = false
     }
     const off = item.kind === 'off'
+    // Worded as of now: one that started while the page was open ends early rather than going.
+    const started = Date.parse(item.startsAt) <= serverNow()
+    const what = off ? '请假' : '加班'
     wx.showModal({
-      title: off ? '取消这次请假？' : '取消这次加班？',
-      content: off
-        ? `${item.text} 会重新开放预约。`
-        : `${item.text} 不再开放预约，已约的课不受影响。`,
-      confirmText: off ? '取消请假' : '取消加班',
+      title: started ? `提前结束这次${what}？` : `取消这次${what}？`,
+      content: started
+        ? off
+          ? '从现在起重新开放预约，已过去的部分保留记录。'
+          : '之后的时间不再开放预约，已约的课不受影响。'
+        : off
+          ? `${item.text} 会重新开放预约。`
+          : `${item.text} 不再开放预约，已约的课不受影响。`,
+      confirmText: started ? '提前结束' : `取消${what}`,
       confirmColor: modalDangerColor(),
       cancelText: '保留',
       success: async (res) => {
@@ -562,13 +621,13 @@ Page({
           return
         }
         try {
-          const res = await coachApi<{ conflicts: ScheduleConflictDto[] }>(
-            'DELETE',
-            `/exceptions/${item.id}`,
-          )
+          const res = await coachApi<{
+            conflicts: ScheduleConflictDto[]
+            endedAt?: string | null
+          }>('DELETE', `/exceptions/${item.id}`)
           // Lessons booked in a 加班 stay, now outside 排班.
           if (!warnConflicts(res?.conflicts ?? [], '不在排班里')) {
-            wx.showToast({ title: '已取消', icon: 'success' })
+            wx.showToast({ title: res?.endedAt ? '已提前结束' : '已取消', icon: 'success' })
           }
           await this.load()
         } catch (err) {

@@ -19,6 +19,7 @@ import {
   useApi,
   useIdempotencyKey,
   useIsPhone,
+  useNow,
   useSubmitting,
 } from './hooks'
 import {
@@ -86,6 +87,8 @@ function LessonBody({
   const [cancelling, setCancelling] = useState<AdminBooking | null>(null)
   const [callingOff, setCallingOff] = useState(false)
   const [adding, setAdding] = useState(false)
+  // So 改约 and 加人 go at the start, and 取消 at the end, with the drawer left open.
+  const now = useNow(10_000)
 
   const s = slot.data
   const rows = seats.data
@@ -99,7 +102,6 @@ function LessonBody({
   // A private lesson is its one booking, the live one if it was booked again after a cancel.
   const main = group ? null : (live[0] ?? rows[0] ?? null)
   const lessonName = s.lessonType?.name ?? main?.lessonType.name ?? '私教课'
-  const now = Date.now()
   const started = Date.parse(s.startsAt) <= now
   const ended = Date.parse(s.endsAt) <= now
   const cancelled = s.cancelledAt !== null
@@ -221,7 +223,9 @@ function LessonBody({
             {
               colKey: 'attendance',
               title: '签到',
-              cell: ({ row }) => <AttendanceCell row={row} canMark={canMark} onChanged={reload} />,
+              cell: ({ row }) => (
+                <AttendanceCell row={row} canMark={canMark} now={now} onChanged={reload} />
+              ),
             },
             ...(group && canBook
               ? [
