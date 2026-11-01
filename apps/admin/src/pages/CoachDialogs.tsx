@@ -23,7 +23,16 @@ import {
 } from 'tdesign-react'
 import { api, RequestError } from '../api'
 import { addDays, fmtDate, fmtDateTime, fmtTime, fmtWeekday, today, venueIso } from '../format'
-import { attempt, newKey, onceKey, useActionKeys, useApi, useIsPhone, useNow } from '../hooks'
+import {
+  attempt,
+  newKey,
+  onceKey,
+  useActionKeys,
+  useApi,
+  useIsPhone,
+  useNow,
+  useToday,
+} from '../hooks'
 import { useCan } from '../me'
 import { useLeaveGuard } from '../SaveBar'
 import type { Coach } from '../types'
@@ -521,6 +530,10 @@ export function ExceptionForm({
   const [kind, setKind] = useState<'off' | 'extra'>('off')
   const [wholeDays, setWholeDays] = useState(true)
   const [range, setRange] = useState<[string, string]>([today(), today()])
+  // Left open past midnight: dates now past move on to the new day, which can still be added.
+  useToday((_, to) =>
+    setRange(([first, last]) => [[first, to].sort()[1] ?? to, [last, to].sort()[1] ?? to]),
+  )
   const [start, setStart] = useState('09:00')
   const [end, setEnd] = useState('12:00')
   const [note, setNote] = useState('')
