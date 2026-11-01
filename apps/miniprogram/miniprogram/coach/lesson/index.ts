@@ -91,6 +91,11 @@ function attendanceNote(l: CoachLessonDto): string {
   if (Date.parse(l.startsAt) > serverNow()) {
     return l.attendance ? `${mark}课程开始后可以修改。` : '课程开始后可以签到。'
   }
+  // Marking stays open until COACH_ATTENDANCE_DAYS after the end; before that the buttons are
+  // still on their way from the server, so nothing is said to be closed.
+  if (Date.parse(l.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000 > serverNow()) {
+    return mark || '正在更新签到状态…'
+  }
   if (l.attendance) return `${mark}签到已截止，如需修改请联系场馆。`
   return '签到已截止，如需补签请联系场馆。'
 }
@@ -141,6 +146,11 @@ Page({
   hidden: false,
   /** When it was last hidden, so onShow can tell an edge passed meanwhile. */
   hiddenAt: 0,
+  /**
+   * Set once an edge passes, until the lesson is fetched after it: how soon to look again. The
+   * buttons come from the server, so a redraw alone leaves the ones from before the edge.
+   */
+  edgeDue: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -177,7 +187,7 @@ Page({
   scheduleEdge(l: CoachLessonDto) {
     this.clearEdge()
     if ((l.status !== 'confirmed' && l.status !== 'completed') || this.hidden) return
-    const wait = edgeWait(edgeTimes(l), serverNow())
+    const wait = this.edgeDue || edgeWait(edgeTimes(l), serverNow())
     if (wait === null) return
     this.edgeTimer = setTimeout(() => void this.onEdge(), wait) as unknown as number
   },
@@ -186,6 +196,8 @@ Page({
     this.edgeTimer = 0
     const shown = this.data.lesson
     if (!shown || this.hidden || this.data.state !== 'ready') return
+    // While a change is on its way, look again shortly.
+    if (!this.edgeDue) this.edgeDue = 1000
     const busy =
       this.data.marking ||
       this.data.cancelling ||
@@ -199,8 +211,13 @@ Page({
     const shows = this.shows
     try {
       const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
-      if (shows === this.shows) this.show(fetched)
+      if (shows === this.shows) {
+        this.edgeDue = 0
+        this.show(fetched)
+      }
     } catch {
+      // Redrawn for the time now, and fetched again in a minute.
+      this.edgeDue = 60_000
       const current = this.data.lesson
       if (current && !this.hidden && this.data.state === 'ready') this.show(current)
     }
@@ -217,7 +234,9 @@ Page({
 
   async load() {
     try {
-      this.show(await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`))
+      const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
+      this.edgeDue = 0
+      this.show(fetched)
     } catch (e) {
       if (bindInstead(e, this)) return
       this.setData({ state: 'error', error: errorMessage(e) })
