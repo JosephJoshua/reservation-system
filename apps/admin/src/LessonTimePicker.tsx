@@ -3,7 +3,7 @@ import { venueInstant } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, DatePicker, Select, TimePicker } from 'tdesign-react'
 import { fmtTime, today, venueIso } from './format'
-import { useApi } from './hooks'
+import { useApi, useNow } from './hooks'
 import type { Coach, LessonType, Slot } from './types'
 
 /** Where a lesson goes: a group session, or a coach and start time for a private lesson. */
@@ -98,7 +98,8 @@ export function LessonTimePicker({
     : null
   const sessions = useApi<Slot[]>(sessionsPath)
   const names = new Map(coaches.map((c) => [c.id, c.name]))
-  const now = Date.now()
+  // Ticks, so a time that passes while the picker is open is no longer offered.
+  const now = useNow(10_000)
 
   // Kept to the shown day and coach, since a slow load keeps the last list a moment.
   const offered = (times.data ?? []).filter(
