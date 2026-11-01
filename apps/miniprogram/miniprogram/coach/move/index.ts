@@ -83,12 +83,20 @@ Page({
     this.clearEdge()
   },
 
-  /** Drops times as they start, and moves the day strip on at midnight. */
+  /** Drops times as they start, closes at the lesson's own start, and moves on at midnight. */
   scheduleEdge() {
     this.clearEdge()
     if (this.hidden) return
     const now = serverNow()
-    const wait = edgeWait([...this.free.map((s) => Date.parse(s.startsAt)), nextMidnight(now)], now)
+    const wait = edgeWait(
+      [
+        ...this.free.map((s) => Date.parse(s.startsAt)),
+        // The lesson itself starting, after which it cannot be moved.
+        Date.parse(this.shownAt),
+        nextMidnight(now),
+      ],
+      now,
+    )
     if (wait === null) return
     this.edgeTimer = setTimeout(() => this.onEdge(), wait) as unknown as number
   },
@@ -102,6 +110,11 @@ Page({
       return
     }
     const at = serverNow()
+    if (Date.parse(this.shownAt) <= at) {
+      this.getOpenerEventChannel().emit?.('stale')
+      this.setData({ state: 'error', fixed: true, error: '这节课现在不能改约' })
+      return
+    }
     if (this.data.days[0]?.key !== venueDateKey(new Date(at))) {
       this.load()
       return
