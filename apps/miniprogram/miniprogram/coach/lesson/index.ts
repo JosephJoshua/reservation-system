@@ -151,9 +151,11 @@ Page({
     this.hidden = false
     const l = this.data.lesson
     if (!l || this.data.state !== 'ready') return
-    // An edge passed while it was hidden: the buttons on screen are from before it.
+    // An edge passed while it was hidden: the buttons on screen are from before it. The timer
+    // fires a second after an edge, so one in the second before hiding was not handled either.
     const now = serverNow()
-    if (this.hiddenAt && edgeTimes(l).some((t) => t > this.hiddenAt && t <= now)) void this.onEdge()
+    if (this.hiddenAt && edgeTimes(l).some((t) => t > this.hiddenAt - 1000 && t <= now))
+      void this.onEdge()
     else this.scheduleEdge(l)
   },
 

@@ -254,6 +254,10 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
     }
     setFrom(next)
   }
+  // Left open past midnight: a 生效日期 now past moves on to the new day, which can still be saved.
+  useToday((_, to) => {
+    if (from < to) changeFrom(to)
+  })
 
   const rows = (hours ?? []).map((h, i) => ({ ...h, key: i }))
   const invalid = hours ? weeklyHoursError(hours) : null
