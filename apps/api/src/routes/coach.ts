@@ -400,7 +400,7 @@ export function coachRoutes(deps: Deps) {
   app.delete('/exceptions/:id', (c) => {
     assertCoachMayEdit(deps.db)
     const coachId = c.get('coachId')
-    const { row, conflicts } = removeException(deps, idParam(c), coachId)
+    const { row, conflicts, endedAt } = removeException(deps, idParam(c), coachId)
     // Already gone: a repeat logs nothing.
     if (row) {
       log(coachId, () => ({
@@ -408,7 +408,8 @@ export function coachRoutes(deps: Deps) {
         target: { kind: 'coach', id: coachId },
       }))
     }
-    return c.json({ conflicts })
+    // `endedAt`: one under way was cut short there rather than deleted.
+    return c.json({ conflicts, endedAt })
   })
 
   return app
