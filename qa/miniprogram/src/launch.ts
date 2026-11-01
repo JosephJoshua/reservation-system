@@ -25,50 +25,45 @@ function recompile(projectPath: string) {
   })
 }
 
-/** The few wx APIs clearFiles uses; the function runs inside the simulator, where wx exists. */
-declare const wx: {
-  env: { USER_DATA_PATH: string }
-  getFileSystemManager(): {
-    readdirSync(path: string): string[]
-    statSync(path: string): { isFile(): boolean }
-    unlinkSync(path: string): void
-    rmdirSync(path: string, recursive: boolean): void
-    getSavedFileList(options: {
-      success: (res: { fileList: { filePath: string }[] }) => void
-      fail: () => void
-    }): void
-    removeSavedFile(options: { filePath: string }): void
-  }
-}
-
 /**
  * Empties the simulator's file storage. Screenshots and downloads pile up there over many runs
  * until saveFile fails with "exceeded the maximum size", so every attached run starts with none.
+ * The function is a string because evaluate sends its source to the simulator, and tsx would add
+ * helpers such as __name that do not exist there.
  */
-async function clearFiles(miniProgram: MiniProgram) {
-  await miniProgram.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        const fs = wx.getFileSystemManager()
-        const base = wx.env.USER_DATA_PATH
+const clearFilesSource = `function () {
+  return new Promise(function (resolve) {
+    var fs = wx.getFileSystemManager()
+    var base = wx.env.USER_DATA_PATH
+    try {
+      fs.readdirSync(base).forEach(function (name) {
+        var path = base + '/' + name
         try {
-          for (const name of fs.readdirSync(base)) {
-            const path = `${base}/${name}`
-            try {
-              if (fs.statSync(path).isFile()) fs.unlinkSync(path)
-              else fs.rmdirSync(path, true)
-            } catch {}
-          }
-        } catch {}
-        fs.getSavedFileList({
-          success: ({ fileList }) => {
-            for (const file of fileList) fs.removeSavedFile({ filePath: file.filePath })
-            resolve()
-          },
-          fail: () => resolve(),
-        })
-      }),
-  )
+          if (fs.statSync(path).isFile()) fs.unlinkSync(path)
+          else fs.rmdirSync(path, true)
+        } catch (e) {}
+      })
+    } catch (e) {}
+    var options = {}
+    options.success = function (res) {
+      res.fileList.forEach(function (file) {
+        fs.removeSavedFile({ filePath: file.filePath })
+      })
+      resolve()
+    }
+    options.fail = function () { resolve() }
+    fs.getSavedFileList(options)
+  })
+}`
+
+async function clearFiles(miniProgram: MiniProgram) {
+  // A failure here is not a simulator that is still starting, so it never feeds the connect
+  // retry; a later saveFile error says the same thing more clearly.
+  try {
+    await miniProgram.evaluate(clearFilesSource)
+  } catch (err) {
+    console.log(`could not clear the simulator's files (${(err as Error).message})`)
+  }
 }
 
 /**
@@ -92,8 +87,8 @@ export async function openMiniProgram(projectPath: string): Promise<MiniProgram>
     try {
       miniProgram = await automator.connect({ wsEndpoint })
       await miniProgram.callWxMethod('clearStorageSync')
-      await clearFiles(miniProgram)
       await miniProgram.reLaunch('/pages/booking/index')
+      await clearFiles(miniProgram)
       return miniProgram
     } catch (err) {
       await miniProgram?.disconnect().catch(() => {})
