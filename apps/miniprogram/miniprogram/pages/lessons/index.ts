@@ -2,7 +2,7 @@ import type { BookingDto } from '../../lib/shared'
 import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
-import { lessonTag } from '../../utils/labels'
+import { lessonTag, settled } from '../../utils/labels'
 import { navigateOnce, takeUpcomingWanted } from '../../utils/nav'
 
 type Scope = 'upcoming' | 'past'
@@ -108,24 +108,31 @@ Page({
   },
 
   /**
-   * Shows `rows` as of now, and comes back when the next unpaid hold's payment time is up, so its
-   * 已失效 shows then rather than at the next refresh.
+   * Shows `rows` as of now, and comes back when the next unpaid hold's payment time is up or a
+   * lesson starts or ends, so its tag changes then rather than at the next refresh.
    */
   render() {
     clearTimeout(this.lapseTimer)
     const rows = this.rows
     // Nothing to check in to while the venue cannot give the lesson.
-    const open = rows.find((b) => b.canCheckIn && !b.disruption)
     const now = new Date(serverNow())
+    // As of now: check-in closes when the lesson ends, before the list is fetched again.
+    const open = rows.find((b) => settled(b, now.getTime()).canCheckIn && !b.disruption)
     this.setData({
       state: 'ready',
       lessons: rows.map((b) => view(b, now)),
       checkIn: this.data.scope === 'upcoming' && open ? view(open, now) : null,
     })
+    // Tags change when a hold's payment time is up and when a booked lesson starts or ends.
     const next = Math.min(
       ...rows
-        .filter((b) => b.status === 'pending_payment' && b.payBy)
-        .map((b) => Date.parse(b.payBy ?? ''))
+        .flatMap((b) =>
+          b.status === 'pending_payment' && b.payBy
+            ? [Date.parse(b.payBy)]
+            : b.status === 'confirmed'
+              ? [Date.parse(b.startsAt), Date.parse(b.endsAt)]
+              : [],
+        )
         .filter((at) => at > now.getTime()),
     )
     // The list refreshes every minute anyway, which schedules this again.

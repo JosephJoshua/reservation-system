@@ -349,7 +349,14 @@ export function isPdf(bytes: Uint8Array) {
  * Records that staff issued the invoice and stores its PDF. Uploading again replaces the file,
  * for a wrong upload. Returns whether it was a replacement.
  */
-export function issueInvoice(deps: Deps, staffId: number, id: number, pdf: Uint8Array) {
+export function issueInvoice(
+  deps: Deps,
+  staffId: number,
+  id: number,
+  pdf: Uint8Array,
+  /** Sent from 重新上传发票: only then may an issued invoice's PDF be swapped. */
+  replace = false,
+) {
   if (pdf.length > MAX_PDF_BYTES) throw new ApiError(400, 'too_large', '文件不能超过 10MB')
   if (!isPdf(pdf)) throw new ApiError(400, 'bad_type', '请上传 PDF 格式的发票')
   const dir = invoicesDir(deps)
@@ -364,6 +371,10 @@ export function issueInvoice(deps: Deps, staffId: number, id: number, pdf: Uint8
       if (!row) throw notFound('发票申请')
       if (row.status === 'rejected') {
         throw new ApiError(409, 'invoice_handled', '该申请已拒绝')
+      }
+      // A first issue from a page opened before someone else issued it: theirs stays.
+      if (row.status === 'issued' && !replace) {
+        throw new ApiError(409, 'invoice_handled', '该申请已开票')
       }
       const student = tx.select().from(students).where(eq(students.id, row.studentId)).get()
       if (student?.deletedAt && row.titleKind === 'personal') throw accountDeleted()

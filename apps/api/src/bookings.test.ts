@@ -1304,6 +1304,13 @@ describe('review fixes', () => {
     expect((await mark({ note: '已在商户平台退款' })).status).toBe(204)
     // A repeat of the mark is fine.
     expect((await mark({ note: '已在商户平台退款' })).status).toBe(204)
+    // Another note from a page opened before it was marked is refused, with the note kept.
+    const other = await mark({ note: '已核对，无需退款' })
+    expect([other.status, other.json.error.code, other.json.error.message]).toEqual([
+      409,
+      'anomaly_handled',
+      '该订单已标记处理：已在商户平台退款',
+    ])
     expect(h.db.select().from(orders).get()?.anomalyNote).toBe('已在商户平台退款')
     expect(await csv()).toContain('已处理：已在商户平台退款')
     expect(

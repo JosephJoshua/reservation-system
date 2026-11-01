@@ -2286,12 +2286,21 @@ export function adminRoutes(deps: Deps) {
     const order = db.select().from(orders).where(eq(orders.id, id)).get()
     if (!order) throw notFound('订单')
     if (!order.anomaly) throw new ApiError(409, 'no_anomaly', '该订单没有支付异常')
-    // A repeat of a mark already made.
-    if (order.anomalyHandledAt) return c.body(null, 204)
-    db.update(orders)
+    // Marked already: a repeat of the same note is fine, but another note (from a page opened
+    // before someone else marked it) is not dropped unseen.
+    const handled = (noteNow: string | null) => {
+      if (noteNow === note) return c.body(null, 204)
+      throw new ApiError(409, 'anomaly_handled', `该订单已标记处理：${noteNow ?? ''}`)
+    }
+    if (order.anomalyHandledAt) return handled(order.anomalyNote)
+    const marked = db
+      .update(orders)
       .set({ anomalyHandledAt: deps.now(), anomalyNote: note })
       .where(and(eq(orders.id, id), isNull(orders.anomalyHandledAt)))
       .run()
+    if (marked.changes === 0) {
+      return handled(db.select().from(orders).where(eq(orders.id, id)).get()?.anomalyNote ?? null)
+    }
     log(c.get('staffId'), {
       action: 'order.anomaly_handled',
       summary: `支付异常已处理：订单 ${order.outTradeNo}，${note}`,
@@ -2601,6 +2610,7 @@ export function adminRoutes(deps: Deps) {
       c.get('staffId'),
       id,
       new Uint8Array(await file.arrayBuffer()),
+      form?.get('replace') === '1',
     )
     const view = adminInvoice(db, id)
     const { what, studentId } = invoiceLabel(db, id)

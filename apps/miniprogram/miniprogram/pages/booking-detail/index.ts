@@ -98,6 +98,8 @@ function subtitle(b: BookingDto, now: number): string {
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
+    /** False once the booking is gone (404): reloading cannot bring it back. */
+    canRetry: true,
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     booking: null as BookingDto | null,
@@ -128,6 +130,8 @@ Page({
   asked: 0,
   answered: 0,
   timer: 0 as number,
+  /** Fires when a booked lesson starts or ends, so the page does not keep the words from before. */
+  edgeTimer: 0 as number,
   venue: null as HomeDto['venue'] | null,
 
   onLoad(query: Record<string, string | undefined>) {
@@ -139,16 +143,22 @@ Page({
     // Back from the background or another page: the lesson may have been paid, cancelled or
     // moved meanwhile, here or on another phone.
     if (this.data.state === 'ready' && !this.data.busy) this.refresh()
-    else if (this.data.booking?.status === 'pending_payment') this.startTimer()
+    else if (this.data.state === 'ready' && this.data.booking) {
+      // Its timers were stopped while hidden.
+      if (this.data.booking.status === 'pending_payment') this.startTimer()
+      this.scheduleEdge(this.data.booking)
+    }
   },
 
   onHide() {
     this.stopTimer()
+    this.clearEdge()
   },
 
   onUnload() {
     this.left = true
     this.stopTimer()
+    this.clearEdge()
   },
 
   onPullDownRefresh() {
@@ -168,7 +178,11 @@ Page({
       this.show(booking)
     } catch (e) {
       if (asked < this.answered) return
-      this.setData({ state: 'error', error: errorMessage(e) })
+      this.setData({
+        state: 'error',
+        error: errorMessage(e),
+        canRetry: !(e instanceof ApiError && e.status === 404),
+      })
     }
   },
 
@@ -192,11 +206,19 @@ Page({
     } catch (e) {
       if (asked < this.answered) return true
       if (e instanceof ApiError && e.status === 404) {
-        this.setData({ state: 'error', error: errorMessage(e) })
+        // Gone: nothing on screen is to come back at a timer.
+        this.stopTimer()
+        this.clearEdge()
+        this.setData({
+          state: 'error',
+          error: errorMessage(e),
+          canRetry: !(e instanceof ApiError && e.status === 404),
+        })
         return false
       }
       if (loud) showError(e)
-      if (this.data.booking?.status === 'pending_payment') this.startTimer()
+      // What is on screen, brought up to the time now, with its timers running again.
+      if (this.data.state === 'ready' && this.data.booking) this.show(this.data.booking)
       return false
     }
   },
@@ -287,11 +309,39 @@ Page({
     })
     if (b.status === 'pending_payment') this.startTimer()
     else this.stopTimer()
+    this.scheduleEdge(b)
+  },
+
+  /**
+   * For a booked lesson, redraws the page as it starts and as it ends (请按时到场上课, then
+   * 课程进行中, then ended), and fetches it again then, as the venue may have marked it.
+   */
+  scheduleEdge(b: BookingDto) {
+    this.clearEdge()
+    if (b.status !== 'confirmed' || this.left) return
+    const now = serverNow()
+    const next = [Date.parse(b.startsAt), Date.parse(b.endsAt)].find((t) => t > now)
+    if (next === undefined) return
+    // Capped, as long timers are not kept reliably; the page schedules again when it fires.
+    const wait = Math.min(next - now + 1000, 6 * 3_600_000)
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      const shown = this.data.booking
+      if (!shown || this.left || this.data.state !== 'ready') return
+      this.show(shown)
+      if (!this.data.busy) void this.refresh()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   startTimer() {
     this.stopTimer()
     this.timer = setInterval(() => {
+      if (this.data.state !== 'ready') return this.stopTimer()
       const b = this.data.booking
       if (b?.status !== 'pending_payment') return this.stopTimer()
       if (b.payBy && Date.parse(b.payBy) <= serverNow()) return this.show(b)
