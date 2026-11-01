@@ -376,10 +376,14 @@ describe('cancelling a paid lesson', () => {
     const { t, bookingId } = await paidBooking(h)
     h.clock.now = new Date('2026-10-26T01:30:00Z')
     const admin = await h.admin()
-    expect(
-      (await h.call('POST', `/admin/bookings/${bookingId}/cancel`, { reason: '教练请假' }, admin))
-        .status,
-    ).toBe(204)
+    const cancel = await h.call(
+      'POST',
+      `/admin/bookings/${bookingId}/cancel`,
+      { reason: '教练请假' },
+      admin,
+    )
+    // What the desk is told became of the money.
+    expect(cancel.json).toEqual({ refunded: 20000, offline: false, lessonReturned: false })
     const view = await h.call('GET', `/bookings/${bookingId}`, undefined, t)
     expect(view.json).toMatchObject({
       cancelledBy: 'venue',
@@ -1211,7 +1215,7 @@ describe('review fixes', () => {
     expect(late.json.error.code).toBe('ended')
     h.clock.now = new Date('2026-10-25T02:30:00Z') // mid-lesson, a coach who did not show up
     const mid = await h.call('POST', `/admin/bookings/${id}/cancel`, { reason: '教练缺席' }, admin)
-    expect(mid.status).toBe(204)
+    expect(mid.status).toBe(200)
   })
 
   it('does not confirm a payment whose amount differs from the order, and flags it', async () => {

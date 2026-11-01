@@ -151,6 +151,42 @@ describe('dialablePhone', () => {
     expect(dialablePhone('+86 (0139) 0000 0001')).toBe('+8613900000001')
   })
 
+  it('leaves out an extension after a 400 or 800 number or a local one', () => {
+    expect(dialablePhone('400-820-8820-3')).toBe('4008208820')
+    expect(dialablePhone('400 820 8820 1')).toBe('4008208820')
+    expect(dialablePhone('800-820-8820-12')).toBe('8008208820')
+    expect(dialablePhone('400-820-8820')).toBe('4008208820')
+    expect(dialablePhone('4008-123-456-8')).toBe('4008123456')
+    expect(dialablePhone('4008 208 820 3')).toBe('4008208820')
+    expect(dialablePhone('62345678-802')).toBe('62345678')
+    expect(dialablePhone('6234 5678 8')).toBe('62345678')
+    expect(dialablePhone('623 4567-8')).toBe('6234567')
+    expect(venuePhoneValid('623456788')).toBe(false)
+    expect(dialablePhone('400-8208-820')).toBe('4008208820')
+    expect(dialablePhone('400 8208 820')).toBe('4008208820')
+    expect(dialablePhone('400-6666-800')).toBe('4006666800')
+    expect(dialablePhone('400-8208-820-3')).toBe('4008208820')
+    for (const phone of [
+      '755 1234 5678',
+      '571 8888 8888',
+      '852 2345 6789',
+      '8001 2345 8',
+      '+86 400 6666 800 8',
+      '0086 400-8208-820-3',
+    ]) {
+      expect(venuePhoneValid(phone), phone).toBe(false)
+    }
+  })
+
+  it('refuses a domestic number longer than any mainland number', () => {
+    for (const phone of ['0106234567888', '0571888888888', '021123456789', '40082088201']) {
+      expect(venuePhoneValid(phone), phone).toBe(false)
+    }
+    expect(dialablePhone('057188888888')).toBe('057188888888')
+    expect(dialablePhone('02112345678')).toBe('02112345678')
+    expect(dialablePhone('0898 1234567')).toBe('08981234567')
+  })
+
   it('takes 0086 with the trunk 0 after it, as +86 and 86', () => {
     expect(venuePhoneValid('0086 (0)755 1234 5678')).toBe(true)
     expect(dialablePhone('0086 (0)755 1234 5678')).toBe('+8675512345678')

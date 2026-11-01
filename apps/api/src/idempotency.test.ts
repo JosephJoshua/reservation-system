@@ -370,8 +370,9 @@ describe('repeated requests without a key', () => {
     const admin = await h.admin()
     const cancel = (reason: string) =>
       h.call('POST', `/admin/bookings/${res.json.bookingId}/cancel`, { reason }, admin)
-    expect((await cancel('场地维修')).status).toBe(204)
-    expect((await cancel('场地维修')).status).toBe(204)
+    expect((await cancel('场地维修')).json.refunded).toBe(20000)
+    // The repeat says the same again.
+    expect((await cancel('场地维修')).json.refunded).toBe(20000)
     // Another venue cancel with its own reason did not happen, so it is not reported as done.
     expect((await cancel('教练请假')).json.error.code).toBe('not_cancellable')
     expect(h.db.select().from(refunds).all()).toHaveLength(1)

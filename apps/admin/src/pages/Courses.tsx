@@ -334,9 +334,12 @@ function LessonEditor({
           theme="normal"
           value={toYuan(f.price)}
           min={0}
+          max={100_000}
+          allowInputOverLimit={false}
           decimalPlaces={2}
           suffix="元"
-          onChange={(v) => set({ price: toFen(v as number) ?? 0 })}
+          // Emptied or negative is not a price, so the last one stays. ¥0 has to be typed.
+          onChange={(v) => set({ price: toFen(v as number) ?? f.price })}
         />
       </Field>
       <Field label="折扣">

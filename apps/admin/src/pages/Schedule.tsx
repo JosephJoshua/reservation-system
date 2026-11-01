@@ -774,7 +774,7 @@ function LessonDialog({
             { reason },
             { key: onceKey(`cancel-booking-${b.id}`) },
           ),
-        cancelDoneMessage(b.status as BookingStatus),
+        cancelDoneMessage,
         { onStale: onChanged },
       )
     )
@@ -960,10 +960,7 @@ function SessionDialog({
                 { reason },
                 { key: onceKey(`cancel-booking-${cancelling}`) },
               ),
-            cancelDoneMessage(
-              (slot.bookings.find((b) => b.id === cancelling)?.status ??
-                'confirmed') as BookingStatus,
-            ),
+            cancelDoneMessage,
             { onStale: onChanged },
           )
     if (ok) onChanged()

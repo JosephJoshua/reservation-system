@@ -5,7 +5,13 @@ import { Dialog, DialogPlugin, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from './api'
 import { fmtDateTime, yuan } from './format'
 import { attempt, onceKey, useSubmitting } from './hooks'
-import { bookingStatusLabel, cancelConfirmLabel, disruptionLabel, refundLabel } from './labels'
+import {
+  bookingStatusLabel,
+  cancelConfirmLabel,
+  cancelDoneMessage,
+  disruptionLabel,
+  refundLabel,
+} from './labels'
 import { openLesson } from './lessonLink'
 import { useCan } from './me'
 import type { AdminBooking } from './types'
@@ -198,7 +204,7 @@ export function CancelBookingDialog({
             { reason },
             { key: onceKey(`cancel-booking-${booking.id}`) },
           ),
-        '已取消',
+        cancelDoneMessage,
         {
           onStale: () => {
             onClose()

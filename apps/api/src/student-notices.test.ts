@@ -129,7 +129,7 @@ describe('student notices', () => {
       { reason: '教练生病' },
       admin,
     )
-    expect(cancel.status).toBe(204)
+    expect(cancel.status).toBe(200)
     await notifyStudents(h.deps)
     await notifyStudents(h.deps)
     expect(sent.slice(2)).toMatchObject([

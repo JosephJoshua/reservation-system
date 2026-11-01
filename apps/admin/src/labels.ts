@@ -1,4 +1,5 @@
 import type { BookingStatus, Disruption, PackageStatus, RefundStatus } from '@rs/shared'
+import { yuan } from './format'
 
 type Theme = 'default' | 'primary' | 'warning' | 'danger' | 'success'
 
@@ -79,9 +80,18 @@ export function cancelConfirmLabel(statuses: BookingStatus[]) {
   return statuses.some((s) => s !== 'pending_payment') ? '确认取消并退款' : '确认取消'
 }
 
-/** What a cancelled single booking tells the desk: a refund only when someone paid. */
-export function cancelDoneMessage(status: BookingStatus) {
-  return status === 'pending_payment' ? '已取消' : '已取消，学员会收到全额退款或退回的课时'
+/** What a venue cancel answers: what became of the money, as it stood when it was cancelled. */
+export type CancelResult = { refunded: number | null; offline: boolean; lessonReturned: boolean }
+
+/** What a cancelled single booking tells the desk, from what the cancel answered. */
+export function cancelDoneMessage(result: unknown) {
+  const r = result as Partial<CancelResult> | undefined
+  if (r?.refunded != null) {
+    return r.offline
+      ? `已取消，请当面退还学员 ${yuan(r.refunded)}`
+      : `已取消，${yuan(r.refunded)} 将原路退回`
+  }
+  return r?.lessonReturned ? '已取消，课时已退回' : '已取消'
 }
 
 /** 支付方式 as the 订单 and 退款 filters offer it. */

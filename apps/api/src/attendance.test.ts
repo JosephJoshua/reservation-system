@@ -351,7 +351,7 @@ describe('front desk 签到', () => {
     const put = `/admin/bookings/${bookingId}/attendance`
     expect((await h.call('PUT', put, mark, admin)).status).toBe(204)
     const cancel = `/admin/bookings/${bookingId}/cancel`
-    expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(204)
+    expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(200)
     expect(row(h, bookingId)).toMatchObject({
       status: 'cancelled',
       attendance: null,

@@ -214,7 +214,12 @@ export function cancelOutcome(tx: Q, bookingId: number) {
     : returned
       ? '，退回课时 1 节'
       : ''
-  return { text, refunded: refund?.amount ?? null }
+  return {
+    text,
+    refunded: refund?.amount ?? null,
+    offline: refund?.provider === 'offline',
+    lessonReturned: !refund && !!returned,
+  }
 }
 
 /** "10月25日 10:00 王教练 一对一私教" and whose booking it is, for log summaries. */
