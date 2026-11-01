@@ -199,12 +199,16 @@ export function coachRoutes(deps: Deps) {
   app.get('/sessions/:id', (c) => c.json(coachSession(deps, idParam(c), c.get('coachId'))))
 
   app.put('/lessons/:id/attendance', async (c) => {
-    const { attendance } = await parseBody(
+    const { attendance, unmarkedOnly } = await parseBody(
       c,
-      z.object({ attendance: z.enum(['attended', 'no_show']).nullable() }),
+      z.object({
+        attendance: z.enum(['attended', 'no_show']).nullable(),
+        // 全部记为到课: a lesson marked meanwhile, here or elsewhere, keeps its mark.
+        unmarkedOnly: z.boolean().default(false),
+      }),
     )
     const coachId = c.get('coachId')
-    setAttendance(deps, idParam(c), attendance, { coachId })
+    setAttendance(deps, idParam(c), attendance, { coachId }, unmarkedOnly)
     return c.json(coachLesson(deps, idParam(c), coachId))
   })
 
