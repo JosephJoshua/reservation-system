@@ -103,6 +103,8 @@ export function updateStaff(
   actorId: number,
   id: number,
   patch: { name?: string; active?: boolean; roles?: StaffRole[] },
+  /** The editor's version of the record (If-Match), checked here so a stale one is refused. */
+  check?: (current: ReturnType<typeof staffView>) => void,
 ) {
   if (patch.active === false && id === actorId) {
     throw new ApiError(409, 'cannot_deactivate_self', '不能停用自己的账号')
@@ -113,6 +115,7 @@ export function updateStaff(
   return immediate(deps.db, (tx) => {
     const before = tx.select().from(staff).where(eq(staff.id, id)).get()
     if (!before) throw notFound('员工')
+    check?.(staffView(before))
     const after = tx.update(staff).set(patch).where(eq(staff.id, id)).returning().get()
     if (!after) throw notFound('员工')
     // Checked after the write, so two admins demoting or deactivating each other at once cannot

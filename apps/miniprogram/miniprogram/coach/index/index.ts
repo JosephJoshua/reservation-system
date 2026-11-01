@@ -182,7 +182,8 @@ Page({
     }
   },
 
-  async loadSchedule() {
+  /** Loads the schedule; `quiet` (the edge timer's reload) keeps the day shown on a failure. */
+  async loadSchedule(quiet?: boolean) {
     const { days } = this.data
     const first = days[0]?.key
     const last = days[days.length - 1]?.key
@@ -206,6 +207,7 @@ Page({
       this.showDay()
     } catch (e) {
       if (request !== this.request) return
+      if (quiet && this.data.state === 'ready') return
       if (this.data.state === 'ready') this.setData({ slotsState: 'error', error: errorMessage(e) })
       else throw e
     }
@@ -317,7 +319,7 @@ Page({
       this.edgeTimer = 0
       if (this.hidden || this.data.state !== 'ready') return
       this.showDay()
-      if (!this.rowBusy) void this.loadSchedule()
+      if (!this.rowBusy) void this.loadSchedule(true)
     }, wait) as unknown as number
   },
 

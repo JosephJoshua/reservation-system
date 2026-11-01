@@ -289,4 +289,31 @@ describe('edits from two tabs', () => {
     })
     expect(save.status).toBe(200)
   })
+
+  it('refuses a staff role or name change made on top of another one', async () => {
+    const h = setup()
+    const admin = await h.admin()
+    const created = await h.call(
+      'POST',
+      '/admin/staff',
+      { name: '周晓雯', username: 'zhou', password: 'front-desk-1', roles: ['front_desk'] },
+      admin,
+    )
+    expect(created.status).toBe(201)
+    const listed = (await h.call('GET', '/admin/staff', undefined, admin)).json.find(
+      (s: { username: string }) => s.username === 'zhou',
+    )
+    const ifMatch = { 'If-Match': versionOf(listed) }
+    const path = `/admin/staff/${listed.id}`
+    const first = await h.call('PATCH', path, { roles: ['front_desk', 'finance'] }, admin, ifMatch)
+    expect(first.status).toBe(200)
+    for (const body of [{ roles: ['finance'] }, { name: '周晓' }]) {
+      const stale = await h.call('PATCH', path, body, admin, ifMatch)
+      expect(stale.json.error?.code).toBe('edited_elsewhere')
+    }
+    const fresh = await h.call('PATCH', path, { name: '周晓' }, admin, {
+      'If-Match': versionOf(first.json),
+    })
+    expect(fresh.json).toMatchObject({ name: '周晓', roles: ['front_desk', 'finance'] })
+  })
 })

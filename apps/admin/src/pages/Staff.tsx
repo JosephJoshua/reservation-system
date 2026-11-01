@@ -259,9 +259,9 @@ function EditRoles({ member, onClose, onDone }: DialogProps & { member: StaffMem
     if (!ready) return
     if (
       await attempt(
-        () => api('PATCH', `/admin/staff/${member.id}`, { roles }, { key }),
+        () => api('PATCH', `/admin/staff/${member.id}`, { roles }, { key, ifMatch: member }),
         '已保存，对方下次操作时就会生效',
-        { onStale: onDone },
+        { onStale: onDone, stale: ['edited_elsewhere'] },
       )
     )
       onDone()
@@ -288,9 +288,11 @@ function Rename({ member, onClose, onDone }: DialogProps & { member: StaffMember
   const submit = async () => {
     if (!ready) return
     if (
-      await attempt(() => api('PATCH', `/admin/staff/${member.id}`, { name }, { key }), '已保存', {
-        onStale: onDone,
-      })
+      await attempt(
+        () => api('PATCH', `/admin/staff/${member.id}`, { name }, { key, ifMatch: member }),
+        '已保存',
+        { onStale: onDone, stale: ['edited_elsewhere'] },
+      )
     )
       onDone()
   }

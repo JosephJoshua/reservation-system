@@ -129,6 +129,8 @@ Page({
   /** The last mark made here: which button and when. */
   lastMark: null as { picked: Attendance; at: number } | null,
   edgeTimer: 0 as number,
+  /** Counts what show() has put on screen, so a slow fetch can tell it is older. */
+  shows: 0,
   /** Behind another page or gone: no edge timer then, onShow sets one again. */
   hidden: false,
 
@@ -166,12 +168,20 @@ Page({
       this.edgeTimer = 0
       const shown = this.data.lesson
       if (!shown || this.hidden || this.data.state !== 'ready') return
-      if (this.data.marking || this.data.cancelling || this.data.deletingFeedback) {
+      const busy =
+        this.data.marking ||
+        this.data.cancelling ||
+        this.data.deletingFeedback ||
+        this.data.savingNote
+      if (busy) {
         this.show(shown)
         return
       }
+      // A change saved meanwhile shows a newer lesson than this fetch may have read.
+      const shows = this.shows
       try {
-        this.show(await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`))
+        const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
+        if (shows === this.shows) this.show(fetched)
       } catch {
         const current = this.data.lesson
         if (current && !this.hidden && this.data.state === 'ready') this.show(current)
@@ -199,6 +209,7 @@ Page({
 
   /** Shows a lesson; keeps an unsaved note unless the server has a newer one. */
   show(l: CoachLessonDto, keepNote?: boolean) {
+    this.shows++
     const keep = keepNote ?? this.data.noteDirty
     this.setData({
       state: 'ready',

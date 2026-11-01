@@ -662,9 +662,10 @@ export function addException(
   if (error) throw new ApiError(400, 'invalid_time', error)
   return immediate(deps.db, (tx) => {
     if (input.coachId !== null) assertCoach(tx, input.coachId)
-    // A repeat of the same request adds nothing.
+    // A repeat of the same request adds nothing; one with another note (a stale page) is refused,
+    // so that note is not lost.
     const same = tx
-      .select({ id: scheduleExceptions.id })
+      .select({ id: scheduleExceptions.id, note: scheduleExceptions.note })
       .from(scheduleExceptions)
       .where(
         and(
@@ -677,6 +678,14 @@ export function addException(
         ),
       )
       .get()
+    if (same && same.note !== input.note) {
+      const what = input.coachId === null ? '闭馆' : input.kind === 'off' ? '请假' : '加班'
+      throw new ApiError(
+        409,
+        'exception_exists',
+        `该时间已有${what}${same.note ? `：${same.note}` : ''}`,
+      )
+    }
     const id =
       same?.id ??
       tx

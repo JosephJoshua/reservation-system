@@ -307,12 +307,19 @@ export async function approvePackageRefund(deps: Deps, refundId: number, amount:
   return approvedNow
 }
 
-/** Rejects a package refund request. Returns false for a repeat of a rejection already made. */
+/**
+ * Rejects a package refund request. Returns false for a repeat of a rejection already made with
+ * the same reason; one made with another reason (a stale page) is refused with that reason, as
+ * the student sees it.
+ */
 export function rejectPackageRefund(deps: Deps, refundId: number, note: string) {
   return immediate(deps.db, (tx) => {
     const refund = tx.select().from(refunds).where(eq(refunds.id, refundId)).get()
     if (!refund?.packageId) throw notFound('退款申请')
-    if (refund.status === 'rejected') return false
+    if (refund.status === 'rejected') {
+      if (refund.failure === note) return false
+      throw new ApiError(409, 'refund_rejected', `该申请已拒绝：${refund.failure ?? ''}`)
+    }
     if (refund.status !== 'requested')
       throw new ApiError(409, 'refund_not_requested', '该申请已处理')
     tx.update(refunds)
