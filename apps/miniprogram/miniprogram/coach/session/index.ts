@@ -1,4 +1,4 @@
-import type { Attendance, CoachSessionDto } from '../../lib/shared'
+import type { Attendance, CoachLessonDto, CoachSessionDto } from '../../lib/shared'
 import { errorMessage, serverNow, showError } from '../../utils/api'
 import { lessonTime } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
@@ -148,14 +148,20 @@ Page({
     const done: number[] = []
     for (const st of todo) {
       try {
-        await coachApi('PUT', `/lessons/${st.bookingId}/attendance`, { attendance: 'attended' })
-        done.push(st.bookingId)
+        // The list may be old (a mark made on the student's page, or by the desk): a lesson
+        // marked meanwhile keeps its mark.
+        const lesson = await coachApi<CoachLessonDto & { changed?: boolean }>(
+          'PUT',
+          `/lessons/${st.bookingId}/attendance`,
+          { attendance: 'attended', unmarkedOnly: true },
+        )
+        if (lesson.changed) done.push(st.bookingId)
       } catch (err) {
         failed = failed ?? err
       }
     }
     if (failed) showError(failed)
-    else wx.showToast({ title: `${todo.length} 人已到课`, icon: 'none' })
+    else if (done.length) wx.showToast({ title: `${done.length} 人已到课`, icon: 'none' })
     this.showMarks(done, 'attended')
     // Held until the list is reloaded, so a second tap meanwhile sends nothing again.
     await this.load()

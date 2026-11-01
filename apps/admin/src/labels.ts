@@ -96,7 +96,7 @@ export function sessionCancelDoneMessage(result: unknown) {
   const parts = [
     r?.refunded ? `${yuan(r.refunded)} 将原路退回` : '',
     r?.offline ? `请当面退还 ${yuan(r.offline)}` : '',
-    r?.failed ? `${yuan(r.failed)} 退款失败，请到退款页处理` : '',
+    r?.failed ? `${yuan(r.failed)} 退款未成功，需财务在退款页处理` : '',
     r?.lessonsReturned ? `退回课时 ${r.lessonsReturned} 节` : '',
   ].filter(Boolean)
   return parts.length ? `已取消整节，${parts.join('，')}` : '已取消整节'
@@ -106,7 +106,7 @@ export function sessionCancelDoneMessage(result: unknown) {
 export function cancelDoneMessage(result: unknown) {
   const r = result as Partial<CancelResult> | undefined
   if (r?.refunded != null) {
-    if (r.refundFailed) return `已取消，${yuan(r.refunded)} 退款失败，请到退款页处理`
+    if (r.refundFailed) return `已取消，${yuan(r.refunded)} 退款未成功，需财务在退款页处理`
     return r.offline
       ? `已取消，请当面退还学员 ${yuan(r.refunded)}`
       : `已取消，${yuan(r.refunded)} 将原路退回`

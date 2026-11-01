@@ -8,7 +8,7 @@ import {
   type RefundDto,
   studentMoveError,
 } from '@rs/shared'
-import { and, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm'
 import type { Q } from '../db/client'
 import {
   bookings,
@@ -232,6 +232,23 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
     : []
   const invoiceByOrder = orderInvoices(tx, packageOrders)
   const offline = new Set(packageOrders.filter((o) => o.provider === 'offline').map((o) => o.id))
+  // As refundablePackage counts them: a lesson in progress still holds the package.
+  const inUse = new Set(
+    ids.length
+      ? tx
+          .select({ packageId: bookings.packageId })
+          .from(bookings)
+          .where(
+            and(
+              inArray(bookings.packageId, ids),
+              eq(bookings.status, 'confirmed'),
+              gt(bookings.endsAt, now),
+            ),
+          )
+          .all()
+          .map((b) => b.packageId)
+      : [],
+  )
   return rows.map((p) => {
     const refund = refundByPackage.get(p.id)
     return {
@@ -247,6 +264,7 @@ export function packageViews(tx: Q, rows: PackageRow[], now: Date): PackageDto[]
       status: packageStatus(p, now),
       pricePaid: p.pricePaid,
       paidOffline: offline.has(p.orderId),
+      inUse: inUse.has(p.id),
       refund: refund ? refundView(refund) : null,
       invoice: invoiceByOrder.get(p.orderId) ?? null,
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ApiError, refreshAfter } from '../miniprogram/utils/api'
-import { needsAgreement } from '../miniprogram/utils/data'
+import { lateBookingText, needsAgreement } from '../miniprogram/utils/data'
 import { bookableDays } from '../miniprogram/utils/format'
 import { moveFailure } from '../miniprogram/utils/move'
 
@@ -59,5 +59,40 @@ describe('refreshAfter', () => {
     expect(refreshAfter(new ApiError(400, 'invalid', ''))).toBe(false)
     expect(refreshAfter(new ApiError(500, 'http_error', ''))).toBe(false)
     expect(refreshAfter(new Error('x'))).toBe(false)
+  })
+})
+
+describe('lateBookingText', () => {
+  const start = '2026-10-30T10:00:00Z'
+  const at = (iso: string) => Date.parse(iso)
+  it('says what a cancel would lose when booked inside the free-cancel window', () => {
+    const late = at('2026-10-30T08:00:00Z')
+    expect(lateBookingText(start, 24, { kind: 'forfeit' }, late, 'wechat')).toBe(
+      '距开课已不足 24 小时，预约后再取消不退费用。',
+    )
+    expect(lateBookingText(start, 24, { kind: 'partial', percent: 50 }, late, 'wechat')).toBe(
+      '距开课已不足 24 小时，预约后再取消只退还 50% 的费用。',
+    )
+    // A package lesson comes back only at 100%, so a partial rule loses the lesson.
+    expect(lateBookingText(start, 24, { kind: 'partial', percent: 50 }, late, 'package')).toBe(
+      '距开课已不足 24 小时，预约后再取消不退课时。',
+    )
+  })
+  it('says nothing when it is not late yet, or a late cancel still refunds in full', () => {
+    expect(
+      lateBookingText(start, 24, { kind: 'forfeit' }, at('2026-10-29T09:00:00Z'), 'wechat'),
+    ).toBe('')
+    expect(
+      lateBookingText(
+        start,
+        24,
+        { kind: 'partial', percent: 100 },
+        at('2026-10-30T08:00:00Z'),
+        'wechat',
+      ),
+    ).toBe('')
+    expect(
+      lateBookingText(start, 0, { kind: 'forfeit' }, at('2026-10-30T08:00:00Z'), 'wechat'),
+    ).toBe('')
   })
 })

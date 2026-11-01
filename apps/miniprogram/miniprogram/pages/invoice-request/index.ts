@@ -17,6 +17,7 @@ const KINDS: InvoiceTitleKind[] = ['personal', 'company']
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
+    canRetry: true,
     error: '',
     errorIcon: { name: 'error-circle', size: '112rpx' },
     item: '',
@@ -52,7 +53,16 @@ Page({
       ])
       const order = orders.find((o: InvoiceOrderDto) => o.orderId === this.orderId)
       if (!order || (order.state !== 'available' && order.state !== 'rejected')) {
-        this.setData({ state: 'error', error: '这笔订单暂时不能申请发票' })
+        // Why, in the words of the 发票 list, rather than a "for now" that never passes.
+        const why: Partial<Record<InvoiceOrderDto['state'], string>> = {
+          requested: '这笔订单已申请发票，场馆开具后会发送到你的邮箱',
+          issued: '这笔订单的发票已开具',
+          refunding: '这笔订单正在退款，退款完成后可按剩余金额申请',
+          refunded: '这笔订单已全额退款，不能开票',
+        }
+        const error = (order && why[order.state]) || '这笔订单不能申请发票'
+        // Nothing to reload for: the order's state is the answer.
+        this.setData({ state: 'error', error, canRetry: false })
         return
       }
       const version = await agreementFor(me)
@@ -72,7 +82,7 @@ Page({
         showAgreement: version !== null,
       })
     } catch (e) {
-      this.setData({ state: 'error', error: errorMessage(e) })
+      this.setData({ state: 'error', error: errorMessage(e), canRetry: true })
     }
   },
 

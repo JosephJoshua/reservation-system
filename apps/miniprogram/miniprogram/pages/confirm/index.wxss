@@ -142,3 +142,10 @@
   display: flex;
   flex-shrink: 0;
 }
+
+.late-note {
+  margin: 24rpx 32rpx 0;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--td-warning-color);
+}

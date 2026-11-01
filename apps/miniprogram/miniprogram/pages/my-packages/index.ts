@@ -21,6 +21,8 @@ interface PackageView {
   refund: string
   /** Bought at the front desk, so a refund is handed back there. */
   paidOffline: boolean
+  /** A lesson booked with it is still to come. */
+  inUse: boolean
   canRefund: boolean
   invoice: string
   invoiceLink: string
@@ -39,7 +41,11 @@ function view(p: PackageDto): PackageView {
       Math.round((p.lessonsRemaining / Math.max(1, p.lessonsPurchased + p.lessonsGranted)) * 100),
     ),
     // Valid through the day before the instant it expires, as admin shows it.
-    expires: `${fullDate(new Date(new Date(p.expiresAt).getTime() - 1))}${p.status === 'expired' ? '已过期' : '到期'}`,
+    // A refunded one no longer runs out.
+    expires:
+      p.status === 'refunded'
+        ? ''
+        : `${fullDate(new Date(new Date(p.expiresAt).getTime() - 1))}${p.status === 'expired' ? '已过期' : '到期'}`,
     // A refunded one says where its money stands, as its refund row does.
     status: tag.text,
     tone:
@@ -53,6 +59,7 @@ function view(p: PackageDto): PackageView {
       ? `退款 ${yuan(p.refund.amount)} · ${refundStatus(p.refund, p.paidOffline)}`
       : '',
     paidOffline: p.paidOffline,
+    inUse: p.inUse,
     // Free packages (gifts) have nothing to refund.
     canRefund: p.status === 'active' && p.lessonsRemaining > 0 && p.pricePaid > 0,
     invoice:
@@ -106,6 +113,15 @@ Page({
   async requestRefund(e: WechatMiniprogram.TouchEvent) {
     const pkg = this.data.packages.find((p) => p.id === Number(e.currentTarget.dataset.id))
     if (!pkg || this.data.busy) return
+    // Said before asking, rather than refused after the student confirms.
+    if (pkg.inUse) {
+      wx.showModal({
+        title: '暂不能退款',
+        content: '还有用这个课时包预约且未结束的课，请在课程结束或取消预约后再申请退款。',
+        showCancel: false,
+      })
+      return
+    }
     const answer = await ask({
       title: '申请退款',
       content: `剩余 ${pkg.remaining} 节。退款金额为实付金额扣除已上课时的单节价（按授课教练计算），由场馆审核后${pkg.paidOffline ? '到店退还' : '原路退回'}，申请后课时包将暂停使用。`,

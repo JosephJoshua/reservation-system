@@ -61,6 +61,8 @@ export function setAttendance(
   bookingId: number,
   attendance: Attendance | null,
   by: { coachId: number } | { staffId: number },
+  /** Leave a lesson already marked as it is, for 全部记为到课 sent from a list that may be old. */
+  unmarkedOnly = false,
 ): boolean {
   return immediate(deps.db, (tx) => {
     const row = tx
@@ -73,6 +75,7 @@ export function setAttendance(
     if ('coachId' in by && !getSettings(tx).attendance.coachMarks) {
       throw new ApiError(403, 'coach_marks_off', '场馆已关闭教练点名，签到由前台办理')
     }
+    if (unmarkedOnly && row.booking.attendance !== null) return false
     const now = deps.now()
     const error = attendanceError(row.booking, now, 'coachId' in by ? 'coach' : 'admin', attendance)
     if (error) throw new ApiError(409, error, messages[error])
