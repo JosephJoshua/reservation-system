@@ -31,6 +31,7 @@ Page({
   },
 
   id: 0,
+  loads: 0,
   /** One mark at a time, so a double tap or two quick taps act once. */
   marking: false,
   /** Each booking's last mark made here, by booking id: which button and when. */
@@ -51,9 +52,13 @@ Page({
   },
 
   async load() {
+    // Only the latest reload is shown: an older one may predate a mark made meanwhile.
+    const seq = ++this.loads
     try {
-      this.show(await coachApi<CoachSessionDto>('GET', `/sessions/${this.id}`))
+      const s = await coachApi<CoachSessionDto>('GET', `/sessions/${this.id}`)
+      if (seq === this.loads) this.show(s)
     } catch (e) {
+      if (seq !== this.loads) return
       if (bindInstead(e, this)) return
       if (this.data.state === 'ready') showError(e)
       else this.setData({ state: 'error', error: errorMessage(e) })
@@ -121,7 +126,8 @@ Page({
       await coachApi('PUT', `/lessons/${student.bookingId}/attendance`, { attendance })
       marked = true
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
-      // Held until the list shows it: 全部记为到课 reads the rows on screen.
+      // Shown at once, so 全部记为到课 never reads the old row, even when the reload fails.
+      this.showMarks([student.bookingId], attendance)
       await this.load()
     } catch (err) {
       showError(err)
@@ -139,17 +145,35 @@ Page({
     if (!todo.length) return
     this.setData({ markingAll: true })
     let failed: unknown = null
+    const done: number[] = []
     for (const st of todo) {
       try {
         await coachApi('PUT', `/lessons/${st.bookingId}/attendance`, { attendance: 'attended' })
+        done.push(st.bookingId)
       } catch (err) {
         failed = failed ?? err
       }
     }
-    this.setData({ markingAll: false })
     if (failed) showError(failed)
     else wx.showToast({ title: `${todo.length} 人已到课`, icon: 'none' })
+    this.showMarks(done, 'attended')
+    // Held until the list is reloaded, so a second tap meanwhile sends nothing again.
     await this.load()
+    this.setData({ markingAll: false })
+  },
+
+  /** Marks the coach just made, shown before the reload confirms them. */
+  showMarks(bookingIds: number[], attendance: Attendance | null) {
+    const s = this.data.session
+    if (!s || !bookingIds.length) return
+    this.show({
+      ...s,
+      students: s.students.map((st) =>
+        bookingIds.includes(st.bookingId)
+          ? { ...st, attendance, attendanceBy: attendance ? 'coach' : null }
+          : st,
+      ),
+    })
   },
 
   retry() {
