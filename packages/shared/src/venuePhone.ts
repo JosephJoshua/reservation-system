@@ -94,9 +94,11 @@ function numbers(phone: string): string[] | null {
   for (const part of parts) {
     const bare = part.replace(EXTENSION, '').trim()
     const number = bare.match(DASH_EXTENSION)?.[1] ?? bare
-    // A short service number with a digit or two after it, as in 95588-1: an extension it can't
-    // dial, or a typo, so refused rather than dialled as one number.
-    if (/^[19]\d{4}(?:\s*-\s*|\s+)\d{1,2}$/.test(number)) return null
+    // A short service number with a digit or two after it, as in 95588-1 or (95588) 1: an
+    // extension it can't dial, or a typo, so refused rather than dialled as one number. No real
+    // number starting 1 or 9 has 6 or 7 digits; 95105 888 has 8.
+    const digits = number.replace(/\D/g, '')
+    if (/^[19]\d{5,6}$/.test(digits) && /\D/.test(number)) return null
     if (!NUMBER.test(number) || !digitsFit(number)) return null
     out.push(number)
   }
