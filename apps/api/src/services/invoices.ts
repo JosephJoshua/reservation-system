@@ -374,7 +374,7 @@ export function issueInvoice(
       }
       // A first issue from a page opened before someone else issued it: theirs stays.
       if (row.status === 'issued' && !replace) {
-        throw new ApiError(409, 'invoice_handled', '该申请已由其他人开票')
+        throw new ApiError(409, 'invoice_handled', '该申请已开票')
       }
       const student = tx.select().from(students).where(eq(students.id, row.studentId)).get()
       if (student?.deletedAt && row.titleKind === 'personal') throw accountDeleted()

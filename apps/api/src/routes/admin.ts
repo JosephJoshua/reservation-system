@@ -2290,7 +2290,7 @@ export function adminRoutes(deps: Deps) {
     // before someone else marked it) is not dropped unseen.
     const handled = (noteNow: string | null) => {
       if (noteNow === note) return c.body(null, 204)
-      throw new ApiError(409, 'anomaly_handled', `已由其他人标记处理：${noteNow ?? ''}`)
+      throw new ApiError(409, 'anomaly_handled', `该订单已标记处理：${noteNow ?? ''}`)
     }
     if (order.anomalyHandledAt) return handled(order.anomalyNote)
     const marked = db

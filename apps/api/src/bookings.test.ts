@@ -1309,7 +1309,7 @@ describe('review fixes', () => {
     expect([other.status, other.json.error.code, other.json.error.message]).toEqual([
       409,
       'anomaly_handled',
-      '已由其他人标记处理：已在商户平台退款',
+      '该订单已标记处理：已在商户平台退款',
     ])
     expect(h.db.select().from(orders).get()?.anomalyNote).toBe('已在商户平台退款')
     expect(await csv()).toContain('已处理：已在商户平台退款')
