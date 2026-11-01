@@ -483,3 +483,43 @@ test('日程 left open past midnight moves on to the new day', async ({ page }) 
   await expect(heading).toContainText(`${tomorrow.slice(5)}`)
   await expect(heading).toContainText('今天')
 })
+
+test('闭馆 form left open past midnight moves its dates on to the new day', async ({ page }) => {
+  const today = venueDateKey(new Date())
+  const tomorrow = addVenueDays(today, 1)
+  await page.clock.install({ time: venueInstant(tomorrow, 0).getTime() - 15_000 })
+  await login(page)
+  await page.goto('./#/settings?section=closures')
+  const card = page.locator('.t-card').filter({ hasText: '添加闭馆' })
+  const dates = card.locator('.t-date-picker input')
+  await expect(dates.first()).toHaveValue(today)
+  await page.clock.runFor(30_000)
+  await expect(dates.first()).toHaveValue(tomorrow)
+  await expect(dates.nth(1)).toHaveValue(tomorrow)
+})
+
+test('排班 left open past midnight moves 生效日期 on to the new day', async ({ page, request }) => {
+  const admin = (
+    await call<{ token: string }>(request, 'POST', '/admin/login', undefined, {
+      username: 'admin',
+      password: ADMIN_PASSWORD,
+    })
+  ).token
+  const name = `午夜${run}`
+  await call(request, 'POST', '/admin/coaches', admin, { name, lessonTypeIds: [] })
+  const today = venueDateKey(new Date())
+  const tomorrow = addVenueDays(today, 1)
+  await page.clock.install({ time: venueInstant(tomorrow, 0).getTime() - 15_000 })
+  await login(page)
+  await page.goto('./#/coaches')
+  await page
+    .getByRole('row')
+    .filter({ hasText: name })
+    .getByRole('button', { name: '排班' })
+    .click()
+  const dialog = page.locator('.t-dialog').filter({ hasText: '生效日期' })
+  const from = dialog.locator('.t-date-picker input').first()
+  await expect(from).toHaveValue(today)
+  await page.clock.runFor(30_000)
+  await expect(from).toHaveValue(tomorrow)
+})

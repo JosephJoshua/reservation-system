@@ -70,7 +70,8 @@ Page({
     const today = venueDateKey(new Date(serverNow()))
     const { state, submitting, days } = this.data
     if (state === 'ready' && !submitting && days[0]?.key !== today) this.load()
-    else if (state === 'ready') this.scheduleEdge()
+    // Its timer was stopped while hidden, and an edge may have passed meanwhile.
+    else if (state === 'ready') this.onEdge()
   },
 
   onHide() {

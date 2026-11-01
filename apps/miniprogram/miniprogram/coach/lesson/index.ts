@@ -95,6 +95,11 @@ function attendanceNote(l: CoachLessonDto): string {
   return '签到已截止，如需补签请联系场馆。'
 }
 
+/** Marking opens at the start and closes COACH_ATTENDANCE_DAYS after the end. */
+function edgeTimes(l: CoachLessonDto): number[] {
+  return [Date.parse(l.startsAt), Date.parse(l.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000]
+}
+
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
@@ -134,6 +139,8 @@ Page({
   shows: 0,
   /** Behind another page or gone: no edge timer then, onShow sets one again. */
   hidden: false,
+  /** When it was last hidden, so onShow can tell an edge passed meanwhile. */
+  hiddenAt: 0,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -143,11 +150,18 @@ Page({
   onShow() {
     this.hidden = false
     const l = this.data.lesson
-    if (l && this.data.state === 'ready') this.scheduleEdge(l)
+    if (!l || this.data.state !== 'ready') return
+    // An edge passed while it was hidden: the buttons on screen are from before it. The timer
+    // fires a second after an edge, so one in the second before hiding was not handled either.
+    const now = serverNow()
+    if (this.hiddenAt && edgeTimes(l).some((t) => t > this.hiddenAt - 1000 && t <= now))
+      void this.onEdge()
+    else this.scheduleEdge(l)
   },
 
   onHide() {
     this.hidden = true
+    this.hiddenAt = serverNow()
     this.clearEdge()
   },
 
@@ -163,35 +177,33 @@ Page({
   scheduleEdge(l: CoachLessonDto) {
     this.clearEdge()
     if ((l.status !== 'confirmed' && l.status !== 'completed') || this.hidden) return
-    // Marking opens at the start and closes COACH_ATTENDANCE_DAYS after the end.
-    const wait = edgeWait(
-      [Date.parse(l.startsAt), Date.parse(l.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000],
-      serverNow(),
-    )
+    const wait = edgeWait(edgeTimes(l), serverNow())
     if (wait === null) return
-    this.edgeTimer = setTimeout(async () => {
-      this.edgeTimer = 0
-      const shown = this.data.lesson
-      if (!shown || this.hidden || this.data.state !== 'ready') return
-      const busy =
-        this.data.marking ||
-        this.data.cancelling ||
-        this.data.deletingFeedback ||
-        this.data.savingNote
-      if (busy) {
-        this.show(shown)
-        return
-      }
-      // A change saved meanwhile shows a newer lesson than this fetch may have read.
-      const shows = this.shows
-      try {
-        const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
-        if (shows === this.shows) this.show(fetched)
-      } catch {
-        const current = this.data.lesson
-        if (current && !this.hidden && this.data.state === 'ready') this.show(current)
-      }
-    }, wait) as unknown as number
+    this.edgeTimer = setTimeout(() => void this.onEdge(), wait) as unknown as number
+  },
+
+  async onEdge() {
+    this.edgeTimer = 0
+    const shown = this.data.lesson
+    if (!shown || this.hidden || this.data.state !== 'ready') return
+    const busy =
+      this.data.marking ||
+      this.data.cancelling ||
+      this.data.deletingFeedback ||
+      this.data.savingNote
+    if (busy) {
+      this.show(shown)
+      return
+    }
+    // A change saved meanwhile shows a newer lesson than this fetch may have read.
+    const shows = this.shows
+    try {
+      const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
+      if (shows === this.shows) this.show(fetched)
+    } catch {
+      const current = this.data.lesson
+      if (current && !this.hidden && this.data.state === 'ready') this.show(current)
+    }
   },
 
   clearEdge() {

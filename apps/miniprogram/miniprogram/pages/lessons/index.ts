@@ -100,8 +100,9 @@ Page({
       this.render()
     } catch (e) {
       if (request !== this.request) return
-      // A failed refresh keeps what is on screen.
+      // A failed refresh keeps what is on screen, redrawn for the time now.
       if (this.data.state === 'ready') {
+        if (!this.hidden) this.render()
         if (quiet !== true) showError(e)
       } else this.setData({ state: 'error', error: errorMessage(e) })
     }
