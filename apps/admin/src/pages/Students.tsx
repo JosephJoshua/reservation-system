@@ -26,7 +26,6 @@ import {
   Input,
   InputNumber,
   Loading,
-  MessagePlugin,
   Popconfirm,
   type PrimaryTableCol,
   Radio,
@@ -57,6 +56,7 @@ import {
   useIsPhone,
   useNow,
   useSubmitting,
+  warn,
 } from '../hooks'
 import {
   bookingStatusLabel,
@@ -1210,7 +1210,7 @@ function ProfileDialog({
   const submit = async () => {
     const error = tagsError(tags)
     if (error) {
-      void MessagePlugin.warning(error)
+      warn(error)
       return
     }
     const ok = await attempt(
@@ -1366,7 +1366,7 @@ function OfflineSale({
     if (!method) {
       setMethodMissing(true)
       // The field may be out of sight on a phone.
-      void MessagePlugin.warning('请选择收款方式')
+      warn('请选择收款方式')
       return
     }
     const ok = await attempt(

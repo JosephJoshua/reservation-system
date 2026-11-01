@@ -9,7 +9,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import { Button, Dialog, Input, Link, MessagePlugin, Space } from 'tdesign-react'
 import { api } from './api'
-import { useApi } from './hooks'
+import { useApi, warn } from './hooks'
 
 export interface CoordText {
   lat: string
@@ -71,9 +71,7 @@ export function VenueLocation({
     if (!text.trim() || busy.current) return
     const parsed = parseMapText(text)
     if (!parsed) {
-      void MessagePlugin.warning(
-        '没有识别到位置，请粘贴高德、腾讯或百度地图的分享链接，或纬度和经度',
-      )
+      warn('没有识别到位置，请粘贴高德、腾讯或百度地图的分享链接，或纬度和经度')
       return
     }
     if (parsed.kind === 'point') {
@@ -83,7 +81,7 @@ export function VenueLocation({
       return
     }
     if (parsed.kind === 'none') {
-      void MessagePlugin.warning(
+      warn(
         `这个${mapAppLabels[parsed.source]}链接里没有位置，请在地图 App 里点“分享”并复制链接，或在地图上选点`,
       )
       return
@@ -98,7 +96,7 @@ export function VenueLocation({
       )
       use(r.point, `已从${mapAppLabels[r.source]}读取位置`)
     } catch (e) {
-      void MessagePlugin.warning((e as Error).message)
+      warn((e as Error).message)
     } finally {
       busy.current = false
       setReading(false)

@@ -41,6 +41,7 @@ import {
   useIsPhone,
   useNow,
   useSubmitting,
+  warn,
 } from '../hooks'
 import {
   bookingStatusLabel,
@@ -540,9 +541,8 @@ function usePlan(initialFrom: string, initialTimes: string) {
 type Plan = ReturnType<typeof usePlan>
 
 /** Each planned start of `minutes` for the coach. Times already past are skipped, so a range starting today still works. */
-function planned(plan: Plan, coachId: number, minutes: number) {
+function planned(plan: Plan, coachId: number, minutes: number, now: number) {
   if (!plan.parsed) return []
-  const now = Date.now()
   const times = plan.parsed
   return plan.dates.flatMap((d) =>
     times.flatMap((t) => {
@@ -637,17 +637,21 @@ function CreateSessions({
   const plan = usePlan(initialFrom, '10:00')
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
+  // Ticks, so a start that passes while the dialog is open drops out of the count and the request.
+  const now = useNow(10_000)
   const sessions = useMemo(
-    () => (coach && lessonType ? planned(plan, coach.id, lessonType.durationMinutes) : []),
-    [plan, coach, lessonType],
+    () => (coach && lessonType ? planned(plan, coach.id, lessonType.durationMinutes, now) : []),
+    [plan, coach, lessonType, now],
   )
   const count = sessions.length
 
   const submit = async () => {
-    if (!lessonType) return
-    const error = planError(plan, sessions, '小班课')
+    if (!coach || !lessonType) return
+    // As of the click, so a start that passed since the last tick is not sent.
+    const fresh = planned(plan, coach.id, lessonType.durationMinutes, Date.now())
+    const error = planError(plan, fresh, '小班课')
     if (error) {
-      void MessagePlugin.warning(error)
+      warn(error)
       return
     }
     if (
@@ -656,10 +660,10 @@ function CreateSessions({
           api(
             'POST',
             '/admin/sessions',
-            { lessonTypeId: lessonType.id, capacity, sessions },
+            { lessonTypeId: lessonType.id, capacity, sessions: fresh },
             { key },
           ),
-        `已排 ${count} 节小班课`,
+        `已排 ${fresh.length} 节小班课`,
         { onStale: onDone },
       )
     )

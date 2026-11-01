@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode, useEffect, useState } from 'react'
-import { Button, Card, Loading, MessagePlugin } from 'tdesign-react'
+import { Button, Card, Loading } from 'tdesign-react'
 import { api } from './api'
-import { type ApiData, attempt, newKey, useSubmitting } from './hooks'
+import { type ApiData, attempt, newKey, useSubmitting, warn } from './hooks'
 import type { Draft } from './preview/data'
 import { EditorWithPreview } from './preview/EditorWithPreview'
 import { SaveBar } from './SaveBar'
@@ -145,7 +145,7 @@ export function EditPage<R extends { id: number }, F>({
         ? `${noun}已被其他人修改，请先载入最新内容`
         : check(form)
     if (problem) {
-      void MessagePlugin.warning(problem)
+      warn(problem)
       return
     }
     // The fields can't be typed in while saving, which takes the cursor out of them.
