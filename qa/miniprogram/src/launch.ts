@@ -39,7 +39,8 @@ export async function openMiniProgram(projectPath: string): Promise<MiniProgram>
   }
   recompile(projectPath)
   // Right after a compile the automation server may not be listening yet, and the app may have no
-  // page, so the first calls fail on a refused connection or missing page meta. Retry for a while.
+  // page, so the first calls fail on a refused connection or missing page meta. A busy Mac can
+  // stall DevTools for over a minute, so retry for up to 90 s.
   for (let attempt = 1; ; attempt++) {
     let miniProgram: MiniProgram | undefined
     try {
@@ -49,7 +50,7 @@ export async function openMiniProgram(projectPath: string): Promise<MiniProgram>
       return miniProgram
     } catch (err) {
       await miniProgram?.disconnect().catch(() => {})
-      if (attempt >= 10) throw err
+      if (attempt >= 60) throw err
       console.log(`simulator not ready (${(err as Error).message}), retrying`)
       await new Promise((resolve) => setTimeout(resolve, 1500))
     }
