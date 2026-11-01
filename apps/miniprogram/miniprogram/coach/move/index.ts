@@ -90,32 +90,34 @@ Page({
     const now = serverNow()
     const wait = edgeWait([...this.free.map((s) => Date.parse(s.startsAt)), nextMidnight(now)], now)
     if (wait === null) return
-    this.edgeTimer = setTimeout(() => {
-      this.edgeTimer = 0
-      if (this.hidden || this.data.state !== 'ready') return
-      // A move on its way settles first; look again shortly.
-      if (this.data.submitting) {
-        this.edgeTimer = setTimeout(() => this.scheduleEdge(), 1000) as unknown as number
-        return
-      }
-      const at = serverNow()
-      if (this.data.days[0]?.key !== venueDateKey(new Date(at))) {
-        this.load()
-        return
-      }
-      this.free = this.free.filter((t) => Date.parse(t.startsAt) > at)
-      const picked = this.data.picked
-      const days = this.data.days.map((d) => ({
-        ...d,
-        free: this.free.filter((t) => !t.tableFull && venueDateKey(new Date(t.startsAt)) === d.key)
-          .length,
-      }))
-      this.setData({ days })
-      this.showDay()
-      const still = picked && this.data.slots.find((v) => v.key === picked.key)
-      if (still) this.setData({ picked: still })
-      this.scheduleEdge()
-    }, wait) as unknown as number
+    this.edgeTimer = setTimeout(() => this.onEdge(), wait) as unknown as number
+  },
+
+  onEdge() {
+    this.edgeTimer = 0
+    if (this.hidden || this.data.state !== 'ready') return
+    // A move on its way settles first; look again shortly.
+    if (this.data.submitting) {
+      this.edgeTimer = setTimeout(() => this.onEdge(), 1000) as unknown as number
+      return
+    }
+    const at = serverNow()
+    if (this.data.days[0]?.key !== venueDateKey(new Date(at))) {
+      this.load()
+      return
+    }
+    this.free = this.free.filter((t) => Date.parse(t.startsAt) > at)
+    const picked = this.data.picked
+    const days = this.data.days.map((d) => ({
+      ...d,
+      free: this.free.filter((t) => !t.tableFull && venueDateKey(new Date(t.startsAt)) === d.key)
+        .length,
+    }))
+    this.setData({ days })
+    this.showDay()
+    const still = picked && this.data.slots.find((v) => v.key === picked.key)
+    if (still) this.setData({ picked: still })
+    this.scheduleEdge()
   },
 
   clearEdge() {

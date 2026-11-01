@@ -175,7 +175,12 @@ Page({
       })
       const yesterday = days[PAST_DAYS - 1]?.key ?? today
       this.setData({ days, date: today, dayAnchor: `day-${yesterday}` })
-      await this.loadSchedule()
+      if (!(await this.loadSchedule(quiet)) && quiet) {
+        // The schedule loaded before still covers the new day: show it and try again.
+        this.showDay()
+        this.retryLater()
+        return
+      }
       this.setData({ state: 'ready' })
     } catch (e) {
       // Left for another page meanwhile: the error state's retry gets here again.
@@ -183,29 +188,36 @@ Page({
         wx.redirectTo({ url: '/coach/bind/index' })
         return
       }
-      // Tries again in a minute, or when the page is shown.
       if (quiet && this.data.state === 'ready') {
-        this.clearEdge()
-        this.edgeTimer = setTimeout(() => {
-          this.edgeTimer = 0
-          if (!this.hidden && this.data.state === 'ready') this.load(true)
-        }, 60_000) as unknown as number
+        this.retryLater()
         return
       }
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 
-  /** Loads the schedule; `quiet` (the edge timer's reload) keeps the day shown on a failure. */
-  async loadSchedule(quiet?: boolean) {
+  /** Tries the move to a new day again in a minute, or when the page is shown. */
+  retryLater() {
+    this.clearEdge()
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      if (!this.hidden && this.data.state === 'ready') this.load(true)
+    }, 60_000) as unknown as number
+  },
+
+  /**
+   * Loads the schedule, saying whether it did; `quiet` (the edge timer's reload) keeps the day
+   * shown on a failure.
+   */
+  async loadSchedule(quiet?: boolean): Promise<boolean> {
     const { days } = this.data
     const first = days[0]?.key
     const last = days[days.length - 1]?.key
-    if (!first || !last) return
+    if (!first || !last) return false
     const request = ++this.request
     try {
       const schedule = await coachApi<CoachDaysDto>('GET', `/schedule?from=${first}&to=${last}`)
-      if (request !== this.request) return
+      if (request !== this.request) return false
       this.schedule = schedule
       const counts = new Map<string, number>()
       for (const s of schedule.lessons) {
@@ -219,11 +231,13 @@ Page({
         days: days.map((d) => ({ ...d, lessons: counts.get(d.key) ?? 0 })),
       })
       this.showDay()
+      return true
     } catch (e) {
-      if (request !== this.request) return
-      if (quiet && this.data.state === 'ready') return
+      if (request !== this.request) return false
+      if (quiet && this.data.state === 'ready') return false
       if (this.data.state === 'ready') this.setData({ slotsState: 'error', error: errorMessage(e) })
       else throw e
+      return false
     }
   },
 

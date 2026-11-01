@@ -297,7 +297,8 @@ Page({
     if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
-      if (this.hidden || this.data.slotsState !== 'ready') return
+      if (this.hidden) return
+      // Midnight even after the times failed to load.
       if (
         this.data.state === 'ready' &&
         this.data.days[0]?.key !== venueDateKey(new Date(serverNow()))
@@ -305,6 +306,7 @@ Page({
         this.load()
         return
       }
+      if (this.data.slotsState !== 'ready') return
       const slots: SlotView[] = this.slotViews()
       this.setData({
         slots,
