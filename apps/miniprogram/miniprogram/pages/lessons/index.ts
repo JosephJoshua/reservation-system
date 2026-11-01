@@ -1,4 +1,4 @@
-import type { BookingDto } from '../../lib/shared'
+import { type BookingDto, CHECK_IN_EARLY_MINUTES } from '../../lib/shared'
 import { api, errorMessage, serverNow, showError } from '../../utils/api'
 import { scanToCheckIn } from '../../utils/check-in'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
@@ -109,7 +109,8 @@ Page({
 
   /**
    * Shows `rows` as of now, and comes back when the next unpaid hold's payment time is up or a
-   * lesson starts or ends, so its tag changes then rather than at the next refresh.
+   * lesson's check-in opens, or it starts or ends, so the page changes then rather than at the
+   * next refresh.
    */
   render() {
     clearTimeout(this.lapseTimer)
@@ -123,21 +124,33 @@ Page({
       lessons: rows.map((b) => view(b, now)),
       checkIn: this.data.scope === 'upcoming' && open ? view(open, now) : null,
     })
-    // Tags change when a hold's payment time is up and when a booked lesson starts or ends.
+    // Tags change when a hold's payment time is up and when a booked lesson starts or ends; the
+    // check-in card shows when check-in opens.
     const next = Math.min(
       ...rows
         .flatMap((b) =>
           b.status === 'pending_payment' && b.payBy
             ? [Date.parse(b.payBy)]
             : b.status === 'confirmed'
-              ? [Date.parse(b.startsAt), Date.parse(b.endsAt)]
+              ? [
+                  Date.parse(b.startsAt) - CHECK_IN_EARLY_MINUTES * 60_000,
+                  Date.parse(b.startsAt),
+                  Date.parse(b.endsAt),
+                ]
               : [],
         )
         .filter((at) => at > now.getTime()),
     )
     // The list refreshes every minute anyway, which schedules this again.
     if (!this.hidden && Number.isFinite(next) && next - now.getTime() < 3_600_000) {
-      this.lapseTimer = setTimeout(() => this.render(), next - now.getTime() + 200)
+      // Redrawn at once, then fetched, as the server says when check-in opens.
+      this.lapseTimer = setTimeout(
+        () => {
+          this.render()
+          void this.load(true)
+        },
+        next - now.getTime() + 1000,
+      )
     }
   },
 

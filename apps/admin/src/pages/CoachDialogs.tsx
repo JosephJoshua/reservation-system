@@ -536,6 +536,8 @@ export function ExceptionForm({
         result = await api('POST', path, { ...(closure ? {} : { kind }), ...body, note }, { key })
       },
       closure ? '已添加闭馆' : kind === 'off' ? '已添加请假' : '已添加加班',
+      // The same time was added elsewhere: show it.
+      { onStale: () => onAdded([], kind) },
     )
     if (ok && result) {
       setKey(newKey())

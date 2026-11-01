@@ -55,9 +55,9 @@ export async function startPayment(
     // it is closed.
     const closed = await closeOrder(deps, orderId)
     if (closed === 'paid') throw orderPaid()
-    throw orderNotPayable()
+    throw orderNotPayable(order)
   }
-  if (order.status !== 'pending' || !order.expiresAt) throw orderNotPayable()
+  if (order.status !== 'pending' || !order.expiresAt) throw orderNotPayable(order)
   // A 闭馆 or 请假 added, or the coach stopped, while the student was paying.
   const held = order.bookingId
     ? deps.db.select().from(bookings).where(eq(bookings.id, order.bookingId)).get()
@@ -93,7 +93,7 @@ export async function startPayment(
     if (saved.changes === 0) {
       await closeAtWechat(deps, order.outTradeNo)
       if (closeStatus(deps, orderId) === 'paid') throw orderPaid()
-      throw orderNotPayable()
+      throw orderNotPayable(order)
     }
   }
   return deps.gateway.paymentParams(prepayId)
@@ -102,7 +102,13 @@ export async function startPayment(
 const SLOT_TAKEN = '时段已被预约'
 const SESSION_CALLED_OFF = '该课已取消'
 
-const orderNotPayable = () => new ApiError(409, 'order_not_payable', '订单已关闭，请重新下单')
+/** A lesson's order is booked again; a package's is bought again. */
+const orderNotPayable = (order: { bookingId: number | null }) =>
+  new ApiError(
+    409,
+    'order_not_payable',
+    order.bookingId ? '订单已关闭，请重新预约' : '订单已关闭，请重新购买',
+  )
 
 const paymentUnavailable = () =>
   new ApiError(502, 'payment_unavailable', '微信支付暂时不可用，请稍后再试')

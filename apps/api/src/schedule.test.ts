@@ -445,6 +445,18 @@ describe('请假, 加班 and 闭馆', () => {
     expect(closed.json.conflicts).toEqual([
       expect.objectContaining({ bookingId: booked.json.bookingId, coachName: '李教练' }),
     ])
+    // A repeat adds nothing; the same span from a stale page with another note is refused.
+    const span = { startsAt: at(SUN, '10:00'), endsAt: at(SUN, '12:00') }
+    const again = await h.call('POST', '/admin/closures', { ...span, note: '比赛' }, admin)
+    expect([again.status, again.json.id]).toEqual([201, closed.json.id])
+    const bare = await h.call('POST', '/admin/closures', { ...span, note: '' }, admin)
+    expect([bare.status, bare.json.id]).toEqual([201, closed.json.id])
+    const other = await h.call('POST', '/admin/closures', { ...span, note: '停电' }, admin)
+    expect(other.status).toBe(409)
+    expect(other.json.error).toMatchObject({
+      code: 'exception_exists',
+      message: '该时间已有闭馆：比赛',
+    })
     expect(await times(h, student, SUN, lesson.id)).toEqual(['09:00', '09:00'])
     // A 请假 elsewhere lists only the lessons it falls on, not those already in 闭馆.
     const leave = await exception(h, admin, coach.id, 'off', at(SUN, '16:00'), at(SUN, '17:00'))

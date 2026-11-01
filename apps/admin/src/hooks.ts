@@ -89,6 +89,8 @@ const STALE = new Set([
   'slot_has_bookings',
   'invoice_handled',
   'anomaly_handled',
+  'refund_rejected',
+  'exception_exists',
   // An earlier submit of this dialog may have gone through: reload to see what it did.
   'in_progress',
   'idempotency_key_reused',

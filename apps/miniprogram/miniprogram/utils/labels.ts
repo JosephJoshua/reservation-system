@@ -95,8 +95,9 @@ export function packageTag(p: {
 
 /**
  * A booking as the server would answer now, for one fetched a while ago: unpaid holds read as
- * expired from payBy on (the server sweeps them a little after), and a booked lesson can no
- * longer be cancelled or moved once it starts, and reads as completed once it ends.
+ * expired from payBy on (the server sweeps them a little after), a booked lesson can no longer
+ * be moved after its free-cancel deadline, nor cancelled or moved once it starts, and it reads
+ * as completed once it ends.
  */
 export function settled(b: BookingDto, now: number): BookingDto {
   if (b.status === 'pending_payment' && b.payBy && Date.parse(b.payBy) <= now) {
@@ -111,6 +112,9 @@ export function settled(b: BookingDto, now: number): BookingDto {
       canMove: false,
       canCheckIn: ended ? false : b.canCheckIn,
     }
+  }
+  if (b.status === 'confirmed' && b.canMove && Date.parse(b.cancelDeadline) < now) {
+    return { ...b, canMove: false }
   }
   return b
 }

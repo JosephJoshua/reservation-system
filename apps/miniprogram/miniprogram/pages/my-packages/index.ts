@@ -1,6 +1,7 @@
 import type { PackageDto } from '../../lib/shared'
-import { api, errorMessage, refreshAfter, showError } from '../../utils/api'
+import { api, errorMessage, refreshAfter, serverNow, showError } from '../../utils/api'
 import { getCatalog } from '../../utils/data'
+import { edgeWait } from '../../utils/edge'
 import { fullDate, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceLink, openInvoice } from '../../utils/invoice'
 import { packageTag, refundStatus } from '../../utils/labels'
@@ -82,9 +83,42 @@ Page({
   },
 
   raw: [] as PackageDto[],
+  edgeTimer: 0 as number,
+  hidden: false,
 
   onShow() {
+    this.hidden = false
     this.load()
+  },
+
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  /** Loads the list again just after a package in use runs out, so 使用中 and 申请退款 go. */
+  scheduleEdge(packages: PackageDto[]) {
+    this.clearEdge()
+    if (this.hidden) return
+    const wait = edgeWait(
+      packages.filter((p) => p.status === 'active').map((p) => Date.parse(p.expiresAt)),
+      serverNow(),
+    )
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      if (!this.hidden && this.data.state === 'ready' && !this.data.busy) void this.load()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   onPullDownRefresh() {
@@ -103,6 +137,7 @@ Page({
         packages: packages.map(view),
         packagesEnabled: catalog.payment.packagesEnabled,
       })
+      this.scheduleEdge(packages)
     } catch (e) {
       // A failed refresh keeps what is on screen.
       if (this.data.state === 'ready') showError(e)

@@ -365,6 +365,19 @@ describe('action log', () => {
       expect(res.status).toBe(204)
     }
     expect(log(h).filter((e) => e.action === 'refund.reject')).toHaveLength(1)
+    // One from a stale page with another reason is refused with the reason the student sees.
+    const other = await h.call(
+      'POST',
+      `/admin/refunds/${refund?.id}/reject`,
+      { note: '请到前台办理' },
+      admin,
+    )
+    expect(other.status).toBe(409)
+    expect(other.json.error).toMatchObject({
+      code: 'refund_rejected',
+      message: '该申请已拒绝：已上课',
+    })
+    expect(h.db.select().from(refunds).get()?.failure).toBe('已上课')
   })
 
   it('writes nothing when the change is refused', async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BookingDto, RefundDto } from '../miniprogram/lib/shared'
+import { edgeWait } from '../miniprogram/utils/edge'
 import {
   lessonTag,
   packageTag,
@@ -138,12 +139,14 @@ describe('settled', () => {
     status: 'confirmed',
     startsAt: '2026-10-29T02:00:00Z',
     endsAt: '2026-10-29T03:00:00Z',
+    cancelDeadline: '2026-10-28T02:00:00Z',
     canCancel: true,
     canMove: true,
   } as BookingDto
   const at = (iso: string) => settled(lesson, Date.parse(iso))
   it('reads a booked lesson as the server would once it starts and ends', () => {
-    expect(at('2026-10-29T01:59:00Z')).toBe(lesson)
+    expect(at('2026-10-28T02:00:00Z')).toBe(lesson)
+    expect(at('2026-10-28T02:00:01Z')).toMatchObject({ canCancel: true, canMove: false })
     expect(at('2026-10-29T02:00:00Z')).toMatchObject({
       status: 'confirmed',
       canCancel: false,
@@ -172,5 +175,16 @@ describe('lesson tag over time', () => {
       tag('2026-10-29T02:00:00Z'),
       tag('2026-10-29T03:00:00Z'),
     ]).toEqual(['已预约', '进行中', '已完成'])
+  })
+})
+
+describe('edgeWait', () => {
+  it('waits until just after the next instant still ahead', () => {
+    expect(edgeWait([5_000, 2_000, 1_000], 1_500)).toBe(1_500)
+    expect(edgeWait([1_000], 1_000)).toBeNull()
+    expect(edgeWait([], 0)).toBeNull()
+  })
+  it('caps a long wait', () => {
+    expect(edgeWait([30 * 3_600_000], 0)).toBe(6 * 3_600_000)
   })
 })

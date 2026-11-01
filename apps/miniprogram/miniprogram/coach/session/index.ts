@@ -1,5 +1,6 @@
 import type { Attendance, CoachLessonDto, CoachSessionDto } from '../../lib/shared'
 import { errorMessage, serverNow, showError } from '../../utils/api'
+import { edgeWait } from '../../utils/edge'
 import { lessonTime } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
@@ -36,6 +37,9 @@ Page({
   marking: false,
   /** Each booking's last mark made here, by booking id: which button and when. */
   lastMark: {} as Record<number, { picked: Attendance; at: number }>,
+  edgeTimer: 0 as number,
+  /** Behind another page or gone: no edge timer then, onShow sets one again. */
+  hidden: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -43,8 +47,42 @@ Page({
   },
 
   onShow() {
+    this.hidden = false
     // Back from a student's lesson page: attendance or feedback may have changed.
     if (this.data.state === 'ready') this.load()
+  },
+
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  /**
+   * Before the class starts, reloads the roster just after the start, as marking opens then. A
+   * failed reload still redraws the rows for the time now.
+   */
+  scheduleEdge(s: CoachSessionDto) {
+    this.clearEdge()
+    if (this.hidden) return
+    const wait = edgeWait([Date.parse(s.startsAt)], serverNow())
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      const shown = this.data.session
+      if (!shown || this.hidden || this.data.state !== 'ready') return
+      this.show(shown)
+      if (!this.marking && !this.data.markingAll) void this.load()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   onPullDownRefresh() {
@@ -100,6 +138,7 @@ Page({
           : '课程开始后才能签到。如需调整名单或取消课程，请联系场馆。',
       canMarkAll: students.some((st) => st.canMark && st.attendance === null),
     })
+    this.scheduleEdge(s)
   },
 
   openStudent(e: WechatMiniprogram.TouchEvent) {

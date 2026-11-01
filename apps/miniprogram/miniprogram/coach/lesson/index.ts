@@ -6,6 +6,7 @@ import {
   type StudentProfileDto,
 } from '../../lib/shared'
 import { assetUrl, errorMessage, refreshAfter, serverNow, showError } from '../../utils/api'
+import { edgeWait } from '../../utils/edge'
 import { dateTime, fullDate, lessonTime, yuan } from '../../utils/format'
 import { navigateOnce } from '../../utils/nav'
 import { previewPhotos } from '../../utils/photos'
@@ -127,10 +128,70 @@ Page({
   feedbackAsking: false,
   /** The last mark made here: which button and when. */
   lastMark: null as { picked: Attendance; at: number } | null,
+  edgeTimer: 0 as number,
+  /** Counts what show() has put on screen, so a slow fetch can tell it is older. */
+  shows: 0,
+  /** Behind another page or gone: no edge timer then, onShow sets one again. */
+  hidden: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
     this.load()
+  },
+
+  onShow() {
+    this.hidden = false
+    const l = this.data.lesson
+    if (l && this.data.state === 'ready') this.scheduleEdge(l)
+  },
+
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  /**
+   * For a booked lesson, fetches it again just after it starts, as attendance opens then; on a
+   * failure it is only redrawn for the time now.
+   */
+  scheduleEdge(l: CoachLessonDto) {
+    this.clearEdge()
+    if (l.status !== 'confirmed' || this.hidden) return
+    const wait = edgeWait([Date.parse(l.startsAt)], serverNow())
+    if (wait === null) return
+    this.edgeTimer = setTimeout(async () => {
+      this.edgeTimer = 0
+      const shown = this.data.lesson
+      if (!shown || this.hidden || this.data.state !== 'ready') return
+      const busy =
+        this.data.marking ||
+        this.data.cancelling ||
+        this.data.deletingFeedback ||
+        this.data.savingNote
+      if (busy) {
+        this.show(shown)
+        return
+      }
+      // A change saved meanwhile shows a newer lesson than this fetch may have read.
+      const shows = this.shows
+      try {
+        const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
+        if (shows === this.shows) this.show(fetched)
+      } catch {
+        const current = this.data.lesson
+        if (current && !this.hidden && this.data.state === 'ready') this.show(current)
+      }
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   onPullDownRefresh() {
@@ -148,6 +209,7 @@ Page({
 
   /** Shows a lesson; keeps an unsaved note unless the server has a newer one. */
   show(l: CoachLessonDto, keepNote?: boolean) {
+    this.shows++
     const keep = keepNote ?? this.data.noteDirty
     this.setData({
       state: 'ready',
@@ -179,6 +241,7 @@ Page({
       })),
       ...(keep ? {} : { note: l.coachNote, noteDirty: false }),
     })
+    this.scheduleEdge(l)
   },
 
   async mark(e: WechatMiniprogram.TouchEvent) {

@@ -444,7 +444,10 @@ export function adminRoutes(deps: Deps) {
         })
         .refine((b) => Object.keys(b).length > 0, { message: '没有要修改的内容' }),
     )
-    const { before, after } = updateStaff(deps, c.get('staffId'), idParam(c), body)
+    // 停用/启用 carries its value, so only the role and name dialogs send If-Match.
+    const { before, after } = updateStaff(deps, c.get('staffId'), idParam(c), body, (current) =>
+      checkVersion(c, current),
+    )
     // Logged on its own, so the log can be filtered for who changed what someone may do.
     if (rolesText(before.roles) !== rolesText(after.roles)) {
       log(c.get('staffId'), {
