@@ -719,7 +719,7 @@ function CreateSessions({
               allowInputOverLimit={false}
               suffix="人"
               onChange={(v) => {
-                const n = typedNumber(v, least, most)
+                const n = typedNumber(v)
                 if (n !== null) setCapacity(Math.floor(n))
               }}
             />

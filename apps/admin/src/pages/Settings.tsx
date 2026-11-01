@@ -420,7 +420,7 @@ export function Settings() {
               allowInputOverLimit={false}
               suffix="次"
               onChange={(v) => {
-                const n = typedNumber(v, 1, 10)
+                const n = typedNumber(v)
                 if (n !== null) {
                   set((d) => {
                     d.payment.trialLimitPerStudent = Math.floor(n)
@@ -438,7 +438,7 @@ export function Settings() {
               allowInputOverLimit={false}
               suffix="分钟"
               onChange={(v) => {
-                const n = typedNumber(v, 5, 30)
+                const n = typedNumber(v)
                 if (n !== null) {
                   set((d) => {
                     d.payment.timeoutMinutes = Math.floor(n)

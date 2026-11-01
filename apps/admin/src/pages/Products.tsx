@@ -333,7 +333,7 @@ function ProductEditor({
           allowInputOverLimit={false}
           suffix="节"
           onChange={(v) => {
-            const n = typedNumber(v, 1, 200)
+            const n = typedNumber(v)
             if (n !== null) set({ lessonCount: Math.floor(n) })
           }}
         />
@@ -359,7 +359,7 @@ function ProductEditor({
           allowInputOverLimit={false}
           suffix="天"
           onChange={(v) => {
-            const n = typedNumber(v, 1, 3650)
+            const n = typedNumber(v)
             if (n !== null) set({ validityDays: Math.floor(n) })
           }}
         />

@@ -22,13 +22,11 @@ describe('fmtLastDay', () => {
 })
 
 describe('typedNumber', () => {
-  it('takes only a number within the limits, so a cleared box keeps the last value', () => {
-    expect(typedNumber('', 1, 200)).toBeNull()
-    expect(typedNumber(undefined, 1, 200)).toBeNull()
-    expect(typedNumber(0, 1, 200)).toBeNull()
-    expect(typedNumber(201, 1, 200)).toBeNull()
-    expect(typedNumber('abc', 1, 200)).toBeNull()
-    expect(typedNumber(12, 1, 200)).toBe(12)
-    expect(typedNumber('0.5', 0.1, 9.9)).toBe(0.5)
+  it('keeps the last value for a cleared box and passes any number on for the box to bring into range', () => {
+    expect(typedNumber('')).toBeNull()
+    expect(typedNumber(undefined)).toBeNull()
+    expect(typedNumber('abc')).toBeNull()
+    expect(typedNumber(3700)).toBe(3700)
+    expect(typedNumber('0.5')).toBe(0.5)
   })
 })

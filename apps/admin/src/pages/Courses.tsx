@@ -269,7 +269,7 @@ function LessonEditor({
           allowInputOverLimit={false}
           suffix="分钟"
           onChange={(v) => {
-            const n = typedNumber(v, 15, 480)
+            const n = typedNumber(v)
             if (n !== null) set({ durationMinutes: Math.floor(n) })
           }}
         />
@@ -284,7 +284,7 @@ function LessonEditor({
             allowInputOverLimit={false}
             suffix="人"
             onChange={(v) => {
-              const n = typedNumber(v, 1, 30)
+              const n = typedNumber(v)
               // The class minimum and seats per table stay as they are while it is typed, say 1
               // on the way to 18; saving a private lesson drops them, and a group checks them.
               if (n !== null) set({ capacity: Math.floor(n) })
@@ -308,7 +308,7 @@ function LessonEditor({
                 allowInputOverLimit={false}
                 suffix="人"
                 onChange={(v) => {
-                  const n = typedNumber(v, 2, f.capacity)
+                  const n = typedNumber(v)
                   if (n !== null) set({ minStudents: Math.floor(n) })
                 }}
               />
@@ -376,7 +376,7 @@ function LessonEditor({
                 decimalPlaces={1}
                 suffix="折"
                 onChange={(v) => {
-                  const n = typedNumber(v, 0.1, 9.9)
+                  const n = typedNumber(v)
                   if (n !== null) set({ salePercent: Math.round(n * 10) })
                 }}
               />

@@ -17,9 +17,9 @@ function unknownRule(name: never): never {
   throw new Error(`unknown booking rule ${name}`)
 }
 
-/** A typed whole number within the rule's limits, or null to keep the last one. */
-function typedRule(v: unknown, limits: { min: number; max: number }) {
-  const n = typedNumber(v, limits.min, limits.max)
+/** A typed whole number, or null to keep the last one. */
+function typedRule(v: unknown) {
+  const n = typedNumber(v)
   return n === null ? null : Math.floor(n)
 }
 
@@ -47,7 +47,7 @@ function NumberRule({
         allowInputOverLimit={false}
         suffix={suffix}
         onChange={(v) => {
-          const hours = typedNumber(v, limits.min / 60, limits.max / 60)
+          const hours = typedNumber(v)
           if (hours !== null) onChange(Math.round(hours * 60))
         }}
       />
@@ -62,7 +62,7 @@ function NumberRule({
       allowInputOverLimit={false}
       suffix={suffix}
       onChange={(v) => {
-        const n = typedRule(v, limits)
+        const n = typedRule(v)
         if (n !== null) onChange(n)
       }}
     />
@@ -111,7 +111,7 @@ function RuleInput({
                 allowInputOverLimit={false}
                 suffix="%"
                 onChange={(v) => {
-                  const percent = typedRule(v, { min: 0, max: 100 })
+                  const percent = typedRule(v)
                   if (percent !== null) onChange({ kind: 'partial', percent })
                 }}
               />
