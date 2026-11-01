@@ -353,7 +353,9 @@ function BookingList({ active }: { active: boolean }) {
           {
             colKey: 'attendance',
             title: '签到',
-            cell: ({ row }) => <AttendanceCell row={row} canMark={canMark} onChanged={reload} />,
+            cell: ({ row }) => (
+              <AttendanceCell row={row} canMark={canMark} now={now} onChanged={reload} />
+            ),
           },
           ...(canBook
             ? [
