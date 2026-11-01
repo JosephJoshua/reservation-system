@@ -8,8 +8,8 @@
       <view wx:if="{{studentNo}}" class="me-no">学员编号 {{studentNo}}</view>
     </block>
     <block wx:elif="{{meFailed}}">
-      <view class="me-name">我的资料</view>
-      <view class="me-phone">下拉刷新</view>
+      <view class="me-name">资料加载失败</view>
+      <view class="me-phone">请检查网络后下拉刷新</view>
     </block>
   </view>
   <view class="me-arrow"><t-icon name="chevron-right" size="40rpx" /></view>

@@ -1294,10 +1294,16 @@ export function adminRoutes(deps: Deps) {
       if (body.open && slot.cancelledAt) {
         throw new ApiError(409, 'session_cancelled', '已取消的小班课不能重新开放')
       }
+      const resize = body.capacity !== undefined && body.capacity !== slot.capacity
+      // From a dialog opened before the session was called off or ended: it reloads.
+      if (resize && slot.cancelledAt) {
+        throw new ApiError(409, 'session_cancelled', '这节小班课已取消，不能修改人数')
+      }
+      if (resize && slot.endsAt <= deps.now()) {
+        throw new ApiError(409, 'ended', '这节课已结束，不能修改人数')
+      }
       const capacity =
-        body.capacity !== undefined && body.capacity !== slot.capacity
-          ? setSessionCapacity(tx, id, body.capacity)
-          : null
+        resize && body.capacity !== undefined ? setSessionCapacity(tx, id, body.capacity) : null
       if (body.open !== undefined) {
         tx.update(slots).set({ open: body.open }).where(eq(slots.id, id)).run()
       }

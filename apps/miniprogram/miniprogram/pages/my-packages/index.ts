@@ -115,7 +115,8 @@ Page({
     if (!pkg || this.data.busy) return
     // Said before asking, rather than refused after the student confirms.
     if (pkg.inUse) {
-      wx.showModal({
+      // Once for a double tap.
+      void ask({
         title: '暂不能退款',
         content: '还有用这个课时包预约且未结束的课，请在课程结束或取消预约后再申请退款。',
         showCancel: false,
