@@ -99,21 +99,26 @@ export function cancelRuleText(hours: number, rule: LateCancelRule): string {
 
 /**
  * What a lesson booked inside its free-cancel window loses if cancelled, said before it is paid
- * for; empty when it is not that late or a late cancel still refunds in full.
+ * for; empty when it is not that late or a late cancel still gives everything back. As
+ * cancellationOutcome has it: a package lesson comes back only at 100%, and a paid one refunds
+ * the rule's share.
  */
 export function lateBookingText(
   startsAt: string,
   hours: number,
   rule: LateCancelRule,
   now: number,
+  payWith: 'wechat' | 'package',
 ): string {
   const start = Date.parse(startsAt)
   if (!hours || Number.isNaN(start) || start - now >= hours * 3_600_000) return ''
   if (rule.kind !== 'forfeit' && rule.percent === 100) return ''
   const loses =
-    rule.kind === 'forfeit' || rule.percent === 0
-      ? '不退费用和课时'
-      : `只退还 ${rule.percent}% 的费用，不退课时`
+    payWith === 'package'
+      ? '不退课时'
+      : rule.kind === 'forfeit' || rule.percent === 0
+        ? '不退费用'
+        : `只退还 ${rule.percent}% 的费用`
   return `距开课已不足 ${hours} 小时，预约后再取消${loses}。`
 }
 

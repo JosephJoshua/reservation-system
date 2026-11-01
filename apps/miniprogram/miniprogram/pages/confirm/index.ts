@@ -3,6 +3,7 @@ import {
   type BookingTerms,
   bookingTerms,
   type CreateBookingResponse,
+  type LateCancelRule,
   type MeDto,
   minCheckHours,
   type StudentDto,
@@ -57,6 +58,14 @@ const SLOT_GONE = [
   'venue_closed',
 ]
 
+/** The late-booking warning both ways of paying would show, so switching needs no recount. */
+function lateNotes(...args: [string, number, LateCancelRule, number]) {
+  return {
+    wechat: lateBookingText(...args, 'wechat'),
+    package: lateBookingText(...args, 'package'),
+  }
+}
+
 Page({
   data: {
     state: 'loading' as 'loading' | 'ready' | 'error',
@@ -68,7 +77,8 @@ Page({
     coachId: 0,
     startsAt: '',
     /** Booked inside the free-cancel window: what a cancel would then lose. */
-    lateNote: '',
+    /** The late-booking warning for each way of paying, as `payWith` picks it. */
+    lateNotes: { wechat: '', package: '' },
     lessonName: '',
     isTrial: false,
     when: '',
@@ -252,7 +262,7 @@ Page({
           lessonType.rules.cancelDeadlineHours,
           lessonType.rules.lateCancel,
         ),
-        lateNote: lateBookingText(
+        lateNotes: lateNotes(
           this.data.startsAt,
           lessonType.rules.cancelDeadlineHours,
           lessonType.rules.lateCancel,
@@ -536,10 +546,24 @@ Page({
     }
     if (isTop(this)) {
       this.finished = true
-      wx.redirectTo({ url, success: () => say(toast) })
+      wx.redirectTo({
+        url,
+        success: () => say(toast),
+        // Still here, so a later tap may try again.
+        fail: () => {
+          this.finished = false
+        },
+      })
     } else if (this.left) {
       this.finished = true
-      wx.navigateTo({ url, complete: () => say(toast || away) })
+      wx.navigateTo({
+        url,
+        success: () => say(toast || away),
+        fail: () => {
+          this.finished = false
+          say(toast || away)
+        },
+      })
     }
   },
 

@@ -117,7 +117,7 @@ Page({
     if (pkg.inUse) {
       wx.showModal({
         title: '暂不能退款',
-        content: '还有用这个课时包预约的课，请先取消这些预约再申请退款。',
+        content: '还有用这个课时包预约且未结束的课，请在课程结束或取消预约后再申请退款。',
         showCancel: false,
       })
       return

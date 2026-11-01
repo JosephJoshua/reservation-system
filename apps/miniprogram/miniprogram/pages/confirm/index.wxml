@@ -64,7 +64,7 @@
     </t-cell-group>
   </block>
 
-  <view wx:if="{{lateNote}}" class="late-note">{{lateNote}}</view>
+  <view wx:if="{{payWith === 'package' ? lateNotes.package : lateNotes.wechat}}" class="late-note">{{payWith === 'package' ? lateNotes.package : lateNotes.wechat}}</view>
   <view class="footnote">
     <view wx:if="{{groupNote}}">{{groupNote}}</view>
     <view>{{cancelRule}}</view>
