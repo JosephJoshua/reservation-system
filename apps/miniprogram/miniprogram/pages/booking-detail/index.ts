@@ -68,6 +68,8 @@ function subtitle(b: BookingDto, now: number): string {
       }
       // Marked 缺席 while it is on: counted as taken, as once it has ended.
       if (b.attendance === 'no_show') return '缺席，照常计课'
+      // Shown as time passes on an open page, before it is fetched again.
+      if (Date.parse(b.endsAt) <= now) return '课程已结束'
       return Date.parse(b.startsAt) <= now ? '课程进行中' : '请按时到场上课'
     case 'completed':
       // Counted like an attended lesson: no refund and the package lesson is used.
@@ -128,6 +130,8 @@ Page({
   asked: 0,
   answered: 0,
   timer: 0 as number,
+  /** Fires when a booked lesson starts or ends, so the page does not keep the words from before. */
+  edgeTimer: 0 as number,
   venue: null as HomeDto['venue'] | null,
 
   onLoad(query: Record<string, string | undefined>) {
@@ -144,11 +148,13 @@ Page({
 
   onHide() {
     this.stopTimer()
+    this.clearEdge()
   },
 
   onUnload() {
     this.left = true
     this.stopTimer()
+    this.clearEdge()
   },
 
   onPullDownRefresh() {
@@ -287,6 +293,33 @@ Page({
     })
     if (b.status === 'pending_payment') this.startTimer()
     else this.stopTimer()
+    this.scheduleEdge(b)
+  },
+
+  /**
+   * For a booked lesson, redraws the page as it starts and as it ends (请按时到场上课, then
+   * 课程进行中, then ended), and fetches it again then, as the venue may have marked it.
+   */
+  scheduleEdge(b: BookingDto) {
+    this.clearEdge()
+    if (b.status !== 'confirmed' || this.left) return
+    const now = serverNow()
+    const next = [Date.parse(b.startsAt), Date.parse(b.endsAt)].find((t) => t > now)
+    if (next === undefined) return
+    // Capped, as long timers are not kept reliably; the page schedules again when it fires.
+    const wait = Math.min(next - now + 1000, 6 * 3_600_000)
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      const shown = this.data.booking
+      if (!shown || this.left) return
+      this.show(shown)
+      if (!this.data.busy) void this.refresh()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   startTimer() {
