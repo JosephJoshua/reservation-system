@@ -9,7 +9,7 @@ import {
 } from '../../lib/shared'
 import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
 import { askForNotices, getCatalog, getMe } from '../../utils/data'
-import { edgeWait } from '../../utils/edge'
+import { edgeWait, nextMidnight } from '../../utils/edge'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { leaveMove, submitMove } from '../../utils/move'
 
@@ -230,15 +230,18 @@ Page({
     this.clearEdge()
     const booking = this.booking
     if (this.hidden || !booking) return
+    const now = serverNow()
     const wait = edgeWait(
       [
         Date.parse(booking.cancelDeadline),
+        // 今天 and the day strip move on then.
+        nextMidnight(now),
         ...this.rows.flatMap((s) => [
           Date.parse(s.startsAt) - booking.window.minNoticeMinutes * 60_000,
           Date.parse(s.startsAt),
         ]),
       ],
-      serverNow(),
+      now,
     )
     if (wait === null) return
     this.edgeTimer = setTimeout(() => this.onEdge(booking), wait) as unknown as number
@@ -255,6 +258,10 @@ Page({
     if (Date.parse(booking.cancelDeadline) < serverNow()) {
       this.getOpenerEventChannel().emit?.('stale')
       this.setData({ state: 'error', fixed: true, error: whyFixed(booking) })
+      return
+    }
+    if (this.data.days[0]?.key !== venueDateKey(new Date(serverNow()))) {
+      this.load()
       return
     }
     if (this.data.slotsState === 'ready') {

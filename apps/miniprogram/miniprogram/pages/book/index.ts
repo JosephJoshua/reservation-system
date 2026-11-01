@@ -1,7 +1,7 @@
 import { type SlotDto, venueDateKey } from '../../lib/shared'
 import { api, assetUrl, errorMessage, serverNow, showError } from '../../utils/api'
 import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
-import { edgeWait } from '../../utils/edge'
+import { edgeWait, nextMidnight } from '../../utils/edge'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce, openUpcomingLessons } from '../../utils/nav'
 
@@ -282,17 +282,31 @@ Page({
   scheduleEdge() {
     this.clearEdge()
     if (this.hidden) return
+    const now = serverNow()
     const wait = edgeWait(
-      (this.rows as SlotDto[]).flatMap((s) => [
-        Date.parse(s.startsAt) - this.noticeMs,
-        Date.parse(s.startsAt),
-      ]),
-      serverNow(),
+      [
+        ...(this.rows as SlotDto[]).flatMap((s) => [
+          Date.parse(s.startsAt) - this.noticeMs,
+          Date.parse(s.startsAt),
+        ]),
+        // 今天 and the day strip move on then.
+        nextMidnight(now),
+      ],
+      now,
     )
     if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
-      if (this.hidden || this.data.slotsState !== 'ready') return
+      if (this.hidden) return
+      // Midnight even after the times failed to load.
+      if (
+        this.data.state === 'ready' &&
+        this.data.days[0]?.key !== venueDateKey(new Date(serverNow()))
+      ) {
+        this.load()
+        return
+      }
+      if (this.data.slotsState !== 'ready') return
       const slots: SlotView[] = this.slotViews()
       this.setData({
         slots,

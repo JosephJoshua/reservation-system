@@ -21,7 +21,6 @@ import {
   DateRangePicker,
   Dialog,
   Input,
-  MessagePlugin,
   Popconfirm,
   Select,
   Space,
@@ -163,16 +162,14 @@ export function Schedule() {
     const minute = startHour * 60 + ((e.clientX - box.left) / HOUR_PX) * 60
     const start = venueInstant(date, Math.floor(minute / 30) * 30)
     if (start.getTime() <= Date.now()) {
-      void MessagePlugin.info('这个时间已过')
+      warn('这个时间已过', 'info')
       return
     }
     // The first step of a lesson starting then.
     const moment = { startsAt: start, endsAt: new Date(start.getTime() + SCHEDULE_STEP * MINUTE) }
     const off = coach.off.filter((o) => clashes(moment, toSpan(o)))
     if (off.length) {
-      void MessagePlugin.info(
-        off.some((o) => o.coachId === null) ? '这个时间闭馆' : '教练这个时间请假',
-      )
+      warn(off.some((o) => o.coachId === null) ? '这个时间闭馆' : '教练这个时间请假', 'info')
       return
     }
     setBooking({

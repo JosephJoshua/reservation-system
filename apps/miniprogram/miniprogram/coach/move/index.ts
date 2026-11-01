@@ -5,6 +5,7 @@ import {
   venueDateKey,
 } from '../../lib/shared'
 import { ApiError, errorMessage, serverNow } from '../../utils/api'
+import { edgeWait, nextMidnight } from '../../utils/edge'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { leaveMove, submitMove } from '../../utils/move'
 import { askForNotices, bindInstead, coachApi } from '../utils/coach-api'
@@ -52,6 +53,9 @@ Page({
   /** Times the server refused for this lesson, by start. */
   refused: new Set<string>(),
   free: [] as OpenTimeDto[],
+  edgeTimer: 0,
+  /** Behind another page or gone: no edge timer then, onShow sets one again. */
+  hidden: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -61,10 +65,64 @@ Page({
   },
 
   onShow() {
+    this.hidden = false
     // Left open past midnight: the day strip has moved.
     const today = venueDateKey(new Date(serverNow()))
     const { state, submitting, days } = this.data
     if (state === 'ready' && !submitting && days[0]?.key !== today) this.load()
+    else if (state === 'ready') this.scheduleEdge()
+  },
+
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  /** Drops times as they start, and moves the day strip on at midnight. */
+  scheduleEdge() {
+    this.clearEdge()
+    if (this.hidden) return
+    const now = serverNow()
+    const wait = edgeWait([...this.free.map((s) => Date.parse(s.startsAt)), nextMidnight(now)], now)
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => this.onEdge(), wait) as unknown as number
+  },
+
+  onEdge() {
+    this.edgeTimer = 0
+    if (this.hidden || this.data.state !== 'ready') return
+    // A move on its way settles first; look again shortly.
+    if (this.data.submitting) {
+      this.edgeTimer = setTimeout(() => this.onEdge(), 1000) as unknown as number
+      return
+    }
+    const at = serverNow()
+    if (this.data.days[0]?.key !== venueDateKey(new Date(at))) {
+      this.load()
+      return
+    }
+    this.free = this.free.filter((t) => Date.parse(t.startsAt) > at)
+    const picked = this.data.picked
+    const days = this.data.days.map((d) => ({
+      ...d,
+      free: this.free.filter((t) => !t.tableFull && venueDateKey(new Date(t.startsAt)) === d.key)
+        .length,
+    }))
+    this.setData({ days })
+    this.showDay()
+    const still = picked && this.data.slots.find((v) => v.key === picked.key)
+    if (still) this.setData({ picked: still })
+    this.scheduleEdge()
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   async load() {
@@ -105,6 +163,7 @@ Page({
         dayAnchor: dayAnchor(days, date),
       })
       this.showDay()
+      this.scheduleEdge()
     } catch (e) {
       if (bindInstead(e, this)) return
       // Not this coach's lesson any more: reloading would not help.

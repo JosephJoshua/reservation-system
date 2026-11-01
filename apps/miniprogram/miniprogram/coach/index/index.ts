@@ -154,7 +154,8 @@ Page({
     this.loadSchedule().finally(() => wx.stopPullDownRefresh())
   },
 
-  async load() {
+  /** `quiet` (the move to a new day at midnight) keeps the day shown on a failure. */
+  async load(quiet = false) {
     try {
       const me = await coachApi<CoachMeDto>('GET', '/me')
       this.me = me
@@ -173,8 +174,17 @@ Page({
         }
       })
       const yesterday = days[PAST_DAYS - 1]?.key ?? today
+      // Moving on at midnight: the counts loaded before stay until the schedule loads again.
+      const counts = new Map(this.data.days.map((d) => [d.key, d.lessons]))
+      if (quiet) for (const d of days) d.lessons = counts.get(d.key) ?? 0
       this.setData({ days, date: today, dayAnchor: `day-${yesterday}` })
-      await this.loadSchedule()
+      const loaded = await this.loadSchedule(quiet)
+      if (quiet && loaded === false) {
+        // The schedule loaded before still covers the new day: show it and try again.
+        this.showDay()
+        this.retryLater()
+        return
+      }
       this.setData({ state: 'ready' })
     } catch (e) {
       // Left for another page meanwhile: the error state's retry gets here again.
@@ -182,20 +192,36 @@ Page({
         wx.redirectTo({ url: '/coach/bind/index' })
         return
       }
+      if (quiet && this.data.state === 'ready') {
+        this.retryLater()
+        return
+      }
       this.setData({ state: 'error', error: errorMessage(e) })
     }
   },
 
-  /** Loads the schedule; `quiet` (the edge timer's reload) keeps the day shown on a failure. */
-  async loadSchedule(quiet?: boolean) {
+  /** Tries the move to a new day again in a minute, or when the page is shown. */
+  retryLater() {
+    this.clearEdge()
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      if (!this.hidden && this.data.state === 'ready') this.load(true)
+    }, 60_000) as unknown as number
+  },
+
+  /**
+   * Loads the schedule, saying whether it did (null when a newer load took over); `quiet` (the
+   * edge timer's reload) keeps the day shown on a failure.
+   */
+  async loadSchedule(quiet?: boolean): Promise<boolean | null> {
     const { days } = this.data
     const first = days[0]?.key
     const last = days[days.length - 1]?.key
-    if (!first || !last) return
+    if (!first || !last) return false
     const request = ++this.request
     try {
       const schedule = await coachApi<CoachDaysDto>('GET', `/schedule?from=${first}&to=${last}`)
-      if (request !== this.request) return
+      if (request !== this.request) return null
       this.schedule = schedule
       const counts = new Map<string, number>()
       for (const s of schedule.lessons) {
@@ -209,11 +235,13 @@ Page({
         days: days.map((d) => ({ ...d, lessons: counts.get(d.key) ?? 0 })),
       })
       this.showDay()
+      return true
     } catch (e) {
-      if (request !== this.request) return
-      if (quiet && this.data.state === 'ready') return
+      if (request !== this.request) return null
+      if (quiet && this.data.state === 'ready') return false
       if (this.data.state === 'ready') this.setData({ slotsState: 'error', error: errorMessage(e) })
       else throw e
+      return false
     }
   },
 
@@ -328,16 +356,23 @@ Page({
 
   /**
    * Redraws the day just after the next of its edges (a lesson starting, so 已预约 becomes 待签到,
-   * or a 请假 or free stretch starting or ending), and loads the schedule again then.
+   * a 请假 or free stretch starting or ending, or midnight), and loads the schedule again then.
    */
   scheduleEdge(starts: number[]) {
     this.clearEdge()
     if (this.hidden) return
-    const wait = edgeWait(starts, serverNow())
+    const now = serverNow()
+    // Midnight too, when 今天 and the day strip move on.
+    const today = this.data.days[PAST_DAYS]?.key ?? venueDateKey(new Date(now))
+    const wait = edgeWait([...starts, venueInstant(today, 24 * 60).getTime()], now)
     if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
       if (this.hidden || this.data.state !== 'ready') return
+      if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date(serverNow()))) {
+        this.load(true)
+        return
+      }
       this.showDay()
       if (!this.rowBusy) void this.loadSchedule(true)
     }, wait) as unknown as number

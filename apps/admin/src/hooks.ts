@@ -99,11 +99,11 @@ const STALE = new Set([
 const warned = new Map<string, number>()
 
 /** Shows a warning, once for a double click: the same text again within 2 s is dropped. */
-export function warn(text: string) {
+export function warn(text: string, theme: 'warning' | 'info' = 'warning') {
   const at = Date.now()
   if ((warned.get(text) ?? 0) > at - 2_000) return
   warned.set(text, at)
-  void MessagePlugin.warning(text)
+  void MessagePlugin[theme](text)
 }
 
 /**
