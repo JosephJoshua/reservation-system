@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Dialog, DialogPlugin, Select, Tag, Textarea } from 'tdesign-react'
 import { api } from './api'
 import { fmtDateTime, yuan } from './format'
-import { attempt, onceKey, useSubmitting } from './hooks'
+import { attempt, onceKey, useNow, useSubmitting } from './hooks'
 import {
   bookingStatusLabel,
   cancelConfirmLabel,
@@ -114,7 +114,9 @@ export function AttendanceCell({
 }) {
   // What stood in the way of the lesson, asked about before 到课.
   const disruption = row.lessonDisruption
-  const started = Date.parse(row.startsAt) <= Date.now()
+  // Ticks, so 签到 shows once the lesson starts with the page left open.
+  const now = useNow(10_000)
+  const started = Date.parse(row.startsAt) <= now
   const markable = started && (row.status === 'confirmed' || row.status === 'completed')
   const mark = async (attendance: string | null) => {
     if (attendance === 'attended' && disruption && !(await confirmDisruptedArrival(disruption))) {

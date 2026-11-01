@@ -307,6 +307,13 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
     }
   }
 
+  // One that ends while the dialog is open leaves the list, as on a reload.
+  const offs = data
+    ? [...data.exceptions, ...data.closures]
+        .filter((e) => Date.parse(e.endsAt) > now)
+        .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
+    : []
+
   const remove = async (e: ScheduleExceptionDto) => {
     let result: { conflicts: ScheduleConflictDto[]; endedAt: string | null } | undefined
     const what = e.kind === 'off' ? '请假' : '加班'
@@ -318,6 +325,8 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
       },
       // One under way, perhaps only since the page was opened, is cut short rather than deleted.
       () => (result?.endedAt ? `已提前结束${what}` : `已取消${what}`),
+      // Ended or removed elsewhere meanwhile: show the list as it is now.
+      { onStale: () => reload() },
     )
     if (ok) {
       // Lessons booked in a 加班 stay, now outside 排班.
@@ -431,57 +440,55 @@ export function CoachScheduleDialog({ coach, onClose }: { coach: Coach; onClose:
 
           <div>
             <div className="subhead">请假和加班</div>
-            {data.exceptions.length + data.closures.length === 0 ? (
+            {offs.length === 0 ? (
               <div className="muted">没有请假和加班</div>
             ) : (
               <div className="exception-list">
-                {[...data.exceptions, ...data.closures]
-                  .sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))
-                  .map((e) => (
-                    <div key={e.id} className="exception-row">
-                      <Tag
-                        variant="light"
-                        theme={
-                          e.coachId === null ? 'default' : e.kind === 'off' ? 'warning' : 'primary'
+                {offs.map((e) => (
+                  <div key={e.id} className="exception-row">
+                    <Tag
+                      variant="light"
+                      theme={
+                        e.coachId === null ? 'default' : e.kind === 'off' ? 'warning' : 'primary'
+                      }
+                    >
+                      {e.coachId === null ? '闭馆' : e.kind === 'off' ? '请假' : '加班'}
+                    </Tag>
+                    <span>{spanText(e.startsAt, e.endsAt)}</span>
+                    <span className="muted">
+                      {[e.note, e.byStaff === null ? '教练添加' : e.byStaff]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    {e.coachId === null ? (
+                      // 闭馆 is kept in 设置, which only some roles open.
+                      canManage && <span className="muted">在设置里管理</span>
+                    ) : (
+                      <Popconfirm
+                        theme="warning"
+                        content={
+                          Date.parse(e.startsAt) <= now
+                            ? e.kind === 'off'
+                              ? '提前结束后，从现在起重新开放预约'
+                              : '提前结束后，之后的时间不再开放预约，已约的课不受影响'
+                            : e.kind === 'off'
+                              ? '取消后这段时间重新开放预约'
+                              : '取消后这段时间不再开放预约，已约的课不受影响'
                         }
+                        confirmBtn={{
+                          content: Date.parse(e.startsAt) <= now ? '提前结束' : '取消',
+                          theme: 'danger',
+                        }}
+                        cancelBtn="保留"
+                        onConfirm={() => remove(e)}
                       >
-                        {e.coachId === null ? '闭馆' : e.kind === 'off' ? '请假' : '加班'}
-                      </Tag>
-                      <span>{spanText(e.startsAt, e.endsAt)}</span>
-                      <span className="muted">
-                        {[e.note, e.byStaff === null ? '教练添加' : e.byStaff]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </span>
-                      {e.coachId === null ? (
-                        // 闭馆 is kept in 设置, which only some roles open.
-                        canManage && <span className="muted">在设置里管理</span>
-                      ) : (
-                        <Popconfirm
-                          theme="warning"
-                          content={
-                            Date.parse(e.startsAt) <= now
-                              ? e.kind === 'off'
-                                ? '提前结束后，从现在起重新开放预约'
-                                : '提前结束后，之后的时间不再开放预约，已约的课不受影响'
-                              : e.kind === 'off'
-                                ? '取消后这段时间重新开放预约'
-                                : '取消后这段时间不再开放预约，已约的课不受影响'
-                          }
-                          confirmBtn={{
-                            content: Date.parse(e.startsAt) <= now ? '提前结束' : '取消',
-                            theme: 'danger',
-                          }}
-                          cancelBtn="保留"
-                          onConfirm={() => remove(e)}
-                        >
-                          <Button variant="text" theme="danger" size="small">
-                            {Date.parse(e.startsAt) <= now ? '提前结束' : '取消'}
-                          </Button>
-                        </Popconfirm>
-                      )}
-                    </div>
-                  ))}
+                        <Button variant="text" theme="danger" size="small">
+                          {Date.parse(e.startsAt) <= now ? '提前结束' : '取消'}
+                        </Button>
+                      </Popconfirm>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
             <ExceptionForm
@@ -645,6 +652,8 @@ export function Closures() {
   const { data, error, reload } = useApi<ScheduleExceptionDto[]>('/admin/closures')
   const [conflicts, setConflicts] = useState<ScheduleConflictDto[]>([])
   const now = useNow(10_000)
+  // One that ends while the page is open leaves the list, as on a reload.
+  const shown = (data ?? []).filter((e) => Date.parse(e.endsAt) > now)
   const remove = async (id: number) => {
     const del = () =>
       api<{ endedAt: string | null }>('DELETE', `/admin/closures/${id}`, undefined, {
@@ -653,18 +662,18 @@ export function Closures() {
     // One under way, perhaps only since the page was opened, is cut short rather than deleted.
     const said = (r: unknown) =>
       (r as { endedAt?: string | null } | undefined)?.endedAt ? '已提前结束闭馆' : '已删除闭馆'
-    if (await attempt(del, said)) await reload()
+    if (await attempt(del, said, { onStale: () => reload() })) await reload()
   }
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
       {conflicts.length > 0 && <ConflictList conflicts={conflicts} what="在闭馆时间里" />}
       {error ? (
         <span className="danger-text">{error}</span>
-      ) : !data?.length ? (
+      ) : !shown.length ? (
         <span className="muted">没有安排闭馆</span>
       ) : (
         <div className="exception-list">
-          {data.map((e) => (
+          {shown.map((e) => (
             <div key={e.id} className="exception-row">
               <span>{spanText(e.startsAt, e.endsAt)}</span>
               <span className="muted">{[e.note, e.byStaff].filter(Boolean).join(' · ')}</span>
