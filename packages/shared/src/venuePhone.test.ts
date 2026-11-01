@@ -149,6 +149,7 @@ describe('dialablePhone', () => {
       expect(dialablePhone(phone), phone).toBeNull()
     }
     expect(dialablePhone('+86 (0139) 0000 0001')).toBe('+8613900000001')
+    expect(dialablePhone('95105 888')).toBe('95105888')
   })
 
   it('leaves out an extension after a 400 or 800 number or a local one', () => {
@@ -171,6 +172,8 @@ describe('dialablePhone', () => {
       '571 8888 8888',
       '852 2345 6789',
       '8001 2345 8',
+      '95588-1',
+      '10086 1',
       '+86 400 6666 800 8',
       '0086 400-8208-820-3',
     ]) {

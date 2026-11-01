@@ -371,6 +371,20 @@ describe('cancelling a paid lesson', () => {
     expect(res.json).toMatchObject({ status: 'cancelled', late: true, refund: null })
   })
 
+  it('tells the desk when WeChat Pay refused the refund of a venue cancel', async () => {
+    const h = setup()
+    const { bookingId } = await paidBooking(h)
+    h.gateway.refundMode = 'fail'
+    const admin = await h.admin()
+    const cancel = await h.call(
+      'POST',
+      `/admin/bookings/${bookingId}/cancel`,
+      { reason: '教练请假' },
+      admin,
+    )
+    expect(cancel.json).toMatchObject({ refunded: 20000, refundFailed: true })
+  })
+
   it('refunds in full when the venue cancels, even late', async () => {
     const h = setup()
     const { t, bookingId } = await paidBooking(h)
@@ -383,7 +397,12 @@ describe('cancelling a paid lesson', () => {
       admin,
     )
     // What the desk is told became of the money.
-    expect(cancel.json).toEqual({ refunded: 20000, offline: false, lessonReturned: false })
+    expect(cancel.json).toEqual({
+      refunded: 20000,
+      offline: false,
+      lessonReturned: false,
+      refundFailed: false,
+    })
     const view = await h.call('GET', `/bookings/${bookingId}`, undefined, t)
     expect(view.json).toMatchObject({
       cancelledBy: 'venue',

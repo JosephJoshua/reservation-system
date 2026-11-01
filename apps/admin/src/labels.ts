@@ -81,12 +81,18 @@ export function cancelConfirmLabel(statuses: BookingStatus[]) {
 }
 
 /** What a venue cancel answers: what became of the money, as it stood when it was cancelled. */
-export type CancelResult = { refunded: number | null; offline: boolean; lessonReturned: boolean }
+export type CancelResult = {
+  refunded: number | null
+  offline: boolean
+  lessonReturned: boolean
+  refundFailed?: boolean
+}
 
 /** What a cancelled single booking tells the desk, from what the cancel answered. */
 export function cancelDoneMessage(result: unknown) {
   const r = result as Partial<CancelResult> | undefined
   if (r?.refunded != null) {
+    if (r.refundFailed) return `已取消，${yuan(r.refunded)} 退款失败，请到退款页处理`
     return r.offline
       ? `已取消，请当面退还学员 ${yuan(r.refunded)}`
       : `已取消，${yuan(r.refunded)} 将原路退回`

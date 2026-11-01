@@ -1587,13 +1587,14 @@ export function adminRoutes(deps: Deps) {
     const byVenue = booking?.status === 'cancelled' && booking.cancelledBy === 'venue'
     const outcome = byVenue
       ? cancelOutcome(db, id)
-      : { text: '', refunded: null, offline: false, lessonReturned: false }
+      : { text: '', refunded: null, offline: false, lessonReturned: false, refundFailed: false }
     // What became of the money, as it stands now: a payment may have landed after the dialog
     // opened. A repeat says the same again.
     const answer = {
       refunded: outcome.refunded,
       offline: outcome.offline,
       lessonReturned: outcome.lessonReturned,
+      refundFailed: outcome.refundFailed,
     }
     if (!cancelled || !byVenue) return c.json(answer)
     const { what, studentId } = describeBooking(db, id, deps.now())
