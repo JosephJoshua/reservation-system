@@ -188,7 +188,7 @@ import { profileInput, saveStudentProfile, studentProfile } from '../services/st
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { exceptionBody, weeklyHoursBody } from './coach'
-import { dateKey, monthKey, oneTarget, targetFields, toTarget } from './target'
+import { dateKey, monthKey, oneTarget, shownTime, targetFields, toTarget } from './target'
 
 const instant = instantString.transform((s) => new Date(s))
 const id = z.coerce.number().int().positive().optional()
@@ -1633,7 +1633,6 @@ export function adminRoutes(deps: Deps) {
 
   // What the page showed as the lesson's coach and start, so a change made on an older view of it
   // is refused rather than undoing someone else's move.
-  const shownTime = z.object({ coachId: z.number().int().positive(), startsAt: instant })
 
   app.post('/bookings/:id/move', need('bookings'), async (c) => {
     const body = await parseBody(

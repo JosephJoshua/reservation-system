@@ -736,6 +736,8 @@ export function removeException(
       // Cut to the 5-minute step, which keeps it a valid exception.
       const step = SCHEDULE_STEP * MINUTE
       shortenedTo = new Date(Math.ceil(now.getTime() / step) * step)
+      // Already cut to this (a second tab, or its last few minutes): nothing changes.
+      if (shortenedTo >= row.endsAt) return { row: null, conflicts: [] }
       tx.update(scheduleExceptions)
         .set({ endsAt: shortenedTo })
         .where(eq(scheduleExceptions.id, id))

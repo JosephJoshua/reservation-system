@@ -3,10 +3,18 @@ import { ApiError, showError } from './api'
 import { isTop, navigateBackOnce } from './nav'
 
 /**
- * Refusals that mean the lesson itself can no longer move: late, used up, cancelled meanwhile, or
- * gone (a coach's lesson the venue gave to someone else). A missing time is 'slot_not_found'.
+ * Refusals that mean the lesson itself can no longer move from this page: late, used up,
+ * cancelled meanwhile, moved elsewhere since the page loaded, or gone (a coach's lesson the venue
+ * gave to someone else). A missing time is 'slot_not_found'.
  */
-const LESSON_FIXED = ['move_deadline', 'no_moves_left', 'not_movable', 'started', 'not_found']
+const LESSON_FIXED = [
+  'move_deadline',
+  'no_moves_left',
+  'not_movable',
+  'started',
+  'not_found',
+  'booking_changed',
+]
 
 /** Refusals of the picked time for this lesson, which still hold after the times reload. */
 const TIME_REFUSED = [

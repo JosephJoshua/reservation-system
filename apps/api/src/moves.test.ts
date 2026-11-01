@@ -170,6 +170,35 @@ describe('students moving a lesson', () => {
     })
   })
 
+  it('refuses a move from a page that still shows the lesson where it was', async () => {
+    const h = setup()
+    const { coach, t, from, id } = await booked(h)
+    const coachToken = await bindCoach(h, coach.id)
+    const shown = { coachId: coach.id, startsAt: from.startsAt.toISOString() }
+    const admin = await h.admin()
+    const venue = h.slot(coach.id, '2026-10-25', 14)
+    expect(
+      (await h.call('POST', `/admin/bookings/${id}/move`, { slotId: venue.id }, admin)).status,
+    ).toBe(204)
+    const other = h.slot(coach.id, '2026-10-25', 11)
+    for (const [path, token] of [
+      [`/bookings/${id}/move`, t],
+      [`/coach/lessons/${id}/move`, coachToken],
+    ] as const) {
+      const stale = await h.call('POST', path, { slotId: other.id, from: shown }, token)
+      expect([stale.status, stale.json.error?.code]).toEqual([409, 'booking_changed'])
+    }
+    expect(row(h, id)?.startsAt.toISOString()).toBe(venue.startsAt.toISOString())
+    // From a page that shows where it is now, the move goes through.
+    const fresh = await h.call(
+      'POST',
+      `/bookings/${id}/move`,
+      { slotId: other.id, from: { coachId: coach.id, startsAt: venue.startsAt.toISOString() } },
+      t,
+    )
+    expect(fresh.status).toBe(200)
+  })
+
   it('stops at the free-cancel deadline; the venue and the coach can still move it', async () => {
     const h = setup()
     const { coach, t, id } = await booked(h)

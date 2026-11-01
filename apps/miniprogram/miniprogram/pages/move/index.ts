@@ -301,6 +301,7 @@ Page({
 
   async submit() {
     const slot = this.data.picked
+    const booking = this.booking
     if (!slot || this.data.submitting) return
     this.setData({ submitting: true })
     const result = await submitMove(
@@ -308,13 +309,13 @@ Page({
       async () => {
         // Asked inside the tap, before any await, or WeChat does not show the prompt.
         await askForNotices(this.templates, ['moved', 'reminder', 'cancelled'])
-        return api<BookingDto>(
-          'POST',
-          `/bookings/${this.id}/move`,
-          slot.id === null
+        return api<BookingDto>('POST', `/bookings/${this.id}/move`, {
+          ...(slot.id === null
             ? { coachId: slot.coachId, startsAt: slot.startsAt }
-            : { slotId: slot.id },
-        )
+            : { slotId: slot.id }),
+          // Where this page showed the lesson, so a move made elsewhere meanwhile is refused.
+          ...(booking ? { from: { coachId: booking.coach.id, startsAt: booking.startsAt } } : {}),
+        })
       },
       `/pages/booking-detail/index?id=${this.id}`,
     )

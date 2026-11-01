@@ -637,6 +637,14 @@ describe('请假, 加班 and 闭馆', () => {
     )
     const row = h.db.select().from(scheduleExceptions).get()
     expect(row?.endsAt.toISOString()).toBe(at(SUN, '10:05'))
+    // A second tab doing the same changes and logs nothing more.
+    const again = await h.call(
+      'DELETE',
+      `/admin/coaches/${coach.id}/exceptions/${leave.json.id}`,
+      undefined,
+      later,
+    )
+    expect(again.status).toBe(200)
     h.clock.now = new Date(Date.parse(at(SUN, '10:05')))
     const ended = await h.call(
       'DELETE',
