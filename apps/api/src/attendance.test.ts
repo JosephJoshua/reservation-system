@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
-import { actionLog, bookings, coaches, scheduleExceptions } from './db/schema'
+import { actionLog, bookings, coaches, idempotencyKeys, scheduleExceptions } from './db/schema'
 import { type Harness, setup } from './test/harness'
 
 const CODE = 'https://yuyue.example.com/checkin'
@@ -359,6 +359,21 @@ describe('front desk 签到', () => {
       attendanceBy: null,
       attendanceStaffId: null,
     })
+  })
+
+  it('still answers a repeated venue cancel once its kept answer was dropped', async () => {
+    const h = setup()
+    const { bookingId } = await lesson(h)
+    const admin = await h.admin()
+    const cancel = () =>
+      h.call('POST', `/admin/bookings/${bookingId}/cancel`, { reason: '停电' }, admin, {
+        'Idempotency-Key': 'once',
+      })
+    expect((await cancel()).status).toBe(200)
+    // As a student erasing their account leaves the answers kept for staff.
+    h.db.update(idempotencyKeys).set({ body: null, contentType: null }).run()
+    const again = await cancel()
+    expect([again.status, again.json]).toEqual([200, {}])
   })
 
   it('stops coach marks when the venue turns 教练点名 off', async () => {
