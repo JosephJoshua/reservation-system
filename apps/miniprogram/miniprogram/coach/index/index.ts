@@ -6,6 +6,7 @@ import {
   venueInstant,
 } from '../../lib/shared'
 import { errorMessage, serverNow, showError } from '../../utils/api'
+import { edgeWait } from '../../utils/edge'
 import { dayName, monthDay, time, weekday } from '../../utils/format'
 import { isTop, navigateOnce } from '../../utils/nav'
 import { modalDangerColor } from '../../utils/theme'
@@ -115,12 +116,26 @@ Page({
   request: 0,
   /** Held from the action sheet until a 请假 change is saved, so a double tap acts once. */
   rowBusy: false,
+  edgeTimer: 0 as number,
+  /** Behind another page or gone: no edge timer then, onShow sets one again. */
+  hidden: false,
 
   onLoad() {
     this.load()
   },
 
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
   onShow() {
+    this.hidden = false
     if (this.data.state !== 'ready') return
     // Left open past midnight: today and the day strip have moved.
     if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date(serverNow()))) {
@@ -216,9 +231,9 @@ Page({
       endsAt: new Date(Math.min(Date.parse(r.endsAt), dayEnd)).toISOString(),
     })
     const edits = schedule.coachEdits
-    const lessons = schedule.lessons
-      .filter((s) => venueDateKey(new Date(s.startsAt)) === date)
-      .map((s) => lessonRow(s, now))
+    const onDate = schedule.lessons.filter((s) => venueDateKey(new Date(s.startsAt)) === date)
+    const lessons = onDate.map((s) => lessonRow(s, now))
+    this.scheduleEdge(onDate.map((s) => Date.parse(s.startsAt)))
     const free = schedule.free.filter(onDay).map((f, i): RowView => {
       const span = clip(f)
       return {
@@ -287,6 +302,28 @@ Page({
         ? '点空闲时间可请假，点请假可取消；已预约的课程点开可签到、写备注或取消，小班课点开可按名单签到。'
         : '已预约的课程点开可签到、写备注或取消。排班由场馆设置，需要请假请联系前台。',
     })
+  },
+
+  /**
+   * Redraws the day just after the next of its lessons starts (已预约 becomes 待签到), and loads
+   * the schedule again then.
+   */
+  scheduleEdge(starts: number[]) {
+    this.clearEdge()
+    if (this.hidden) return
+    const wait = edgeWait(starts, serverNow())
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      if (this.hidden || this.data.state !== 'ready') return
+      this.showDay()
+      if (!this.rowBusy) void this.loadSchedule()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   pickDate(e: WechatMiniprogram.TouchEvent) {

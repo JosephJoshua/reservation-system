@@ -1,5 +1,6 @@
 import {
   type BookingDto,
+  CHECK_IN_EARLY_MINUTES,
   COACH_CANCEL_PREFIX,
   cancellationOutcome,
   DISRUPTION_TEXT,
@@ -17,6 +18,7 @@ import {
 import { addLessonToCalendar } from '../../utils/calendar'
 import { scanToCheckIn } from '../../utils/check-in'
 import { cancelRuleText, getCatalog } from '../../utils/data'
+import { edgeWait } from '../../utils/edge'
 import { dateTime, lessonTime, yuan } from '../../utils/format'
 import { INVOICE_STATE, invoiceAction, openInvoice } from '../../utils/invoice'
 import { refundBack, refundStatus, settled } from '../../utils/labels'
@@ -313,17 +315,24 @@ Page({
   },
 
   /**
-   * For a booked lesson, redraws the page as it starts and as it ends (请按时到场上课, then
-   * 课程进行中, then ended), and fetches it again then, as the venue may have marked it.
+   * For a booked lesson, redraws the page at its free-cancel deadline, as check-in opens, as it
+   * starts and as it ends (请按时到场上课, then 课程进行中, then ended), and fetches it again
+   * then, as the server decides what the student can still do and the venue may have marked it.
    */
   scheduleEdge(b: BookingDto) {
     this.clearEdge()
     if (b.status !== 'confirmed' || this.left) return
-    const now = serverNow()
-    const next = [Date.parse(b.startsAt), Date.parse(b.endsAt)].find((t) => t > now)
-    if (next === undefined) return
-    // Capped, as long timers are not kept reliably; the page schedules again when it fires.
-    const wait = Math.min(next - now + 1000, 6 * 3_600_000)
+    const starts = Date.parse(b.startsAt)
+    const wait = edgeWait(
+      [
+        Date.parse(b.cancelDeadline),
+        starts - CHECK_IN_EARLY_MINUTES * 60_000,
+        starts,
+        Date.parse(b.endsAt),
+      ],
+      serverNow(),
+    )
+    if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
       const shown = this.data.booking
