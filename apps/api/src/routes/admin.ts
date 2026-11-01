@@ -1378,7 +1378,17 @@ export function adminRoutes(deps: Deps) {
         target: { kind: 'slot', id },
       })
     }
-    return c.body(null, 204)
+    // What became of the money of the seats this cancel ended, as it stands now.
+    const outcomes = cancelled.map((bookingId) => cancelOutcome(db, bookingId))
+    const sum = (pick: (o: (typeof outcomes)[number]) => boolean) =>
+      outcomes.filter(pick).reduce((total, o) => total + (o.refunded ?? 0), 0)
+    return c.json({
+      cancelled: cancelled.length,
+      refunded: sum((o) => o.refunded !== null && !o.offline && !o.refundFailed),
+      offline: sum((o) => o.refunded !== null && o.offline),
+      failed: sum((o) => o.refunded !== null && o.refundFailed),
+      lessonsReturned: outcomes.filter((o) => o.lessonReturned).length,
+    })
   })
 
   app.delete('/slots/:id', need('bookings'), (c) => {

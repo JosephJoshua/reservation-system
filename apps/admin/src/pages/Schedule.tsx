@@ -32,7 +32,7 @@ import {
 import { api } from '../api'
 import { BookForStudent } from '../BookForStudent'
 import { Field } from '../Field'
-import { addDays, fmtDate, fmtTime, fmtWeekday, today, venueIso } from '../format'
+import { addDays, fmtDate, fmtTime, fmtWeekday, today, typedNumber, venueIso } from '../format'
 import {
   attempt,
   onceKey,
@@ -42,7 +42,13 @@ import {
   useIsPhone,
   useSubmitting,
 } from '../hooks'
-import { bookingStatusLabel, callOffEffect, cancelConfirmLabel, cancelDoneMessage } from '../labels'
+import {
+  bookingStatusLabel,
+  callOffEffect,
+  cancelConfirmLabel,
+  cancelDoneMessage,
+  sessionCancelDoneMessage,
+} from '../labels'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
 import type { Coach, LessonType, Slot } from '../types'
@@ -710,8 +716,12 @@ function CreateSessions({
               value={capacity}
               min={least}
               max={most}
+              allowInputOverLimit={false}
               suffix="人"
-              onChange={(v) => setCapacity(Math.max(least, Math.min(most, Number(v) || least)))}
+              onChange={(v) => {
+                const n = typedNumber(v, least, most)
+                if (n !== null) setCapacity(Math.floor(n))
+              }}
             />
           </Field>
         </div>
@@ -947,9 +957,7 @@ function SessionDialog({
       cancelling === 'session'
         ? await attempt(
             () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
-            slot.bookings.some((b) => b.status === 'pending_payment')
-              ? '已取消整节'
-              : '已取消整节，学员会收到全额退款或退回的课时',
+            sessionCancelDoneMessage,
             { onStale: onChanged },
           )
         : await attempt(

@@ -21,7 +21,12 @@ import {
   useIsPhone,
   useSubmitting,
 } from './hooks'
-import { bookingStatusLabel, callOffEffect, cancelConfirmLabel } from './labels'
+import {
+  bookingStatusLabel,
+  callOffEffect,
+  cancelConfirmLabel,
+  sessionCancelDoneMessage,
+} from './labels'
 import { closeLesson, lessonChanged, showLesson } from './lessonLink'
 import { MoveDialog } from './MoveDialog'
 import { useCan } from './me'
@@ -333,9 +338,7 @@ function CallOffDialog({
     sent.current = true
     const ok = await attempt(
       () => api('POST', `/admin/slots/${slot.id}/cancel`, { reason }, { key }),
-      statuses.includes('pending_payment')
-        ? '已取消整节'
-        : '已取消整节，学员会收到全额退款或退回的课时',
+      sessionCancelDoneMessage,
       {
         onStale: () => {
           onClose()
