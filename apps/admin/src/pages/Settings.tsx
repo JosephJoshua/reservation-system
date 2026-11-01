@@ -8,21 +8,11 @@ import {
   venueSettings,
 } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
-import {
-  Button,
-  Card,
-  Input,
-  Loading,
-  MessagePlugin,
-  Radio,
-  Space,
-  Switch,
-  Textarea,
-} from 'tdesign-react'
+import { Button, Card, Input, Loading, Radio, Space, Switch, Textarea } from 'tdesign-react'
 import { DefaultRuleFields } from '../BookingRules'
 import { Field } from '../Field'
 import { typedNumber } from '../format'
-import { useApi } from '../hooks'
+import { useApi, warn } from '../hooks'
 import { NumberBox } from '../NumberBox'
 import { SaveBar, StaleNotice } from '../SaveBar'
 import { SectionNav, useSections } from '../SectionNav'
@@ -173,14 +163,14 @@ export function Settings() {
   const save = async () => {
     if (isSaving()) return
     if (!s.venue.name.trim()) {
-      void MessagePlugin.warning('请填写场馆名称')
+      warn('请填写场馆名称')
       nav.scrollTo('venue')
       return
     }
     const lat = coord.lat.trim()
     const lng = coord.lng.trim()
     if (!coordValid(lat, 90) || !coordValid(lng, 180) || !lat !== !lng) {
-      void MessagePlugin.warning('请填写完整、有效的经纬度，或都留空')
+      warn('请填写完整、有效的经纬度，或都留空')
       nav.scrollTo('venue')
       return
     }
@@ -193,13 +183,13 @@ export function Settings() {
       60,
     )
     if (phoneWrong) {
-      void MessagePlugin.warning(VENUE_PHONE_MESSAGE)
+      warn(VENUE_PHONE_MESSAGE)
       nav.scrollTo('venue')
       return
     }
     const problem = settingsProblem(body)
     if (problem) {
-      void MessagePlugin.warning(problem.message)
+      warn(problem.message)
       nav.scrollTo(problem.section)
       return
     }

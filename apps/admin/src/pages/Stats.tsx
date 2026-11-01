@@ -6,11 +6,11 @@ import {
   type StatsReport,
 } from '@rs/shared'
 import { type ReactNode, useState } from 'react'
-import { Button, Card, DateRangePicker, MessagePlugin, Radio } from 'tdesign-react'
+import { Button, Card, DateRangePicker, Radio } from 'tdesign-react'
 import { ColumnChart, Heatmap, LineChart, MeterList, type Series } from '../charts'
 import { DataTable } from '../DataTable'
 import { addDays, fmtDate, today, yuan } from '../format'
-import { useApi } from '../hooks'
+import { useApi, warn } from '../hooks'
 import { Pager, useListFilters, usePagedList } from '../lists'
 import { Delta } from '../StatDelta'
 import { StudentCell } from '../StudentCell'
@@ -234,7 +234,7 @@ export function Stats() {
             const to = [picked, today()].sort()[0] ?? picked
             if (from > to) return
             if (daysBetween(from, to) > STATS_MAX_DAYS) {
-              void MessagePlugin.warning(`最多统计 ${STATS_MAX_DAYS} 天`)
+              warn(`最多统计 ${STATS_MAX_DAYS} 天`)
               return
             }
             setPreset('')

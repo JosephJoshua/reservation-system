@@ -1,8 +1,7 @@
 import type { VenueSettings } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
-import { MessagePlugin } from 'tdesign-react'
 import { api } from './api'
-import { attempt, newKey, useApi } from './hooks'
+import { attempt, newKey, useApi, warn } from './hooks'
 
 /** The same value, whatever order its keys come in. */
 function sameValue(a: unknown, b: unknown): boolean {
@@ -82,7 +81,7 @@ export function useSettingsDraft() {
   const save = async (body: VenueSettings | null = s) => {
     if (busy.current || !body) return false
     if (stale) {
-      void MessagePlugin.warning('设置已被其他人修改，请先载入最新内容')
+      warn('设置已被其他人修改，请先载入最新内容')
       return false
     }
     busy.current = true

@@ -96,6 +96,16 @@ const STALE = new Set([
   'idempotency_key_reused',
 ])
 
+const warned = new Map<string, number>()
+
+/** Shows a warning, once for a double click: the same text again within 2 s is dropped. */
+export function warn(text: string) {
+  const at = Date.now()
+  if ((warned.get(text) ?? 0) > at - 2_000) return
+  warned.set(text, at)
+  void MessagePlugin.warning(text)
+}
+
 /**
  * Runs a change, shows its error as a message, and reports success. `onStale` runs when the
  * record changed elsewhere, so the page can close the dialog and reload, and the change counts as

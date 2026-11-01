@@ -239,26 +239,36 @@ Page({
     const edits = schedule.coachEdits
     const onDate = schedule.lessons.filter((s) => venueDateKey(new Date(s.startsAt)) === date)
     const lessons = onDate.map((s) => lessonRow(s, now))
-    const free = schedule.free.filter(onDay).map((f, i): RowView => {
-      const span = clip(f)
-      return {
-        key: `f${i}`,
-        id: 0,
-        kind: 'free',
+    // Free time already begun starts at the next 5-minute step, as the server would send it, so
+    // the row stays right offline too.
+    const ahead = Math.ceil(now / STEP) * STEP
+    const free = schedule.free
+      .filter(onDay)
+      .map(clip)
+      .map((span) => ({
         ...span,
-        start: time(span.startsAt),
-        end: clock(span.endsAt, dayEnd),
-        bookingId: 0,
-        whole: '',
-        since: '',
-        student: '',
-        lesson: '',
-        label: '空闲，可预约',
-        tag: '',
-        tone: 'default',
-        active: edits,
-      }
-    })
+        startsAt: new Date(Math.max(Date.parse(span.startsAt), ahead)).toISOString(),
+      }))
+      .filter((span) => Date.parse(span.startsAt) < Date.parse(span.endsAt))
+      .map((span, i): RowView => {
+        return {
+          key: `f${i}`,
+          id: 0,
+          kind: 'free',
+          ...span,
+          start: time(span.startsAt),
+          end: clock(span.endsAt, dayEnd),
+          bookingId: 0,
+          whole: '',
+          since: '',
+          student: '',
+          lesson: '',
+          label: '空闲，可预约',
+          tag: '',
+          tone: 'default',
+          active: edits,
+        }
+      })
     const off = schedule.off.filter(onDay).map((o): RowView => {
       const span = clip(o)
       return {

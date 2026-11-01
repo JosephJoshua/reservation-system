@@ -41,6 +41,7 @@ import {
   useIsPhone,
   useNow,
   useSubmitting,
+  warn,
 } from '../hooks'
 import {
   bookingStatusLabel,
@@ -650,7 +651,7 @@ function CreateSessions({
     const fresh = planned(plan, coach.id, lessonType.durationMinutes, Date.now())
     const error = planError(plan, fresh, '小班课')
     if (error) {
-      void MessagePlugin.warning(error)
+      warn(error)
       return
     }
     if (
