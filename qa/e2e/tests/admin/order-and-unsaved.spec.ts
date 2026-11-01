@@ -100,6 +100,9 @@ test('settings ask before leaving with unsaved changes', async ({ page }) => {
   await page.getByRole('link', { name: '课时包' }).click()
   await page.getByRole('button', { name: '放弃修改' }).click()
   await expect(page).toHaveURL(/#\/products$/)
+  // The address changes a moment before the page does (hashchange comes after): going back
+  // before then would land on the form it never left.
+  await expect(page.locator('.admin-title-text')).toHaveText('课时包')
   await page.goBack()
   await expect(phone).toHaveValue(was)
 })
