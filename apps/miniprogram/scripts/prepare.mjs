@@ -8,7 +8,15 @@
 // The gitignored project.private.config.json carries WX_APPID when set, so a different AppID
 // (such as a sandbox test AppID) works without editing project.config.json, and turns off the
 // domain check when the API is plain http, which only a local development server is.
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +36,46 @@ const tdesignDist = join(
   'miniprogram_dist',
 )
 cpSync(tdesignDist, join(npmDir, 'tdesign-miniprogram'), { recursive: true })
+
+// TDesign loads its icon font from tdesign.gtimg.com, so icons show as boxes until it arrives, or
+// for good when it can't. The icons used here are embedded instead (scripts/icons/subset.py).
+{
+  const iconWxss = join(npmDir, 'tdesign-miniprogram/icon/icon.wxss')
+  const known = new Set(
+    [...readFileSync(iconWxss, 'utf8').matchAll(/\.t-icon-([a-z0-9-]+):before/g)].map((m) => m[1]),
+  )
+  const kept = new Set(JSON.parse(readFileSync(new URL('./icons/icons.json', import.meta.url))))
+  // Any icon name in quotes, in this app's files or in the TDesign components it copies.
+  const used = new Set()
+  const scan = (dir, skip) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (!skip.includes(path)) scan(path, skip)
+      } else if (/\.(wxml|ts|js|json|wxs)$/.test(entry.name)) {
+        for (const m of readFileSync(path, 'utf8').matchAll(/['"]([a-z0-9-]+)['"]/g)) {
+          if (known.has(m[1])) used.add(m[1])
+        }
+      }
+    }
+  }
+  scan(appDir, [npmDir, libDir, join(appDir, 'node_modules')])
+  scan(join(npmDir, 'tdesign-miniprogram'), [])
+  const missing = [...used].filter((name) => !kept.has(name)).sort()
+  if (missing.length) {
+    throw new Error(
+      `icons not in scripts/icons/icons.json: ${missing.join(', ')}. Add them there and run scripts/icons/subset.py`,
+    )
+  }
+  const font = readFileSync(new URL('./icons/icons.woff', import.meta.url)).toString('base64')
+  const css = readFileSync(iconWxss, 'utf8')
+  const embedded = css.replace(
+    /@font-face\{font-family:t;src:[^;]*;/,
+    `@font-face{font-family:t;src:url(data:font/woff;base64,${font}) format('woff');`,
+  )
+  if (embedded === css) throw new Error('TDesign icon.wxss no longer has the expected @font-face')
+  writeFileSync(iconWxss, embedded)
+}
 
 // Reads top-level `page { }` rules and `@media (prefers-color-scheme) { page { } }` blocks and
 // returns the custom properties each mode gets, in source order so later ones still win.

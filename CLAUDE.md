@@ -41,7 +41,7 @@ pnpm --filter @rs/api db:generate   # after schema changes
 - Booking rules live in `packages/shared` (pure functions) or the API, with Vitest coverage.
 - Mini program: run `pnpm --filter @rs/miniprogram build` before opening DevTools; it copies
   TDesign into `miniprogram_npm`, bundles `@rs/shared` into `lib/`, and writes an optional
-  `WX_APPID` override into the gitignored `project.private.config.json`. Tab bar icons are
+  `WX_APPID` override into the gitignored `project.private.config.json`. It also inlines a subset of the TDesign icon font (`scripts/icons`), since TDesign loads it from a CDN that is not a 合法域名; a new icon name fails the build until you rerun `scripts/icons/subset.py`. Tab bar icons are
   PNGs in `miniprogram/assets/tab` (TDesign icons, light and dark), wired through `theme.json`. Do not name a class
   `.page`: TDesign's theme file sets tokens on `.page`, which would undo the brand colors.
 - Privacy: a page that calls a WeChat privacy API (clipboard, images, location and so on) must
