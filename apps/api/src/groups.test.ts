@@ -299,6 +299,27 @@ describe('scheduling sessions', () => {
     expect((await h.call('PATCH', `/admin/slots/${id}`, { capacity: 4 }, admin)).status).toBe(204)
   })
 
+  it('refuses a seat change on a session called off or over', async () => {
+    const h = setup()
+    const { coach, kids } = seedGroup(h)
+    const admin = await h.admin()
+    const id = await session(h, admin, kids.id, coach.id)
+    const ended = h.db.select().from(slots).where(eq(slots.id, id)).get()?.endsAt
+    const before = h.clock.now
+    h.clock.now = new Date((ended?.getTime() ?? 0) + 60_000)
+    // Days on, so signed in again.
+    const later = await h.admin()
+    const late = await h.call('PATCH', `/admin/slots/${id}`, { capacity: 3 }, later)
+    expect([late.status, late.json.error.code]).toEqual([409, 'ended'])
+    h.clock.now = before
+    await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '天气原因' }, admin)
+    const stale = await h.call('PATCH', `/admin/slots/${id}`, { capacity: 3 }, admin)
+    expect([stale.status, stale.json.error.code]).toEqual([409, 'session_cancelled'])
+    expect(h.db.select().from(slots).where(eq(slots.id, id)).get()?.capacity).toBe(4)
+    // The same number as now is no change, so a resent dialog still closes cleanly.
+    expect((await h.call('PATCH', `/admin/slots/${id}`, { capacity: 4 }, admin)).status).toBe(204)
+  })
+
   it('keeps a session bigger than its class has since become editable', async () => {
     const h = setup()
     const { coach, kids } = seedGroup(h, { capacity: 6 })
