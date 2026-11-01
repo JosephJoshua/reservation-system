@@ -167,7 +167,8 @@ Page({
       }))
       const own = venueDateKey(new Date(lesson.startsAt))
       // A reload (after a refused move, or at midnight) stays on the day the coach was looking at.
-      const shown = this.data.state === 'ready' ? this.data.date : ''
+      // Kept through the loading state a refused move shows.
+      const shown = this.data.date
       const date = [shown, own].find((k) => k && days.some((d) => d.key === k)) ?? first
       this.setData({
         state: 'ready',
