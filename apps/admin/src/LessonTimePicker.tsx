@@ -3,7 +3,7 @@ import { venueInstant } from '@rs/shared'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, DatePicker, Select, TimePicker } from 'tdesign-react'
 import { fmtTime, today, venueIso } from './format'
-import { useApi, useNow } from './hooks'
+import { useApi, useNow, useToday } from './hooks'
 import type { Coach, LessonType, Slot } from './types'
 
 /** Where a lesson goes: a group session, or a coach and start time for a private lesson. */
@@ -73,6 +73,8 @@ export function LessonTimePicker({
     initialCoachId ?? (coaches.length === 1 ? (coaches[0]?.id ?? 0) : 0),
   )
   const [date, setDate] = useState(initialDate && initialDate >= today() ? initialDate : today())
+  // Left open past midnight: a picker on the old today moves on to the new one.
+  useToday((from, to) => setDate((d) => (d === from ? to : d)))
   const [outside, setOutside] = useState(value?.kind === 'time' && value.outside)
   const coach = coaches.find((c) => c.id === coachId)
   // A coach who stopped teaching it is dropped back to every coach.
