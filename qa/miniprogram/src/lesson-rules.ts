@@ -197,7 +197,7 @@ try {
     const q = `lessonTypeId=${lesson.id}&coachId=${coach.id}&startsAt=${encodeURIComponent(first.startsAt)}&endsAt=${encodeURIComponent(first.endsAt)}`
     await miniProgram.navigateTo(`/pages/confirm/index?${q}`)
     const page = await waitForPage('pages/confirm/index', (d) => d.state === 'ready')
-    const rule = ((await page.data('cancelRule')) as string[]).join('')
+    const rule = (await page.data('cancelRule')) as string
     check(
       rule === '开课前 48 小时以上可免费取消；之后再取消，则退还 50% 的费用，但不退课时。',
       `unexpected cancel rule: ${rule}`,
@@ -231,7 +231,7 @@ try {
   await step('预约详情 keeps the rule it was booked under', async () => {
     await miniProgram.reLaunch(`/pages/booking-detail/index?id=${booked.bookingId}`)
     const page = await waitForPage('pages/booking-detail/index', (d) => d.state === 'ready')
-    const rule = ((await page.data('cancelRule')) as string[]).join('')
+    const rule = (await page.data('cancelRule')) as string
     check(
       rule.startsWith('开课前 48 小时以上可免费取消；之后再取消，则退还 50% 的费用'),
       `unexpected rule: ${rule}`,
