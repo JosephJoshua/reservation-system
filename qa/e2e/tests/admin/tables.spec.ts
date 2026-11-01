@@ -87,6 +87,22 @@ test('the table count keeps odd input in range and empty means no limit', async 
   await page.locator('.t-card__title', { hasText: '预约规则' }).click()
   await expect(input).toHaveValue('')
 
+  // 课间休息 keeps the digits as typed and goes to a multiple of 5 when left.
+  const buffer = field(page, '课间休息').locator('input')
+  const before = await buffer.inputValue()
+  for (const [typed, shown] of [
+    ['30', '30'],
+    ['33', '35'],
+    ['99', '60'],
+  ]) {
+    await typeNumber(buffer, typed as string)
+    await expect(buffer).toHaveValue(typed as string)
+    await page.locator('.t-card__title', { hasText: '预约规则' }).click()
+    await expect(buffer).toHaveValue(shown as string)
+  }
+  await typeNumber(buffer, before)
+  await page.locator('.t-card__title', { hasText: '预约规则' }).click()
+
   await typeNumber(input, '3')
   await page.locator('.save-bar').getByRole('button', { name: '保存' }).click()
   await expect(page.getByText('已保存')).toBeVisible()

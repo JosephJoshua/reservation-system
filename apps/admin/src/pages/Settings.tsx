@@ -12,7 +12,6 @@ import {
   Button,
   Card,
   Input,
-  InputNumber,
   Loading,
   MessagePlugin,
   Radio,
@@ -301,21 +300,19 @@ export function Settings() {
             }
           />
           <Field label="球台数" help="同一时间最多能上几节课，留空则不限">
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={s.booking.tables ?? undefined}
               min={1}
               max={99}
               placeholder="不限"
               suffix="张"
+              allowEmpty
               onChange={(v) =>
                 set((d) => {
-                  // Empty is no limit; any number is kept to 1 to 99 tables.
-                  const n = Math.floor(Number(v))
-                  d.booking.tables =
-                    v === '' || v === undefined || Number.isNaN(n)
-                      ? null
-                      : Math.min(Math.max(n, 1), 99)
+                  // Empty is no limit; a number past 1 to 99 comes back to it when left.
+                  const n = typedNumber(v)
+                  d.booking.tables = n === null ? null : Math.floor(n)
                 })
               }
             />
@@ -341,16 +338,24 @@ export function Settings() {
             </Radio.Group>
           </Field>
           <Field label="课间休息" help="同一教练两节课之间至少空出的时间">
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={s.booking.bufferMinutes}
               min={0}
               max={60}
               step={5}
               suffix="分钟"
-              onChange={(v) =>
+              onChange={(v) => {
+                const n = typedNumber(v)
+                if (n === null) return
                 set((d) => {
-                  const n = Math.round((Number(v) || 0) / 5) * 5
+                  d.booking.bufferMinutes = Math.floor(n)
+                })
+              }}
+              // Kept as typed until it is left, so 30 is not 5 after its first digit.
+              onBlur={() =>
+                set((d) => {
+                  const n = Math.round(d.booking.bufferMinutes / 5) * 5
                   d.booking.bufferMinutes = Math.min(Math.max(n, 0), 60)
                 })
               }

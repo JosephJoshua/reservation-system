@@ -21,7 +21,6 @@ import {
   DateRangePicker,
   Dialog,
   Input,
-  InputNumber,
   MessagePlugin,
   Popconfirm,
   Select,
@@ -1120,14 +1119,17 @@ function SessionDialog({
             </Space>
             <Space align="center">
               <span>每节人数</span>
-              <InputNumber
+              <NumberBox
                 theme="normal"
                 value={capacity}
                 min={minSeats}
                 max={maxSeats}
                 suffix="人"
                 status={capacityOk ? 'default' : 'error'}
-                onChange={(v) => setCapacity(Number(v) || 0)}
+                onChange={(v) => {
+                  const n = typedNumber(v)
+                  if (n !== null) setCapacity(Math.floor(n))
+                }}
               />
               <Button
                 variant="outline"
