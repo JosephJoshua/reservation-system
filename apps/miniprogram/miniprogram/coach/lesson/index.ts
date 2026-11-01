@@ -219,7 +219,7 @@ Page({
     this.setData({
       state: 'ready',
       lesson: l,
-      tag: lessonTag(l, l.startsAt, serverNow()),
+      tag: lessonTag(l, l.startsAt, serverNow(), l.endsAt),
       when: lessonTime(l.startsAt, l.endsAt),
       movedFrom: l.movedFrom ? dateTime(l.movedFrom) : '',
       lessonName: l.lessonType.isTrial

@@ -77,7 +77,7 @@ function lessonRow(s: CoachSlotDto, now: number): RowView {
     }
   }
   const l = s.lesson
-  const tag = l ? lessonTag(l, s.startsAt, now) : { text: '', tone: 'default' }
+  const tag = l ? lessonTag(l, s.startsAt, now, s.endsAt) : { text: '', tone: 'default' }
   return {
     ...base,
     kind: 'lesson',

@@ -116,7 +116,7 @@ Page({
     const now = serverNow()
     const started = Date.parse(s.startsAt) <= now
     const students = s.students.map((st): StudentView => {
-      const tag = lessonTag(st, s.startsAt, now)
+      const tag = lessonTag(st, s.startsAt, now, s.endsAt)
       const parts = [
         st.status === 'pending_payment' ? '待支付' : '',
         st.attendance
@@ -143,7 +143,7 @@ Page({
       footnote: s.coachMarksOff
         ? '签到由前台办理。点学员可以写备注和课后点评；如需调整名单或取消课程，请联系场馆。'
         : Date.parse(s.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000 < now
-          ? '签到已截止，如需修改请联系场馆。点学员可以写备注和课后点评。'
+          ? '签到已截止，如需修改请联系场馆。点学员可以写备注。'
           : started
             ? '缺席照常计课，不退费用，也不退回课时。再点一次即可撤销；点学员可以写备注和课后点评。'
             : '课程开始后才能签到。如需调整名单或取消课程，请联系场馆。',
