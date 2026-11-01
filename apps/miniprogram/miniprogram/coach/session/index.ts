@@ -1,4 +1,9 @@
-import type { Attendance, CoachLessonDto, CoachSessionDto } from '../../lib/shared'
+import {
+  type Attendance,
+  COACH_ATTENDANCE_DAYS,
+  type CoachLessonDto,
+  type CoachSessionDto,
+} from '../../lib/shared'
 import { errorMessage, serverNow, showError } from '../../utils/api'
 import { edgeWait } from '../../utils/edge'
 import { lessonTime } from '../../utils/format'
@@ -63,13 +68,17 @@ Page({
   },
 
   /**
-   * Before the class starts, reloads the roster just after the start, as marking opens then. A
-   * failed reload still redraws the rows for the time now.
+   * Reloads the roster just after the class starts and just after marking closes, as the mark
+   * buttons come and go then. A failed reload still redraws the rows for the time now.
    */
   scheduleEdge(s: CoachSessionDto) {
     this.clearEdge()
     if (this.hidden) return
-    const wait = edgeWait([Date.parse(s.startsAt)], serverNow())
+    // Marking opens at the start and closes COACH_ATTENDANCE_DAYS after the end.
+    const wait = edgeWait(
+      [Date.parse(s.startsAt), Date.parse(s.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000],
+      serverNow(),
+    )
     if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0

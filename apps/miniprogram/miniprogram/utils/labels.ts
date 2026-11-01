@@ -17,7 +17,7 @@ export const REFUND_STATUS: Record<RefundStatus, string> = {
   rejected: '未通过',
 }
 
-type RefundState = Pick<RefundDto, 'status' | 'settledHow' | 'abnormal'>
+type RefundState = Pick<RefundDto, 'status' | 'settledHow' | 'abnormal' | 'rejectReason'>
 
 /** WeChat Pay could not pay it back (failed, or 退款异常): the venue retries it or pays another way. */
 function stuck(refund: RefundState): boolean {
@@ -28,7 +28,7 @@ function stuck(refund: RefundState): boolean {
  * A refund's status for the student. Money paid at the front desk is handed back there (待到店退还,
  * then 已到店退还); one staff paid back another way (线下另付) after WeChat Pay could not is 已退还,
  * not 已退款 to where it came from; one WeChat Pay could not pay back is 退款处理中 until staff
- * sort it out.
+ * sort it out. One turned down says why.
  */
 export function refundStatus(refund: RefundState, paidOffline: boolean): string {
   const text = REFUND_STATUS[refund.status]
@@ -36,6 +36,8 @@ export function refundStatus(refund: RefundState, paidOffline: boolean): string 
   if (paidOffline && refund.status === 'succeeded') return '已到店退还'
   if (refund.status === 'succeeded' && refund.settledHow === 'offline') return '已退还'
   if (stuck(refund)) return '退款处理中'
+  // Turned down: with the venue's reason, so the student knows why.
+  if (refund.status === 'rejected' && refund.rejectReason) return `${text}：${refund.rejectReason}`
   return text
 }
 

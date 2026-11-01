@@ -378,6 +378,9 @@ describe('action log', () => {
       message: '该申请已拒绝：已上课',
     })
     expect(h.db.select().from(refunds).get()?.failure).toBe('已上课')
+    // The student sees why.
+    const [pkg] = (await h.call('GET', '/packages', undefined, t)).json
+    expect(pkg.refund).toMatchObject({ status: 'rejected', rejectReason: '已上课' })
   })
 
   it('writes nothing when the change is refused', async () => {

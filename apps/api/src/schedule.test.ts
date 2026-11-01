@@ -644,7 +644,7 @@ describe('请假, 加班 and 闭馆', () => {
       undefined,
       later,
     )
-    expect([again.status, again.json.endedAt]).toEqual([200, null])
+    expect([again.status, again.json.endedAt]).toEqual([200, at(SUN, '10:05')])
     h.clock.now = new Date(Date.parse(at(SUN, '10:05')))
     const ended = await h.call(
       'DELETE',

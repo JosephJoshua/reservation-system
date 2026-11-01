@@ -945,13 +945,13 @@ export function adminRoutes(deps: Deps) {
     logRemoved(c.get('staffId'), removed)
     // Removing a 加班 leaves its lessons outside 排班, for the desk to move or cancel. `endedAt`
     // says one under way was cut short there rather than deleted.
-    return c.json({ conflicts: removed.conflicts, endedAt: removed.row?.shortenedTo ?? null })
+    return c.json({ conflicts: removed.conflicts, endedAt: removed.endedAt })
   })
 
   app.delete('/closures/:id', need('manage'), (c) => {
     const removed = removeException(deps, idParam(c), null)
     logRemoved(c.get('staffId'), removed)
-    return c.json({ endedAt: removed.row?.shortenedTo ?? null })
+    return c.json({ endedAt: removed.endedAt })
   })
 
   // Lessons and sessions yet to start that the desk has to move or cancel.
