@@ -39,6 +39,8 @@ interface RowView {
   bookingId: number
   /** A 请假's whole span, which may run over several days. */
   whole: string
+  /** When a 请假 really starts, before it is clipped to the day shown. */
+  since: string
   student: string
   lesson: string
   label: string
@@ -58,6 +60,7 @@ function lessonRow(s: CoachSlotDto, now: number): RowView {
     end: time(s.endsAt),
     bookingId: 0,
     whole: '',
+    since: '',
     student: '',
     lesson: '',
     label: '',
@@ -83,6 +86,7 @@ function lessonRow(s: CoachSlotDto, now: number): RowView {
     kind: 'lesson',
     bookingId: l?.bookingId ?? 0,
     whole: '',
+    since: '',
     student: l?.studentName || '未填写姓名',
     lesson: l ? (l.isTrial ? `${l.lessonTypeName} · 体验` : l.lessonTypeName) : '',
     tag: tag.text,
@@ -247,6 +251,7 @@ Page({
         end: clock(span.endsAt, dayEnd),
         bookingId: 0,
         whole: '',
+        since: '',
         student: '',
         lesson: '',
         label: '空闲，可预约',
@@ -266,6 +271,7 @@ Page({
         end: clock(span.endsAt, dayEnd),
         bookingId: 0,
         whole: spanText(o.startsAt, o.endsAt),
+        since: o.startsAt,
         student: o.closure ? '闭馆' : '请假',
         lesson: o.note,
         label: '',
@@ -366,10 +372,14 @@ Page({
       })
       return
     }
+    // Worded as of the tap: one under way ends early, keeping the part already passed.
+    const started = Date.parse(row.since) <= serverNow()
     wx.showModal({
-      title: '取消这段请假？',
-      content: `${row.whole} 会重新开放预约。`,
-      confirmText: '取消请假',
+      title: started ? '提前结束这段请假？' : '取消这段请假？',
+      content: started
+        ? '从现在起重新开放预约，已过去的部分保留记录。'
+        : `${row.whole} 会重新开放预约。`,
+      confirmText: started ? '提前结束' : '取消请假',
       confirmColor: modalDangerColor(),
       cancelText: '保留',
       success: (res) => {
@@ -395,8 +405,8 @@ Page({
 
   async removeLeave(id: number) {
     try {
-      await coachApi('DELETE', `/exceptions/${id}`)
-      wx.showToast({ title: '已取消请假', icon: 'success' })
+      const res = await coachApi<{ endedAt?: string | null }>('DELETE', `/exceptions/${id}`)
+      wx.showToast({ title: res?.endedAt ? '已提前结束' : '已取消请假', icon: 'success' })
     } catch (err) {
       showError(err)
     }
