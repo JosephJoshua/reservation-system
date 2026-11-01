@@ -117,6 +117,8 @@ Page({
   quotes: 0,
   /** The free-cancel deadline and late rule, for the late note as time passes. */
   lateRule: null as { hours: number; rule: LateCancelRule } | null,
+  /** The late notes the student has been shown up front: on opening, or in the modal. */
+  lateWarned: { wechat: '', package: '' },
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -142,12 +144,9 @@ Page({
     if (this.data.state === 'ready' && !this.data.submitting) this.requote()
   },
 
-  /**
-   * Works the late note out again for the time now. Returns the note for the chosen way to pay
-   * when it was not shown before, so a booking about to be sent can stop and show it first.
-   */
-  refreshLate(): string {
-    if (!this.lateRule) return ''
+  /** Works the late note out again for the time now. */
+  refreshLate() {
+    if (!this.lateRule) return
     const before = this.data.lateNotes
     const notes = lateNotes(
       this.data.startsAt,
@@ -158,8 +157,19 @@ Page({
     if (notes.wechat !== before.wechat || notes.package !== before.package) {
       this.setData({ lateNotes: notes })
     }
+  },
+
+  /**
+   * The late note for the chosen way to pay when it came up after the page opened, which the
+   * student may have scrolled past or come back to unseen; marked as warned once returned.
+   */
+  unwarnedLate(): string {
+    this.refreshLate()
     const key = this.data.payWith === 'package' ? 'package' : 'wechat'
-    return notes[key] && notes[key] !== before[key] ? notes[key] : ''
+    const note = this.data.lateNotes[key]
+    if (!note || note === this.lateWarned[key]) return ''
+    this.lateWarned = { ...this.lateWarned, [key]: note }
+    return note
   },
 
   /** Where the booking goes: the session, or the coach and start time. */
@@ -264,6 +274,8 @@ Page({
         rule: lessonType.rules.lateCancel,
       }
       this.refreshLate()
+      // Shown as the page opens, with the rest of the terms.
+      this.lateWarned = { ...this.data.lateNotes }
       this.setData({
         state: 'ready',
         lessonName: lessonType.name,
@@ -367,7 +379,7 @@ Page({
       return
     }
     // Became late while the page was open: shown before anything is booked, and the next tap books.
-    const late = this.refreshLate()
+    const late = this.unwarnedLate()
     if (late) {
       wx.showModal({
         title: '请留意取消规则',
