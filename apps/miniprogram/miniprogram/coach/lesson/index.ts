@@ -91,6 +91,11 @@ function attendanceNote(l: CoachLessonDto): string {
   if (Date.parse(l.startsAt) > serverNow()) {
     return l.attendance ? `${mark}课程开始后可以修改。` : '课程开始后可以签到。'
   }
+  // Marking stays open until COACH_ATTENDANCE_DAYS after the end; before that the buttons are
+  // still on their way from the server, so nothing is said to be closed.
+  if (Date.parse(l.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000 > serverNow()) {
+    return mark || '正在更新签到状态…'
+  }
   if (l.attendance) return `${mark}签到已截止，如需修改请联系场馆。`
   return '签到已截止，如需补签请联系场馆。'
 }
