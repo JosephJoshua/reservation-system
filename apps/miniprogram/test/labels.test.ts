@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { BookingDto, RefundDto } from '../miniprogram/lib/shared'
-import { lessonTag, packageTag, refundBack, refundStatus } from '../miniprogram/utils/labels'
+import {
+  lessonTag,
+  packageTag,
+  refundBack,
+  refundStatus,
+  settled,
+} from '../miniprogram/utils/labels'
 
 const refund = (r: Partial<RefundDto>): RefundDto => ({
   amount: 8000,
@@ -124,5 +130,29 @@ describe('lesson tag', () => {
     expect(lessonTag(booking({ status: 'confirmed', attendance: 'attended' }), now).status).toBe(
       '已签到',
     )
+  })
+})
+
+describe('settled', () => {
+  const lesson = {
+    status: 'confirmed',
+    startsAt: '2026-10-29T02:00:00Z',
+    endsAt: '2026-10-29T03:00:00Z',
+    canCancel: true,
+    canMove: true,
+  } as BookingDto
+  const at = (iso: string) => settled(lesson, Date.parse(iso))
+  it('reads a booked lesson as the server would once it starts and ends', () => {
+    expect(at('2026-10-29T01:59:00Z')).toBe(lesson)
+    expect(at('2026-10-29T02:00:00Z')).toMatchObject({
+      status: 'confirmed',
+      canCancel: false,
+      canMove: false,
+    })
+    expect(at('2026-10-29T03:00:00Z')).toMatchObject({
+      status: 'completed',
+      canCancel: false,
+      canMove: false,
+    })
   })
 })

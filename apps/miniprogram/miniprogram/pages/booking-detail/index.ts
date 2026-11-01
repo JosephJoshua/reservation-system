@@ -68,8 +68,6 @@ function subtitle(b: BookingDto, now: number): string {
       }
       // Marked 缺席 while it is on: counted as taken, as once it has ended.
       if (b.attendance === 'no_show') return '缺席，照常计课'
-      // Shown as time passes on an open page, before it is fetched again.
-      if (Date.parse(b.endsAt) <= now) return '课程已结束'
       return Date.parse(b.startsAt) <= now ? '课程进行中' : '请按时到场上课'
     case 'completed':
       // Counted like an attended lesson: no refund and the package lesson is used.
@@ -143,7 +141,11 @@ Page({
     // Back from the background or another page: the lesson may have been paid, cancelled or
     // moved meanwhile, here or on another phone.
     if (this.data.state === 'ready' && !this.data.busy) this.refresh()
-    else if (this.data.booking?.status === 'pending_payment') this.startTimer()
+    else if (this.data.booking) {
+      // Its timers were stopped while hidden.
+      if (this.data.booking.status === 'pending_payment') this.startTimer()
+      this.scheduleEdge(this.data.booking)
+    }
   },
 
   onHide() {
@@ -202,7 +204,8 @@ Page({
         return false
       }
       if (loud) showError(e)
-      if (this.data.booking?.status === 'pending_payment') this.startTimer()
+      // What is on screen, brought up to the time now, with its timers running again.
+      if (this.data.booking) this.show(this.data.booking)
       return false
     }
   },

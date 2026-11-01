@@ -93,11 +93,20 @@ export function packageTag(p: {
   }
 }
 
-/** The server sweeps unpaid holds a little after payBy; they read as expired from payBy on. */
+/**
+ * A booking as the server would answer now, for one fetched a while ago: unpaid holds read as
+ * expired from payBy on (the server sweeps them a little after), and a booked lesson can no
+ * longer be cancelled or moved once it starts, and reads as completed once it ends.
+ */
 export function settled(b: BookingDto, now: number): BookingDto {
-  return b.status === 'pending_payment' && b.payBy && Date.parse(b.payBy) <= now
-    ? { ...b, status: 'expired', canCancel: false }
-    : b
+  if (b.status === 'pending_payment' && b.payBy && Date.parse(b.payBy) <= now) {
+    return { ...b, status: 'expired', canCancel: false }
+  }
+  if (b.status === 'confirmed' && Date.parse(b.startsAt) <= now) {
+    const ended = Date.parse(b.endsAt) <= now
+    return { ...b, status: ended ? 'completed' : 'confirmed', canCancel: false, canMove: false }
+  }
+  return b
 }
 
 /** A lesson's tag on the 课程 list, with the attendance once it is marked. */
