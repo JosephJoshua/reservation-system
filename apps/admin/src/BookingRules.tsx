@@ -3,6 +3,7 @@ import { ruleLabels, ruleLimits, ruleNames, ruleText } from '@rs/shared'
 import type { ReactNode } from 'react'
 import { Button, InputNumber, Radio, Tag } from 'tdesign-react'
 import { Field } from './Field'
+import { typedNumber } from './format'
 
 const HELP: Partial<Record<RuleName, string>> = {
   advanceDays: '学员可以预约从今天起多少天内的课',
@@ -16,9 +17,10 @@ function unknownRule(name: never): never {
   throw new Error(`unknown booking rule ${name}`)
 }
 
-/** Typed text kept to whole units within the rule's limits; empty is the lowest. */
-function clamp(v: unknown, limits: { min: number; max: number }) {
-  return Math.min(Math.max(Math.floor(Number(v)) || limits.min, limits.min), limits.max)
+/** A typed whole number within the rule's limits, or null to keep the last one. */
+function typedRule(v: unknown, limits: { min: number; max: number }) {
+  const n = typedNumber(v, limits.min, limits.max)
+  return n === null ? null : Math.floor(n)
 }
 
 /** A number rule's input. 最晚预约 is kept in minutes and typed in hours. */
@@ -42,8 +44,12 @@ function NumberRule({
         min={limits.min / 60}
         max={limits.max / 60}
         decimalPlaces={1}
+        allowInputOverLimit={false}
         suffix={suffix}
-        onChange={(v) => onChange(clamp(Math.round((Number(v) || 0) * 60), limits))}
+        onChange={(v) => {
+          const hours = typedNumber(v, limits.min / 60, limits.max / 60)
+          if (hours !== null) onChange(Math.round(hours * 60))
+        }}
       />
     )
   }
@@ -53,8 +59,12 @@ function NumberRule({
       value={value}
       min={limits.min}
       max={limits.max}
+      allowInputOverLimit={false}
       suffix={suffix}
-      onChange={(v) => onChange(clamp(v, limits))}
+      onChange={(v) => {
+        const n = typedRule(v, limits)
+        if (n !== null) onChange(n)
+      }}
     />
   )
 }
@@ -98,10 +108,12 @@ function RuleInput({
                 value={late.percent}
                 min={0}
                 max={100}
+                allowInputOverLimit={false}
                 suffix="%"
-                onChange={(v) =>
-                  onChange({ kind: 'partial', percent: clamp(v, { min: 0, max: 100 }) })
-                }
+                onChange={(v) => {
+                  const percent = typedRule(v, { min: 0, max: 100 })
+                  if (percent !== null) onChange({ kind: 'partial', percent })
+                }}
               />
               <span className="muted">用课时包预约的课，只有比例为 100% 时才会退回课时</span>
             </>

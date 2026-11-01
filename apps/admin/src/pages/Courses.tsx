@@ -1,4 +1,9 @@
-import { type BookingRules, ownRuleLabels, type VenueSettings } from '@rs/shared'
+import {
+  type BookingRules,
+  groupSettingsError,
+  ownRuleLabels,
+  type VenueSettings,
+} from '@rs/shared'
 import { useState } from 'react'
 import {
   Button,
@@ -25,6 +30,7 @@ import {
   pickerToIso,
   toFen,
   toYuan,
+  typedNumber,
   yuan,
 } from '../format'
 import { type ApiData, useApi } from '../hooks'
@@ -188,6 +194,10 @@ function CourseList({ types }: { types: ApiData<LessonType[]> }) {
   )
 }
 
+/** A private lesson has no class minimum or seats per table, whatever was set while a group. */
+const lessonBody = (f: LessonForm): LessonForm =>
+  f.capacity > 1 ? f : { ...f, minStudents: null, studentsPerTable: null }
+
 function CourseEditPage({ id, types }: { id: number | 'new'; types: ApiData<LessonType[]> }) {
   // The venue's 默认预约规则, which a lesson type follows where it sets none of its own.
   const venue = useApi<VenueSettings>('/admin/settings')
@@ -201,7 +211,8 @@ function CourseEditPage({ id, types }: { id: number | 'new'; types: ApiData<Less
       blank={blankLesson}
       toForm={lessonForm}
       name={(f) => f.name.trim()}
-      check={(f) => (f.name.trim() ? null : '请填写课程名称')}
+      check={(f) => (f.name.trim() ? null : '请填写课程名称') ?? groupSettingsError(lessonBody(f))}
+      toBody={lessonBody}
       draft={(form) => ({ kind: 'lessonType', id: id === 'new' ? null : id, form })}
     >
       {(form, set) => (
@@ -255,8 +266,12 @@ function LessonEditor({
           min={15}
           max={480}
           step={15}
+          allowInputOverLimit={false}
           suffix="分钟"
-          onChange={(v) => set({ durationMinutes: Number(v) || 60 })}
+          onChange={(v) => {
+            const n = typedNumber(v, 15, 480)
+            if (n !== null) set({ durationMinutes: Math.floor(n) })
+          }}
         />
       </Field>
       <Field label="上课人数" help="多于 1 人为小班课，在日程页按节安排">
@@ -266,21 +281,13 @@ function LessonEditor({
             value={f.capacity}
             min={1}
             max={30}
+            allowInputOverLimit={false}
             suffix="人"
             onChange={(v) => {
-              const capacity = Math.max(1, Math.min(30, Number(v) || 1))
-              set({
-                capacity,
-                // A minimum only makes sense for a group, and never above its size.
-                minStudents:
-                  capacity === 1 || f.minStudents === null
-                    ? null
-                    : Math.min(f.minStudents, capacity),
-                studentsPerTable:
-                  capacity === 1 || f.studentsPerTable === null
-                    ? null
-                    : Math.min(f.studentsPerTable, capacity),
-              })
+              const n = typedNumber(v, 1, 30)
+              // The class minimum and seats per table stay as they are while it is typed, say 1
+              // on the way to 18; saving a private lesson drops them, and a group checks them.
+              if (n !== null) set({ capacity: Math.floor(n) })
             }}
           />
           {f.capacity > 1 && (
@@ -298,10 +305,12 @@ function LessonEditor({
                 value={f.minStudents}
                 min={2}
                 max={f.capacity}
+                allowInputOverLimit={false}
                 suffix="人"
-                onChange={(v) =>
-                  set({ minStudents: Math.max(2, Math.min(f.capacity, Number(v) || 2)) })
-                }
+                onChange={(v) => {
+                  const n = typedNumber(v, 2, f.capacity)
+                  if (n !== null) set({ minStudents: Math.floor(n) })
+                }}
               />
               <span className="muted">到免费取消截止时如果人数不足，整节课会自动取消并退款</span>
             </>
@@ -363,9 +372,13 @@ function LessonEditor({
                 value={f.salePercent / 10}
                 min={0.1}
                 max={9.9}
+                allowInputOverLimit={false}
                 decimalPlaces={1}
                 suffix="折"
-                onChange={(v) => set({ salePercent: Math.round((Number(v) || 9) * 10) })}
+                onChange={(v) => {
+                  const n = typedNumber(v, 0.1, 9.9)
+                  if (n !== null) set({ salePercent: Math.round(n * 10) })
+                }}
               />
               <DateRangePicker
                 enableTimePicker

@@ -52,6 +52,7 @@ export function EditPage<R extends { id: number }, F>({
   editable = (row) => row,
   name,
   check,
+  toBody = (form) => form,
   draft,
   actions,
   children,
@@ -73,6 +74,8 @@ export function EditPage<R extends { id: number }, F>({
   name: (form: F) => string
   /** Why the form can't be saved yet, if it can't. */
   check: (form: F) => string | null
+  /** What is sent for the form, when part of it only applies in some cases. */
+  toBody?: (form: F) => unknown
   draft: (form: F) => Draft
   /** Buttons beside the title, for a saved record. */
   actions?: (row: R) => ReactNode
@@ -149,7 +152,7 @@ export function EditPage<R extends { id: number }, F>({
     const focused = document.activeElement
     const ok = await attempt(
       () =>
-        api(isNew ? 'POST' : 'PUT', isNew ? path : `${path}/${id}`, form, {
+        api(isNew ? 'POST' : 'PUT', isNew ? path : `${path}/${id}`, toBody(form), {
           key,
           ifMatch: base ? editable(base) : undefined,
         }),

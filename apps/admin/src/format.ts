@@ -78,3 +78,14 @@ export function defaultSaleWindow() {
 export function actorName(e: { staff: { name: string } | null; coach: { name: string } | null }) {
   return e.staff?.name ?? (e.coach ? `${e.coach.name}（教练）` : '')
 }
+
+/**
+ * A number typed in a number box, or null when it is empty or outside `min`-`max`. A box then keeps
+ * its last value rather than jumping to a default the next keys would be typed after; the box
+ * itself (allowInputOverLimit off) brings an out-of-range number into range when it loses focus.
+ */
+export function typedNumber(v: unknown, min: number, max: number): number | null {
+  if (v === '' || v === undefined || v === null) return null
+  const n = Number(v)
+  return Number.isFinite(n) && n >= min && n <= max ? n : null
+}

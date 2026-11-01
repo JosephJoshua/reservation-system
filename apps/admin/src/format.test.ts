@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fmtLastDay, yuan } from './format'
+import { fmtLastDay, typedNumber, yuan } from './format'
 
 describe('yuan', () => {
   it('groups thousands and shows cents only when there are any, always two of them', () => {
@@ -18,5 +18,17 @@ describe('fmtLastDay', () => {
     expect(fmtLastDay('2026-11-07T16:00:00.000Z')).toBe('2026-11-07')
     // 18:00 on the 8th still covers the 8th.
     expect(fmtLastDay('2026-11-08T10:00:00.000Z')).toBe('2026-11-08')
+  })
+})
+
+describe('typedNumber', () => {
+  it('takes only a number within the limits, so a cleared box keeps the last value', () => {
+    expect(typedNumber('', 1, 200)).toBeNull()
+    expect(typedNumber(undefined, 1, 200)).toBeNull()
+    expect(typedNumber(0, 1, 200)).toBeNull()
+    expect(typedNumber(201, 1, 200)).toBeNull()
+    expect(typedNumber('abc', 1, 200)).toBeNull()
+    expect(typedNumber(12, 1, 200)).toBe(12)
+    expect(typedNumber('0.5', 0.1, 9.9)).toBe(0.5)
   })
 })
