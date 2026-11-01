@@ -121,12 +121,14 @@ Page({
       await coachApi('PUT', `/lessons/${student.bookingId}/attendance`, { attendance })
       marked = true
       wx.showToast({ title: attendance ? ATTENDANCE[attendance] : '已撤销', icon: 'none' })
+      // Held until the list shows it: 全部记为到课 reads the rows on screen.
+      await this.load()
     } catch (err) {
       showError(err)
+      await this.load()
     } finally {
       this.marking = false
     }
-    await this.load()
     if (marked) this.lastMark[student.bookingId] = { picked, at: Date.now() }
   },
 
