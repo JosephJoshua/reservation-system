@@ -12,7 +12,7 @@ import {
   weeklyHoursError,
 } from '../../lib/shared'
 import { ApiError, errorMessage, serverNow, showError } from '../../utils/api'
-import { edgeWait } from '../../utils/edge'
+import { edgeWait, nextMidnight } from '../../utils/edge'
 import { dateText, time } from '../../utils/format'
 import { modalDangerColor } from '../../utils/theme'
 import { bindInstead, coachApi } from '../utils/coach-api'
@@ -201,14 +201,24 @@ Page({
     this.clearEdge()
     if (this.hidden) return
     const offs: ScheduleExceptionDto[] = this.offs
+    const now = serverNow()
     const wait = edgeWait(
-      offs.flatMap((e) => [Date.parse(e.startsAt), Date.parse(e.endsAt)]),
-      serverNow(),
+      [
+        ...offs.flatMap((e) => [Date.parse(e.startsAt), Date.parse(e.endsAt)]),
+        // 今天, the 生效日期 and the pickers' range move on then.
+        nextMidnight(now),
+      ],
+      now,
     )
     if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
       if (this.hidden || this.data.state !== 'ready') return
+      if (this.data.today !== venueDateKey(new Date(serverNow()))) {
+        // What onShow does after midnight, with the page left open.
+        this.onShow()
+        return
+      }
       const now = serverNow()
       this.setData({
         exceptions: upcoming(this.periods, this.offs, venueDateKey(new Date(now)), now).exceptions,

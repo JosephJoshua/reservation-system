@@ -154,7 +154,8 @@ Page({
     this.loadSchedule().finally(() => wx.stopPullDownRefresh())
   },
 
-  async load() {
+  /** `quiet` (the move to a new day at midnight) keeps the day shown on a failure. */
+  async load(quiet = false) {
     try {
       const me = await coachApi<CoachMeDto>('GET', '/me')
       this.me = me
@@ -180,6 +181,15 @@ Page({
       // Left for another page meanwhile: the error state's retry gets here again.
       if (isNotBound(e) && isTop(this)) {
         wx.redirectTo({ url: '/coach/bind/index' })
+        return
+      }
+      // Tries again in a minute, or when the page is shown.
+      if (quiet && this.data.state === 'ready') {
+        this.clearEdge()
+        this.edgeTimer = setTimeout(() => {
+          this.edgeTimer = 0
+          if (!this.hidden && this.data.state === 'ready') this.load(true)
+        }, 60_000) as unknown as number
         return
       }
       this.setData({ state: 'error', error: errorMessage(e) })
@@ -342,7 +352,7 @@ Page({
       this.edgeTimer = 0
       if (this.hidden || this.data.state !== 'ready') return
       if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date(serverNow()))) {
-        this.load()
+        this.load(true)
         return
       }
       this.showDay()
