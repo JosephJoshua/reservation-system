@@ -78,3 +78,15 @@ export function defaultSaleWindow() {
 export function actorName(e: { staff: { name: string } | null; coach: { name: string } | null }) {
   return e.staff?.name ?? (e.coach ? `${e.coach.name}（教练）` : '')
 }
+
+/**
+ * A number typed in a number box, or null when the box is empty or holds no number. A cleared box
+ * then keeps its last value rather than jumping to a default the next keys would be typed after.
+ * An out-of-range number is kept, so the box (allowInputOverLimit off) can bring it into range
+ * when it loses focus, as saving does.
+ */
+export function typedNumber(v: unknown): number | null {
+  if (v === '' || v === undefined || v === null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}

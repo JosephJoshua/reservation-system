@@ -776,7 +776,12 @@ describe('front-desk booking', () => {
     )
     const cancel = `/admin/bookings/${res.json.bookingId}/cancel`
     const first = await h.call('POST', cancel, { reason: '停电' }, admin)
-    expect(first.json).toEqual({ refunded: null, offline: false, lessonReturned: true })
+    expect(first.json).toEqual({
+      refunded: null,
+      offline: false,
+      lessonReturned: true,
+      refundFailed: false,
+    })
     expect((await h.call('POST', cancel, { reason: '停电' }, admin)).status).toBe(200)
     expect(log(h).at(-1)?.summary).toBe(
       '10月25日 10:00 王教练 一对一私教，原因：停电，退回课时 1 节',

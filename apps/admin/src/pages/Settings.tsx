@@ -22,7 +22,9 @@ import {
 } from 'tdesign-react'
 import { DefaultRuleFields } from '../BookingRules'
 import { Field } from '../Field'
+import { typedNumber } from '../format'
 import { useApi } from '../hooks'
+import { NumberBox } from '../NumberBox'
 import { SaveBar, StaleNotice } from '../SaveBar'
 import { SectionNav, useSections } from '../SectionNav'
 import { useSettingsDraft } from '../settingsDraft'
@@ -411,31 +413,37 @@ export function Settings() {
             />
           </Field>
           <Field label="每人体验课次数">
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={s.payment.trialLimitPerStudent}
               min={1}
               max={10}
               suffix="次"
-              onChange={(v) =>
-                set((d) => {
-                  d.payment.trialLimitPerStudent = Number(v) || 1
-                })
-              }
+              onChange={(v) => {
+                const n = typedNumber(v)
+                if (n !== null) {
+                  set((d) => {
+                    d.payment.trialLimitPerStudent = Math.floor(n)
+                  })
+                }
+              }}
             />
           </Field>
           <Field label="支付时限" help="下单后超过这个时间仍未支付，订单会自动取消并释放时段">
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={s.payment.timeoutMinutes}
               min={5}
               max={30}
               suffix="分钟"
-              onChange={(v) =>
-                set((d) => {
-                  d.payment.timeoutMinutes = Number(v) || 10
-                })
-              }
+              onChange={(v) => {
+                const n = typedNumber(v)
+                if (n !== null) {
+                  set((d) => {
+                    d.payment.timeoutMinutes = Math.floor(n)
+                  })
+                }
+              }}
             />
           </Field>
         </div>

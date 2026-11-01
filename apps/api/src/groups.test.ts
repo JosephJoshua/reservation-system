@@ -931,7 +931,11 @@ describe('calling off a session', () => {
     // An unpaid hold is released too.
     const held = await book(h, c, id, kids.id)
     const res = await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)
-    expect(res.status).toBe(204)
+    // The desk is told what went back, so it knows what is left to hand over in person.
+    expect([res.status, res.json]).toEqual([
+      200,
+      { cancelled: 3, refunded: 16000, offline: 0, failed: 0, lessonsReturned: 0 },
+    ])
     expect(live(h, id)).toHaveLength(0)
     const rows = h.db.select().from(bookings).where(eq(bookings.slotId, id)).all()
     expect(
@@ -953,8 +957,8 @@ describe('calling off a session', () => {
     })
     // A repeat does nothing more; the session cannot be reopened or booked.
     expect(
-      (await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)).status,
-    ).toBe(204)
+      (await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)).json,
+    ).toEqual({ cancelled: 0, refunded: 0, offline: 0, failed: 0, lessonsReturned: 0 })
     expect(h.db.select().from(refunds).all()).toHaveLength(2)
     const reopen = await h.call('PATCH', `/admin/slots/${id}`, { open: true }, admin)
     expect(reopen.json.error.code).toBe('session_cancelled')
@@ -984,7 +988,7 @@ describe('calling off a session', () => {
       throw new Error('wechat down')
     }
     const res = await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)
-    expect(res.status).toBe(204)
+    expect(res.status).toBe(200)
     expect(live(h, id).map((r) => r.status)).toEqual(['pending_payment', 'pending_payment'])
     // No cashier for it any more.
     const again = await h.call('POST', `/orders/${held.json.orderId}/payment`, {}, a)
@@ -1062,7 +1066,7 @@ describe('calling off a session', () => {
     // Paid at WeChat Pay a moment before the call-off; the close call reports it paid.
     h.gateway.pay(order?.outTradeNo ?? '')
     const res = await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)
-    expect(res.status).toBe(204)
+    expect(res.status).toBe(200)
     expect(
       h.db.select().from(bookings).where(eq(bookings.id, held.json.bookingId)).get(),
     ).toMatchObject({ status: 'cancelled', cancelledBy: 'venue', cancelReason: '场地维修' })

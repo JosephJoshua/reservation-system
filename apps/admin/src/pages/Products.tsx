@@ -16,9 +16,18 @@ import { DataTable } from '../DataTable'
 import { EditPage, useRecordId } from '../EditPage'
 import { ExportButton } from '../ExportButton'
 import { Field } from '../Field'
-import { defaultSaleWindow, isoToPicker, pickerToIso, toFen, toYuan, yuan } from '../format'
+import {
+  defaultSaleWindow,
+  isoToPicker,
+  pickerToIso,
+  toFen,
+  toYuan,
+  typedNumber,
+  yuan,
+} from '../format'
 import { type ApiData, useApi } from '../hooks'
 import { packageStatusLabel } from '../labels'
+import { NumberBox } from '../NumberBox'
 import type { ProductForm } from '../preview/data'
 import { PreviewDialog } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
@@ -317,13 +326,16 @@ function ProductEditor({
         )}
       </Field>
       <Field label="课时数">
-        <InputNumber
+        <NumberBox
           theme="normal"
           value={f.lessonCount}
           min={1}
           max={200}
           suffix="节"
-          onChange={(v) => set({ lessonCount: Number(v) || 1 })}
+          onChange={(v) => {
+            const n = typedNumber(v)
+            if (n !== null) set({ lessonCount: Math.floor(n) })
+          }}
         />
       </Field>
       <Field label="价格">
@@ -339,13 +351,16 @@ function ProductEditor({
         />
       </Field>
       <Field label="有效期" help="从购买当天起计算">
-        <InputNumber
+        <NumberBox
           theme="normal"
           value={f.validityDays}
           min={1}
           max={3650}
           suffix="天"
-          onChange={(v) => set({ validityDays: Number(v) || 1 })}
+          onChange={(v) => {
+            const n = typedNumber(v)
+            if (n !== null) set({ validityDays: Math.floor(n) })
+          }}
         />
       </Field>
       <Field label="限时价">

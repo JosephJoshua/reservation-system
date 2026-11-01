@@ -88,6 +88,10 @@ const CREDENTIAL_PATHS =
 
 const PHOTO_UPLOAD = /^\/api\/coach\/lessons\/[^/]+\/photos\/?$/
 
+// A cancel's answer only adds up the money; once dropped, a repeat still learns the cancel went
+// through, and the reload shows the rest.
+const CANCEL = /^\/api\/admin\/(?:bookings|slots)\/[^/]+\/cancel\/?$/
+
 /**
  * The key a request is kept under, for a signed-in caller's mutating request that carries an
  * Idempotency-Key; null when it is not kept.
@@ -163,6 +167,9 @@ export function idempotency(deps: Deps): MiddlewareHandler {
       }
       if (seen.status !== null) {
         // Its answer was dropped when a student deleted their account (see eraseStudent).
+        if (seen.body === null && seen.status !== 204 && CANCEL.test(c.req.path)) {
+          return c.json({}, seen.status as 200)
+        }
         if (seen.body === null && seen.status !== 204) {
           // A photo the coach has not saved in feedback yet is in no list a reload shows, so the
           // coach is told to add it again; the copy already uploaded is swept as unused.

@@ -1447,7 +1447,7 @@ describe('the front desk booking outside 排班', () => {
     expect(
       (await h.call('POST', `/admin/slots/${session?.id}/cancel`, { reason: '人数不足' }, admin))
         .status,
-    ).toBe(204)
+    ).toBe(200)
     expect(await times(h, student, SUN, lesson.id)).toEqual([
       '09:00',
       '09:30',

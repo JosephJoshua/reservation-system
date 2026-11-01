@@ -197,7 +197,7 @@ export const yuan = formatMoney
 /** What a venue or coach cancel gave back, as "，退款 ¥200" for its log summary. */
 export function cancelOutcome(tx: Q, bookingId: number) {
   const refund = tx
-    .select({ amount: refunds.amount, provider: orders.provider })
+    .select({ amount: refunds.amount, provider: orders.provider, status: refunds.status })
     .from(refunds)
     .innerJoin(orders, eq(orders.id, refunds.orderId))
     .where(eq(refunds.bookingId, bookingId))
@@ -209,8 +209,10 @@ export function cancelOutcome(tx: Q, bookingId: number) {
     .where(and(eq(packageLedger.bookingId, bookingId), eq(packageLedger.kind, 'return')))
     .get()
   // An unpaid hold was simply released.
+  // WeChat Pay may have refused the refund already, when it was sent on the cancel.
+  const failed = refund?.status === 'failed'
   const text = refund
-    ? `，${refund.provider === 'offline' ? '待线下退还' : '退款'} ${yuan(refund.amount)}`
+    ? `，${refund.provider === 'offline' ? '待线下退还' : failed ? '退款失败' : '退款'} ${yuan(refund.amount)}`
     : returned
       ? '，退回课时 1 节'
       : ''
@@ -219,6 +221,7 @@ export function cancelOutcome(tx: Q, bookingId: number) {
     refunded: refund?.amount ?? null,
     offline: refund?.provider === 'offline',
     lessonReturned: !refund && !!returned,
+    refundFailed: failed,
   }
 }
 

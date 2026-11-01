@@ -81,12 +81,32 @@ export function cancelConfirmLabel(statuses: BookingStatus[]) {
 }
 
 /** What a venue cancel answers: what became of the money, as it stood when it was cancelled. */
-export type CancelResult = { refunded: number | null; offline: boolean; lessonReturned: boolean }
+export type CancelResult = {
+  refunded: number | null
+  offline: boolean
+  lessonReturned: boolean
+  refundFailed?: boolean
+}
+
+/** What calling off a whole session tells the desk, from what the cancel answered. */
+export function sessionCancelDoneMessage(result: unknown) {
+  const r = result as
+    | { refunded?: number; offline?: number; failed?: number; lessonsReturned?: number }
+    | undefined
+  const parts = [
+    r?.refunded ? `${yuan(r.refunded)} 将原路退回` : '',
+    r?.offline ? `请当面退还 ${yuan(r.offline)}` : '',
+    r?.failed ? `${yuan(r.failed)} 退款失败，请到退款页处理` : '',
+    r?.lessonsReturned ? `退回课时 ${r.lessonsReturned} 节` : '',
+  ].filter(Boolean)
+  return parts.length ? `已取消整节，${parts.join('，')}` : '已取消整节'
+}
 
 /** What a cancelled single booking tells the desk, from what the cancel answered. */
 export function cancelDoneMessage(result: unknown) {
   const r = result as Partial<CancelResult> | undefined
   if (r?.refunded != null) {
+    if (r.refundFailed) return `已取消，${yuan(r.refunded)} 退款失败，请到退款页处理`
     return r.offline
       ? `已取消，请当面退还学员 ${yuan(r.refunded)}`
       : `已取消，${yuan(r.refunded)} 将原路退回`
