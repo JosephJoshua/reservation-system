@@ -239,7 +239,6 @@ Page({
     const edits = schedule.coachEdits
     const onDate = schedule.lessons.filter((s) => venueDateKey(new Date(s.startsAt)) === date)
     const lessons = onDate.map((s) => lessonRow(s, now))
-    this.scheduleEdge(onDate.map((s) => Date.parse(s.startsAt)))
     const free = schedule.free.filter(onDay).map((f, i): RowView => {
       const span = clip(f)
       return {
@@ -280,6 +279,11 @@ Page({
         active: edits && !o.closure && Date.parse(o.endsAt) > now,
       }
     })
+    // Lessons starting, and 请假 and free time starting or ending, change what the day shows.
+    this.scheduleEdge([
+      ...onDate.map((s) => Date.parse(s.startsAt)),
+      ...[...off, ...free].flatMap((r) => [Date.parse(r.startsAt), Date.parse(r.endsAt)]),
+    ])
     const rows = [...off, ...lessons, ...free].sort(
       (a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt),
     )
@@ -313,8 +317,8 @@ Page({
   },
 
   /**
-   * Redraws the day just after the next of its lessons starts (已预约 becomes 待签到), and loads
-   * the schedule again then.
+   * Redraws the day just after the next of its edges (a lesson starting, so 已预约 becomes 待签到,
+   * or a 请假 or free stretch starting or ending), and loads the schedule again then.
    */
   scheduleEdge(starts: number[]) {
     this.clearEdge()
