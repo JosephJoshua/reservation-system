@@ -19,10 +19,10 @@ is not installed in the default location.
 
 Each script launches its own DevTools window by default. To reuse one simulator across runs, open
 an automation instance once (`cli auto --project <path to apps/miniprogram> --auto-port 9420`) and
-set `QA_WS_ENDPOINT=ws://127.0.0.1:9420`. The scripts then attach to it, clear its storage,
-relaunch the first page and leave it open when they finish. If a run fails with `saveFile:fail
-exceeded the maximum size`, rerun it once with `QA_RECOMPILE=1`, which recompiles the open project
-first and resets the simulator's file storage.
+set `QA_WS_ENDPOINT=ws://127.0.0.1:9420`. The scripts then attach to it, clear its storage and
+saved files, relaunch the first page and leave it open when they finish. If the simulator gets
+stuck, rerun once with `QA_RECOMPILE=1`, which recompiles the open project first; the simulator
+restarts, so leave it off otherwise.
 
 ## Student flows
 

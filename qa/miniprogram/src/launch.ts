@@ -11,9 +11,8 @@ const cliPath =
   process.env.WECHAT_DEVTOOLS_CLI ?? '/Applications/wechatwebdevtools.app/Contents/MacOS/cli'
 
 /**
- * Recompiles the open project in place. Screenshots and downloads pile up in the simulator's file
- * storage until saveFile fails with "exceeded the maximum size", and DevTools only recounts it on
- * a compile. The simulator visibly restarts, so this runs only when QA_RECOMPILE=1.
+ * Recompiles the open project in place, for when the simulator is stuck. The simulator visibly
+ * restarts, so this runs only when QA_RECOMPILE=1.
  */
 function recompile(projectPath: string) {
   const appJson = join(projectPath, 'miniprogram', 'app.json')
@@ -26,10 +25,56 @@ function recompile(projectPath: string) {
   })
 }
 
+/** The few wx APIs clearFiles uses; the function runs inside the simulator, where wx exists. */
+declare const wx: {
+  env: { USER_DATA_PATH: string }
+  getFileSystemManager(): {
+    readdirSync(path: string): string[]
+    statSync(path: string): { isFile(): boolean }
+    unlinkSync(path: string): void
+    rmdirSync(path: string, recursive: boolean): void
+    getSavedFileList(options: {
+      success: (res: { fileList: { filePath: string }[] }) => void
+      fail: () => void
+    }): void
+    removeSavedFile(options: { filePath: string }): void
+  }
+}
+
+/**
+ * Empties the simulator's file storage. Screenshots and downloads pile up there over many runs
+ * until saveFile fails with "exceeded the maximum size", so every attached run starts with none.
+ */
+async function clearFiles(miniProgram: MiniProgram) {
+  await miniProgram.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const fs = wx.getFileSystemManager()
+        const base = wx.env.USER_DATA_PATH
+        try {
+          for (const name of fs.readdirSync(base)) {
+            const path = `${base}/${name}`
+            try {
+              if (fs.statSync(path).isFile()) fs.unlinkSync(path)
+              else fs.rmdirSync(path, true)
+            } catch {}
+          }
+        } catch {}
+        fs.getSavedFileList({
+          success: ({ fileList }) => {
+            for (const file of fileList) fs.removeSavedFile({ filePath: file.filePath })
+            resolve()
+          },
+          fail: () => resolve(),
+        })
+      }),
+  )
+}
+
 /**
  * Opens the mini program for a run. With QA_WS_ENDPOINT set (for example ws://127.0.0.1:9420)
  * this attaches to the DevTools instance already open there (recompiling it first with
- * QA_RECOMPILE=1), clears its storage and relaunches the first page, so every run reuses one simulator instead of opening a new window.
+ * QA_RECOMPILE=1), clears its storage and files and relaunches the first page, so every run reuses one simulator instead of opening a new window.
  */
 export async function openMiniProgram(projectPath: string): Promise<MiniProgram> {
   if (!wsEndpoint) {
@@ -47,6 +92,7 @@ export async function openMiniProgram(projectPath: string): Promise<MiniProgram>
     try {
       miniProgram = await automator.connect({ wsEndpoint })
       await miniProgram.callWxMethod('clearStorageSync')
+      await clearFiles(miniProgram)
       await miniProgram.reLaunch('/pages/booking/index')
       return miniProgram
     } catch (err) {
