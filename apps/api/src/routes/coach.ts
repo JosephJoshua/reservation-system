@@ -52,7 +52,7 @@ import {
   scheduleView,
 } from '../services/schedule'
 import { profileInput } from '../services/student-profiles'
-import { dateKey, oneTarget, targetFields, toTarget } from './target'
+import { dateKey, oneTarget, shownTime, targetFields, toTarget } from './target'
 
 const code = z.string().min(1).max(200)
 
@@ -324,7 +324,10 @@ export function coachRoutes(deps: Deps) {
   })
 
   app.post('/lessons/:id/move', async (c) => {
-    const body = await parseBody(c, z.object(targetFields).refine(oneTarget, '请选择上课时间'))
+    const body = await parseBody(
+      c,
+      z.object({ ...targetFields, from: shownTime.optional() }).refine(oneTarget, '请选择上课时间'),
+    )
     const coachId = c.get('coachId')
     const id = idParam(c)
     // Described before the move, for the log only: a failure here must not stop the move.
@@ -335,7 +338,7 @@ export function coachRoutes(deps: Deps) {
       deps.log('action log write failed', { coachId, error: String(e) })
     }
     // A repeat of a move that already happened logs nothing.
-    if (moveBooking(deps, id, toTarget(body), { coachId }) && before) {
+    if (moveBooking(deps, id, toTarget(body), { coachId }, { from: body.from }) && before) {
       const { what, studentId } = before
       log(coachId, () => {
         const to = db

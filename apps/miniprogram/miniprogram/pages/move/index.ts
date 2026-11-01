@@ -9,6 +9,7 @@ import {
 } from '../../lib/shared'
 import { api, assetUrl, errorMessage, serverNow } from '../../utils/api'
 import { askForNotices, getCatalog, getMe } from '../../utils/data'
+import { edgeWait } from '../../utils/edge'
 import { bookableDays, dateText, dayAnchor, lessonTime, time } from '../../utils/format'
 import { leaveMove, submitMove } from '../../utils/move'
 
@@ -77,6 +78,11 @@ Page({
   catalog: null as CatalogDto | null,
   templates: {} as MeDto['noticeTemplates'],
   request: 0,
+  /** The selected day's times as fetched, redrawn as they pass. */
+  rows: [] as SlotDto[],
+  edgeTimer: 0 as number,
+  /** Behind another page or gone: no edge timer then, onShow sets one again. */
+  hidden: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.id = Number(query.id)
@@ -86,10 +92,22 @@ Page({
   },
 
   onShow() {
+    this.hidden = false
     // Left open past midnight: the day strip has moved.
     const today = venueDateKey(new Date(serverNow()))
     const { state, submitting, days } = this.data
     if (state === 'ready' && !submitting && days[0]?.key !== today) this.load()
+    else if (state === 'ready') this.scheduleEdge()
+  },
+
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
   },
 
   async load() {
@@ -155,42 +173,103 @@ Page({
         `/slots?date=${date}&coachId=${coachId}&moving=${booking.id}`,
       )
       if (request !== this.request) return
-      const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
-      const now = serverNow()
-      const notice = booking.window.minNoticeMinutes * 60_000
-      // A group class moves to another session of the same class, a private lesson to a private slot.
-      const sessionOf = booking.capacity > 1 ? booking.lessonType.id : null
-      const slots = rows
-        .filter(
-          (s) =>
-            Date.parse(s.startsAt) > now &&
-            Date.parse(s.endsAt) - Date.parse(s.startsAt) === length &&
-            s.lessonTypeId === sessionOf,
-        )
-        .map((s) => {
-          const current = s.coachId === booking.coach.id && s.startsAt === booking.startsAt
-          const key = s.id === null ? `${s.coachId}@${s.startsAt}` : `s${s.id}`
-          return {
-            id: s.id,
-            key,
-            coachId: s.coachId,
-            time: time(s.startsAt),
-            startsAt: s.startsAt,
-            endsAt: s.endsAt,
-            available: s.available && !current && !this.refused.has(key),
-            current,
-            closed: !s.available && Date.parse(s.startsAt) - now < notice,
-            refused: this.refused.has(key),
-            seatsLeft: sessionOf === null ? null : s.seatsLeft,
-            mine:
-              s.mine && !current ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
-          }
-        })
+      this.rows = rows
+      const slots: SlotView[] = this.slotViews(booking)
       this.setData({ slotsState: 'ready', slots })
+      this.scheduleEdge()
     } catch (e) {
       if (request !== this.request) return
       this.setData({ slotsState: 'error', slotsError: errorMessage(e) })
     }
+  },
+
+  /**
+   * The day's times as of now: past ones dropped, those now inside the notice shown closed, and
+   * the times the server refused kept refused.
+   */
+  slotViews(booking: BookingDto): SlotView[] {
+    const length = Date.parse(booking.endsAt) - Date.parse(booking.startsAt)
+    const now = serverNow()
+    const notice = booking.window.minNoticeMinutes * 60_000
+    // A group class moves to another session of the same class, a private lesson to a private slot.
+    const sessionOf = booking.capacity > 1 ? booking.lessonType.id : null
+    return this.rows
+      .filter(
+        (s) =>
+          Date.parse(s.startsAt) > now &&
+          Date.parse(s.endsAt) - Date.parse(s.startsAt) === length &&
+          s.lessonTypeId === sessionOf,
+      )
+      .map((s) => {
+        const current = s.coachId === booking.coach.id && s.startsAt === booking.startsAt
+        const key = s.id === null ? `${s.coachId}@${s.startsAt}` : `s${s.id}`
+        const tooSoon = Date.parse(s.startsAt) - now < notice
+        return {
+          id: s.id,
+          key,
+          coachId: s.coachId,
+          time: time(s.startsAt),
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          available: s.available && !tooSoon && !current && !this.refused.has(key),
+          current,
+          closed: tooSoon,
+          refused: this.refused.has(key),
+          seatsLeft: sessionOf === null ? null : s.seatsLeft,
+          mine:
+            s.mine && !current ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
+        }
+      })
+  },
+
+  /**
+   * Redraws the day as its next time comes inside the notice or starts, and shows the lesson as
+   * fixed once its own 改约 deadline passes, as the server would refuse the move then.
+   */
+  scheduleEdge() {
+    this.clearEdge()
+    const booking = this.booking
+    if (this.hidden || !booking) return
+    const wait = edgeWait(
+      [
+        Date.parse(booking.cancelDeadline),
+        ...this.rows.flatMap((s) => [
+          Date.parse(s.startsAt) - booking.window.minNoticeMinutes * 60_000,
+          Date.parse(s.startsAt),
+        ]),
+      ],
+      serverNow(),
+    )
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => this.onEdge(booking), wait) as unknown as number
+  },
+
+  /** At an edge; while a move is being sent or the times are loading, it looks again shortly. */
+  onEdge(booking: BookingDto) {
+    this.edgeTimer = 0
+    if (this.hidden || this.data.state !== 'ready') return
+    if (this.data.submitting || this.data.slotsState === 'loading') {
+      this.edgeTimer = setTimeout(() => this.onEdge(booking), 1000) as unknown as number
+      return
+    }
+    if (Date.parse(booking.cancelDeadline) < serverNow()) {
+      this.getOpenerEventChannel().emit?.('stale')
+      this.setData({ state: 'error', fixed: true, error: whyFixed(booking) })
+      return
+    }
+    if (this.data.slotsState === 'ready') {
+      const slots: SlotView[] = this.slotViews(booking)
+      const picked = this.data.picked
+      const still = picked && slots.find((s) => s.key === picked.key)?.available
+      this.setData({ slots, ...(picked && !still ? { picked: null } : {}) })
+    }
+    // On a slots error too, so the lesson's own deadline still shows.
+    this.scheduleEdge()
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   pickCoach(e: WechatMiniprogram.TouchEvent) {
@@ -231,6 +310,7 @@ Page({
 
   async submit() {
     const slot = this.data.picked
+    const booking = this.booking
     if (!slot || this.data.submitting) return
     this.setData({ submitting: true })
     const result = await submitMove(
@@ -238,13 +318,13 @@ Page({
       async () => {
         // Asked inside the tap, before any await, or WeChat does not show the prompt.
         await askForNotices(this.templates, ['moved', 'reminder', 'cancelled'])
-        return api<BookingDto>(
-          'POST',
-          `/bookings/${this.id}/move`,
-          slot.id === null
+        return api<BookingDto>('POST', `/bookings/${this.id}/move`, {
+          ...(slot.id === null
             ? { coachId: slot.coachId, startsAt: slot.startsAt }
-            : { slotId: slot.id },
-        )
+            : { slotId: slot.id }),
+          // Where this page showed the lesson, so a move made elsewhere meanwhile is refused.
+          ...(booking ? { from: { coachId: booking.coach.id, startsAt: booking.startsAt } } : {}),
+        })
       },
       `/pages/booking-detail/index?id=${this.id}`,
     )

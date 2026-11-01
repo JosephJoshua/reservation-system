@@ -1,5 +1,6 @@
 import {
   type Attendance,
+  COACH_ATTENDANCE_DAYS,
   type CoachLessonDto,
   profileCounts,
   profileTraits,
@@ -156,13 +157,17 @@ Page({
   },
 
   /**
-   * For a booked lesson, fetches it again just after it starts, as attendance opens then; on a
-   * failure it is only redrawn for the time now.
+   * For a booked lesson, fetches it again just after it starts and just after marking closes, as
+   * the mark buttons come and go then; on a failure it is only redrawn for the time now.
    */
   scheduleEdge(l: CoachLessonDto) {
     this.clearEdge()
-    if (l.status !== 'confirmed' || this.hidden) return
-    const wait = edgeWait([Date.parse(l.startsAt)], serverNow())
+    if ((l.status !== 'confirmed' && l.status !== 'completed') || this.hidden) return
+    // Marking opens at the start and closes COACH_ATTENDANCE_DAYS after the end.
+    const wait = edgeWait(
+      [Date.parse(l.startsAt), Date.parse(l.endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000],
+      serverNow(),
+    )
     if (wait === null) return
     this.edgeTimer = setTimeout(async () => {
       this.edgeTimer = 0
@@ -214,7 +219,7 @@ Page({
     this.setData({
       state: 'ready',
       lesson: l,
-      tag: lessonTag(l, l.startsAt, serverNow()),
+      tag: lessonTag(l, l.startsAt, serverNow(), l.endsAt),
       when: lessonTime(l.startsAt, l.endsAt),
       movedFrom: l.movedFrom ? dateTime(l.movedFrom) : '',
       lessonName: l.lessonType.isTrial

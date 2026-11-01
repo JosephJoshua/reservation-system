@@ -67,7 +67,7 @@ import { getSettings, ruleBook } from '../services/settings'
 import { linkDeskStudent } from '../services/student-link'
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, studentPackages } from '../services/views'
-import { dateKey, oneTarget, targetFields, toTarget } from './target'
+import { dateKey, oneTarget, shownTime, targetFields, toTarget } from './target'
 
 const positiveId = z.coerce.number().int().positive()
 
@@ -744,8 +744,11 @@ export function studentRoutes(deps: Deps) {
 
   app.post('/bookings/:id/move', async (c) => {
     const id = idParam(c)
-    const body = await parseBody(c, z.object(targetFields).refine(oneTarget, '请选择上课时间'))
-    moveBooking(deps, id, toTarget(body), { studentId: c.get('studentId') })
+    const body = await parseBody(
+      c,
+      z.object({ ...targetFields, from: shownTime.optional() }).refine(oneTarget, '请选择上课时间'),
+    )
+    moveBooking(deps, id, toTarget(body), { studentId: c.get('studentId') }, { from: body.from })
     return c.json(ownBookingView(id, c.get('studentId')))
   })
 

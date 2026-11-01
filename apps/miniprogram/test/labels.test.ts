@@ -46,6 +46,9 @@ describe('refund wording', () => {
   it('keeps the review states of a package refund request', () => {
     expect(refundStatus(refund({ status: 'requested' }), false)).toBe('待审核')
     expect(refundStatus(refund({ status: 'rejected' }), false)).toBe('未通过')
+    expect(refundStatus(refund({ status: 'rejected', rejectReason: '已上课过半' }), false)).toBe(
+      '未通过：已上课过半',
+    )
   })
 })
 

@@ -188,7 +188,7 @@ import { profileInput, saveStudentProfile, studentProfile } from '../services/st
 import { slotsWithoutTable } from '../services/tables'
 import { bookingStatus, bookingViews, packageViews } from '../services/views'
 import { exceptionBody, weeklyHoursBody } from './coach'
-import { dateKey, monthKey, oneTarget, targetFields, toTarget } from './target'
+import { dateKey, monthKey, oneTarget, shownTime, targetFields, toTarget } from './target'
 
 const instant = instantString.transform((s) => new Date(s))
 const id = z.coerce.number().int().positive().optional()
@@ -943,13 +943,15 @@ export function adminRoutes(deps: Deps) {
     if (!Number.isInteger(exceptionId) || exceptionId <= 0) throw notFound('请假/加班')
     const removed = removeException(deps, exceptionId, idParam(c))
     logRemoved(c.get('staffId'), removed)
-    // Removing a 加班 leaves its lessons outside 排班, for the desk to move or cancel.
-    return c.json({ conflicts: removed.conflicts })
+    // Removing a 加班 leaves its lessons outside 排班, for the desk to move or cancel. `endedAt`
+    // says one under way was cut short there rather than deleted.
+    return c.json({ conflicts: removed.conflicts, endedAt: removed.endedAt })
   })
 
   app.delete('/closures/:id', need('manage'), (c) => {
-    logRemoved(c.get('staffId'), removeException(deps, idParam(c), null))
-    return c.body(null, 204)
+    const removed = removeException(deps, idParam(c), null)
+    logRemoved(c.get('staffId'), removed)
+    return c.json({ endedAt: removed.endedAt })
   })
 
   // Lessons and sessions yet to start that the desk has to move or cancel.
@@ -1630,10 +1632,6 @@ export function adminRoutes(deps: Deps) {
     })
     return c.json(answer)
   })
-
-  // What the page showed as the lesson's coach and start, so a change made on an older view of it
-  // is refused rather than undoing someone else's move.
-  const shownTime = z.object({ coachId: z.number().int().positive(), startsAt: instant })
 
   app.post('/bookings/:id/move', need('bookings'), async (c) => {
     const body = await parseBody(

@@ -1,6 +1,7 @@
 import { type SlotDto, venueDateKey } from '../../lib/shared'
 import { api, assetUrl, errorMessage, serverNow, showError } from '../../utils/api'
 import { catalogFetchedAt, getCatalog, TRIAL_PENDING, trialBlock } from '../../utils/data'
+import { edgeWait } from '../../utils/edge'
 import { bookableDays, dayAnchor, priceText, time } from '../../utils/format'
 import { navigateOnce, openUpcomingLessons } from '../../utils/nav'
 
@@ -76,6 +77,11 @@ Page({
   request: 0,
   /** Set by chooseCoach for the load onShow runs when the coach page goes back here. */
   pendingSeek: undefined as Seek | undefined,
+  /** The selected day's times as fetched, redrawn as they pass. */
+  rows: [] as SlotDto[],
+  edgeTimer: 0 as number,
+  /** Behind another page or gone: no edge timer then, onShow loads and sets one again. */
+  hidden: false,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -85,7 +91,18 @@ Page({
     this.load('quiet')
   },
 
+  onHide() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
+  onUnload() {
+    this.hidden = true
+    this.clearEdge()
+  },
+
   onShow() {
+    this.hidden = false
     // A 体验课 that was taken may have been paid, lapsed or freed meanwhile, maybe on another phone.
     if (this.data.state === 'error' && this.data.usedUp) {
       this.load('quiet', true)
@@ -191,7 +208,7 @@ Page({
    */
   async loadSlots(seek?: Seek, moved = false) {
     const request = ++this.request
-    const { date, coachId, lessonTypeId, coaches } = this.data
+    const { date, coachId, lessonTypeId } = this.data
     this.setData({ slotsState: 'loading' })
     try {
       const filter = `lessonTypeId=${lessonTypeId}${coachId ? `&coachId=${coachId}` : ''}`
@@ -201,26 +218,8 @@ Page({
         : undefined
       const rows = await api<SlotDto[]>('GET', `/slots?date=${date}&${filter}`)
       if (request !== this.request) return
-      const names = new Map(coaches.map((c) => [c.id, c.name]))
-      const now = serverNow()
-      const notice = this.noticeMs
-      const slots = rows
-        .filter((s) => names.has(s.coachId) && Date.parse(s.startsAt) > now)
-        .map((s) => ({
-          id: s.id,
-          key: s.id === null ? `${s.coachId}@${s.startsAt}` : `s${s.id}`,
-          coachId: s.coachId,
-          coachName: names.get(s.coachId) ?? '',
-          time: time(s.startsAt),
-          startsAt: s.startsAt,
-          endsAt: s.endsAt,
-          available: s.available,
-          // Too close to start to book online, as opposed to booked by someone else.
-          closed: !s.available && Date.parse(s.startsAt) - now < notice,
-          seatsLeft: s.lessonTypeId === null ? null : s.seatsLeft,
-          mine: s.mine ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
-          bookingId: s.mine?.bookingId ?? null,
-        }))
+      this.rows = rows
+      const slots: SlotView[] = this.slotViews()
       const availableCount = slots.filter((s) => s.available).length
       if (openDays && availableCount === 0) {
         const open = await openDays
@@ -236,6 +235,7 @@ Page({
       }
       const mineCount = slots.filter((s) => s.mine).length
       this.setData({ slotsState: 'ready', slots, availableCount, mineCount })
+      this.scheduleEdge()
       const day = this.data.days.find((d) => d.key === date)
       if (moved && day && availableCount > 0) {
         wx.showToast({ title: `当天没有可约时段，已跳到 ${day.date}`, icon: 'none' })
@@ -244,6 +244,68 @@ Page({
       if (request !== this.request) return
       this.setData({ slotsState: 'error', error: errorMessage(e) })
     }
+  },
+
+  /**
+   * The day's times as of now: past ones dropped, and those now inside the lesson type's notice
+   * shown closed, as the server would refuse them.
+   */
+  slotViews(): SlotView[] {
+    const names = new Map(this.data.coaches.map((c) => [c.id, c.name]))
+    const now = serverNow()
+    const notice = this.noticeMs
+    const rows: SlotDto[] = this.rows
+    return rows
+      .filter((s) => names.has(s.coachId) && Date.parse(s.startsAt) > now)
+      .map((s) => {
+        const tooSoon = Date.parse(s.startsAt) - now < notice
+        const available = s.available && !tooSoon
+        return {
+          id: s.id,
+          key: s.id === null ? `${s.coachId}@${s.startsAt}` : `s${s.id}`,
+          coachId: s.coachId,
+          coachName: names.get(s.coachId) ?? '',
+          time: time(s.startsAt),
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          available,
+          // Too close to start to book online, as opposed to booked by someone else.
+          closed: tooSoon,
+          seatsLeft: s.lessonTypeId === null ? null : s.seatsLeft,
+          mine: s.mine ? (s.mine.status === 'pending_payment' ? '待支付' : '已报名') : '',
+          bookingId: s.mine?.bookingId ?? null,
+        }
+      })
+  },
+
+  /** Redraws the day as its next bookable time comes inside the notice, or the next time starts. */
+  scheduleEdge() {
+    this.clearEdge()
+    if (this.hidden) return
+    const wait = edgeWait(
+      (this.rows as SlotDto[]).flatMap((s) => [
+        Date.parse(s.startsAt) - this.noticeMs,
+        Date.parse(s.startsAt),
+      ]),
+      serverNow(),
+    )
+    if (wait === null) return
+    this.edgeTimer = setTimeout(() => {
+      this.edgeTimer = 0
+      if (this.hidden || this.data.slotsState !== 'ready') return
+      const slots: SlotView[] = this.slotViews()
+      this.setData({
+        slots,
+        availableCount: slots.filter((s) => s.available).length,
+        mineCount: slots.filter((s) => s.mine).length,
+      })
+      this.scheduleEdge()
+    }, wait) as unknown as number
+  },
+
+  clearEdge() {
+    if (this.edgeTimer) clearTimeout(this.edgeTimer)
+    this.edgeTimer = 0
   },
 
   retrySlots() {

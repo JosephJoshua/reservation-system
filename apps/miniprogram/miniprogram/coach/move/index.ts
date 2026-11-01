@@ -47,6 +47,8 @@ Page({
 
   id: 0,
   coachId: 0,
+  /** When the lesson was as this page loaded it, so a move made elsewhere meanwhile is refused. */
+  shownAt: '',
   /** Times the server refused for this lesson, by start. */
   refused: new Set<string>(),
   free: [] as OpenTimeDto[],
@@ -77,6 +79,7 @@ Page({
         return
       }
       this.coachId = me.id
+      this.shownAt = lesson.startsAt
       const strip = bookableDays(me.advanceDays, serverNow())
       const first = strip[0]?.key ?? ''
       const last = strip[strip.length - 1]?.key ?? first
@@ -151,6 +154,7 @@ Page({
         coachApi<CoachLessonDto>('POST', `/lessons/${this.id}/move`, {
           coachId,
           startsAt: slot.startsAt,
+          from: { coachId, startsAt: this.shownAt },
         }),
       `/coach/lesson/index?id=${this.id}`,
     )

@@ -28,6 +28,15 @@ export const targetFields = {
   startsAt: instantString.optional(),
 }
 
+/**
+ * The time a mover's page showed the lesson at (`from`), so a lesson moved meanwhile is refused
+ * rather than moved again from where it is now.
+ */
+export const shownTime = z.object({
+  coachId: z.number().int().positive(),
+  startsAt: instantString.transform((s) => new Date(s)),
+})
+
 /** Refines a schema that has `targetFields`: exactly one of the two forms. */
 export const oneTarget = (o: { slotId?: number; coachId?: number; startsAt?: string }) =>
   o.slotId !== undefined

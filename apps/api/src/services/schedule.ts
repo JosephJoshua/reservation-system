@@ -723,12 +723,14 @@ export function removeException(
 ): {
   row: (typeof scheduleExceptions.$inferSelect & { shortenedTo: Date | null }) | null
   conflicts: ScheduleConflictDto[]
+  /** Where one under way now ends, cut short now or before (a repeat); null once deleted. */
+  endedAt: Date | null
 } {
   const now = deps.now()
   return immediate(deps.db, (tx) => {
     const row = tx.select().from(scheduleExceptions).where(eq(scheduleExceptions.id, id)).get()
     if (!row || (coachId !== undefined && row.coachId !== coachId)) {
-      return { row: null, conflicts: [] }
+      return { row: null, conflicts: [], endedAt: null }
     }
     if (row.endsAt <= now) throw new ApiError(409, 'ended', '已过去的不能删除')
     let shortenedTo: Date | null = null
@@ -736,6 +738,8 @@ export function removeException(
       // Cut to the 5-minute step, which keeps it a valid exception.
       const step = SCHEDULE_STEP * MINUTE
       shortenedTo = new Date(Math.ceil(now.getTime() / step) * step)
+      // Already cut to this (a second tab, or its last few minutes): nothing changes.
+      if (shortenedTo >= row.endsAt) return { row: null, conflicts: [], endedAt: row.endsAt }
       tx.update(scheduleExceptions)
         .set({ endsAt: shortenedTo })
         .where(eq(scheduleExceptions.id, id))
@@ -752,7 +756,7 @@ export function removeException(
             ),
           )
         : []
-    return { row: { ...row, shortenedTo }, conflicts }
+    return { row: { ...row, shortenedTo }, conflicts, endedAt: shortenedTo }
   })
 }
 

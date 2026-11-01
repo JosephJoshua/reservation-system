@@ -29,6 +29,7 @@ describe('moveFailure', () => {
   it('tells a fixed lesson, a refused time and a gone time apart', () => {
     expect(moveFailure(409, 'move_deadline')).toBe('fixed')
     expect(moveFailure(404, 'not_found')).toBe('fixed')
+    expect(moveFailure(409, 'booking_changed')).toBe('fixed')
     expect(moveFailure(409, 'student_clash')).toBe('refused')
     expect(moveFailure(409, 'slot_taken')).toBe('gone')
     expect(moveFailure(404, 'slot_not_found')).toBe('gone')

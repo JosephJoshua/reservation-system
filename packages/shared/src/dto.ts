@@ -135,6 +135,8 @@ export interface RefundDto {
   settledHow: RefundSettleWay | null
   /** WeChat Pay could not pay it back to where it came from (退款异常); staff handle it. */
   abnormal: boolean
+  /** Why staff turned a requested refund down, as the student is told. */
+  rejectReason?: string
 }
 
 /** The failure note on a refund staff paid back 线下另付 that WeChat Pay then reports done too. */

@@ -44,7 +44,13 @@ export function packageStatus(p: PackageRow, now: Date): PackageStatus {
 
 /** A refund as the student sees it: how much, how far, and how staff paid it back if they did. */
 function refundView(r: typeof refunds.$inferSelect): RefundDto {
-  return { amount: r.amount, status: r.status, settledHow: r.settledHow, abnormal: r.abnormal }
+  return {
+    amount: r.amount,
+    status: r.status,
+    settledHow: r.settledHow,
+    abnormal: r.abnormal,
+    ...(r.status === 'rejected' && r.failure ? { rejectReason: r.failure } : {}),
+  }
 }
 
 /** Latest refund per key, preferring one that is not rejected. */

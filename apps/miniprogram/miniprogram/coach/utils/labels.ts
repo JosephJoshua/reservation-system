@@ -1,6 +1,7 @@
 import {
   type Attendance,
   type BookingStatus,
+  COACH_ATTENDANCE_DAYS,
   type StudentProfileDto,
   venueDateKey,
 } from '../../lib/shared'
@@ -16,12 +17,17 @@ export function lessonTag(
   lesson: { status: BookingStatus; attendance: Attendance | null },
   startsAt: string,
   now: number,
+  /** Given, an unmarked lesson reads 未签到 once the coach can no longer mark it. */
+  endsAt?: string,
 ): Tag {
   if (lesson.status === 'pending_payment') return { text: '待支付', tone: 'warning' }
   if (lesson.status === 'cancelled') return { text: '已取消', tone: 'default' }
   if (lesson.status === 'expired') return { text: '已失效', tone: 'default' }
   if (lesson.attendance === 'attended') return { text: '已到课', tone: 'success' }
   if (lesson.attendance === 'no_show') return { text: '缺席', tone: 'danger' }
+  if (endsAt && Date.parse(endsAt) + COACH_ATTENDANCE_DAYS * 86_400_000 < now) {
+    return { text: '未签到', tone: 'default' }
+  }
   if (Date.parse(startsAt) <= now) return { text: '待签到', tone: 'warning' }
   return { text: '已预约', tone: 'primary' }
 }

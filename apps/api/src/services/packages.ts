@@ -251,7 +251,13 @@ export function requestPackageRefund(deps: Deps, studentId: number, packageId: n
         .get()
       if (waiting) return waiting.id
     }
-    if (pkg.status !== 'active') throw new ApiError(409, 'package_not_active', '该课时包已申请退款')
+    if (pkg.status !== 'active') {
+      throw new ApiError(
+        409,
+        'package_not_active',
+        pkg.status === 'refunded' ? '该课时包已退款' : '该课时包已申请退款',
+      )
+    }
     const { order, amount } = refundablePackage(tx, pkg, now, '请先取消使用该课时包的预约')
     tx.update(packages).set({ status: 'refund_requested' }).where(eq(packages.id, pkg.id)).run()
     // A zero suggestion still goes to the admin, who may decide to refund something anyway.
