@@ -55,6 +55,7 @@ import {
   useApi,
   useIdempotencyKey,
   useIsPhone,
+  useNow,
   useSubmitting,
 } from '../hooks'
 import {
@@ -1031,7 +1032,8 @@ function StudentPage({ id }: { id: number }) {
     history.replaceState(history.state, '', `#/students/${id}${rest ? `?${rest}` : ''}`)
   }, [fellBack, id, named])
 
-  const now = Date.now()
+  // Ticks, so 下次上课 moves on once that lesson starts.
+  const now = useNow()
   const active = s?.packages.filter((p) => p.status === 'active') ?? []
   const next = s?.bookings
     .filter((b) => b.status === 'confirmed' && Date.parse(b.startsAt) > now)

@@ -25,7 +25,7 @@ import {
   typedNumber,
   yuan,
 } from '../format'
-import { type ApiData, useApi } from '../hooks'
+import { type ApiData, useApi, useNow } from '../hooks'
 import { packageStatusLabel } from '../labels'
 import { NumberBox } from '../NumberBox'
 import type { ProductForm } from '../preview/data'
@@ -137,7 +137,8 @@ function ProductList({
       ? '全部教练'
       : ids.map((id) => coaches.find((c) => c.id === id)?.name ?? '').join('，')
 
-  const now = new Date()
+  // Ticks, so a sale's tag changes as it starts or ends with the page open.
+  const now = new Date(useNow())
 
   return (
     <Card

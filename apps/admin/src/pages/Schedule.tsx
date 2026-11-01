@@ -39,6 +39,7 @@ import {
   useApi,
   useIdempotencyKey,
   useIsPhone,
+  useNow,
   useSubmitting,
 } from '../hooks'
 import {
@@ -769,7 +770,8 @@ function LessonDialog({
   const [moving, setMoving] = useState(false)
   const submitting = useSubmitting()
   const status = bookingStatusLabel[b.status as keyof typeof bookingStatusLabel]
-  const now = new Date()
+  // Ticks, so the actions change at the start and end with the dialog left open.
+  const now = new Date(useNow(10_000))
   const started = new Date(slot.startsAt) <= now
 
   const cancel = async () => {
@@ -917,7 +919,8 @@ function SessionDialog({
   const submitting = useSubmitting()
   const key = useIdempotencyKey()
   const keys = useActionKeys()
-  const now = new Date()
+  // Ticks, so the actions change at the start and end with the dialog left open.
+  const now = new Date(useNow(10_000))
   const started = new Date(slot.startsAt) <= now
   const ended = new Date(slot.endsAt) <= now
   const cancelled = slot.cancelledAt !== null
