@@ -115,6 +115,8 @@ Page({
   shown: false,
   /** Counts quotes asked for, so only the latest one is shown. */
   quotes: 0,
+  /** The free-cancel deadline and late rule, for the late note as time passes. */
+  lateRule: null as { hours: number; rule: LateCancelRule } | null,
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
@@ -138,6 +140,26 @@ Page({
     // Back from buying a package (or from the coach or a policy page): the package to use and
     // the price may have changed meanwhile.
     if (this.data.state === 'ready' && !this.data.submitting) this.requote()
+  },
+
+  /**
+   * Works the late note out again for the time now. Returns the note for the chosen way to pay
+   * when it was not shown before, so a booking about to be sent can stop and show it first.
+   */
+  refreshLate(): string {
+    if (!this.lateRule) return ''
+    const before = this.data.lateNotes
+    const notes = lateNotes(
+      this.data.startsAt,
+      this.lateRule.hours,
+      this.lateRule.rule,
+      serverNow(),
+    )
+    if (notes.wechat !== before.wechat || notes.package !== before.package) {
+      this.setData({ lateNotes: notes })
+    }
+    const key = this.data.payWith === 'package' ? 'package' : 'wechat'
+    return notes[key] && notes[key] !== before[key] ? notes[key] : ''
   },
 
   /** Where the booking goes: the session, or the coach and start time. */
@@ -177,6 +199,8 @@ Page({
    * since the last quote is picked; a student who chose WeChat Pay over the same package keeps it.
    */
   async requote() {
+    // Time has passed too: the lesson may now be inside its free-cancel window.
+    this.refreshLate()
     const asked = ++this.quotes
     let quote: BookingQuoteDto
     try {
@@ -235,6 +259,11 @@ Page({
       }
       const { price, package: pkg, perClassEnabled } = quote
       this.terms = bookingTerms(lessonType.rules)
+      this.lateRule = {
+        hours: lessonType.rules.cancelDeadlineHours,
+        rule: lessonType.rules.lateCancel,
+      }
+      this.refreshLate()
       this.setData({
         state: 'ready',
         lessonName: lessonType.name,
@@ -260,12 +289,6 @@ Page({
         cancelRule: cancelRuleText(
           lessonType.rules.cancelDeadlineHours,
           lessonType.rules.lateCancel,
-        ),
-        lateNotes: lateNotes(
-          this.data.startsAt,
-          lessonType.rules.cancelDeadlineHours,
-          lessonType.rules.lateCancel,
-          serverNow(),
         ),
         needName: !me.name,
         needPhone: !me.phone,
@@ -341,6 +364,17 @@ Page({
     const problem = this.problem()
     if (problem) {
       wx.showToast({ title: problem, icon: 'none' })
+      return
+    }
+    // Became late while the page was open: shown before anything is booked, and the next tap books.
+    const late = this.refreshLate()
+    if (late) {
+      wx.showModal({
+        title: '请留意取消规则',
+        content: late,
+        showCancel: false,
+        confirmText: '知道了',
+      })
       return
     }
     this.setData({ submitting: true })

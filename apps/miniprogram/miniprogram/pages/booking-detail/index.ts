@@ -37,6 +37,9 @@ const STATUS: Record<BookingDto['status'], { title: string; icon: string; tone: 
 /** A booked lesson the venue cannot give as booked: not to be travelled to. */
 const DISRUPTED = { title: '课程有变', icon: 'error-circle-filled', tone: 'hint' }
 
+/** Marked 缺席, while it is on or after: counted as taken, so neither 预约成功 nor 已完成. */
+const NO_SHOW = { title: '缺席', icon: 'close-circle-filled', tone: 'muted' }
+
 /** Whether the student is told to come for it: booked, and nothing in the way. */
 function onAsBooked(b: BookingDto): boolean {
   return b.status === 'confirmed' && !b.disruption
@@ -63,7 +66,9 @@ function subtitle(b: BookingDto, now: number): string {
             : '请取消后重新预约'
         return `${DISRUPTION_TEXT[b.disruption]}，${next}`
       }
-      return '请按时到场上课'
+      // Marked 缺席 while it is on: counted as taken, as once it has ended.
+      if (b.attendance === 'no_show') return '缺席，照常计课'
+      return Date.parse(b.startsAt) <= now ? '课程进行中' : '请按时到场上课'
     case 'completed':
       // Counted like an attended lesson: no refund and the package lesson is used.
       return b.attendance === 'no_show' ? '缺席，照常计课' : '课程已结束'
@@ -209,7 +214,9 @@ Page({
     const status =
       (b.status === 'confirmed' || b.status === 'pending_payment') && b.disruption
         ? DISRUPTED
-        : STATUS[b.status]
+        : (b.status === 'confirmed' || b.status === 'completed') && b.attendance === 'no_show'
+          ? NO_SHOW
+          : STATUS[b.status]
     this.setData({
       state: 'ready',
       booking: b,
