@@ -146,9 +146,8 @@ Page({
     // moved meanwhile, here or on another phone.
     if (this.data.state === 'ready' && !this.data.busy) this.refresh()
     else if (this.data.state === 'ready' && this.data.booking) {
-      // Its timers were stopped while hidden.
-      if (this.data.booking.status === 'pending_payment') this.startTimer()
-      this.scheduleEdge(this.data.booking)
+      // Its timers were stopped while hidden; redrawn for the time now, which also restarts them.
+      this.show(this.data.booking)
     }
   },
 
