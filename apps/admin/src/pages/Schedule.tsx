@@ -51,6 +51,7 @@ import {
 } from '../labels'
 import { openLesson, useOnLessonChanged } from '../lessonLink'
 import { MoveDialog } from '../MoveDialog'
+import { NumberBox } from '../NumberBox'
 import type { Coach, LessonType, Slot } from '../types'
 import { CoachScheduleDialog, spanText } from './CoachDialogs'
 
@@ -711,12 +712,11 @@ function CreateSessions({
             label="每节人数"
             help={`最多 ${most} 人。${lessonType?.minStudents ? `报名不足 ${lessonType.minStudents} 人时整节自动取消并退款。` : ''}与该教练已有的课重叠、或在请假和闭馆里的时间不能排`}
           >
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={capacity}
               min={least}
               max={most}
-              allowInputOverLimit={false}
               suffix="人"
               onChange={(v) => {
                 const n = typedNumber(v)

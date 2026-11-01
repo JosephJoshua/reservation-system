@@ -24,6 +24,7 @@ import { DefaultRuleFields } from '../BookingRules'
 import { Field } from '../Field'
 import { typedNumber } from '../format'
 import { useApi } from '../hooks'
+import { NumberBox } from '../NumberBox'
 import { SaveBar, StaleNotice } from '../SaveBar'
 import { SectionNav, useSections } from '../SectionNav'
 import { useSettingsDraft } from '../settingsDraft'
@@ -412,12 +413,11 @@ export function Settings() {
             />
           </Field>
           <Field label="每人体验课次数">
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={s.payment.trialLimitPerStudent}
               min={1}
               max={10}
-              allowInputOverLimit={false}
               suffix="次"
               onChange={(v) => {
                 const n = typedNumber(v)
@@ -430,12 +430,11 @@ export function Settings() {
             />
           </Field>
           <Field label="支付时限" help="下单后超过这个时间仍未支付，订单会自动取消并释放时段">
-            <InputNumber
+            <NumberBox
               theme="normal"
               value={s.payment.timeoutMinutes}
               min={5}
               max={30}
-              allowInputOverLimit={false}
               suffix="分钟"
               onChange={(v) => {
                 const n = typedNumber(v)

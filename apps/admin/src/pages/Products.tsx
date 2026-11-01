@@ -27,6 +27,7 @@ import {
 } from '../format'
 import { type ApiData, useApi } from '../hooks'
 import { packageStatusLabel } from '../labels'
+import { NumberBox } from '../NumberBox'
 import type { ProductForm } from '../preview/data'
 import { PreviewDialog } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
@@ -325,12 +326,11 @@ function ProductEditor({
         )}
       </Field>
       <Field label="课时数">
-        <InputNumber
+        <NumberBox
           theme="normal"
           value={f.lessonCount}
           min={1}
           max={200}
-          allowInputOverLimit={false}
           suffix="节"
           onChange={(v) => {
             const n = typedNumber(v)
@@ -351,12 +351,11 @@ function ProductEditor({
         />
       </Field>
       <Field label="有效期" help="从购买当天起计算">
-        <InputNumber
+        <NumberBox
           theme="normal"
           value={f.validityDays}
           min={1}
           max={3650}
-          allowInputOverLimit={false}
           suffix="天"
           onChange={(v) => {
             const n = typedNumber(v)

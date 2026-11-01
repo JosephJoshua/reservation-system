@@ -21,6 +21,7 @@ import { Field } from '../Field'
 import { toFen, toYuan, yuan } from '../format'
 import { type ApiData, attempt, hashParam, newKey, onceKey, useApi, useSubmitting } from '../hooks'
 import { COACH_PHOTO, useImageUpload } from '../ImageCrop'
+import { NumberBox } from '../NumberBox'
 import type { CoachForm } from '../preview/data'
 import { PreviewDialog } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
@@ -560,7 +561,7 @@ function CategoryEditor({
                   单独定价
                 </Checkbox>
                 {p ? (
-                  <InputNumber
+                  <NumberBox
                     theme="normal"
                     style={{ width: 140 }}
                     value={toYuan(p.price)}
@@ -568,7 +569,6 @@ function CategoryEditor({
                     decimalPlaces={2}
                     suffix="元"
                     max={100_000}
-                    allowInputOverLimit={false}
                     onChange={(v) => setPrice(t.id, toFen(v as number) ?? p.price)}
                   />
                 ) : (
@@ -587,7 +587,7 @@ function CategoryEditor({
               <span className="category-lesson" title={t.name}>
                 {t.name}
               </span>
-              <InputNumber
+              <NumberBox
                 theme="normal"
                 style={{ width: 160 }}
                 value={toYuan(rateOf(t.id))}
@@ -596,7 +596,6 @@ function CategoryEditor({
                 placeholder="未设置"
                 suffix="元/节"
                 max={100_000}
-                allowInputOverLimit={false}
                 onChange={(v) => {
                   // Left empty: unset. A negative one is not a rate, so the last one stays.
                   const rate = toFen(v as number)

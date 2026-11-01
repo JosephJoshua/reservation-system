@@ -34,6 +34,7 @@ import {
   yuan,
 } from '../format'
 import { type ApiData, useApi } from '../hooks'
+import { NumberBox } from '../NumberBox'
 import type { LessonForm } from '../preview/data'
 import { PreviewDialog } from '../preview/EditorWithPreview'
 import { useReorder } from '../Reorder'
@@ -260,13 +261,12 @@ function LessonEditor({
         />
       </Field>
       <Field label="时长">
-        <InputNumber
+        <NumberBox
           theme="normal"
           value={f.durationMinutes}
           min={15}
           max={480}
           step={15}
-          allowInputOverLimit={false}
           suffix="分钟"
           onChange={(v) => {
             const n = typedNumber(v)
@@ -276,12 +276,11 @@ function LessonEditor({
       </Field>
       <Field label="上课人数" help="多于 1 人为小班课，在日程页按节安排">
         <div className="stack">
-          <InputNumber
+          <NumberBox
             theme="normal"
             value={f.capacity}
             min={1}
             max={30}
-            allowInputOverLimit={false}
             suffix="人"
             onChange={(v) => {
               const n = typedNumber(v)
@@ -300,12 +299,11 @@ function LessonEditor({
           )}
           {f.capacity > 1 && f.minStudents !== null && (
             <>
-              <InputNumber
+              <NumberBox
                 theme="normal"
                 value={f.minStudents}
                 min={2}
                 max={f.capacity}
-                allowInputOverLimit={false}
                 suffix="人"
                 onChange={(v) => {
                   const n = typedNumber(v)
@@ -339,12 +337,11 @@ function LessonEditor({
         </Field>
       )}
       <Field label="标准价" help="教练类别可以单独定价，小班课填每人的价格">
-        <InputNumber
+        <NumberBox
           theme="normal"
           value={toYuan(f.price)}
           min={0}
           max={100_000}
-          allowInputOverLimit={false}
           decimalPlaces={2}
           suffix="元"
           // Emptied or negative is not a price, so the last one stays. ¥0 has to be typed.
@@ -367,12 +364,11 @@ function LessonEditor({
           </Checkbox>
           {f.salePercent !== null && (
             <>
-              <InputNumber
+              <NumberBox
                 theme="normal"
                 value={f.salePercent / 10}
                 min={0.1}
                 max={9.9}
-                allowInputOverLimit={false}
                 decimalPlaces={1}
                 suffix="折"
                 onChange={(v) => {

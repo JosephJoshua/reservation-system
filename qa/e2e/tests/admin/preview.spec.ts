@@ -174,6 +174,12 @@ test('a package previews on the 课时包 page, outlined', async ({ page }) => {
   await count.press('Backspace')
   await count.pressSequentially('8')
   const days = field(d, '有效期').locator('input')
+  // Emptied and left, a box shows its last value again rather than its minimum.
+  await days.click()
+  await days.press('ControlOrMeta+a')
+  await days.press('Backspace')
+  await field(d, '名称').locator('.field-label').click()
+  await expect(days).toHaveValue('180')
   await typeNumber(days, '3700')
   await field(d, '名称').locator('.field-label').click()
   await expect(count).toHaveValue('8')

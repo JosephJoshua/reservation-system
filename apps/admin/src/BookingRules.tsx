@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { Button, InputNumber, Radio, Tag } from 'tdesign-react'
 import { Field } from './Field'
 import { typedNumber } from './format'
+import { NumberBox } from './NumberBox'
 
 const HELP: Partial<Record<RuleName, string>> = {
   advanceDays: '学员可以预约从今天起多少天内的课',
@@ -38,13 +39,12 @@ function NumberRule({
   const limits = ruleLimits[name]
   if (name === 'minNoticeMinutes') {
     return (
-      <InputNumber
+      <NumberBox
         theme="normal"
         value={value / 60}
         min={limits.min / 60}
         max={limits.max / 60}
         decimalPlaces={1}
-        allowInputOverLimit={false}
         suffix={suffix}
         onChange={(v) => {
           const hours = typedNumber(v)
@@ -54,12 +54,11 @@ function NumberRule({
     )
   }
   return (
-    <InputNumber
+    <NumberBox
       theme="normal"
       value={value}
       min={limits.min}
       max={limits.max}
-      allowInputOverLimit={false}
       suffix={suffix}
       onChange={(v) => {
         const n = typedRule(v)
@@ -103,12 +102,11 @@ function RuleInput({
           </Radio.Group>
           {late.kind === 'partial' && (
             <>
-              <InputNumber
+              <NumberBox
                 theme="normal"
                 value={late.percent}
                 min={0}
                 max={100}
-                allowInputOverLimit={false}
                 suffix="%"
                 onChange={(v) => {
                   const percent = typedRule(v)
