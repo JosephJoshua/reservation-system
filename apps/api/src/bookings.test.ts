@@ -385,6 +385,22 @@ describe('cancelling a paid lesson', () => {
     expect(cancel.json).toMatchObject({ refunded: 20000, refundFailed: true })
   })
 
+  it('tells the desk when WeChat Pay answers a venue cancel refund as stuck', async () => {
+    const h = setup()
+    const { bookingId } = await paidBooking(h)
+    h.gateway.refund = async () => ({ status: 'processing', refundId: 'r1', abnormal: true })
+    const admin = await h.admin()
+    const cancel = await h.call(
+      'POST',
+      `/admin/bookings/${bookingId}/cancel`,
+      { reason: '教练请假' },
+      admin,
+    )
+    expect(cancel.json).toMatchObject({ refunded: 20000, refundFailed: true })
+    const log = await h.call('GET', '/admin/actions', undefined, admin)
+    expect(JSON.stringify(log.json)).toContain('退款异常 ¥200')
+  })
+
   it('refunds in full when the venue cancels, even late', async () => {
     const h = setup()
     const { t, bookingId } = await paidBooking(h)

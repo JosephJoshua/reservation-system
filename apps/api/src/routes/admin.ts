@@ -1369,6 +1369,10 @@ export function adminRoutes(deps: Deps) {
     const { reason } = await parseBody(c, z.object({ reason: z.string().trim().min(1).max(100) }))
     const id = idParam(c)
     const before = db.select().from(slots).where(eq(slots.id, id)).get()
+    // Called off already for another reason, say from a second tab: students were told that one.
+    if (before?.cancelledAt && before.cancelReason !== reason) {
+      throw new ApiError(409, 'session_cancelled', `该节课已取消，原因：${before.cancelReason}`)
+    }
     const cancelled = await cancelSession(deps, id, reason)
     // A repeat of a cancel that went through logs nothing.
     if (before && (!before.cancelledAt || cancelled.length)) {

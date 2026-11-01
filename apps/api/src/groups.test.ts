@@ -960,6 +960,10 @@ describe('calling off a session', () => {
       (await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '场地维修' }, admin)).json,
     ).toEqual({ cancelled: 0, refunded: 0, offline: 0, failed: 0, lessonsReturned: 0 })
     expect(h.db.select().from(refunds).all()).toHaveLength(2)
+    // Another reason, say from a second tab, is told the session went for the first one.
+    const other = await h.call('POST', `/admin/slots/${id}/cancel`, { reason: '停电' }, admin)
+    expect([other.status, other.json.error.code]).toEqual([409, 'session_cancelled'])
+    expect(other.json.error.message).toBe('该节课已取消，原因：场地维修')
     const reopen = await h.call('PATCH', `/admin/slots/${id}`, { open: true }, admin)
     expect(reopen.json.error.code).toBe('session_cancelled')
     const t = await h.student('d')
