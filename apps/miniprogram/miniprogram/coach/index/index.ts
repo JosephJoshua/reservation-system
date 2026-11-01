@@ -328,16 +328,23 @@ Page({
 
   /**
    * Redraws the day just after the next of its edges (a lesson starting, so 已预约 becomes 待签到,
-   * or a 请假 or free stretch starting or ending), and loads the schedule again then.
+   * a 请假 or free stretch starting or ending, or midnight), and loads the schedule again then.
    */
   scheduleEdge(starts: number[]) {
     this.clearEdge()
     if (this.hidden) return
-    const wait = edgeWait(starts, serverNow())
+    const now = serverNow()
+    // Midnight too, when 今天 and the day strip move on.
+    const today = this.data.days[PAST_DAYS]?.key ?? venueDateKey(new Date(now))
+    const wait = edgeWait([...starts, venueInstant(today, 24 * 60).getTime()], now)
     if (wait === null) return
     this.edgeTimer = setTimeout(() => {
       this.edgeTimer = 0
       if (this.hidden || this.data.state !== 'ready') return
+      if (this.data.days[PAST_DAYS]?.key !== venueDateKey(new Date(serverNow()))) {
+        this.load()
+        return
+      }
       this.showDay()
       if (!this.rowBusy) void this.loadSchedule(true)
     }, wait) as unknown as number
