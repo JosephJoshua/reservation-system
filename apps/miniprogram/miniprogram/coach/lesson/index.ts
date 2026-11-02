@@ -144,8 +144,8 @@ Page({
   shows: 0,
   /** Behind another page or gone: no edge timer then, onShow sets one again. */
   hidden: false,
-  /** When it was last hidden, so onShow can tell an edge passed meanwhile. */
-  hiddenAt: 0,
+  /** When the lesson was last fetched, so onShow can tell an edge passed since. */
+  fetchedAt: 0,
   /**
    * Set once an edge passes, until the lesson is fetched after it: how soon to look again. The
    * buttons come from the server, so a redraw alone leaves the ones from before the edge.
@@ -161,17 +161,16 @@ Page({
     this.hidden = false
     const l = this.data.lesson
     if (!l || this.data.state !== 'ready') return
-    // An edge passed while it was hidden: the buttons on screen are from before it. The timer
-    // fires a second after an edge, so one in the second before hiding was not handled either.
+    // An edge passed since the lesson was fetched, while hidden or with its timer late: the
+    // buttons on screen are from before it.
     const now = serverNow()
-    if (this.hiddenAt && edgeTimes(l).some((t) => t > this.hiddenAt - 1000 && t <= now))
+    if (this.fetchedAt && edgeTimes(l).some((t) => t > this.fetchedAt && t <= now))
       void this.onEdge()
     else this.scheduleEdge(l)
   },
 
   onHide() {
     this.hidden = true
-    this.hiddenAt = serverNow()
     this.clearEdge()
   },
 
@@ -209,10 +208,12 @@ Page({
     }
     // A change saved meanwhile shows a newer lesson than this fetch may have read.
     const shows = this.shows
+    const asked = serverNow()
     try {
       const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
       if (shows === this.shows) {
         this.edgeDue = 0
+        this.fetchedAt = asked
         this.show(fetched)
       }
     } catch {
@@ -234,8 +235,10 @@ Page({
 
   async load() {
     try {
+      const asked = serverNow()
       const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
       this.edgeDue = 0
+      this.fetchedAt = asked
       this.show(fetched)
     } catch (e) {
       if (bindInstead(e, this)) return
