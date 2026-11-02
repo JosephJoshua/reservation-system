@@ -118,11 +118,14 @@ Page({
     this.edgeTimer = setTimeout(() => this.onEdge(), wait) as unknown as number
   },
 
-  /** At an expiry; while a refund request is on its way, it looks again shortly. */
+  /** At an expiry; while a refund request is on its way, it redraws and looks again shortly. */
   onEdge() {
     this.edgeTimer = 0
     if (this.hidden || this.data.state !== 'ready') return
     if (this.data.busy) {
+      // Shown as expired now, and loaded once the request settles.
+      const now = serverNow()
+      this.setData({ packages: this.raw.map((p) => view(asOf(p, now))) })
       this.edgeTimer = setTimeout(() => this.onEdge(), 1000) as unknown as number
       return
     }
