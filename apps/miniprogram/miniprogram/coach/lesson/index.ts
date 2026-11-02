@@ -211,17 +211,24 @@ Page({
     const asked = serverNow()
     try {
       const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
-      if (shows === this.shows) {
-        this.edgeDue = 0
-        this.fetchedAt = asked
-        this.show(fetched)
-      }
+      if (shows === this.shows) this.showFetched(fetched, asked)
     } catch {
       // Redrawn for the time now, and fetched again in a minute.
       this.edgeDue = 60_000
       const current = this.data.lesson
       if (current && !this.hidden && this.data.state === 'ready') this.show(current)
     }
+  },
+
+  /**
+   * Shows a lesson fetched from `asked` on. The phone's clock can be a second off the server's,
+   * so an edge in the second before `asked` may not be in it yet: that one is fetched again.
+   */
+  showFetched(l: CoachLessonDto, asked: number) {
+    this.fetchedAt = asked - 1000
+    const now = serverNow()
+    this.edgeDue = edgeTimes(l).some((t) => t > this.fetchedAt && t <= now) ? 1500 : 0
+    this.show(l)
   },
 
   clearEdge() {
@@ -236,10 +243,7 @@ Page({
   async load() {
     try {
       const asked = serverNow()
-      const fetched = await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`)
-      this.edgeDue = 0
-      this.fetchedAt = asked
-      this.show(fetched)
+      this.showFetched(await coachApi<CoachLessonDto>('GET', `/lessons/${this.id}`), asked)
     } catch (e) {
       if (bindInstead(e, this)) return
       this.setData({ state: 'error', error: errorMessage(e) })
