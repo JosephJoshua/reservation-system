@@ -10,7 +10,8 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed-demo.ts"
+    "db:seed": "tsx src/db/seed-demo.ts",
+    "db:seed:venue": "tsx src/db/seed-venue.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
