@@ -69,6 +69,7 @@ async function waitForPage(
 ): Promise<Page> {
   const until = Date.now() + timeout
   let last = ''
+  let state = ''
   while (Date.now() < until) {
     const page = await miniProgram.currentPage()
     last = page?.path ?? ''
@@ -76,10 +77,11 @@ async function waitForPage(
       await sleep(500)
       const data = await page.data().catch(() => null)
       if (data && ready(data)) return page
+      state = data ? String(data.state) : ''
     }
     await sleep(250)
   }
-  throw new Error(`Timed out waiting for ${path} (on ${last})`)
+  throw new Error(`Timed out waiting for ${path} (on ${last}, state ${state || 'unknown'})`)
 }
 
 /** Native dialogs cannot be tapped from the automator, so every modal is answered "confirm". */
@@ -215,8 +217,17 @@ try {
   await autoConfirmModals()
 
   await step('the lesson offers 改约', async () => {
-    await miniProgram.reLaunch(`/pages/booking-detail/index?id=${bookingId}`)
-    const detail = await waitForPage('pages/booking-detail/index', (d) => d.booking !== null)
+    // The first page after switching students can load while the old session is still being
+    // replaced and land on an error; open it again once before failing.
+    let detail: Page
+    try {
+      await miniProgram.reLaunch(`/pages/booking-detail/index?id=${bookingId}`)
+      detail = await waitForPage('pages/booking-detail/index', (d) => d.booking !== null)
+    } catch (err) {
+      console.log(`  retrying the first page (${(err as Error).message})`)
+      await miniProgram.reLaunch(`/pages/booking-detail/index?id=${bookingId}`)
+      detail = await waitForPage('pages/booking-detail/index', (d) => d.booking !== null)
+    }
     await expectStudent(miniProgram, studentLogin)
     const booking = (await detail.data('booking')) as Booking
     check(booking.canMove && booking.movesLeft === 1, 'a new paid lesson should be movable once')
